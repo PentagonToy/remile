@@ -11,7 +11,7 @@ struct OverleafComments: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Comments").font(RemileType.heading); Text(connection.name).foregroundStyle(.secondary); Spacer()
+                Spacer()
                 if state.busy { ProgressView().controlSize(.small) }
                 Button { Task { await refresh() } } label: { Image(systemName: "arrow.clockwise") }.remileHelp("Refresh comments").disabled(state.busy)
                 Menu { Button("Markdown…") { export(json: false) }; Button("JSON…") { export(json: true) } } label: { Image(systemName: "square.and.arrow.up") }.disabled(archive == nil)
@@ -20,9 +20,10 @@ struct OverleafComments: View {
             if let error = state.error {
                 HStack { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning); Spacer(); Button("Sign in") { state.signIn = true } }
             }
-            ScrollView {
+            if let archive, archive.threads.isEmpty {
+                ContentUnavailableView("No comments", systemImage: "text.bubble").frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else { ScrollView {
                 LazyVStack(alignment: .leading, spacing: 20) {
-                    if let archive, archive.threads.isEmpty { ContentUnavailableView("No comments", systemImage: "text.bubble") }
                     ForEach(archive?.threads ?? []) { thread in
                         VStack(alignment: .leading, spacing: 8) {
                             Label(thread.resolved ? "Resolved" : "Comment", systemImage: thread.resolved ? "checkmark.bubble" : "text.bubble").font(RemileType.caption).foregroundStyle(thread.resolved ? RemileStyle.success : RemileStyle.ink.opacity(0.6))
@@ -32,7 +33,7 @@ struct OverleafComments: View {
                         }
                     }
                 }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity) }
         }.padding(24).frame(width: 520, height: 440).background(RemileStyle.background)
             .task { await refresh() }
             .sheet(isPresented: $state.signIn, onDismiss: { Task { await refresh() } }) { OverleafSignIn(profile: connection.profileID) { state.signIn = false } }

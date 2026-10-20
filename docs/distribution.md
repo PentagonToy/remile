@@ -1,6 +1,6 @@
 # Install and updates
 
-remile. 0.1.0 targets macOS 14 and later. The Apple Silicon DMG is published on [GitHub releases](https://github.com/PentagonToy/remile/releases).
+remile. 0.1.1 targets macOS 14 and later. The Apple Silicon DMG is published on [GitHub releases](https://github.com/PentagonToy/remile/releases).
 
 For DMG installation, drag remile.app to Applications. The app includes its [CLI](cli.md). Settings → General shows the installed version and checks for updates when requested. A newer stable release with a matching DMG opens its download in the browser. The app does not replace itself. No document content or account credentials are included in the GitHub check.
 
@@ -19,7 +19,7 @@ brew install --cask PentagonToy/tap/remile
 brew upgrade --cask remile
 ```
 
-The [project tap](https://github.com/PentagonToy/homebrew-tap) installs the native app and bundled CLI. The versioned cask verifies the released DMG checksum. The 0.1.0 package uses an ad hoc signature and has not been notarised by Apple. Homebrew installation does not grant an exception to macOS security checks. No cask hook removes quarantine or disables Gatekeeper.
+The [project tap](https://github.com/PentagonToy/homebrew-tap) installs the native app and bundled CLI. The versioned cask verifies the released DMG checksum. The 0.1.1 package uses an ad hoc signature and has not been notarised by Apple. Homebrew installation does not grant an exception to macOS security checks. No cask hook removes quarantine or disables Gatekeeper.
 
 
 For a Homebrew installation, update through Homebrew rather than mixing package-manager updates with manual app replacement. The in-app check remains a link to published release assets.

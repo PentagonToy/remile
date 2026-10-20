@@ -5,7 +5,9 @@ import UniformTypeIdentifiers
 @MainActor final class TeXProject: ObservableObject {
     let identity = UUID()
     @Published private(set) var root: URL
-    private let connectedName: String?
+    @Published private var connectedName: String?
+    @Published private(set) var renamingProject = false
+    var renameConnectedProject: ((String) async throws -> Void)?
     var displayName: String { connectedName ?? root.lastPathComponent }
     var connected: Bool { !historyEnabled }
     @Published private(set) var files: [String]
@@ -87,6 +89,7 @@ import UniformTypeIdentifiers
     private var compileID = UUID()
     private var syncTask: Task<Void, Never>?
     private var original: [String: String]
+    private var cachedBuild: URL?
     private var job: TeXCompileJob?
     private var task: Task<Void, Never>?
     private let historyEnabled: Bool
@@ -116,8 +119,9 @@ import UniformTypeIdentifiers
         collections = TeXCollections.read(self.root)
         revisions = historyEnabled ? TeXHistory.read(self.root) : []; outline = TeXOutlineItem.project(sources, main: initial); captureHistory(file: initial)
     }
+    deinit { TeXCache.discard(cachedBuild) }
     var dirty: Bool { buffers != original }
-    var source: Binding<String> { Binding(get: { self.buffers[self.selected] ?? "" }, set: { self.buffers[self.selected] = $0 }) }
+    var source: Binding<String> { Binding(get: { self.buffers[self.selected] ?? "" }, set: { if self.buffers[self.selected] != nil { self.buffers[self.selected] = $0 } }) }
     @discardableResult func save() -> Bool {
         do {
             let changed = files.filter { buffers[$0] != original[$0] }
@@ -146,8 +150,11 @@ import UniformTypeIdentifiers
         }
         self.job = job; outputCurrent = false; compiling = true; message = nil; log = ""; diagnostics = []
         let root = root, main = main, buffers = buffers, configuration = TeXConfiguration.current
-        let destination = output ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app/LaTeX/" + UUID().uuidString)
+        let destination = output ?? TeXCache.allocate("LaTeX")
+        let managed = output == nil
         task = Task { @MainActor [weak self] in
+            var retained = false
+            defer { if managed && !retained { TeXCache.discard(destination) } }
             do {
                 let result = try await Task.detached { try job.run(root: root, main: main, buffers: buffers, configuration: configuration, output: destination, scratch: scratch, submissionCheck: submissionCheck) }.value
                 guard let self, self.compileID == id else { return }; self.outputCurrent = false; self.log = result.log; self.diagnostics = TeXDiagnostics.parse(result.log)
@@ -155,6 +162,7 @@ import UniformTypeIdentifiers
                     self.outputCurrent = self.buffers == buffers && self.main == main
                     self.pdf = document; self.message = self.outputCurrent ? nil : "Edited · recompile"
                     if submissionCheck { self.message = self.buffers == buffers && self.main == main ? "Submission check passed" : "Source changed · recheck"; self.showsLog = true }
+                    TeXCache.discard(self.cachedBuild); self.cachedBuild = managed ? destination : nil; retained = managed
                     self.build = TeXBuild(pdf: result.output, source: destination.appendingPathComponent("Source"), executable: URL(fileURLWithPath: configuration.directory).appendingPathComponent("synctex"), buffers: buffers, main: main)
                 }
                 else { self.message = submissionCheck ? "Submission check failed" : "Compilation failed"; self.showsLog = true }
@@ -345,10 +353,21 @@ import UniformTypeIdentifiers
         }
     }
     @discardableResult func renameProject(to requestedName: String) -> Bool {
-        guard !connected else { return false }
-        guard !compiling else { return false }
+        guard !compiling, !renamingProject else { return false }
         let name = requestedName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, !name.contains("/"), name != ".", name != ".." else { return false }
+        guard !name.isEmpty else { return false }
+        if connected {
+            guard name.utf16.count <= 150, name.rangeOfCharacter(from: .controlCharacters) == nil, let renameConnectedProject else { message = "Use an Overleaf project name up to 150 characters."; return false }
+            if name == connectedName { return true }
+            renamingProject = true; message = "Renaming project…"
+            Task { @MainActor [weak self] in
+                do { try await renameConnectedProject(name); self?.connectedName = name; self?.message = nil }
+                catch { self?.message = "Rename failed: " + error.localizedDescription }
+                self?.renamingProject = false
+            }
+            return true
+        }
+        guard !name.contains("/"), name != ".", name != ".." else { return false }
         if name == root.lastPathComponent { return true }
         let old = root, target = root.deletingLastPathComponent().appendingPathComponent(name)
         do {

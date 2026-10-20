@@ -250,6 +250,10 @@ final class HomeModel: ObservableObject {
     }
     func openTeX(_ root: URL) {
         do { let connection = overleaf.connection(for: root); let project = try TeXProject(root, historyEnabled: connection == nil, displayName: connection?.name); guard reader.close(), closeTeX() else { return }; texProject = project
+            if let connection { project.renameConnectedProject = { [weak library = overleaf] name in
+                guard let library else { throw OverleafProjectRename.Failure.unavailable }
+                try await library.renameProject(connection.id, to: name)
+            } }
             project.renamedRoot = { [weak self] old, new in self?.recent.removeAll { $0 == old }; self?.recordRecent(new) }
             recordRecent(project.root); project.compile() }
         catch { self.error = "Unable to open LaTeX project: " + error.localizedDescription }

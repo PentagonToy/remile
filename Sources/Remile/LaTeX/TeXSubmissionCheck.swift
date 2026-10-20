@@ -6,6 +6,7 @@ import SwiftUI
     private(set) var buffers: [String: String] = [:]
     private(set) var main = ""
     private(set) var embedded: String?
+    private var cachedOutput: URL?
     private var job: TeXCompileJob?
     private var task: Task<Void, Never>?
     private var generation = UUID()
@@ -16,11 +17,13 @@ import SwiftUI
         let generation = UUID(); self.generation = generation
         let job = TeXCompileJob(); self.job = job
         let configuration = TeXConfiguration.current
-        let output = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app/Submission/" + generation.uuidString)
+        TeXCache.discard(cachedOutput)
+        let output = TeXCache.allocate("Submission"); cachedOutput = output
         let publish: @Sendable (Int, TeXSubmissionComparison.Row) -> Void = { [weak self] index, row in
             Task { @MainActor [weak self] in guard let self, self.generation == generation, self.running else { return }; self.rows[index] = row }
         }
         task = Task { @MainActor [weak self] in
+            let owner = self; defer { withExtendedLifetime(owner) { } }
             do {
                 let result = try await Task.detached {
                     try TeXSubmissionComparison.run(root: root, main: main, buffers: buffers, configuration: configuration, output: output, job: job, progress: publish)
@@ -32,6 +35,7 @@ import SwiftUI
             self?.running = false; self?.job = nil; completion()
         }
     }
+    deinit { TeXCache.discard(cachedOutput) }
     func stop() { job?.stop() }
     var json: [[String: Any]] { rows.enumerated().map { index, row in
         ["kind": index == 0 ? "current" : "embedded", "state": row.state, "detail": row.detail, "log": row.log, "logPath": row.logPath ?? "", "pdf": row.pdf ?? ""]

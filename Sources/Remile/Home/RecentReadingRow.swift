@@ -5,6 +5,7 @@ struct RecentReadingRow: View {
     let url: URL
     var openedAt: Date? = nil
     var displayName: String? = nil
+    var overleaf = false
     @StateObject private var hover = Hover()
     private final class Hover: ObservableObject { @Published var active = false }
     @StateObject private var preview = Preview()
@@ -12,7 +13,7 @@ struct RecentReadingRow: View {
     private var isTeX: Bool { (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
     @Environment(\.colorScheme) private var scheme
     private var tag: String { isTeX ? "TeX" : url.pathExtension.lowercased() == "pdf" ? "PDF" : "MD" }
-    private var kind: String { isTeX ? "LaTeX" : tag == "PDF" ? "PDF" : "Markdown" }
+    private var kind: String { isTeX ? (overleaf ? "Overleaf" : "Local LaTeX") : tag == "PDF" ? "PDF" : "Markdown" }
     private var tint: Color {
         if isTeX { return scheme == .dark ? Color(red: 0.55, green: 0.76, blue: 0.66) : Color(red: 0.16, green: 0.43, blue: 0.33) }
         if tag == "MD" { return scheme == .dark ? Color(red: 0.57, green: 0.70, blue: 0.90) : Color(red: 0.20, green: 0.37, blue: 0.60) }
@@ -25,9 +26,18 @@ struct RecentReadingRow: View {
                 else { Image(systemName: "doc.text").font(.system(size: 30)).foregroundStyle(tint).padding(.bottom, 8) }
             }.frame(width: 44, height: 58).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 4))
                 .overlay(alignment: .bottom) { Text(tag).font(.system(size: 10, weight: .bold, design: .rounded)).tracking(0.5).foregroundStyle(scheme == .dark ? Color(nsColor: RemileStyle.slate) : .white).frame(width: 48, height: 19).background(tint, in: RoundedRectangle(cornerRadius: 3)).offset(y: 1) }.accessibilityLabel(kind + " document")
+                .overlay(alignment: .topTrailing) {
+                    if isTeX && overleaf {
+                        Image(systemName: "leaf.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(tint)
+                            .frame(width: 22, height: 22).background(RemileStyle.background, in: Circle()).offset(x: 7, y: -5)
+                            .remileHelp("Overleaf project").accessibilityLabel("Overleaf")
+                    }
+                }
             VStack(alignment: .leading, spacing: 5) {
                 Text(displayName ?? url.lastPathComponent).font(.system(size: 17, weight: .medium)).lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
-                if let openedAt { Text(Self.relativeDate(openedAt)).font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1) }
+                HStack(spacing: 6) {
+                    if let openedAt { Text(Self.relativeDate(openedAt)) }
+                }.font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
 

@@ -7,6 +7,7 @@ final class RemileDelegate: NSObject, NSApplicationDelegate {
     func bind() {
         guard automationTask == nil else { return }
         UserDefaults.standard.set(false, forKey: "editor.aiSuggestions")
+        Task.detached(priority: .utility) { TeXCache.prune() }
         automationTask = Task { @MainActor in await EditorBridge.serve { RemileWindows.shared.requestHome() } }
     }
     func applicationWillTerminate(_ notification: Notification) { automationTask?.cancel() }

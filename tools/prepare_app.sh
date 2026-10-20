@@ -7,6 +7,8 @@ case "$output_directory" in /*) ;; *) print -u2 "Use an absolute output director
 mkdir -p "$output_directory"
 cd "$source_directory"
 version="$(cat VERSION)"
+release_numbers=("${(@s:.:)version}")
+build_number=$(( release_numbers[1] * 10000 + release_numbers[2] * 100 + release_numbers[3] ))
 swift build --build-system native --scratch-path "$output_directory/swift-build" -c release --product Remile
 binary_directory="$(swift build --build-system native --scratch-path "$output_directory/swift-build" -c release --show-bin-path)"
 application="$output_directory/remile.app"
@@ -30,7 +32,7 @@ cat > "$application/Contents/Info.plist" <<PLIST
 <key>CFBundleIconFile</key><string>Remile.icns</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>$version</string>
-<key>CFBundleVersion</key><string>100</string>
+<key>CFBundleVersion</key><string>$build_number</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSPrincipalClass</key><string>NSApplication</string>

@@ -4,6 +4,7 @@ struct InlineName: View {
     let value: String
     @Binding var editing: Bool
     let rename: (String) -> Bool
+    var truncation: Text.TruncationMode = .middle
     @StateObject private var draft = Draft()
     private final class Draft: ObservableObject { @Published var text = "" }
     @FocusState private var focused: Bool
@@ -14,12 +15,14 @@ struct InlineName: View {
                     .padding(.horizontal, 6).padding(.vertical, 4)
                     .background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: RemileRadius.control))
                     .overlay(RoundedRectangle(cornerRadius: RemileRadius.control).stroke(Color(nsColor: RemileStyle.navy)))
+                    .background(InlineEditBoundary { editing = false })
                     .onAppear { draft.text = value; focused = true }
                     .onSubmit { if rename(draft.text) { editing = false } }
                     .onExitCommand { editing = false }
                     .onChange(of: focused) { if !focused { editing = false } }
             } else {
-                Text(value).lineLimit(1).truncationMode(.middle).onTapGesture(count: 2) { draft.text = value; editing = true }
+                Text(value).lineLimit(1).truncationMode(truncation).onTapGesture(count: 2) { draft.text = value; editing = true }
+                    .accessibilityAction(named: "Rename") { draft.text = value; editing = true }
             }
         }.remileHelp("Double-click to rename · Return applies · Escape cancels")
     }

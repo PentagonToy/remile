@@ -77,3 +77,13 @@ Inline AI suggestions clear when switching documents or replacing editor content
 Select up to 2,000 characters of prose in Markdown or LaTeX and choose Proofread with Apple Intelligence or Proofread with ChatGPT from the context menu. Review a proposed replacement before applying it. This explicit check follows the selected AI, respects Manual mode and excludes code, maths and TeX commands. Automatic underlines use macOS spelling and grammar checks. Optional inline completions appear in grey and insert only with Tab.
 
 AI settings offers separate Grammar suggestions, Word alternatives and local inline completion switches. Apple Intelligence, ChatGPT and Manual share one provider selector. Word alternatives also appear in the context menu for a selected word. An unavailable ChatGPT connection falls back to Apple Intelligence when available, and the suggestion identifies that fallback.
+
+## Project navigation and storage
+
+Project titles sit in the centre of the action toolbar. Short titles are centred inside a bounded box, and overflowing titles keep their beginning visible. Overleaf sync ages use whole minutes. Recent Overleaf projects carry a leaf badge on the document icon. Double-click an Overleaf title to rename the online project. This needs remile’s Overleaf web sign-in and project rename permission. The title changes only after confirmation from Overleaf.
+
+Drag the line between Files and Outline to resize them. Selecting a PDF, EPS or image asset shows a preview beside the compiled document. EPS previews need `epstopdf` and use temporary copies.
+
+Superseded compilation caches are removed after a replacement build succeeds. Failed temporary builds are discarded. Abandoned UUID build folders are pruned at launch after seven days or when their combined size exceeds 512 MB. Active builds are protected. This policy leaves project copies, editor drafts, local history and the search index intact. Local text history retains its existing limit of 50 revisions and 16 MB per project.
+
+See the [changelog](../CHANGELOG.md) for the release history and pending changes.

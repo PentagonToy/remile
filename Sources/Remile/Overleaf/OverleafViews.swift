@@ -15,8 +15,8 @@ struct OverleafBar: View {
             else if library.statuses[connection.id] == .conflict { Label("Conflicting edits", systemImage: "exclamationmark.circle.fill").foregroundStyle(.red).remileHelp("Overlapping edits need your choice before syncing.") }
             else if library.statuses[connection.id] == .changes || library.pendingFiles.contains(connection.id) { Label("Changes to review", systemImage: "circle.fill").foregroundStyle(RemileStyle.warning).remileHelp("Review local and Overleaf changes before applying or publishing.") }
             else if let date = library.syncedAt[connection.id] {
-                TimelineView(.periodic(from: .now, by: 60)) { _ in
-                    Label { Text("Synced ") + Text(date, style: .relative) + Text(" ago") } icon: { Image(systemName: "checkmark.circle.fill") }.foregroundStyle(RemileStyle.success).remileHelp("Local files and Overleaf matched at the last completed check.")
+                TimelineView(.periodic(from: .now, by: 60)) { tick in
+                    Label(OverleafLibrary.syncAge(date, now: tick.date), systemImage: "checkmark.circle.fill").foregroundStyle(RemileStyle.success).remileHelp("Last matched: " + date.formatted(date: .abbreviated, time: .shortened))
                 }
             }
             Toggle(isOn: $library.offlineMode) { Image(systemName: "cloud.slash") }.toggleStyle(.button).remileHelp("Work offline · pause remote requests").disabled(library.busy)
