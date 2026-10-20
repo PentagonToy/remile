@@ -1,0 +1,79 @@
+import SwiftUI
+import UniformTypeIdentifiers
+
+/// Card destinations consume their own drops, including validation errors.
+enum HomeFileDrop {
+    enum Target { case open, convert, compress, combine }
+    enum Plan { case open(URL), convert([URL]), compress(URL), combine([URL]) }
+    struct Failure: LocalizedError { let message: String; var errorDescription: String? { message } }
+    @MainActor static func receive(_ providers: [NSItemProvider], perform: @escaping ([URL]) -> Void) {
+        Task { @MainActor in
+            var urls: [URL] = []
+            for provider in providers {
+                let url: URL? = await withCheckedContinuation { continuation in
+                    provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { value, _ in
+                        let url = (value as? URL) ?? (value as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
+                        continuation.resume(returning: url)
+                    }
+                }
+                guard let url else { perform([]); return }
+                urls.append(url)
+            }
+            perform(urls)
+        }
+    }
+    static func plan(_ urls: [URL], target: Target) throws -> Plan {
+        guard !urls.isEmpty, urls.allSatisfy(\.isFileURL) else { throw Failure(message: "Drop local files from Finder.") }
+        switch target {
+        case .open:
+            guard urls.count == 1, ["pdf", "md", "markdown", "txt"].contains(urls[0].pathExtension.lowercased()) else { throw Failure(message: "Drop one PDF or Markdown document to open it.") }
+            return .open(urls[0])
+        case .convert:
+            guard urls.allSatisfy({ url in
+                ["md", "markdown", "doc", "docx"].contains(url.pathExtension.lowercased()) || UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true
+            }) else { throw Failure(message: "Convert accepts images, Word and Markdown files.") }
+            return .convert(urls)
+        case .compress:
+            guard urls.count == 1, urls[0].pathExtension.lowercased() == "pdf" else { throw Failure(message: "Drop one PDF onto Compress.") }
+            return .compress(urls[0])
+        case .combine:
+            guard urls.count >= 2, urls.allSatisfy({ $0.pathExtension.lowercased() == "pdf" }) else { throw Failure(message: "Drop two or more PDFs onto Combine. You can review their order before continuing.") }
+            return .combine(urls)
+        }
+    }
+}
+
+extension HomeModel {
+    func presentConversion(_ urls: [URL] = []) {
+        conversion = ConversionModel(); conversion.add(urls); convertPresented = true
+    }
+    func presentCompression(_ url: URL? = nil) {
+        compression = CompressionModel(); if let url { compression.add(url) }; compressPresented = true
+    }
+    func handleDrop(_ urls: [URL], target: HomeFileDrop.Target) {
+        guard !processing, !opening, !convertPresented, !compressPresented else { return }
+        do {
+            switch try HomeFileDrop.plan(urls, target: target) {
+            case .open(let url): open(url)
+            case .convert(let urls): presentConversion(urls)
+            case .compress(let url): presentCompression(url)
+            case .combine(let urls): Task { @MainActor in self.create(.combine, inputs: urls, open: { self.open($0) }) }
+            }
+        } catch { self.error = error.localizedDescription }
+    }
+}
+
+struct ToolFileDrop: ViewModifier {
+    let model: HomeModel
+    let target: HomeFileDrop.Target
+    @StateObject private var hover = Hover()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private final class Hover: ObservableObject { @Published var active = false }
+    func body(content: Content) -> some View {
+        content.overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(DeerStyle.accent.opacity(hover.active ? 0.9 : 0), lineWidth: 2).allowsHitTesting(false))
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hover.active)
+            .onDrop(of: [UTType.fileURL.identifier], isTargeted: $hover.active) { providers in
+                HomeFileDrop.receive(providers) { model.handleDrop($0, target: target) }; return true
+            }
+    }
+}
