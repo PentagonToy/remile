@@ -9,6 +9,7 @@ private final class SettingsPresentation: ObservableObject {
 struct ReaderSettings: View {
     @AppStorage("markdown.autoPair") private var autoPair = true
     @AppStorage("markdown.livePreview") private var livePreview = true
+    @AppStorage("editor.sidebarArtwork") private var sidebarArtwork = true
     @AppStorage(ReaderScrolling.preference) private var elasticScrolling = true
     @AppStorage(PaperSize.preference) private var paper = PaperSize.a4.rawValue
     @AppStorage(PaperSize.landscapePreference) private var landscape = false
@@ -17,16 +18,18 @@ struct ReaderSettings: View {
     @AppStorage(ReaderZoom.preference) private var markdownZoom = 100
     @AppStorage(AssistantResponseDetail.preference) private var responseDetail = AssistantResponseDetail.mid.rawValue
     @AppStorage(AssistantHistoryRetention.preference) private var retention = AssistantHistoryRetention.days30.rawValue
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var presentation = SettingsPresentation()
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack { Text("Settings").font(.system(size: 24, weight: .semibold)); Spacer() }.padding(22)
+            HStack { Text("Settings").font(.system(size: 24, weight: .semibold)); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }.padding(22)
             Divider()
             HStack(spacing: 0) {
                 VStack(spacing: 6) {
                     category("General", symbol: "slider.horizontal.3")
-                    category("Ask", symbol: "sparkles")
+                    category("AI", symbol: "sparkles")
+                    category("Search", symbol: "magnifyingglass")
                     category("LaTeX", symbol: "doc.text")
                     Spacer()
                 }.padding(14).frame(width: 155).frame(maxHeight: .infinity).background(RemileStyle.sidebar)
@@ -34,7 +37,9 @@ struct ReaderSettings: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(presentation.section).font(.system(size: 21, weight: .semibold)).padding(.horizontal, 22).padding(.top, 20)
                     if presentation.section == "General" { Form {
+                        Section("Version & updates") { RemileUpdateSettings() }
                         Section("Appearance") {
+                            Toggle("Sidebar artwork", isOn: $sidebarArtwork)
                             Picker("Theme", selection: $appearance) {
                                 ForEach(ReaderAppearance.allCases, id: \.rawValue) { Text($0.rawValue).tag($0.rawValue) }
                             }.pickerStyle(.segmented)
@@ -62,8 +67,10 @@ struct ReaderSettings: View {
                             }.pickerStyle(.segmented)
                         }
                     }.formStyle(.grouped).scrollContentBackground(.hidden) }
+                    else if presentation.section == "Search" { LibrarySearchSettings() }
                     else if presentation.section == "LaTeX" { TeXSettings() }
                     else { Form {
+                        Section("Connection & usage") { ChatGPTSettings(showsHeading: false) }
                         Section("Responses") {
                             Picker("Detail", selection: $responseDetail) {
                                 ForEach(AssistantResponseDetail.allCases, id: \.rawValue) { Text($0.rawValue).tag($0.rawValue) }
@@ -101,4 +108,29 @@ struct ReaderSettings: View {
         }.buttonStyle(.plain).accessibilityValue(presentation.section == name ? "Selected" : "")
     }
 
+}
+
+struct LibrarySearchSettings: View {
+    @AppStorage(SearchQuestion.preference) private var interpretQuestions = true
+    @AppStorage(SearchQuestion.spellingPreference) private var spellingSuggestions = true
+    var body: some View {
+        Form {
+            Section("Matching") {
+                Toggle("Interpret English questions", isOn: $interpretQuestions)
+                Text("Find key words and common word endings in questions. Each key word must appear.\nKeywords stay literal. Put an exact phrase in quotes.")
+                    .font(RemileType.caption).foregroundStyle(.secondary).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+            }
+            Section("Suggestions") {
+                Toggle("Suggest spelling corrections", isOn: $spellingSuggestions)
+                Text("Shown when a search finds no matches.\nChoose a suggestion to search again.")
+                    .font(RemileType.caption).foregroundStyle(.secondary).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+            }
+            Section("Your library") {
+                Text("Manage folders and indexing in Library.\nUse Update Index after changing files.")
+                    .font(RemileType.callout).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+                Text("Search stays on this Mac. No AI is used.\nChanges apply immediately.")
+                    .font(RemileType.caption).foregroundStyle(.secondary).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+            }
+        }.formStyle(.grouped).scrollContentBackground(.hidden)
+    }
 }

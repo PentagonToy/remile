@@ -20,6 +20,13 @@ struct LibrarySummary: Sendable {
     var needsOCR = 0
     var failed = 0
 }
+struct LibraryIndexedDocument: Identifiable, Sendable {
+    let path: String
+    let emptyPages: Int
+    let failed: Bool
+    var id: String { path }
+    var status: String { failed ? "Not indexed" : emptyPages > 0 ? "\(emptyPages) pages without text" : "Indexed" }
+}
 
 struct LibraryHit: Identifiable, Sendable {
     let path: String
@@ -108,6 +115,16 @@ actor LibraryIndex {
         guard status == SQLITE_DONE || status == SQLITE_ROW else { throw failure() }
     }
 
+    func indexedDocuments() throws -> [LibraryIndexedDocument] {
+        try connect()
+        let rows = try statement("SELECT path,empty_pages,error IS NOT NULL FROM documents ORDER BY error IS NOT NULL DESC,empty_pages DESC,path LIMIT 2000")
+        defer { sqlite3_finalize(rows) }
+        var result: [LibraryIndexedDocument] = []
+        while sqlite3_step(rows) == SQLITE_ROW {
+            result.append(LibraryIndexedDocument(path: text(rows, 0), emptyPages: Int(sqlite3_column_int(rows, 1)), failed: sqlite3_column_int(rows, 2) != 0))
+        }
+        return result
+    }
     func summary() throws -> LibrarySummary {
         try connect()
         var result = LibrarySummary()
@@ -309,20 +326,38 @@ actor LibraryIndex {
         return terms
     }
 
-    func search(_ query: String) throws -> [LibraryHit] {
+    /// Re-read complete indexed passages only for explicit cloud questions.
+    func answerContext(_ hits: [LibraryHit]) throws -> [LibraryHit] {
         try connect()
-        let expression = try Self.expression(query)
-        let row = try statement("SELECT path,page,body,bm25(pages,0,0,4,1),(SELECT folder FROM documents WHERE documents.path=pages.path),heading FROM pages WHERE pages MATCH ? AND path IN (SELECT path FROM documents WHERE error IS NULL) ORDER BY bm25(pages,0,0,4,1),path,CAST(page AS INTEGER) LIMIT 200", [expression])
-        defer { sqlite3_finalize(row) }
-        var results: [LibraryHit] = []
-        var status = sqlite3_step(row)
-        while status == SQLITE_ROW {
-            try Task.checkCancellation()
-            let context = SearchText.context(text(row, 2), query: query)
-            results.append(LibraryHit(path: text(row, 0), folderID: text(row, 4), page: Int(sqlite3_column_int(row, 1)), excerpt: context.excerpt, score: sqlite3_column_double(row, 3) * (1 + 0.25 * context.proximity), sectionTitle: URL(fileURLWithPath: text(row, 0)).pathExtension.lowercased() == "pdf" ? nil : text(row, 5)))
-            status = sqlite3_step(row)
+        return try hits.prefix(12).compactMap { hit in
+            let row = try statement("SELECT body FROM pages WHERE path=? AND page=? AND path IN (SELECT path FROM documents WHERE error IS NULL)", [hit.path, String(hit.page)])
+            defer { sqlite3_finalize(row) }
+            guard sqlite3_step(row) == SQLITE_ROW else { return nil }
+            return LibraryHit(path: hit.path, folderID: hit.folderID, page: hit.page, excerpt: String(text(row, 0).prefix(8000)), score: hit.score, sectionTitle: hit.sectionTitle)
         }
-        guard status == SQLITE_DONE else { throw failure() }
-        return results.sorted { $0.score == $1.score ? $0.id < $1.id : $0.score < $1.score }
+    }
+
+    func search(_ query: String, interpretQuestions: Bool = true) throws -> [LibraryHit] {
+        // Release temporary Foundation text objects between successive searches.
+        return try autoreleasepool {
+            try connect()
+            let literal = try Self.expression(query)
+            let question = interpretQuestions ? SearchQuestion(query) : nil
+            let expression = question?.expression ?? literal
+            let row = try statement("SELECT path,page,body,bm25(pages,0,0,4,1),(SELECT folder FROM documents WHERE documents.path=pages.path),heading FROM pages WHERE pages MATCH ? AND path IN (SELECT path FROM documents WHERE error IS NULL) ORDER BY bm25(pages,0,0,4,1),path,CAST(page AS INTEGER) LIMIT 200", [expression])
+            defer { sqlite3_finalize(row) }
+            var results: [LibraryHit] = []
+            var status = sqlite3_step(row)
+            while status == SQLITE_ROW {
+                try Task.checkCancellation()
+                let body = text(row, 2)
+                let matchedQuery = question?.matchedQuery(in: body)
+                let context = SearchText.context(body, query: matchedQuery ?? query)
+                results.append(LibraryHit(path: text(row, 0), folderID: text(row, 4), page: Int(sqlite3_column_int(row, 1)), excerpt: context.excerpt, score: sqlite3_column_double(row, 3) * (1 + 0.25 * context.proximity), sectionTitle: URL(fileURLWithPath: text(row, 0)).pathExtension.lowercased() == "pdf" ? nil : text(row, 5), matchQuery: matchedQuery))
+                status = sqlite3_step(row)
+            }
+            guard status == SQLITE_DONE else { throw failure() }
+            return results.sorted { $0.score == $1.score ? $0.id < $1.id : $0.score < $1.score }
+        }
     }
 }

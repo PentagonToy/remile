@@ -20,9 +20,7 @@ final class PDFSession: NSObject, ObservableObject {
     enum Sidebar: String, CaseIterable { case pages = "Pages", outline = "Outline", search = "Search", comments = "Comments", highlights = "Highlights" }
     /// Link Contents are accessibility descriptions, not a review conversation.
     static func isReviewComment(_ annotation: PDFAnnotation) -> Bool {
-        let types: Set<String> = ["Text", "FreeText", "Line", "Square", "Circle", "Polygon", "PolyLine", "Highlight", "Underline", "Squiggly", "StrikeOut", "Stamp", "Caret", "Ink", "FileAttachment", "Sound", "Redact"]
-        if ["Highlight", "Underline", "Squiggly", "StrikeOut"].contains(annotation.type ?? ""), annotation.value(forAnnotationKey: PDFAnnotationKey(rawValue: "IRT")) == nil { return false }
-        return types.contains(annotation.type ?? "") && annotation.contents?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        PDFCommentExport.isReviewComment(annotation)
     }
 
     struct Thread: Identifiable {
@@ -222,6 +220,10 @@ final class PDFSession: NSObject, ObservableObject {
         view?.go(to: comment.annotation.bounds.insetBy(dx: -24, dy: -24), on: comment.page)
     }
 
+    func exportComments(name: String) throws -> PDFCommentExport.Archive {
+        guard let document else { throw CocoaError(.fileReadUnknown) }
+        return try PDFCommentExport.capture(document, name: name, graph: commentGraph)
+    }
     func loadComments() {
         guard !commentsLoaded, commentTask == nil, let document, !document.isLocked else { return }
         let token = commentGeneration

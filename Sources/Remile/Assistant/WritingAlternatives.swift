@@ -1,0 +1,20 @@
+import Foundation
+
+@MainActor enum WritingAlternatives {
+    private static var cache: [(key: String, date: Date, choices: [String])] = []
+    static func choices(text: String, context: String, correction: Bool) async throws -> [String] {
+        let key = ChatGPTConnection.shared.model + "|" + (correction ? "fix|" : "synonym|") + text + "|" + context
+        if let saved = cache.first(where: { $0.key == key && Date().timeIntervalSince($0.date) < 600 }) { return saved.choices }
+        let input = try JSONSerialization.data(withJSONObject: ["selected": text, "context": context])
+        let response = try await ChatGPTConnection.shared.respond(String(decoding: input, as: UTF8.self), instructions: correction ? AssistantPrompts.grammar : AssistantPrompts.synonyms)
+        let choices: [String]
+        if correction {
+            let raw = response.trimmingCharacters(in: .whitespacesAndNewlines)
+            let values = raw.data(using: .utf8).flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+            var seen = Set<String>([text])
+            choices = Array(values.filter { !$0.isEmpty && $0.count < 300 && !$0.contains("\\") && !$0.contains("$") && seen.insert($0).inserted }.prefix(3))
+        } else { choices = EditorSynonyms.candidates(response, for: text) }
+        cache.removeAll { Date().timeIntervalSince($0.date) >= 600 }; cache.append((key, Date(), choices)); cache = Array(cache.suffix(64))
+        return choices
+    }
+}

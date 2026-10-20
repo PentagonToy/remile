@@ -26,7 +26,7 @@ struct EditorToolsMenu: View {
             Divider()
             Button("Remove notes (%)…") { notes() }
             Button(state.preparing ? "Embedding bibliography…" : "Embed bibliography…") { bibliography() }.disabled(project.compiling || state.preparing)
-        } label: { Image(systemName: "wand.and.stars") }.help("Writing and submission tools")
+        } label: { Image(systemName: "wand.and.stars") }.remileHelp("Writing and submission tools")
             .sheet(item: $state.proposal) { proposal in
                 VStack(alignment: .leading, spacing: 16) {
                     Text(proposal.title).font(.title2.weight(.semibold))

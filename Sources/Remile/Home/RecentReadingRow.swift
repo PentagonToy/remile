@@ -4,6 +4,7 @@ import PDFKit
 struct RecentReadingRow: View {
     let url: URL
     var openedAt: Date? = nil
+    var displayName: String? = nil
     @StateObject private var hover = Hover()
     private final class Hover: ObservableObject { @Published var active = false }
     @StateObject private var preview = Preview()
@@ -25,14 +26,14 @@ struct RecentReadingRow: View {
             }.frame(width: 44, height: 58).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 4))
                 .overlay(alignment: .bottom) { Text(tag).font(.system(size: 10, weight: .bold, design: .rounded)).tracking(0.5).foregroundStyle(scheme == .dark ? Color(nsColor: RemileStyle.slate) : .white).frame(width: 48, height: 19).background(tint, in: RoundedRectangle(cornerRadius: 3)).offset(y: 1) }.accessibilityLabel(kind + " document")
             VStack(alignment: .leading, spacing: 5) {
-                Text(url.lastPathComponent).font(.system(size: 17, weight: .medium)).lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
-                Text((openedAt.map { Self.relativeDate($0) } ?? url.deletingLastPathComponent().lastPathComponent)).font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                Text(displayName ?? url.lastPathComponent).font(.system(size: 17, weight: .medium)).lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
+                if let openedAt { Text(Self.relativeDate(openedAt)).font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1) }
             }
             Spacer(minLength: 0)
 
         }.padding(14).frame(maxWidth: .infinity).contentShape(Rectangle())
             .background(hover.active ? DocumentTone.surface(pdf: url.pathExtension.lowercased() == "pdf") : Color.clear, in: RoundedRectangle(cornerRadius: RemileRadius.card))
-            .onHover { hover.active = $0 }.help(url.path)
+            .onHover { hover.active = $0 }
             .task(id: url) {
                 guard url.pathExtension.lowercased() == "pdf" else { return }
                 preview.image = await Task.detached(priority: .utility) {

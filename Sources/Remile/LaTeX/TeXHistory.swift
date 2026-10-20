@@ -54,17 +54,43 @@ enum TeXHistory {
 }
 
 struct TeXOutlineItem: Identifiable {
-    let id: Int
+    let line: Int
     let title: String
     let level: Int
-    static func parse(_ source: String) -> [Self] {
+    var file = ""
+    var id: String { file + ":" + String(line) }
+    static func parse(_ source: String, file: String = "") -> [Self] {
         let pattern = try! NSRegularExpression(pattern: #"^\s*\\(part|chapter|section|subsection|subsubsection|paragraph)\*?(?:\[[^\]]*\])?\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}"#)
         let levels = ["part": 0, "chapter": 0, "section": 0, "subsection": 1, "subsubsection": 2, "paragraph": 3]
         return source.components(separatedBy: .newlines).enumerated().compactMap { line, text in
             let ns = text as NSString
             guard let match = pattern.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
             let title = ns.substring(with: match.range(at: 2)).replacingOccurrences(of: #"\\[a-zA-Z]+|[{}]"#, with: "", options: .regularExpression)
-            return Self(id: line, title: title, level: levels[ns.substring(with: match.range(at: 1))] ?? 0)
+            return Self(line: line, title: title, level: levels[ns.substring(with: match.range(at: 1))] ?? 0, file: file)
         }
+    }
+    /// Literal includes only. Reuses in-memory buffers and never opens paths outside the project.
+    static func project(_ sources: [String: String], main: String) -> [Self] {
+        let include = try! NSRegularExpression(pattern: #"\\(?:input|include|subfile)\s*\{([^{}\\]+)\}"#)
+        var result: [Self] = [], visited = Set<String>(), bytes = 0
+        func visit(_ file: String, depth: Int) {
+            guard depth < 32, visited.count < 2000, !visited.contains(file), let source = sources[file], bytes + source.utf8.count <= 16_000_000 else { return }
+            visited.insert(file); bytes += source.utf8.count
+            let headings = Dictionary(uniqueKeysWithValues: parse(source, file: file).map { ($0.line, $0) })
+            for (line, raw) in source.components(separatedBy: .newlines).enumerated() {
+                guard result.count < 2000 else { return }
+                if let heading = headings[line] { result.append(heading) }
+                let text = raw.replacingOccurrences(of: #"(?<!\\)%.*$"#, with: "", options: .regularExpression) as NSString
+                for match in include.matches(in: text as String, range: NSRange(location: 0, length: text.length)) {
+                    var path = text.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespaces)
+                    guard !path.hasPrefix("/"), !path.contains("..") else { continue }
+                    if (path as NSString).pathExtension.isEmpty { path += ".tex" }
+                    let relative = ((file as NSString).deletingLastPathComponent as NSString).appendingPathComponent(path)
+                    visit(sources[path] != nil ? path : relative, depth: depth + 1)
+                }
+            }
+        }
+        visit(main, depth: 0)
+        return result
     }
 }

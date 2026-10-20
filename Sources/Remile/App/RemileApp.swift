@@ -1,17 +1,29 @@
 import SwiftUI
 import AppKit
 
+@MainActor
 final class RemileDelegate: NSObject, NSApplicationDelegate {
-    var reader: ReadingSession?
-    var home: HomeModel?
     private var automationTask: Task<Void, Never>?
-    @MainActor func bind(_ model: HomeModel) {
-        home = model; reader = model.reader
-        if automationTask == nil { UserDefaults.standard.set(false, forKey: "editor.aiSuggestions"); automationTask = Task { @MainActor in await EditorBridge.serve(model) } }
+    func bind() {
+        guard automationTask == nil else { return }
+        UserDefaults.standard.set(false, forKey: "editor.aiSuggestions")
+        automationTask = Task { @MainActor in await EditorBridge.serve { RemileWindows.shared.requestHome() } }
     }
     func applicationWillTerminate(_ notification: Notification) { automationTask?.cancel() }
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply { (home?.texProject?.confirmLeaving() == false || reader?.confirmLeaving() == false) ? .terminateCancel : .terminateNow }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        for home in RemileWindows.shared.models {
+            if home.texProject?.confirmLeaving() == false || !home.reader.confirmLeaving() { return .terminateCancel }
+        }
+        return .terminateNow
+    }
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        let item = NSMenuItem(title: "New Window", action: #selector(newWindow), keyEquivalent: "")
+        item.target = self; menu.addItem(item)
+        return menu
+    }
+    @objc private func newWindow() { RemileWindows.shared.createWindow?(); NSApp.activate(ignoringOtherApps: true) }
 }
 
 @main
@@ -26,28 +38,52 @@ struct RemileEntry {
 
 struct RemileApp: App {
     @NSApplicationDelegateAdaptor(RemileDelegate.self) private var delegate
-    @StateObject private var home = HomeModel()
-
     var body: some Scene {
-        Window("remile.", id: "home") {
-            ReadingShell(home: home, reader: home.reader).modifier(ReaderAppearanceModifier())
-                .onAppear { delegate.bind(home) }
-        }
-        .defaultSize(width: 1120, height: 800)
-        .commands { HomeCommands(model: home) }
+        WindowGroup("remile.", id: "home") { RemileWindow(delegate: delegate) }
+            .defaultSize(width: 1120, height: 800)
+            .commands { RemileCommands() }
         Settings { ReaderSettings().modifier(ReaderAppearanceModifier()) }
+    }
+}
+
+private struct RemileWindow: View {
+    let delegate: RemileDelegate
+    @StateObject private var home = HomeModel()
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        ReadingShell(home: home, reader: home.reader).modifier(ReaderAppearanceModifier())
+            .onAppear { RemileWindows.shared.createWindow = { openWindow(id: "home") }; delegate.bind() }
+    }
+}
+
+private struct RemileCommands: Commands {
+    @ObservedObject private var windows = RemileWindows.shared
+    var body: some Commands {
+        if let model = windows.active { HomeCommands(model: model) }
+        else {
+            CommandGroup(replacing: .newItem) {
+                Button("New Window") { windows.createWindow?() }.keyboardShortcut("n", modifiers: [.command, .shift])
+                Divider()
+                Button("New Markdown") { windows.perform { $0.newMarkdown() } }.keyboardShortcut("n")
+                Button("Open…") { windows.perform { if let url = $0.chooseDocument() { $0.open(url) } } }.keyboardShortcut("o")
+            }
+        }
     }
 }
 
 private struct HomeCommands: Commands {
     @ObservedObject var model: HomeModel
-    @Environment(\.openWindow) private var openWindow
     var body: some Commands {
+        CommandGroup(replacing: .help) {
+            Button("remile. User Guide") { model.guidePresented = true }
+        }
         CommandGroup(replacing: .newItem) {
-            Button("New Markdown") { model.newMarkdown(); openWindow(id: "home") }.keyboardShortcut("n")
+            Button("New Window") { RemileWindows.shared.createWindow?() }.keyboardShortcut("n", modifiers: [.command, .shift])
+            Divider()
+            Button("New Markdown") { model.newMarkdown() }.keyboardShortcut("n")
             Button("Open LaTeX Project…") { model.chooseTeX() }
             Divider()
-            Button("Open…") { if let url = model.chooseDocument() { model.open(url) }; openWindow(id: "home") }.keyboardShortcut("o")
+            Button("Open…") { if let url = model.chooseDocument() { model.open(url) } }.keyboardShortcut("o")
         }
         CommandGroup(after: .importExport) {
             Button("Convert to PDF…") { model.presentConversion() }
@@ -55,7 +91,7 @@ private struct HomeCommands: Commands {
             Button("Combine PDFs…") { model.create(.combine, open: model.open) }
         }
         CommandGroup(replacing: .printItem) {
-            Button("Print…") { NotificationCenter.default.post(name: Notification.Name("remile.print"), object: nil) }.keyboardShortcut("p")
+            Button("Print…") { NotificationCenter.default.post(name: Notification.Name("remile.print"), object: model.reader) }.keyboardShortcut("p")
         }
         CommandGroup(replacing: .saveItem) {
             Button("Save") { if let project = model.texProject { project.save() } else { model.reader.save() } }.keyboardShortcut("s")
@@ -69,11 +105,11 @@ private struct HomeCommands: Commands {
             }.keyboardShortcut("w")
         }
         CommandGroup(after: .textEditing) {
-            Button("Toggle Comment") { NotificationCenter.default.post(name: Notification.Name("remile.toggleComment"), object: nil) }.keyboardShortcut("/").disabled(model.texProject == nil)
+            Button("Toggle Comment") { NotificationCenter.default.post(name: Notification.Name("remile.toggleComment"), object: model.texProject) }.keyboardShortcut("/").disabled(model.texProject == nil)
         }
         CommandGroup(after: .newItem) {
-            Button("Home") { guard model.closeTeX(), model.reader.close() else { return }; model.page = .home; openWindow(id: "home") }.keyboardShortcut("h", modifiers: [.command, .shift])
-            Button("Search Library") { guard model.closeTeX(), model.reader.close() else { return }; model.page = .search; openWindow(id: "home") }.keyboardShortcut("f", modifiers: [.command, .shift])
+            Button("Home") { guard model.closeTeX(), model.reader.close() else { return }; model.page = .home }.keyboardShortcut("h", modifiers: [.command, .shift])
+            Button("Search Library") { guard model.closeTeX(), model.reader.close() else { return }; model.page = .search }.keyboardShortcut("f", modifiers: [.command, .shift])
         }
     }
 }

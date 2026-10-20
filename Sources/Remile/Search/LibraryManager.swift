@@ -2,6 +2,8 @@ import SwiftUI
 
 struct LibraryManager: View {
     @ObservedObject var model: HomeModel
+    @StateObject private var state = Presentation()
+    private final class Presentation: ObservableObject { @Published var documents: [LibraryIndexedDocument] = []; @Published var loadError: String? }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
@@ -19,7 +21,8 @@ struct LibraryManager: View {
             if model.summary.folders.isEmpty {
                 ContentUnavailableView("Choose folders to index", systemImage: "folder.badge.plus")
             } else {
-                List(model.summary.folders) { folder in
+                List {
+                ForEach(model.summary.folders) { folder in
                     HStack(spacing: 12) {
                         Image(systemName: "folder").foregroundStyle(RemileStyle.accent)
                         VStack(alignment: .leading, spacing: 4) {
@@ -27,8 +30,20 @@ struct LibraryManager: View {
                             Text(folder.path).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         }
                         Spacer()
-                        Button { model.removeFolder(folder) } label: { Image(systemName: "minus.circle") }.buttonStyle(.plain).help("Remove from Library; keep original files").disabled(model.indexing)
+                        Button { model.removeFolder(folder) } label: { Image(systemName: "minus.circle") }.buttonStyle(.plain).remileHelp("Remove from Library · keep original files").disabled(model.indexing)
                     }.padding(.vertical, 8)
+                }
+                DisclosureGroup("Documents · \(model.summary.documents)") {
+                    ForEach(state.documents) { document in
+                        HStack {
+                            Text(URL(fileURLWithPath: document.path).lastPathComponent).lineLimit(1).truncationMode(.middle)
+                            Spacer()
+                            Text(document.status).foregroundStyle(document.failed || document.emptyPages > 0 ? RemileStyle.warning : RemileStyle.success).lineLimit(1)
+                        }.font(RemileType.caption).padding(.vertical, 4).remileHelp(document.path)
+                    }
+                    if model.summary.documents > 2000 { Text("Showing the first 2,000 documents").font(RemileType.caption).foregroundStyle(.secondary) }
+                    if let error = state.loadError { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning) }
+                }
                 }.listStyle(.plain).scrollContentBackground(.hidden)
             }
             if model.indexing {
@@ -44,5 +59,9 @@ struct LibraryManager: View {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
         .padding(24).frame(width: 620, height: 420).background(RemileStyle.background).foregroundStyle(RemileStyle.ink).tint(RemileStyle.accent)
+            .task(id: model.libraryRevision) {
+                do { state.documents = try await model.index.indexedDocuments(); state.loadError = nil }
+                catch { state.loadError = "Could not read document status. Update the index and try again." }
+            }
     }
 }

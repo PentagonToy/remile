@@ -26,6 +26,19 @@ enum TeXFileSystem {
         }
         return paths.sorted()
     }
+    static func folders(_ root: URL) throws -> [String] {
+        guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) else { throw CocoaError(.fileReadUnknown) }
+        var result: [String] = []
+        for case let url as URL in items {
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            if values.isSymbolicLink == true { items.skipDescendants(); continue }
+            if values.isDirectory == true { result.append(String(url.path.dropFirst(root.path.count + 1))) }
+            guard result.count < 10000 else { throw CocoaError(.fileReadTooLarge) }
+        }
+        return result.sorted()
+    }
+    static func reference(_ path: String) -> String { path.hasSuffix(".tex") ? String(path.dropLast(4)) : path }
+    static func topLevel(_ paths: [String]) -> [String] { paths.filter { path in !paths.contains { $0 != path && path.hasPrefix($0 + "/") } } }
     static func importFile(_ source: URL, root: URL, folder: String) throws -> String {
         let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
         let allowed = ["tex", "bib", "sty", "cls", "pdf", "png", "jpg", "jpeg", "svg", "eps", "csv", "txt", "dat"]

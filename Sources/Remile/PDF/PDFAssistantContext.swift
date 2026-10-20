@@ -15,7 +15,7 @@ actor PDFAssistantContext {
         }
     }
     func passages(data: Data, password: String, path: String, question: String, currentPage: Int,
-                  selection: (page: Int, text: String)?, progress: @escaping @Sendable (Double) async -> Void) async throws -> [AssistantPassage] {
+                  selection: (page: Int, text: String)?, expanded: Bool = false, progress: @escaping @Sendable (Double) async -> Void) async throws -> [AssistantPassage] {
         guard data.count <= 256 * 1024 * 1024 else { throw Failure.tooLarge }
         guard let document = PDFDocument(data: data) else { throw Failure.unreadable }
         if document.isLocked { document.unlock(withPassword: password) }
@@ -29,9 +29,9 @@ actor PDFAssistantContext {
                 let text = String(raw.prefix(100_000))
                 if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     let score = Self.score(text, terms: terms) + (index + 1 == currentPage ? 0.25 : 0)
-                    candidates.append((index + 1, score, Self.excerpt(text, terms: terms)))
+                    candidates.append((index + 1, score, Self.excerpt(text, terms: terms, bytes: expanded ? 8000 : 650)))
                     candidates.sort { $0.score == $1.score ? $0.page < $1.page : $0.score > $1.score }
-                    if candidates.count > 6 { candidates.removeLast() }
+                    if candidates.count > (expanded ? 12 : 6) { candidates.removeLast() }
                 }
             }
             if index.isMultiple(of: 8) || index + 1 == document.pageCount {
@@ -42,7 +42,7 @@ actor PDFAssistantContext {
         try Task.checkCancellation()
         var result: [AssistantPassage] = []
         if let selection, selection.page > 0, selection.page <= document.pageCount, !selection.text.isEmpty {
-            result.append(AssistantPassage(location: AssistantLocation(path: path, unit: selection.page, label: "Page \(selection.page)"), text: Self.excerpt(selection.text, terms: terms)))
+            result.append(AssistantPassage(location: AssistantLocation(path: path, unit: selection.page, label: "Page \(selection.page)"), text: Self.excerpt(selection.text, terms: terms, bytes: expanded ? 8000 : 650)))
         }
         for candidate in candidates where !result.contains(where: { $0.location.unit == candidate.page }) {
             result.append(AssistantPassage(location: AssistantLocation(path: path, unit: candidate.page, label: "Page \(candidate.page)"), text: candidate.text))
@@ -86,12 +86,13 @@ actor PDFAssistantContext {
         }
         return edits + (i < a.count || j < b.count ? 1 : 0) <= 1
     }
-    static func excerpt(_ text: String, terms: [String]) -> String {
+    static func excerpt(_ text: String, terms: [String], bytes: Int = 650) -> String {
+        if text.utf8.count <= bytes { return text }
         // Find the densest paragraph window so a keyword near the end of a page survives truncation.
         let chunks = text.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         var best = text, bestScore = -Double.infinity
         for index in chunks.indices {
-            let window = chunks[index..<min(chunks.count, index + 5)].joined(separator: " ")
+            let window = chunks[index..<min(chunks.count, index + (bytes > 650 ? 40 : 5))].joined(separator: " ")
             let value = score(window, terms: terms)
             if value > bestScore { best = window; bestScore = value }
         }
@@ -100,6 +101,6 @@ actor PDFAssistantContext {
             let start = best.index(range.lowerBound, offsetBy: -120, limitedBy: best.startIndex) ?? best.startIndex
             best = "…" + best[start...]
         }
-        return AssistantEvidence.bounded(best, bytes: 650)
+        return AssistantEvidence.bounded(best, bytes: bytes)
     }
 }

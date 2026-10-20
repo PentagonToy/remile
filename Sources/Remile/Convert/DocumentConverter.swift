@@ -112,7 +112,7 @@ actor DocumentConverter {
         var report = ConversionSaveReport()
         for item in batch.items {
             guard !excluding.contains(item.id), let source = item.output else { continue }
-            let stem = item.input.deletingPathExtension().lastPathComponent
+            let stem = "converted_" + item.input.deletingPathExtension().lastPathComponent
             var destination = directory.appendingPathComponent(stem + ".pdf")
             var number = 2
             while FileManager.default.fileExists(atPath: destination.path) { destination = directory.appendingPathComponent("\(stem)-\(number).pdf"); number += 1 }

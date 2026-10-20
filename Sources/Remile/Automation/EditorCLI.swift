@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import PDFKit
 
 @MainActor enum EditorCLI {
     static func run(_ arguments: [String]) -> Int32 {
@@ -7,8 +8,19 @@ import AppKit
             let command = arguments.first ?? "help", options = Array(arguments.dropFirst())
             func option(_ key: String) -> String? { options.firstIndex(of: key).flatMap { options.indices.contains($0 + 1) ? options[$0 + 1] : nil } }
             switch command {
+            case "version", "--version": return emit(["ok": true, "version": RemileRelease.current])
             case "help", "--help":
-                return emit(["ok": true, "usage": "remile --cli COMMAND", "commands": ["combine /absolute/one /absolute/two --output /absolute/new.pdf|new.md", "compress /absolute/input.pdf --output /absolute/new.pdf [--quality small|balanced|high] [--grayscale]", "status", "logs [--tail characters]", "read [--file relative.tex]", "select --file relative.tex", "replace --file relative.tex --source-file /absolute/file --expected-sha256 HASH", "save", "compile [--scratch] [--submission-check]", "submission-compare [--status]", "history", "doctor", "transform --action strip-notes|embed-bibliography|toggle-comment|indent|outdent [--file relative.tex] [--start UTF16 --length UTF16] [--apply --expected-sha256 HASH]", "rename --file relative.tex --name NEW [--kind project]", "export --kind pdf|source --output /absolute/new-file", "open /absolute/path", "inspect /absolute/project", "build /absolute/project --output /absolute/new-directory [--main main.tex]"]])
+                return emit(["ok": true, "usage": "remile --cli COMMAND", "commands": ["version", "comments [/absolute/document.pdf] [--format markdown|json] [--output /absolute/new.md|new.json]","combine /absolute/one /absolute/two --output /absolute/new.pdf|new.md", "compress /absolute/input.pdf --output /absolute/new.pdf [--quality small|balanced|high] [--grayscale]", "status", "logs [--tail characters]", "read [--file relative.tex]", "select --file relative.tex", "replace --file relative.tex --source-file /absolute/file --expected-sha256 HASH", "save", "compile [--scratch] [--submission-check]", "submission-compare [--status]", "history", "doctor", "transform --action strip-notes|embed-bibliography|toggle-comment|indent|outdent [--file relative.tex] [--start UTF16 --length UTF16] [--apply --expected-sha256 HASH]", "rename --file relative.tex --name NEW [--kind project]", "export --kind pdf|source --output /absolute/new-file", "open /absolute/path", "inspect /absolute/project", "build /absolute/project --output /absolute/new-directory [--main main.tex]"]])
+            case "comments":
+                let output = option("--output"), format = try PDFCommentExport.format(named: option("--format"), output: output)
+                if let path = options.first, path.hasPrefix("/") {
+                    NSApplication.shared.setActivationPolicy(.prohibited)
+                    guard let document = PDFDocument(url: URL(fileURLWithPath: path)) else { throw Failure("Choose a readable PDF.") }
+                    let archive = try PDFCommentExport.capture(document, name: URL(fileURLWithPath: path).lastPathComponent)
+                    return emit(try PDFCommentExport.response(archive, format: format, output: output))
+                }
+                var request = EditorBridge.Request(operation: "comments"); request.kind = format.rawValue; request.output = output
+                return try send(request)
             case "combine", "compress":
                 guard let output = option("--output"), output.hasPrefix("/"), !FileManager.default.fileExists(atPath: output) else { throw Failure("Choose a new absolute output file.") }
                 NSApplication.shared.setActivationPolicy(.prohibited)
@@ -67,20 +79,23 @@ import AppKit
                     let data = try Data(contentsOf: URL(fileURLWithPath: path)); guard data.count <= 4_000_000, let source = String(data: data, encoding: .utf8) else { throw Failure("Source must be UTF-8 and at most 4 MB.") }
                     request.source = source; request.expectedSHA256 = hash
                 }
-                let folder = EditorBridge.directory
-                guard FileManager.default.fileExists(atPath: folder.path) else { throw Failure("Start remile. before using live commands.") }
-                let input = folder.appendingPathComponent(request.id.uuidString + ".request.json"), output = folder.appendingPathComponent(request.id.uuidString + ".response.json")
-                defer { try? FileManager.default.removeItem(at: input); try? FileManager.default.removeItem(at: output) }
-                try JSONEncoder().encode(request).write(to: input, options: [.atomic]); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: input.path)
-                let deadline = Date().addingTimeInterval(10)
-                while Date() < deadline {
-                    if FileManager.default.fileExists(atPath: output.path) { let response = try JSONSerialization.jsonObject(with: Data(contentsOf: output)) as? [String: Any] ?? [:]; return emit(response) }
-                    Thread.sleep(forTimeInterval: 0.05)
-                }
-                throw Failure("The app did not respond. Close modal dialogues and try again.")
+                return try send(request)
             default: throw Failure("Unknown command. Use --cli help.")
             }
         } catch { return emit(["ok": false, "error": error.localizedDescription]) }
+    }
+    private static func send(_ request: EditorBridge.Request) throws -> Int32 {
+    let folder = EditorBridge.directory
+    guard FileManager.default.fileExists(atPath: folder.path) else { throw Failure("Start remile. before using live commands.") }
+    let input = folder.appendingPathComponent(request.id.uuidString + ".request.json"), output = folder.appendingPathComponent(request.id.uuidString + ".response.json")
+    defer { try? FileManager.default.removeItem(at: input); try? FileManager.default.removeItem(at: output) }
+    try JSONEncoder().encode(request).write(to: input, options: [.atomic]); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: input.path)
+    let deadline = Date().addingTimeInterval(10)
+    while Date() < deadline {
+        if FileManager.default.fileExists(atPath: output.path) { let response = try JSONSerialization.jsonObject(with: Data(contentsOf: output)) as? [String: Any] ?? [:]; return emit(response) }
+        Thread.sleep(forTimeInterval: 0.05)
+    }
+    throw Failure("The app did not respond. Close modal dialogues and try again.")
     }
     private final class CompressionReply: @unchecked Sendable {
         private let lock = NSLock()

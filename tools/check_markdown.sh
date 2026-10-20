@@ -7,4 +7,4 @@ mkdir -p "$check_directory/module-cache"
 cat "$project_directory/Sources/Remile/Markdown/MathMarkup.swift" \
     "$project_directory/Sources/Remile/Markdown/MarkdownHTML.swift" \
     "$project_directory/Tests/MarkdownChecks/main.swift" > "$check_directory/markup-checks.swift"
-swift -module-cache-path "$check_directory/module-cache" "$check_directory/markup-checks.swift" "$check_directory/markup-fixtures"
+swift -module-cache-path "$check_directory/module-cache" "$check_directory/markup-checks.swift" "$check_directory/markup-fixtures" "$project_directory"

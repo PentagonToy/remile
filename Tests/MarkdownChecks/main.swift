@@ -38,6 +38,54 @@ try verify(!linkHTML.contains("href=\"javascript:"), "Non-web destinations canno
 for source in ["![Remote](https://example.invalid/x.png)", "![Escape](../image.png)", "![Missing](missing.png)", "```\nunfinished", "$$\nx^2", ""] {
     var failed = false
     do { var local = MarkdownHTML(baseURL: directory.appendingPathComponent("fixture.md")); _ = try local.document(source) } catch { failed = true }
-    try verify(failed, "Invalid or inaccessible resource rejected")
+    try verify(failed, "Invalid or inaccessible resource rejected: \(source)")
+}
+let svg = ##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 30"><defs><linearGradient id="gold"><stop offset="0" stop-color="#d6b777"/></linearGradient></defs><rect width="40" height="30" fill="url(#gold)"/></svg>"##
+try Data(svg.utf8).write(to: directory.appendingPathComponent("image.svg"))
+func renderImage(_ source: String) throws -> String {
+    var renderer = MarkdownHTML(baseURL: directory.appendingPathComponent("fixture.md"))
+    return try renderer.document(source)
+}
+let svgHTML = try renderImage("![Vector](image.svg)")
+try verify(svgHTML.contains("src=\"data:image/svg+xml;base64,"), "Local SVG embeds as a passive vector image")
+let imageHTML = try renderImage(#"<img src="image.png" alt="A &amp; B" width="960" onerror="alert(1)">"#)
+try verify(imageHTML.contains("alt=\"A &amp; B\"") && imageHTML.contains("width=\"960\"") && !imageHTML.contains("onerror"), "HTML images retain description and size but discard event handlers")
+let pictureHTML = try renderImage("""
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="image.svg">
+  <img src="image.png" alt="Banner" width="960">
+</picture>
+""")
+try verify(pictureHTML.contains("class=\"picture-light\"") && pictureHTML.contains("class=\"picture-dark\"") && !pictureHTML.contains("&lt;picture"), "Picture selects embedded light and dark images")
+try verify(pictureHTML.components(separatedBy: "alt=\"Banner\"").count == 3, "Both image variants retain accessible description")
+for code in ["\\<img src=\"image.png\">", "`<img src=\"image.png\">`", "``<img src=\"image.png\">``", "```html\n<img src=\"image.png\">\n```"] {
+    let result = try renderImage(code)
+    try verify(!result.contains("src=\"data:image/"), "Image markup remains literal inside code")
+}
+for unsafe in [
+    svg.replacingOccurrences(of: "<defs>", with: "<script>alert(1)</script><defs>"),
+    svg.replacingOccurrences(of: "viewBox=", with: "onload=\"alert(1)\" viewBox="),
+    svg.replacingOccurrences(of: "url(#gold)", with: "url(https://example.invalid/image)"),
+    svg.replacingOccurrences(of: "<defs>", with: "<image href=\"file:///etc/passwd\"/><defs>"),
+    "<!DOCTYPE svg [<!ENTITY x SYSTEM \"file:///etc/passwd\">]>" + svg,
+    "<?xml-stylesheet href=\"https://example.invalid/theme.css\"?>" + svg
+] {
+    try Data(unsafe.utf8).write(to: directory.appendingPathComponent("unsafe.svg"))
+    var failed = false
+    do { _ = try renderImage("![Unsafe](unsafe.svg)") } catch { failed = true }
+    try verify(failed, "Active or externally referencing SVG rejected")
+}
+for source in [#"<img src="https://example.invalid/x.png">"#, #"<img src="../image.png">"#] {
+    var failed = false
+    do { _ = try renderImage(source) } catch { failed = true }
+    try verify(failed, "HTML image paths use the same local confinement")
+}
+if CommandLine.arguments.count > 2 {
+    let readme = URL(fileURLWithPath: CommandLine.arguments[2]).appendingPathComponent("README.md")
+    var renderer = MarkdownHTML(baseURL: readme)
+    let result = try renderer.document(String(contentsOf: readme, encoding: .utf8))
+    try verify(result.components(separatedBy: "src=\"data:image/svg+xml;base64,").count == 3, "Actual README embeds both theme banners")
+    try verify(result.contains("<blockquote>Across time, a few words find you here.</blockquote>"), "Actual README slogan remains one sentence")
+    try result.write(to: directory.appendingPathComponent("readme.html"), atomically: true, encoding: .utf8)
 }
 print("\(checks) Markdown/MathML checks passed")

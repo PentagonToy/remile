@@ -201,7 +201,7 @@ struct ConvertWorkspace: View {
                                 Text(url.lastPathComponent).font(RemileType.callout).lineLimit(2)
                                 Spacer(minLength: 0)
                                 Button { model.remove(url) } label: { Image(systemName: "xmark") }
-                                    .buttonStyle(.borderless).help("Remove \(url.lastPathComponent)").disabled(model.busy || model.saving)
+                                    .buttonStyle(.borderless).remileHelp("Remove \(url.lastPathComponent)").disabled(model.busy || model.saving)
                             }.padding(12)
                         }
                     }
@@ -306,11 +306,11 @@ struct ConversionPreview: View {
     var body: some View {
         VStack(spacing: 10) {
             HStack {
-                Button { model.show(model.page - 1); pageChanged(model.page) } label: { Image(systemName: "chevron.left") }.disabled(model.loading || model.page == 0).help("Previous preview page")
+                Button { model.show(model.page - 1); pageChanged(model.page) } label: { Image(systemName: "chevron.left") }.disabled(model.loading || model.page == 0).remileHelp("Previous preview page")
                 Spacer()
                 Text(model.count == 0 ? "Loading…" : "Page \(model.page + 1) of \(model.count)").font(RemileType.caption).monospacedDigit()
                 Spacer()
-                Button { model.show(model.page + 1); pageChanged(model.page) } label: { Image(systemName: "chevron.right") }.disabled(model.loading || model.page + 1 >= model.count).help("Next preview page")
+                Button { model.show(model.page + 1); pageChanged(model.page) } label: { Image(systemName: "chevron.right") }.disabled(model.loading || model.page + 1 >= model.count).remileHelp("Next preview page")
             }
             if model.loading { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
             else if let image = model.image {

@@ -24,6 +24,7 @@ struct MarkdownHTML {
 
     mutating func document(_ source: String, anchors: [Int: Int] = [:]) throws -> String {
         guard source.utf8.count <= 8_000_000 else { throw Failure.tooLarge }
+        guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Failure.empty }
         var lines = source.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
         for index in lines.indices {
             let line = lines[index].trimmingCharacters(in: .whitespaces)
@@ -103,7 +104,7 @@ struct MarkdownHTML {
         guard !html.isEmpty else { throw Failure.empty }
         return """
         <!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src 'none'; script-src 'none'; connect-src 'none'; frame-src 'none'; base-uri 'none'"><style>
-        @page { size:letter; margin:36pt; } *{box-sizing:border-box}html,body{margin:0;padding:0;background:white;color:#171c20}body{font:11pt -apple-system,BlinkMacSystemFont,sans-serif;line-height:1.5;overflow-wrap:anywhere}h1,h2,h3,h4,h5,h6{line-height:1.2;break-after:avoid;margin:1em 0 .5em}h1{font-size:24pt}h2{font-size:19pt}h3{font-size:15pt}p{margin:.65em 0}pre{background:#f2f3f4;padding:10pt;white-space:pre-wrap;overflow-wrap:anywhere}code{font:10pt ui-monospace,monospace}blockquote{border-left:3pt solid #c9c9c9;margin:10pt 0;padding-left:12pt}table{width:100%;border-collapse:collapse;margin:12pt 0;table-layout:fixed}thead{display:table-header-group}tr{break-inside:avoid}th,td{border:0.5pt solid #b8b8b8;padding:6pt;vertical-align:top}th{background:#eee}img{display:inline-block;max-width:100%;max-height:650pt;object-fit:contain;vertical-align:middle;break-inside:avoid}math[display=block]{margin:12pt 0;break-inside:avoid;font-size:13pt}math{font-family:"STIX Two Math","STIXGeneral","Times New Roman",serif}hr{border:0;border-top:1pt solid #bbb}a{color:inherit;text-decoration:underline}
+        @page { size:letter; margin:36pt; } *{box-sizing:border-box}html,body{margin:0;padding:0;background:white;color:#171c20}body{font:11pt -apple-system,BlinkMacSystemFont,sans-serif;line-height:1.5;overflow-wrap:anywhere}h1,h2,h3,h4,h5,h6{line-height:1.2;break-after:avoid;margin:1em 0 .5em}h1{font-size:24pt}h2{font-size:19pt}h3{font-size:15pt}p{margin:.65em 0}pre{background:#f2f3f4;padding:10pt;white-space:pre-wrap;overflow-wrap:anywhere}code{font:10pt ui-monospace,monospace}blockquote{border-left:3pt solid #c9c9c9;margin:10pt 0;padding-left:12pt}table{width:100%;border-collapse:collapse;margin:12pt 0;table-layout:fixed}thead{display:table-header-group}tr{break-inside:avoid}th,td{border:0.5pt solid #b8b8b8;padding:6pt;vertical-align:top}th{background:#eee}img{display:inline-block;max-width:100%;max-height:650pt;object-fit:contain;vertical-align:middle;break-inside:avoid}.picture-dark{display:none}@media print{.picture-dark{display:none!important}.picture-light{display:inline!important}}math[display=block]{margin:12pt 0;break-inside:avoid;font-size:13pt}math{font-family:"STIX Two Math","STIXGeneral","Times New Roman",serif}hr{border:0;border-top:1pt solid #bbb}a{color:inherit;text-decoration:underline}
         </style></head><body>\(html)</body></html>
         """
     }
@@ -159,14 +160,32 @@ struct MarkdownHTML {
             return html
         }
         while position < chars.count {
+            if chars[position] == "\\", position + 1 < chars.count, ["<", "!", "`"].contains(chars[position + 1]) {
+                plain += String(chars[position...position + 1]); position += 2; continue
+            }
             if chars[position...].starts(with: Array("<br>")) || chars[position...].starts(with: Array("<br/>")) {
                 result += styled(plain) + "<br>"; plain = ""
                 position += chars[position...].starts(with: Array("<br/>")) ? 5 : 4; continue
             }
+            if chars[position] == "<", let fragment = MarkdownImageFragment.read(chars, at: position) {
+                result += styled(plain); plain = ""
+                let fallback = try imageTag(fragment.image)
+                if let source = fragment.dark?["src"] {
+                    var dark = fragment.image; dark["src"] = source
+                    result += "<span class=\"markdown-picture\"><span class=\"picture-light\">\(fallback)</span><span class=\"picture-dark\">\(try imageTag(dark))</span></span>"
+                } else { result += fallback }
+                position = fragment.end; continue
+            }
             if chars[position] == "`" {
-                let start = position; position += 1
-                while position < chars.count && chars[position] != "`" { position += 1 }
-                if position < chars.count { position += 1 }
+                let start = position
+                while position < chars.count && chars[position] == "`" { position += 1 }
+                let width = position - start
+                while position < chars.count {
+                    if chars[position] != "`" { position += 1; continue }
+                    let closing = position
+                    while position < chars.count && chars[position] == "`" { position += 1 }
+                    if position - closing == width { break }
+                }
                 plain += String(chars[start..<position]); continue
             }
             if chars[position] == "\\", position + 1 < chars.count, chars[position + 1] == "$" {
@@ -209,6 +228,15 @@ struct MarkdownHTML {
         return result + styled(plain)
     }
 
+    private mutating func imageTag(_ attributes: [String: String]) throws -> String {
+        guard let path = attributes["src"] else { throw Failure.image(attributes["alt"] ?? "image") }
+        var size = ""
+        for key in ["width", "height"] {
+            if let raw = attributes[key], let value = Int(raw), value > 0 && value <= 10_000 { size += " \(key)=\"\(value)\"" }
+        }
+        return "<img alt=\"\(MathMarkup.escape(attributes["alt"] ?? ""))\" src=\"\(try embeddedImage(path))\"\(size)>"
+    }
+
     private mutating func embeddedImage(_ reference: String) throws -> String {
         var path = reference.trimmingCharacters(in: .whitespaces)
         if path.hasPrefix("<"), let end = path.firstIndex(of: ">") { path = String(path[path.index(after: path.startIndex)..<end]) }
@@ -224,7 +252,12 @@ struct MarkdownHTML {
             guard size <= 30_000_000 else { throw Failure.tooLarge }
             guard let bytes = try? Data(contentsOf: resolved) else { throw Failure.image(path) }; data = bytes
         }
-        guard data.count <= 30_000_000, let source = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 4800] as CFDictionary) else { throw Failure.image(path) }
+        guard data.count <= 30_000_000 else { throw Failure.tooLarge }
+        if let svg = MarkdownSVG.sanitised(data) {
+            imageBytes += svg.count; guard imageBytes <= 60_000_000 else { throw Failure.tooLarge }
+            return "data:image/svg+xml;base64," + svg.base64EncodedString()
+        }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 4800] as CFDictionary) else { throw Failure.image(path) }
         let bytes = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil) else { throw Failure.image(path) }
         CGImageDestinationAddImage(destination, image, nil)
@@ -232,4 +265,79 @@ struct MarkdownHTML {
         imageBytes += bytes.length; guard imageBytes <= 60_000_000 else { throw Failure.tooLarge }
         return "data:image/png;base64," + (bytes as Data).base64EncodedString()
     }
+}
+
+/// Reads only image markup. Other HTML remains escaped Markdown text.
+private final class MarkdownImageFragment: NSObject, XMLParserDelegate {
+    var image: [String: String] = [:], dark: [String: String]?
+    var end = 0
+    private var valid = true, depth = 0
+    static func read(_ chars: [Character], at start: Int) -> MarkdownImageFragment? {
+        let tail = chars[start...]
+        let picture = tail.starts(with: Array("<picture>"))
+        guard picture || tail.starts(with: Array("<img ")) || tail.starts(with: Array("<img\n")) else { return nil }
+        var end = start, quote: Character?
+        while end < chars.count {
+            let c = chars[end]
+            if let active = quote { if c == active { quote = nil } }
+            else if c == "\"" || c == "'" { quote = c }
+            else if c == ">" {
+                if !picture || (end >= 9 && chars[(end - 9)...end].elementsEqual(Array("</picture>"))) { end += 1; break }
+            }
+            end += 1
+        }
+        guard end <= chars.count, end > start, chars[end - 1] == ">" else { return nil }
+        let markup = String(chars[start..<end]).replacingOccurrences(of: #"<(img|source)\b([^>]*?)(?<!/)>"#, with: "<$1$2/>", options: .regularExpression)
+        let reader = MarkdownImageFragment(); reader.end = end
+        let parser = XMLParser(data: Data(markup.utf8)); parser.shouldResolveExternalEntities = false; parser.delegate = reader
+        guard parser.parse(), reader.valid, reader.image["src"] != nil else { return nil }
+        return reader
+    }
+    func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String]) {
+        depth += 1
+        switch name {
+        case "picture": if depth != 1 || !attributes.isEmpty { valid = false }
+        case "img":
+            if !image.isEmpty || depth > 2 { valid = false }
+            image = attributes
+        case "source":
+            guard depth == 2, let src = attributes["srcset"], !src.contains(","), !src.contains("\n") else { valid = false; return }
+            if attributes["media"]?.trimmingCharacters(in: .whitespacesAndNewlines) == "(prefers-color-scheme: dark)" { dark = ["src": src] }
+        default: valid = false
+        }
+    }
+    func parser(_ parser: XMLParser, didEndElement: String, namespaceURI: String?, qualifiedName: String?) { depth -= 1 }
+    func parser(_ parser: XMLParser, foundCharacters string: String) { if !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { valid = false } }
+}
+
+/// Rebuilds a passive SVG subset; source scripts, CSS, entities and external references never enter WebKit.
+private final class MarkdownSVG: NSObject, XMLParserDelegate {
+    private var output = "", depth = 0, nodes = 0, valid = true
+    private static let elements: Set<String> = ["svg", "g", "defs", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "linearGradient", "radialGradient", "stop", "clipPath", "title", "desc", "text", "tspan"]
+    private static let attributes: Set<String> = ["xmlns", "viewBox", "width", "height", "x", "y", "x1", "x2", "y1", "y2", "cx", "cy", "r", "rx", "ry", "fx", "fy", "d", "points", "id", "fill", "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-opacity", "stroke-linecap", "stroke-linejoin", "stroke-dasharray", "stroke-dashoffset", "stroke-miterlimit", "opacity", "transform", "offset", "stop-color", "stop-opacity", "gradientUnits", "gradientTransform", "spreadMethod", "clip-path", "clip-rule", "clipPathUnits", "preserveAspectRatio", "font-family", "font-size", "font-weight", "text-anchor", "dominant-baseline", "dx", "dy"]
+    static func sanitised(_ data: Data) -> Data? {
+        guard let source = String(data: data, encoding: .utf8), source.contains("<svg"), !source.localizedCaseInsensitiveContains("<!DOCTYPE"), !source.localizedCaseInsensitiveContains("<!ENTITY") else { return nil }
+        let reader = MarkdownSVG(), parser = XMLParser(data: data)
+        parser.shouldResolveExternalEntities = false; parser.delegate = reader
+        guard parser.parse(), reader.valid, reader.depth == 0 else { return nil }
+        return Data(reader.output.utf8)
+    }
+    func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes values: [String: String]) {
+        nodes += 1; depth += 1
+        guard Self.elements.contains(name), depth <= 128, nodes <= 50_000, depth != 1 || name == "svg" else { valid = false; parser.abortParsing(); return }
+        var attributes = depth == 1 && values["xmlns"] == nil ? " xmlns=\"http://www.w3.org/2000/svg\"" : ""
+        for key in values.keys.sorted() {
+            let value = values[key]!
+            guard Self.attributes.contains(key), key != "xmlns" || value == "http://www.w3.org/2000/svg" else { valid = false; parser.abortParsing(); return }
+            if value.localizedCaseInsensitiveContains("url") {
+                guard value.range(of: #"^url\(#[A-Za-z_][A-Za-z0-9_.:-]*\)$"#, options: .regularExpression) != nil else { valid = false; parser.abortParsing(); return }
+            }
+            attributes += " \(key)=\"\(MathMarkup.escape(value))\""
+        }
+        output += "<\(name)\(attributes)>"
+    }
+    func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) { output += "</\(name)>"; depth -= 1 }
+    func parser(_ parser: XMLParser, foundCharacters string: String) { output += MathMarkup.escape(string) }
+    func parser(_ parser: XMLParser, foundCDATA data: Data) { valid = false; parser.abortParsing() }
+    func parser(_ parser: XMLParser, foundProcessingInstructionWithTarget target: String, data: String?) { valid = false; parser.abortParsing() }
 }

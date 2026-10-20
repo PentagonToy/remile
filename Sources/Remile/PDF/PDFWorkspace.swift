@@ -4,12 +4,14 @@ import PDFKit
 struct PDFWorkspace: View {
     let data: Data
     var fileURL: URL? = nil
+    var readingSession: ReadingSession? = nil
     @ObservedObject private var navigation = ReaderNavigation.shared
     let updateDocument: (Data) -> Void
     @StateObject private var session = PDFSession()
     @StateObject private var assistant = DocumentAssistant()
     @StateObject private var presentation = Presentation()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("assistant.provider") private var assistantProvider = "Apple Intelligence"
     private let assistantContext = PDFAssistantContext()
     private final class Presentation: ObservableObject {
         @Published var ask = false
@@ -22,8 +24,8 @@ struct PDFWorkspace: View {
     @FocusState private var searchFocused: Bool
     @StateObject private var zoom = ReaderZoom()
 
-    init(data: Data, fileURL: URL? = nil, session: PDFSession? = nil, showAsk: Bool = false, updateDocument: @escaping (Data) -> Void) {
-        self.data = data; self.fileURL = fileURL; self.updateDocument = updateDocument
+    init(data: Data, fileURL: URL? = nil, session: PDFSession? = nil, showAsk: Bool = false, readingSession: ReadingSession? = nil, updateDocument: @escaping (Data) -> Void) {
+        self.data = data; self.fileURL = fileURL; self.readingSession = readingSession; self.updateDocument = updateDocument
         _session = StateObject(wrappedValue: session ?? PDFSession())
         let state = Presentation(); state.ask = showAsk
         _presentation = StateObject(wrappedValue: state)
@@ -40,16 +42,17 @@ struct PDFWorkspace: View {
                     Button("Dismiss") { session.dismissCitationStatus() }
                 }.padding(10).background(.bar)
             }
+            ReaderThemeFooter()
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { assistant.useHistory(fileURL.map { "pdf:" + $0.path }); session.undoManager = undoManager; session.load(data); session.loadComments(); revealLibraryPage(); if !session.query.isEmpty { session.search() } }
+        .onAppear { readingSession?.commentsExport = { [weak session = session] in guard let session else { throw CocoaError(.fileReadUnknown) }; return try session.exportComments(name: fileURL?.lastPathComponent ?? "Untitled.pdf") }; assistant.useHistory(fileURL.map { "pdf:" + $0.path }); session.undoManager = undoManager; session.load(data); session.loadComments(); revealLibraryPage(); if !session.query.isEmpty { session.search() } }
         .onChange(of: data) { _, data in assistant.cancel(); presentation.selectedPassages = []; session.load(data) }
         .onChange(of: fileURL) { assistant.useHistory(fileURL.map { "pdf:" + $0.path }) }
         .onChange(of: navigation.request?.id) { revealLibraryPage() }
-        .onDisappear { assistant.cancel(); session.stop() }
+        .onDisappear { assistant.cancel(); session.stop(); readingSession?.commentsExport = nil }
         .onChange(of: session.query) { session.search() }
         .onChange(of: session.caseSensitive) { session.search() }
         .onChange(of: session.committedData) { _, bytes in if let bytes { assistant.cancel(); updateDocument(bytes) } }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.print"))) { _ in session.printDocument() }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.print"))) { event in if event.object as? ReadingSession === readingSession { session.printDocument() } }
         .modifier(SelectionTranslationModifier(request: $presentation.translation))
         .sheet(isPresented: $presentation.ocr) { PDFDocumentOCRSheet(data: session.committedData ?? data, password: session.assistantPassword) }
     }
@@ -61,7 +64,7 @@ struct PDFWorkspace: View {
     }
     @ViewBuilder private var readingAndAsk: some View {
         if presentation.ask {
-            ReaderSplit(side: .trailing, initial: 360, minimum: 320, maximum: 440, minimumContent: 380, label: "Ask panel", pane: { assistantPanel }, content: { readingCanvas })
+            ReaderSplit(side: .trailing, initial: 360, minimum: 320, maximum: 440, minimumContent: 380, preferPaneWhenNarrow: true, label: "Ask panel", pane: { assistantPanel }, content: { readingCanvas })
         } else { readingCanvas }
     }
     private var readingCanvas: some View {
@@ -84,7 +87,7 @@ struct PDFWorkspace: View {
             } else {
                 ContentUnavailableView("Unable to open PDF", systemImage: "doc.badge.exclamationmark", description: Text("The document may be damaged or unsupported."))
             }
-        }.frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
+        }.frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
     }
     private var assistantPanel: some View {
         AssistantPanel(assistant: assistant, passages: [], topic: fileURL?.deletingPathExtension().lastPathComponent ?? "this PDF", select: { source in
@@ -94,7 +97,7 @@ struct PDFWorkspace: View {
         }, close: { toggleAssistant() }, retrieve: { question in
             guard session.document?.allowsCopying == true, session.document?.isLocked == false else { throw PDFAssistantContext.Failure.restricted }
             let retrieved = try await assistantContext.passages(data: session.committedData ?? data, password: session.assistantPassword, path: assistantPath, question: question,
-                currentPage: session.currentPage, selection: presentation.selectedPassages.first.map { (page: $0.location.unit, text: $0.text) } ?? session.assistantSelection) { fraction in
+                currentPage: session.currentPage, selection: presentation.selectedPassages.first.map { (page: $0.location.unit, text: $0.text) } ?? session.assistantSelection, expanded: assistantProvider == "ChatGPT" && AIUsage.shared.reason == nil) { fraction in
                     await assistant.reportProgress(fraction)
                 }
             return presentation.selectedPassages + retrieved.filter { passage in !presentation.selectedPassages.contains { $0.id == passage.id } }
@@ -113,7 +116,7 @@ struct PDFWorkspace: View {
                             Image(systemName: "exclamationmark.circle").foregroundStyle(.red)
                             Text(error).font(RemileType.callout)
                             Spacer()
-                            Button { session.dismissEditingError() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Dismiss message")
+                            Button { session.dismissEditingError() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).remileHelp("Dismiss message")
                         }.padding(.horizontal, 16).padding(.vertical, 10)
                     }
                     Divider()
@@ -125,11 +128,11 @@ struct PDFWorkspace: View {
 
     private var readingControls: some View {
         HStack(spacing: 12) {
-            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.showsSidebar.toggle() } } label: { Image(systemName: "sidebar.left") }.help("Pages, outline, search and comments").accessibilityLabel("Toggle document sidebar")
+            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.showsSidebar.toggle() } } label: { Image(systemName: "sidebar.left") }.remileHelp("Pages, outline, search and comments").accessibilityLabel("Toggle document sidebar")
             HStack(spacing: 6) {
-                Button { session.previousPage() } label: { Image(systemName: "chevron.up") }.help("Previous page").disabled(session.showsOverview || session.currentPage <= 1)
+                Button { session.previousPage() } label: { Image(systemName: "chevron.up") }.remileHelp("Previous page").disabled(session.showsOverview || session.currentPage <= 1)
                 ReaderPageControl(current: session.currentPage, total: session.document?.pageCount ?? 0, go: session.goToPage)
-                Button { session.nextPage() } label: { Image(systemName: "chevron.down") }.help("Next page").disabled(session.showsOverview || session.currentPage >= (session.document?.pageCount ?? 0))
+                Button { session.nextPage() } label: { Image(systemName: "chevron.down") }.remileHelp("Next page").disabled(session.showsOverview || session.currentPage >= (session.document?.pageCount ?? 0))
             }
             Button {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
@@ -140,17 +143,24 @@ struct PDFWorkspace: View {
                     }
                 }
             } label: { Image(systemName: session.showsOverview ? "doc.text" : "square.grid.2x2") }
-                .help(session.showsOverview ? "Read document" : "Page overview").accessibilityLabel(session.showsOverview ? "Read document" : "Page overview")
+                .remileHelp(session.showsOverview ? "Read document" : "Page overview").accessibilityLabel(session.showsOverview ? "Read document" : "Page overview")
                 .disabled(session.document?.isLocked != false)
             Button { session.firstPageAlone = false; session.twoPage.toggle() } label: { Image(systemName: session.twoPage ? "book" : "doc") }
-                .help(session.twoPage ? "Switch to single page" : "Switch to two pages").accessibilityLabel("Page layout").accessibilityValue(session.twoPage ? "Two pages" : "Single page")
+                .remileHelp(session.twoPage ? "Switch to single page" : "Switch to two pages").accessibilityLabel("Page layout").accessibilityValue(session.twoPage ? "Two pages" : "Single page")
             Spacer(minLength: 12)
-            Button { presentation.ocr = true } label: { Label("Scan & OCR", systemImage: "text.viewfinder") }.help("Recognise text throughout this PDF with Apple Vision").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
-            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.toggleEditing() } } label: { Label(session.isEditing ? "Done" : "Edit PDF", systemImage: session.isEditing ? "checkmark" : "pencil") }.disabled(!session.canEdit)
-            Button { toggleAssistant() } label: { Image(systemName: "sparkles") }.help("Ask (on-device)").accessibilityLabel("Ask (on-device)").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
+            Button { presentation.ocr = true } label: { controlLabel("Scan & OCR", symbol: "text.viewfinder") }.remileHelp("Recognise text throughout this PDF with Apple Vision").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
+            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.toggleEditing() } } label: { controlLabel(session.isEditing ? "Done" : "Edit PDF", symbol: session.isEditing ? "checkmark" : "pencil") }.remileHelp(session.isEditing ? "Finish editing PDF" : "Edit PDF text, annotations and pages").disabled(!session.canEdit)
+            AIToolGroup {
+            AIProviderButton()
+            Button { toggleAssistant() } label: { Image(systemName: "text.bubble") }.remileHelp(assistantProvider == "ChatGPT" ? "Ask ChatGPT" : "Ask (on-device)").accessibilityLabel(assistantProvider == "ChatGPT" ? "Ask ChatGPT" : "Ask (on-device)").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
+
+            }
             ReaderZoomControls(zoom: zoom).disabled(session.showsOverview)
-            Button { session.sidebar = .search; session.showsSidebar = true; searchFocused = true } label: { Image(systemName: "magnifyingglass") }.help("Find in document").keyboardShortcut("f")
+            Button { session.sidebar = .search; session.showsSidebar = true; searchFocused = true } label: { Image(systemName: "magnifyingglass") }.remileHelp("Find in document").keyboardShortcut("f")
         }.buttonStyle(RemileToolStyle()).font(RemileType.callout).labelStyle(.titleAndIcon).padding(.horizontal, 16).padding(.vertical, 10)
+    }
+    private func controlLabel(_ title: String, symbol: String) -> some View {
+        ViewThatFits(in: .horizontal) { Label(title, systemImage: symbol).fixedSize(); Image(systemName: symbol).accessibilityLabel(title) }
     }
 
     private var selectionActions: PDFSelectionActions {
@@ -173,14 +183,14 @@ struct PDFWorkspace: View {
             Text("Edit PDF").font(RemileType.heading)
             PDFPageSizeControl(session: session).disabled(!session.canArrangePages)
             Button { session.beginComment() } label: { Label("Note", systemImage: "text.bubble") }
-                .disabled(session.document?.allowsCommenting != true).help("Add a note at the selection or current page")
+                .disabled(session.document?.allowsCommenting != true).remileHelp("Add a note at the selection or current page")
             Button { session.highlightSelection() } label: { Label("Highlight", systemImage: "highlighter") }
-                .disabled(!session.canHighlight).help("Highlight selected text")
+                .disabled(!session.canHighlight).remileHelp("Highlight selected text")
             Divider().frame(height: 20)
             Button { session.rotateCurrentPage(clockwise: false) } label: { Image(systemName: "rotate.left") }
-                .disabled(session.document?.allowsDocumentAssembly != true).help("Rotate current page left")
+                .disabled(session.document?.allowsDocumentAssembly != true).remileHelp("Rotate current page left")
             Button { session.rotateCurrentPage(clockwise: true) } label: { Image(systemName: "rotate.right") }
-                .disabled(session.document?.allowsDocumentAssembly != true).help("Rotate current page right")
+                .disabled(session.document?.allowsDocumentAssembly != true).remileHelp("Rotate current page right")
             Spacer(minLength: 12)
             Text("Page text is read-only").font(RemileType.callout).foregroundStyle(.secondary)
         }
@@ -211,7 +221,7 @@ struct PDFWorkspace: View {
                                 if tab == .comments && !session.comments.isEmpty { Circle().fill(RemileStyle.accent).frame(width: 6, height: 6).padding(4).accessibilityLabel("\(session.comments.count) comments") }
                             }
                             .background(session.sidebar == tab ? RemileStyle.accent.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
-                    }.buttonStyle(.plain).help(tab.rawValue).accessibilityLabel("Show " + tab.rawValue).accessibilityValue(session.sidebar == tab ? "Selected" : "")
+                    }.buttonStyle(.plain).remileHelp(tab.rawValue).accessibilityLabel("Show " + tab.rawValue).accessibilityValue(session.sidebar == tab ? "Selected" : "")
                 }
             }.padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
             Text(session.sidebar.rawValue).font(RemileType.heading).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.bottom, 10)
@@ -279,6 +289,8 @@ struct PDFWorkspace: View {
 
     private var commentsPanel: some View {
         VStack(spacing: 0) {
+            HStack { Text("Comments").font(RemileType.heading); Spacer(); PDFCommentExportMenu(session: session, name: fileURL?.lastPathComponent ?? "Untitled.pdf") }.padding(12)
+            Divider()
             commentList
             if let context = session.draftContext {
                 Divider()
@@ -331,7 +343,7 @@ struct PDFWorkspace: View {
                 Spacer()
                 Button("p. \(comment.pageNumber)") { session.reveal(comment) }
                     .buttonStyle(.plain).font(RemileType.caption).foregroundStyle(.secondary)
-                    .help("Show comment on the page")
+                    .remileHelp("Show comment on the page")
             }
             Text(comment.text).textSelection(.enabled).multilineTextAlignment(.leading)
             HStack {

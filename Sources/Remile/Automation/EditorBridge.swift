@@ -21,7 +21,8 @@ enum EditorBridge {
     }
     static var directory: URL { FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app/Automation") }
     static func digest(_ source: String) -> String { SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined() }
-    @MainActor static func serve(_ home: HomeModel) async {
+    @MainActor static func serve(_ home: HomeModel) async { await serve { home } }
+    @MainActor static func serve(_ currentHome: @escaping @MainActor () -> HomeModel?) async {
         let manager = FileManager.default, folder = directory
         do { try manager.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]); try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) } catch { return }
         while !Task.isCancelled {
@@ -32,6 +33,7 @@ enum EditorBridge {
                     guard attributes[.type] as? FileAttributeType == .typeRegular, (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(), (attributes[.size] as? Int ?? Int.max) < 5_000_000 else { continue }
                     let request = try JSONDecoder().decode(Request.self, from: Data(contentsOf: file))
                     guard file.lastPathComponent == request.id.uuidString + ".request.json" else { continue }
+                    guard let home = currentHome() else { continue }
                     let response = await handle(request, home: home)
                     let output = folder.appendingPathComponent(request.id.uuidString + ".response.json")
                     guard !manager.fileExists(atPath: output.path) else { continue }
@@ -48,7 +50,18 @@ enum EditorBridge {
             home.open(URL(fileURLWithPath: path)); return ["ok": home.error == nil, "message": home.error ?? "", "opening": home.opening]
         }
         if request.operation == "status" {
-            return ["ok": true, "kind": home.texProject == nil ? "document" : "latex-local", "path": home.texProject?.root.path ?? home.reader.url?.path ?? "", "dirty": home.texProject?.dirty ?? home.reader.dirty, "compiling": home.texProject?.compiling ?? false, "selected": home.texProject?.selected ?? "", "pages": home.texProject?.pdf?.pageCount ?? 0, "errors": home.texProject?.diagnostics.filter { $0.severity == .error }.count ?? 0, "warnings": home.texProject?.diagnostics.filter { $0.severity == .warning }.count ?? 0, "historyMinutes": TeXHistory.intervalMinutes, "aiSuggestions": UserDefaults.standard.bool(forKey: "editor.aiSuggestions")]
+            return ["ok": true, "kind": home.texProject == nil ? "document" : "latex-local", "path": home.texProject?.root.path ?? home.reader.url?.path ?? "", "dirty": home.texProject?.dirty ?? home.reader.dirty, "compiling": home.texProject?.compiling ?? false, "selected": home.texProject?.selected ?? "", "pages": home.texProject?.pdf?.pageCount ?? 0, "errors": home.texProject?.diagnostics.filter { $0.severity == .error }.count ?? 0, "warnings": home.texProject?.diagnostics.filter { $0.severity == .warning }.count ?? 0, "historyMinutes": TeXHistory.intervalMinutes, "aiSuggestions": UserDefaults.standard.bool(forKey: "editor.aiSuggestions"), "compileCurrent": home.texProject?.outputCurrent ?? false]
+        }
+        if request.operation == "comments" {
+            do {
+                if let root = home.texProject?.root, let project = home.overleaf.connection(for: root) {
+                    guard let archive = home.overleaf.comments[project.id] else { return ["ok": false, "error": "Open Online review and read this project's comments first."] }
+                    return try archive.response(format: PDFCommentExport.format(named: request.kind, output: request.output), output: request.output)
+                }
+                guard home.texProject == nil, case .pdf = home.reader.document.content, let export = home.reader.commentsExport else { return ["ok": false, "error": "Open a PDF to read its comments."] }
+                let archive = try export(), format = try PDFCommentExport.format(named: request.kind, output: request.output)
+                return try PDFCommentExport.response(archive, format: format, output: request.output)
+            } catch { return ["ok": false, "error": error.localizedDescription] }
         }
         if home.texProject == nil, home.reader.url != nil, case .markdown(let source) = home.reader.document.content {
             return await markdown(request, reader: home.reader, source: source)

@@ -32,7 +32,7 @@ enum TeXSourceSnapshot {
         defer { try? manager.removeItem(at: folder) }
         let snapshot = folder.appendingPathComponent(root.lastPathComponent)
         try write(root: root, buffers: buffers, to: snapshot)
-        let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto"); process.arguments = ["-c", "-k", "--keepParent", snapshot.path, output.path]; process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+        let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto"); process.arguments = ["-c", "-k", "--norsrc", "--noextattr", "--noqtn", "--keepParent", snapshot.path, output.path]; process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
         try process.run(); process.waitUntilExit()
         guard process.terminationStatus == 0 else { throw CocoaError(.fileWriteUnknown) }
     }

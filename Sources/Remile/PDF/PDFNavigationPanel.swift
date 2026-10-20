@@ -12,10 +12,10 @@ struct PDFPagesPanel: View {
                     ForEach(0..<document.pageCount, id: \.self) { index in
                         Button { select(index + 1) } label: {
                             HStack(spacing: 14) {
-                                if let page = document.page(at: index) { PDFPageThumbnail(page: page) }
-                                Text("Page \(index + 1)").font(RemileType.callout).monospacedDigit()
+                                if let page = document.page(at: index) { PDFPageThumbnail(page: page, size: CGSize(width: 50, height: 66)) }
+                                Text("\(index + 1)").font(RemileType.caption).monospacedDigit()
                                 Spacer()
-                            }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                            }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
                                 .background(currentPage == index + 1 ? RemileStyle.accent.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
                         }.buttonStyle(.plain).id(index + 1).accessibilityLabel("Go to page \(index + 1)")
                     }

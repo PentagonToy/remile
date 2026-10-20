@@ -5,6 +5,8 @@ import SwiftUI
 final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDelegate {
     private(set) var scroll: NSScrollView?
     private(set) var textView: NSTextView?
+    var writingIssueRequested: ((NSRange, NSTextView) -> Bool)?
+    var dismissWriting: (() -> Void)?
     var writingRanges: [NSRange] = [] { didSet { scheduleStyle() } }
     var texTheme: TeXEditorTheme?
     var externalRanges: [NSRange] = [] { didSet { if oldValue != externalRanges { scheduleStyle() } } }
@@ -43,7 +45,8 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         view.textContainer?.widthTracksTextView = true; view.textContainerInset = NSSize(width: 24, height: 24)
         view.delegate = self; view.setAccessibilityLabel("Markdown source")
         view.backgroundColor = NSColor(RemileStyle.surface); view.textColor = NSColor(RemileStyle.ink)
-        view.sourceInteraction = { [weak self] in self?.fadeFlash() }
+        view.sourceInteraction = { [weak self] in self?.fadeFlash(); self?.dismissWriting?() }
+        view.writingSelection = { [weak self, weak view] range in guard let self, let view else { return false }; return self.writingIssueRequested?(range, view) ?? false }
         view.completionKey = { [weak self] event in
             guard let self else { return false }
             if self.completion.key(event) { return true }
@@ -294,6 +297,7 @@ final class MarkdownSourceTextView: NSTextView {
     var syncSelection: () -> Void = {}
     var sourceInteraction: () -> Void = {}
     var completionKey: (NSEvent) -> Bool = { _ in false }
+    var writingSelection: (NSRange) -> Bool = { _ in false }
     var markdownMode = true
     var resigned: () -> Void = {}
     override func paste(_ sender: Any?) {
@@ -322,7 +326,11 @@ final class MarkdownSourceTextView: NSTextView {
         breakUndoCoalescing(); insertText(output, replacementRange: selectedRange()); undoManager?.setActionName("Paste as Markdown"); breakUndoCoalescing()
     }
     override func keyDown(with event: NSEvent) { sourceInteraction(); if !completionKey(event) { super.keyDown(with: event) } }
-    override func mouseDown(with event: NSEvent) { sourceInteraction(); resigned(); super.mouseDown(with: event); if event.clickCount == 2 { syncSelection() } }
+    override func mouseDown(with event: NSEvent) {
+        let index = characterIndexForInsertion(at: convert(event.locationInWindow, from: nil))
+        sourceInteraction(); resigned(); super.mouseDown(with: event)
+        if event.clickCount == 2, !writingSelection(NSRange(location: index, length: 0)) { syncSelection() }
+    }
     override func resignFirstResponder() -> Bool { resigned(); return super.resignFirstResponder() }
     override var rangeForUserCompletion: NSRange {
         guard !hasMarkedText(), let context = MathCompletion.context(string, selection: selectedRange()) else { return NSRange(location: NSNotFound, length: 0) }

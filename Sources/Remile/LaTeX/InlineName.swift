@@ -21,6 +21,6 @@ struct InlineName: View {
             } else {
                 Text(value).lineLimit(1).truncationMode(.middle).onTapGesture(count: 2) { draft.text = value; editing = true }
             }
-        }.help("Double-click to rename · Return applies · Escape cancels")
+        }.remileHelp("Double-click to rename · Return applies · Escape cancels")
     }
 }

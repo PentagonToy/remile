@@ -10,9 +10,9 @@ struct PDFThumbnailOverview: View {
             HStack(spacing: 8) {
                 Text("Pages").font(RemileType.heading)
                 Spacer()
-                Button { session.choosePDFs() } label: { Image(systemName: "doc.badge.plus").frame(width: 32, height: 32) }.help("Add PDFs")
-                Button { session.rotateOverviewPages(clockwise: false) } label: { Image(systemName: "rotate.left").frame(width: 32, height: 32) }.help("Rotate selected pages left")
-                Button { session.rotateOverviewPages(clockwise: true) } label: { Image(systemName: "rotate.right").frame(width: 32, height: 32) }.help("Rotate selected pages right")
+                Button { session.choosePDFs() } label: { Image(systemName: "doc.badge.plus").frame(width: 32, height: 32) }.remileHelp("Add PDFs")
+                Button { session.rotateOverviewPages(clockwise: false) } label: { Image(systemName: "rotate.left").frame(width: 32, height: 32) }.remileHelp("Rotate selected pages left")
+                Button { session.rotateOverviewPages(clockwise: true) } label: { Image(systemName: "rotate.right").frame(width: 32, height: 32) }.remileHelp("Rotate selected pages right")
                 PDFPageSizeControl(session: session)
             }.buttonStyle(RemileToolStyle()).font(RemileType.callout).disabled(!session.canArrangePages)
                 .padding(.horizontal, 20).padding(.vertical, 8)

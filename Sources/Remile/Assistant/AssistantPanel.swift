@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AssistantPanel: View {
+    @ObservedObject private var usage = AIUsage.shared
     @ObservedObject var assistant: DocumentAssistant
     let passages: [AssistantPassage]
     let topic: String
@@ -11,15 +12,17 @@ struct AssistantPanel: View {
     var clearSelection: (() -> Void)? = nil
     @Environment(\.scenePhase) private var phase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("assistant.provider") private var provider = "Apple Intelligence"
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Label("Ask (on-device)", systemImage: "sparkles").font(RemileType.callout.bold()).fixedSize()
+                Text("Ask").font(RemileType.callout.bold())
                 Spacer()
+                AIProviderButton()
                 Button("Clear") { assistant.clear() }
-                    .disabled(assistant.turns.isEmpty && assistant.question.isEmpty).help("Clear conversation").accessibilityLabel("Clear conversation")
+                    .disabled(assistant.turns.isEmpty && assistant.question.isEmpty).remileHelp("Clear conversation").accessibilityLabel("Clear conversation")
                 Button { assistant.cancel(); close() } label: { Image(systemName: "xmark") }
-                    .help("Close Ask").accessibilityLabel("Close Ask")
+                    .remileHelp("Close Ask").accessibilityLabel("Close Ask")
             }.buttonStyle(.plain).padding(.horizontal, 14).padding(.vertical, 13)
             if assistant.availability != "On-device" {
                 Text(assistant.availability).font(RemileType.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.bottom, 10)
@@ -53,7 +56,7 @@ struct AssistantPanel: View {
             }
             if let selection {
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack { Label("Selected passage", systemImage: "text.quote"); Spacer(); Button { clearSelection?() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Remove selected passage") }
+                    HStack { Label("Selected passage", systemImage: "text.quote"); Spacer(); Button { clearSelection?() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).remileHelp("Remove selected passage") }
                     Text(selection).lineLimit(3).foregroundStyle(.secondary)
                 }.font(RemileType.caption).padding(10).background(RemileStyle.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 5)).padding(.horizontal, 12)
             }
@@ -66,13 +69,16 @@ struct AssistantPanel: View {
                         .frame(width: 28, height: 28).background(RemileStyle.brand, in: Circle())
                 }.buttonStyle(.plain).padding(4)
                     .disabled(assistant.working || (passages.isEmpty && retrieve == nil))
-                    .help(assistant.question.isEmpty ? "Summarize document" : "Send message").accessibilityLabel("Send message")
+                    .remileHelp(assistant.question.isEmpty ? "Summarize document" : "Send message").accessibilityLabel("Send message")
             }
             .background(RemileStyle.sidebar, in: RoundedRectangle(cornerRadius: 7))
             .overlay(RoundedRectangle(cornerRadius: 7).stroke(RemileStyle.ink.opacity(0.15)))
             .padding(12)
-        }.frame(minWidth: 320, idealWidth: 360, maxWidth: 440)
-            .background(RemileStyle.surface).onAppear { assistant.checkAvailability() }
+        }.frame(minWidth: 240, idealWidth: 330, maxWidth: 440)
+            .background(RemileStyle.surface).onAppear { assistant.useEngine(.selected) }
+            .onChange(of: provider) { assistant.useEngine(.selected) }
+            .onChange(of: usage.online) { assistant.checkAvailability() }
+            .onChange(of: usage.paused) { assistant.checkAvailability() }
             .onChange(of: phase) { if phase == .active { assistant.checkAvailability() } }
     }
     private func conversation(_ turn: AssistantTurn) -> some View {
@@ -133,7 +139,7 @@ private struct AssistantSources: View {
                             Text("[\(source.number)] \(source.location.name) · \(source.location.label)").font(.system(size: 13, weight: .medium))
                             Text(source.text).font(RemileType.caption).lineLimit(3).foregroundStyle(.secondary)
                         }.multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                    }.buttonStyle(.plain).help("Show cited passage").accessibilityIdentifier("ask.source.\(source.number)")
+                    }.buttonStyle(.plain).remileHelp("Show cited passage").accessibilityIdentifier("ask.source.\(source.number)")
                 }
             }.padding(.top, 8)
         } label: {

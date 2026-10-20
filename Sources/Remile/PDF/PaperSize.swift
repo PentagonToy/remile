@@ -41,7 +41,7 @@ struct PDFPageSizeControl: View {
             state.landscape = UserDefaults.standard.bool(forKey: PaperSize.landscapePreference)
             state.shown.toggle()
         } label: { Label("Page size", systemImage: "arrow.up.left.and.arrow.down.right").frame(height: 32) }
-            .help("Fit all pages to a paper size").accessibilityLabel("Page size")
+            .remileHelp("Fit all pages to a paper size").accessibilityLabel("Page size")
             .popover(isPresented: $state.shown, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Page size").font(RemileType.heading)

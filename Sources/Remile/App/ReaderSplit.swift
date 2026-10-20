@@ -9,6 +9,7 @@ struct ReaderSplit<Pane: View, Content: View>: View {
     var minimum: CGFloat = 240
     var maximum: CGFloat = 440
     var minimumContent: CGFloat = 380
+    var preferPaneWhenNarrow = false
     var label = "Sidebar"
     var revealToken = ""
     @ViewBuilder let pane: () -> Pane
@@ -26,17 +27,18 @@ struct ReaderSplit<Pane: View, Content: View>: View {
     var body: some View {
         GeometryReader { geometry in
             let width = Self.constrained(state.width ?? initial, available: geometry.size.width, minimum: minimum, maximum: maximum, content: minimumContent)
-            let effective = state.collapsed < 0 ? 0 : state.collapsed > 0 ? max(0, geometry.size.width - Self.handleWidth) : width
+            let narrow = geometry.size.width < minimum + minimumContent + Self.handleWidth
+            let effective = state.collapsed < 0 ? 0 : state.collapsed > 0 ? max(0, geometry.size.width - Self.handleWidth) : narrow ? (preferPaneWhenNarrow ? max(0, geometry.size.width - Self.handleWidth) : 0) : width
             let remaining = max(0, geometry.size.width - Self.handleWidth - effective)
             HStack(spacing: 0) {
                 if side == .leading {
-                    pane().frame(width: effective).clipped().allowsHitTesting(state.collapsed != -1).accessibilityHidden(state.collapsed == -1)
+                    pane().frame(width: effective, alignment: .leading).clipped().allowsHitTesting(effective > 0).accessibilityHidden(effective == 0)
                     grip(width: width, available: geometry.size.width)
-                    content().frame(width: remaining).clipped().allowsHitTesting(state.collapsed != 1).accessibilityHidden(state.collapsed == 1)
+                    content().frame(width: remaining, alignment: .leading).clipped().allowsHitTesting(remaining > 0).accessibilityHidden(remaining == 0)
                 } else {
-                    content().frame(width: remaining).clipped().allowsHitTesting(state.collapsed != 1).accessibilityHidden(state.collapsed == 1)
+                    content().frame(width: remaining, alignment: .leading).clipped().allowsHitTesting(remaining > 0).accessibilityHidden(remaining == 0)
                     grip(width: width, available: geometry.size.width)
-                    pane().frame(width: effective).clipped().allowsHitTesting(state.collapsed != -1).accessibilityHidden(state.collapsed == -1)
+                    pane().frame(width: effective, alignment: .leading).clipped().allowsHitTesting(effective > 0).accessibilityHidden(effective == 0)
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height)
                 .coordinateSpace(name: "reader.split." + label)
@@ -49,10 +51,10 @@ struct ReaderSplit<Pane: View, Content: View>: View {
     private func grip(width: CGFloat, available: CGFloat) -> some View {
         ZStack {
             Rectangle().fill(Color.primary.opacity(0.09)).frame(width: 1).allowsHitTesting(false)
-            if state.collapsed != 0 {
-                Button { state.collapsed = 0 } label: {
+            if state.collapsed != 0 || available < minimum + minimumContent + Self.handleWidth {
+                Button { state.collapsed = state.collapsed == 0 ? (preferPaneWhenNarrow ? -1 : 1) : 0 } label: {
                     Image(systemName: (state.collapsed < 0) == (side == .leading) ? "chevron.right" : "chevron.left").font(.system(size: 10, weight: .semibold)).frame(width: 14, height: 40).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
-                }.buttonStyle(.plain).help("Restore split view").accessibilityLabel("Restore " + label)
+                }.buttonStyle(.plain).remileHelp("Restore split view").accessibilityLabel("Restore " + label)
             } else {
             HStack(spacing: 2) {
                 ForEach(0..<3) { _ in Capsule().fill(RemileStyle.ink.opacity(0.45)).frame(width: 1, height: 11) }
@@ -74,7 +76,7 @@ struct ReaderSplit<Pane: View, Content: View>: View {
                 .accessibilityElement().accessibilityLabel("Resize " + label).accessibilityValue("\(Int(width)) points")
                 .accessibilityAdjustableAction { direction in
                     state.width = Self.constrained(width + (direction == .increment ? 20 : -20), available: available, minimum: minimum, maximum: maximum, content: minimumContent)
-                }.accessibilityAction(named: "Collapse " + label) { state.collapsed = -1 }.help("Resize " + label)
+                }.accessibilityAction(named: "Collapse " + label) { state.collapsed = -1 }.remileHelp("Resize " + label)
             }
         }.frame(width: Self.handleWidth).frame(maxHeight: .infinity)
     }

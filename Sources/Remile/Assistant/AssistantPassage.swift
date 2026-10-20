@@ -53,3 +53,15 @@ struct AssistantCitation: Identifiable, Sendable {
         return []
     }
 }
+
+
+enum AssistantRetrieval {
+    static func rank(_ passages: [AssistantPassage], question: String) -> [AssistantPassage] {
+        let ignored: Set<String> = ["what", "which", "where", "when", "this", "that", "these", "those", "does", "with", "from", "about", "please", "explain", "document", "according", "their", "have", "would", "could"]
+        let terms = Set(question.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 2 && !ignored.contains($0) })
+        func score(_ passage: AssistantPassage) -> Int { let text = passage.text.lowercased(); return terms.reduce(0) { $0 + (text.contains($1) ? 1 : 0) } }
+        let scored: [(Int, AssistantPassage, Int)] = passages.enumerated().map { ($0.offset, $0.element, score($0.element)) }
+        let ordered = scored.sorted { first, second in first.2 == second.2 ? first.0 < second.0 : first.2 > second.2 }
+        return ordered.map { $0.1 }
+    }
+}

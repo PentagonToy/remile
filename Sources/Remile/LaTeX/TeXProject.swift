@@ -3,35 +3,46 @@ import PDFKit
 import UniformTypeIdentifiers
 
 @MainActor final class TeXProject: ObservableObject {
+    let identity = UUID()
     @Published private(set) var root: URL
+    private let connectedName: String?
+    var displayName: String { connectedName ?? root.lastPathComponent }
+    var connected: Bool { !historyEnabled }
     @Published private(set) var files: [String]
     @Published private(set) var treeFiles: [String]
+    @Published var treeFolders: [String] = []
+    @Published private(set) var fileRevision = 0
+    @Published var collections: [TeXCollections.Group] = []
     @Published var selected: String {
         didSet {
             guard oldValue != selected else { return }
-            scheduleOutline(); captureHistory(file: oldValue)
+            captureHistory(file: oldValue)
             if !navigating { backFiles.append(oldValue); forwardFiles = [] }
         }
     }
     @Published var main: String {
         didSet {
+            if oldValue != main { outputCurrent = false; scheduleOutline(); if pdf != nil { message = "Edited · recompile" } }
             var choices = UserDefaults.standard.dictionary(forKey: "latex.mainDocuments") as? [String: String] ?? [:]
             choices[root.path] = main; UserDefaults.standard.set(choices, forKey: "latex.mainDocuments")
         }
     }
     @Published var buffers: [String: String] {
         didSet {
-            let changed = buffers.keys.filter { buffers[$0] != oldValue[$0] }
+            let changed = Set(buffers.keys).union(oldValue.keys).filter { buffers[$0] != oldValue[$0] }
             guard !changed.isEmpty else { return }
+            outputCurrent = false
+            if !compiling && (!log.isEmpty || pdf != nil) { message = "Edited · recompile" }
             if submissionCheck, message != "Source changed · recheck" { message = "Source changed · recheck" }
             for file in changed {
                 pendingHistory.insert(file)
-                if let ranges = externalEdits[file], !ranges.isEmpty, let before = oldValue[file], let after = buffers[file] { externalEdits[file] = EditorProvenance.rebase(ranges, before: before, after: after) }
+                if var tracker = provenance[file], let before = oldValue[file], let after = buffers[file] { tracker.transition(before: before, after: after); provenance[file] = tracker; externalEdits[file] = tracker.ranges }
             }
             scheduleHistory(); scheduleOutline()
         }
     }
     @Published private(set) var externalEdits: [String: [NSRange]] = [:]
+    private var provenance: [String: EditorProvenance.Tracker] = [:]
     private var pendingHistory = Set<String>()
     @Published var outline: [TeXOutlineItem] = []
     @Published var setupNeeded = false
@@ -49,6 +60,7 @@ import UniformTypeIdentifiers
     @Published var showsSubmission = false
     @Published var compiling = false
     @Published private(set) var submissionCheck = false
+    @Published private(set) var outputCurrent = false
     @Published var log = ""
     @Published var message: String?
     @Published var pdf: PDFDocument?
@@ -65,7 +77,9 @@ import UniformTypeIdentifiers
     private var original: [String: String]
     private var job: TeXCompileJob?
     private var task: Task<Void, Never>?
-    init(_ root: URL) throws {
+    private let historyEnabled: Bool
+    init(_ root: URL, historyEnabled: Bool = true, displayName: String? = nil) throws {
+        self.historyEnabled = historyEnabled; connectedName = displayName
         self.root = root.standardizedFileURL
         guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey], options: [.skipsHiddenFiles]) else { throw CocoaError(.fileReadUnknown) }
         var sources: [String: String] = [:], paths: [String] = []
@@ -86,7 +100,9 @@ import UniformTypeIdentifiers
         let saved = (UserDefaults.standard.dictionary(forKey: "latex.mainDocuments") as? [String: String])?[root.standardizedFileURL.path]
         let initial = saved.flatMap { sources[$0] != nil && $0.hasSuffix(".tex") ? $0 : nil } ?? chosen
         treeFiles = paths.sorted(); files = sources.keys.sorted(); buffers = sources; original = sources; main = initial; selected = initial
-        revisions = TeXHistory.read(self.root); outline = TeXOutlineItem.parse(sources[initial] ?? ""); captureHistory(file: initial)
+        treeFolders = try TeXFileSystem.folders(self.root)
+        collections = TeXCollections.read(self.root)
+        revisions = historyEnabled ? TeXHistory.read(self.root) : []; outline = TeXOutlineItem.project(sources, main: initial); captureHistory(file: initial)
     }
     var dirty: Bool { buffers != original }
     var source: Binding<String> { Binding(get: { self.buffers[self.selected] ?? "" }, set: { self.buffers[self.selected] = $0 }) }
@@ -116,15 +132,16 @@ import UniformTypeIdentifiers
         let job = TeXCompileJob { [weak self] output in
             Task { @MainActor [weak self] in guard let self, self.compileID == id, self.compiling else { return }; self.log = output }
         }
-        self.job = job; compiling = true; message = nil; log = ""; diagnostics = []
+        self.job = job; outputCurrent = false; compiling = true; message = nil; log = ""; diagnostics = []
         let root = root, main = main, buffers = buffers, configuration = TeXConfiguration.current
         let destination = output ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app/LaTeX/" + UUID().uuidString)
         task = Task { @MainActor [weak self] in
             do {
                 let result = try await Task.detached { try job.run(root: root, main: main, buffers: buffers, configuration: configuration, output: destination, scratch: scratch, submissionCheck: submissionCheck) }.value
-                guard let self else { return }; self.log = result.log; self.diagnostics = TeXDiagnostics.parse(result.log)
+                guard let self, self.compileID == id else { return }; self.outputCurrent = false; self.log = result.log; self.diagnostics = TeXDiagnostics.parse(result.log)
                 if let data = result.pdf, let document = PDFDocument(data: data) {
-                    self.pdf = document; self.message = "\(document.pageCount) pages"
+                    self.outputCurrent = self.buffers == buffers && self.main == main
+                    self.pdf = document; self.message = self.outputCurrent ? nil : "Edited · recompile"
                     if submissionCheck { self.message = self.buffers == buffers && self.main == main ? "Submission check passed" : "Source changed · recheck"; self.showsLog = true }
                     self.build = TeXBuild(pdf: result.output, source: destination.appendingPathComponent("Source"), executable: URL(fileURLWithPath: configuration.directory).appendingPathComponent("synctex"), buffers: buffers, main: main)
                 }
@@ -153,12 +170,20 @@ import UniformTypeIdentifiers
         outlineTask?.cancel()
         outlineTask = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-            guard let self else { return }; let file = self.selected, source = self.buffers[self.selected] ?? ""
-            let outline = await Task.detached { TeXOutlineItem.parse(source) }.value
-            guard !Task.isCancelled, self.selected == file, self.buffers[file] == source else { return }; self.outline = outline
+            guard let self else { return }; let main = self.main, sources = self.buffers
+            let outline = await Task.detached { TeXOutlineItem.project(sources, main: main) }.value
+            guard !Task.isCancelled, self.main == main, self.buffers == sources else { return }; self.outline = outline
         }
     }
     private func scheduleHistory() {
+        if !historyEnabled {
+            historyTask?.cancel()
+            historyTask = Task { @MainActor [weak self] in
+                do { try await Task.sleep(for: .milliseconds(1000)); try Task.checkCancellation() } catch { return }
+                guard let self, self.dirty else { return }; _ = self.save()
+            }
+            return
+        }
         guard historyTask == nil else { return }
         historyTask = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: .seconds(TeXHistory.intervalMinutes * 60)) } catch { return }
@@ -168,6 +193,7 @@ import UniformTypeIdentifiers
         }
     }
     func captureHistory(file: String, marker: String? = nil, automatic: Bool = false) {
+        guard historyEnabled else { pendingHistory.remove(file); return }
         guard let source = buffers[file] else { return }
         if automatic, let last = revisions.first(where: { $0.file == file }), !TeXHistory.substantial(last.source, source), Date().timeIntervalSince(last.date) < 900 { return }
         pendingHistory.remove(file)
@@ -175,8 +201,7 @@ import UniformTypeIdentifiers
         catch { message = "Unable to save local history." }
     }
     func markExternalEdit(file: String, before: String, after: String) {
-        let range = EditorProvenance.change(before: before, after: after).inserted
-        externalEdits[file] = EditorProvenance.merged((externalEdits[file] ?? []) + (range.length > 0 ? [range] : []))
+        var tracker = provenance[file] ?? EditorProvenance.Tracker(); tracker.mark(before: before, after: after); provenance[file] = tracker; externalEdits[file] = tracker.ranges
     }
     func restore(_ revision: TeXHistory.Revision) {
         guard buffers[revision.file] != nil else { message = "The file no longer exists in this project."; return }
@@ -197,26 +222,61 @@ import UniformTypeIdentifiers
         do {
             captureHistory(file: selected); try TeXFileSystem.move(root: root, from: path, to: target)
             func mapped(_ file: String) -> String { file == path ? target : file.hasPrefix(path + "/") ? target + file.dropFirst(path.count) : file }
+            externalEdits = Dictionary(uniqueKeysWithValues: externalEdits.map { (mapped($0.key), $0.value) }); provenance = Dictionary(uniqueKeysWithValues: provenance.map { (mapped($0.key), $0.value) }); pendingHistory = Set(pendingHistory.map(mapped))
             buffers = Dictionary(uniqueKeysWithValues: buffers.map { (mapped($0.key), $0.value) })
             original = Dictionary(uniqueKeysWithValues: original.map { (mapped($0.key), $0.value) })
-            files = files.map(mapped).sorted(); treeFiles = treeFiles.map(mapped).sorted(); main = mapped(main); selected = mapped(selected)
+            files = files.map(mapped).sorted(); treeFiles = treeFiles.map(mapped).sorted(); treeFolders = treeFolders.map(mapped).sorted(); main = mapped(main); selected = mapped(selected)
+            updateCollections(collections.map { var group = $0; group.paths = group.paths.map(mapped); return group })
             backFiles = backFiles.map(mapped); forwardFiles = forwardFiles.map(mapped); build = nil
+            outputCurrent = false; fileRevision += 1
             message = "Moved. TeX references may need updating."
         } catch { message = error.localizedDescription }
     }
-    func trash(_ path: String) {
+    func trash(_ path: String) { trash([path]) }
+    func trash(_ paths: [String]) {
         guard !compiling else { message = "Wait for compilation to finish."; return }
-        let affected = files.filter { $0 == path || $0.hasPrefix(path + "/") }
+        let paths = TeXFileSystem.topLevel(paths)
+        guard !paths.isEmpty else { return }
+        let affected = files.filter { file in paths.contains { file == $0 || file.hasPrefix($0 + "/") } }
         guard !affected.contains(main) else { message = "Choose another main document before removing this item."; return }
-        let alert = NSAlert(); alert.messageText = "Move “\((path as NSString).lastPathComponent)” to Trash?"; alert.addButton(withTitle: "Move to Trash"); alert.addButton(withTitle: "Cancel")
+        let alert = NSAlert(); alert.messageText = paths.count == 1 ? "Move “\((paths[0] as NSString).lastPathComponent)” to Trash?" : "Move \(paths.count) items to Trash?"
+        alert.addButton(withTitle: "Move to Trash"); alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        do {
-            for file in affected { captureHistory(file: file) }
-            try FileManager.default.trashItem(at: TeXFileSystem.url(path, root: root), resultingItemURL: nil)
-            for file in affected { buffers.removeValue(forKey: file); original.removeValue(forKey: file) }
-            files.removeAll { affected.contains($0) }; treeFiles.removeAll { $0 == path || $0.hasPrefix(path + "/") }
-            if affected.contains(selected) { selected = main }; backFiles.removeAll { affected.contains($0) }; forwardFiles.removeAll { affected.contains($0) }; build = nil
-        } catch { message = error.localizedDescription }
+        for path in paths {
+            do {
+                let removed = files.filter { $0 == path || $0.hasPrefix(path + "/") }
+                for file in removed { captureHistory(file: file) }
+                try FileManager.default.trashItem(at: TeXFileSystem.url(path, root: root), resultingItemURL: nil)
+                for file in removed { buffers.removeValue(forKey: file); original.removeValue(forKey: file); externalEdits.removeValue(forKey: file); provenance.removeValue(forKey: file); pendingHistory.remove(file) }
+                files.removeAll { removed.contains($0) }; treeFiles.removeAll { $0 == path || $0.hasPrefix(path + "/") }; treeFolders.removeAll { $0 == path || $0.hasPrefix(path + "/") }
+                if removed.contains(selected) { selected = main }; backFiles.removeAll { removed.contains($0) }; forwardFiles.removeAll { removed.contains($0) }; build = nil; outputCurrent = false; fileRevision += 1
+            } catch { message = error.localizedDescription }
+        }
+    }
+    func newFolder(in parent: String = "") {
+        guard !compiling else { return }
+        let alert = NSAlert(); alert.messageText = "New folder"; if connected { alert.informativeText = "Overleaf receives folders when they contain a file." }
+        let field = NSTextField(string: ""); field.placeholderString = "Folder name"; field.frame = NSRect(x: 0, y: 0, width: 240, height: 24); alert.accessoryView = field
+        alert.addButton(withTitle: "Create"); alert.addButton(withTitle: "Cancel"); alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !name.contains("/"), !name.hasPrefix(".") else { message = "Choose a folder name."; return }
+        do { let path = parent.isEmpty ? name : parent + "/" + name; try FileManager.default.createDirectory(at: TeXFileSystem.url(path, root: root), withIntermediateDirectories: false); treeFolders = try TeXFileSystem.folders(root); fileRevision += 1 }
+        catch { message = error.localizedDescription }
+    }
+    func duplicate(_ paths: [String]) {
+        guard !compiling, save() else { return }
+        for path in TeXFileSystem.topLevel(paths) where treeFiles.contains(path) {
+            do {
+                let source = try TeXFileSystem.url(path, root: root), base = source.deletingPathExtension().lastPathComponent, ext = source.pathExtension
+                var number = 1, target: URL
+                repeat { target = source.deletingLastPathComponent().appendingPathComponent(base + " copy" + (number == 1 ? "" : " \(number)") + (ext.isEmpty ? "" : "." + ext)); number += 1 } while FileManager.default.fileExists(atPath: target.path)
+                try FileManager.default.copyItem(at: source, to: target)
+                let added = String(target.path.dropFirst(root.path.count + 1)); treeFiles.append(added); treeFiles.sort()
+                if let text = buffers[path] { buffers[added] = text; original[added] = text; files.append(added); files.sort() }
+                outputCurrent = false; fileRevision += 1
+            } catch { message = error.localizedDescription }
+        }
     }
     func drop(_ urls: [URL], into folder: String) {
         guard !compiling, !urls.isEmpty, urls.count <= 20 else { return }
@@ -232,12 +292,13 @@ import UniformTypeIdentifiers
                     if ["tex", "bib", "sty", "cls"].contains(url.pathExtension.lowercased()), let source = try? String(contentsOf: root.appendingPathComponent(path), encoding: .utf8), source.utf8.count <= 4_000_000 {
                         buffers[path] = source; original[path] = source; files.append(path); files.sort()
                     }
-                    build = nil
+                    build = nil; outputCurrent = false; treeFolders = try TeXFileSystem.folders(root); fileRevision += 1
                 } catch { message = error.localizedDescription }
             }
         }
     }
     @discardableResult func renameProject(to requestedName: String) -> Bool {
+        guard !connected else { return false }
         guard !compiling else { return false }
         let name = requestedName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, !name.contains("/"), name != ".", name != ".." else { return false }
@@ -262,7 +323,7 @@ import UniformTypeIdentifiers
         return true
     }
     func exportSource() {
-        let panel = NSSavePanel(); panel.allowedContentTypes = [.zip]; panel.nameFieldStringValue = root.lastPathComponent + ".zip"
+        let panel = NSSavePanel(); panel.allowedContentTypes = [.zip]; panel.nameFieldStringValue = displayName + ".zip"
         guard panel.runModal() == .OK, let output = panel.url, !FileManager.default.fileExists(atPath: output.path) else { return }
         let root = root, buffers = buffers
         Task { @MainActor [weak self] in

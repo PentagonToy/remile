@@ -53,3 +53,36 @@ struct SearchText {
         return (excerpt, groups > 1 && bestLength != Int.max ? 1 / (1 + Double(bestLength) / 80) : 0)
     }
 }
+
+/// A bounded lexical interpretation of explicit English questions; no model or index changes.
+struct SearchQuestion {
+    static let preference = "search.interpretQuestions"
+    static let spellingPreference = "search.spellingSuggestions"
+    let terms: [(word: String, prefix: Bool)]
+    init?(_ query: String) {
+        guard !query.contains("\""), let groups = try? LibraryIndex.queryTerms(query), groups.count >= 4 else { return nil }
+        let words = query.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        guard let first = words.first, ["how", "why", "what", "which", "where", "when"].contains(first),
+              words.allSatisfy({ $0.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) } }),
+              !words.contains("not"), !words.contains("without") else { return nil }
+        let stop = Set("how why what which where when a an the is are was were be been being do does did can could should would will may might i we you my our your it its they their this that these those and or to of for in on at by with from as about used use explain describe please".split(separator: " ").map(String.init))
+        var seen = Set<String>(), terms: [(String, Bool)] = []
+        for word in words where !stop.contains(word) {
+            var stem = word
+            if word.count >= 8 && word.hasSuffix("ing") { stem = String(word.dropLast(3)) }
+            else if word.count >= 7 && word.hasSuffix("ed") { stem = String(word.dropLast(2)) }
+            guard seen.insert(stem).inserted else { continue }
+            terms.append((stem, stem != word))
+        }
+        guard terms.count >= 2 else { return nil }
+        self.terms = terms
+    }
+    var expression: String { terms.map { "\"" + $0.word + "\"" + ($0.prefix ? "*" : "") }.joined(separator: " AND ") }
+    func matchedQuery(in body: String) -> String {
+        let words = body.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX")).split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        var seen = Set<String>()
+        return words.filter { word in
+            terms.contains { $0.prefix ? word.hasPrefix($0.word) : word == $0.word } && seen.insert(word).inserted
+        }.prefix(24).joined(separator: " ")
+    }
+}

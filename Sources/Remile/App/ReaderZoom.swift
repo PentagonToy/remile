@@ -65,7 +65,7 @@ struct ReaderZoomControls: View {
     var body: some View {
         HStack(spacing: 0) {
             Button { zoom.step(-1) } label: { Image(systemName: "minus").frame(width: 32, height: 32).contentShape(Rectangle()) }
-                .help("Zoom out 10 percentage points (⌘−: fine)").accessibilityLabel("Zoom out")
+                .remileHelp("Zoom out 10 percentage points (⌘−: fine)").accessibilityLabel("Zoom out")
             Menu {
                 Button("Actual size · 100%") { zoom.change(1) }
                 Button(text ? "Reading width" : "Fit page") { zoom.fit(width: false) }
@@ -75,10 +75,10 @@ struct ReaderZoomControls: View {
                     Button("\(percent)%") { zoom.change(CGFloat(percent) / 100) }
                 }
             } label: { Text(zoom.label).monospacedDigit().frame(width: 70, height: 32) }
-                .menuStyle(.borderlessButton).fixedSize().help("Zoom percentage and fit options")
+                .menuStyle(.borderlessButton).fixedSize().remileHelp("Zoom percentage and fit options")
             Button { zoom.step(1) } label: { Image(systemName: "plus").frame(width: 32, height: 32).contentShape(Rectangle()) }
-                .help("Zoom in 10 percentage points (⌘+: fine)").accessibilityLabel("Zoom in")
-            Button { zoom.fit(width: text) } label: { Text("Fit").frame(width: 42, height: 32).contentShape(Rectangle()) }.help(text ? "Fit reading width" : "Fit the whole page (⌘0)").keyboardShortcut("0")
+                .remileHelp("Zoom in 10 percentage points (⌘+: fine)").accessibilityLabel("Zoom in")
+            Button { zoom.fit(width: text) } label: { Text("Fit").frame(width: 42, height: 32).contentShape(Rectangle()) }.remileHelp(text ? "Fit reading width" : "Fit the whole page (⌘0)").keyboardShortcut("0")
         }.buttonStyle(RemileToolStyle()).font(.system(size: 15)).tint(.primary).fixedSize()
             .accessibilityElement(children: .contain)
             .background {

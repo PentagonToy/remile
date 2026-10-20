@@ -19,7 +19,7 @@ import UniformTypeIdentifiers
     func save(open: @escaping (URL) -> Void, close: @escaping () -> Void) {
         guard inputs.count >= 2, let kind, !busy else { return }
         let panel = NSSavePanel(); panel.allowedContentTypes = kind == .pdf ? [.pdf] : [.remileMarkdown]
-        panel.nameFieldStringValue = kind == .pdf ? "Combined.pdf" : "Combined.md"
+        panel.nameFieldStringValue = "combined_" + (inputs.first?.deletingPathExtension().lastPathComponent ?? "Document") + (kind == .pdf ? ".pdf" : ".md")
         guard panel.runModal() == .OK, let output = panel.url else { return }
         let inputs = inputs; busy = true; error = nil
         Task {
@@ -45,9 +45,9 @@ struct CombineWorkspace: View {
                         HStack(spacing: 10) {
                             Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 22)
                             Text(url.lastPathComponent).lineLimit(1).truncationMode(.middle); Spacer()
-                            Button { model.inputs.swapAt(index, index - 1) } label: { Image(systemName: "chevron.up") }.disabled(index == 0).help("Move up")
-                            Button { model.inputs.swapAt(index, index + 1) } label: { Image(systemName: "chevron.down") }.disabled(index == model.inputs.count - 1).help("Move down")
-                            Button { model.inputs.remove(at: index) } label: { Image(systemName: "minus.circle") }.help("Remove file")
+                            Button { model.inputs.swapAt(index, index - 1) } label: { Image(systemName: "chevron.up") }.disabled(index == 0).remileHelp("Move up")
+                            Button { model.inputs.swapAt(index, index + 1) } label: { Image(systemName: "chevron.down") }.disabled(index == model.inputs.count - 1).remileHelp("Move down")
+                            Button { model.inputs.remove(at: index) } label: { Image(systemName: "minus.circle") }.remileHelp("Remove file")
                         }.padding(8)
                     }
                 }

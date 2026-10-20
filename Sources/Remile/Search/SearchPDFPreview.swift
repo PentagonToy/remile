@@ -122,7 +122,7 @@ struct SearchPDFPreview: View {
                 VStack(spacing: 10) {
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(hit.name).font(RemileType.heading).lineLimit(2).multilineTextAlignment(.leading).help(hit.name)
+                            Text(hit.name).font(RemileType.heading).lineLimit(2).multilineTextAlignment(.leading).remileHelp(hit.name)
                             Text("Page \(hit.page)").font(RemileType.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                         Button { ReaderNavigation.shared.reveal(hit, query: query); open(URL(fileURLWithPath: hit.path)) } label: { Label("Open", systemImage: "arrow.up.right.square") }.fixedSize()
@@ -131,13 +131,13 @@ struct SearchPDFPreview: View {
                         ReaderZoomControls(zoom: zoom)
                         Spacer(minLength: 0)
                         if model.saving { ProgressView().controlSize(.small) }
-                        Button { model.highlight() } label: { Image(systemName: "highlighter") }.help("Highlight selected text and save to PDF").accessibilityLabel("Highlight selected text").disabled(!model.selectionAvailable || model.saving)
+                        Button { model.highlight() } label: { Image(systemName: "highlighter") }.remileHelp("Highlight selected text and save to PDF").accessibilityLabel("Highlight selected text").disabled(!model.selectionAvailable || model.saving)
                         Menu {
                             ForEach(HighlightColor.allCases) { color in
                                 Button { model.color = color } label: { Label { Text(color.name) } icon: { Image(systemName: model.color == color ? "checkmark.circle.fill" : "circle.fill").foregroundStyle(Color(nsColor: color.color)) } }
                             }
-                        } label: { Image(systemName: "circle.fill").foregroundStyle(Color(nsColor: model.color.color)) }.help("Highlight colour · \(model.color.name)").accessibilityLabel("Highlight colour")
-                        Button { model.undoHighlight() } label: { Image(systemName: "arrow.uturn.backward") }.disabled(!model.canUndoHighlight || model.saving).help("Undo last highlight")
+                        } label: { Image(systemName: "circle.fill").foregroundStyle(Color(nsColor: model.color.color)) }.remileHelp("Highlight colour · \(model.color.name)").accessibilityLabel("Highlight colour")
+                        Button { model.undoHighlight() } label: { Image(systemName: "arrow.uturn.backward") }.disabled(!model.canUndoHighlight || model.saving).remileHelp("Undo last highlight")
                     }.buttonStyle(.borderless)
                 }.padding(14)
                 if let message = model.editMessage { Text(message).font(RemileType.caption).foregroundStyle(.secondary).padding([.horizontal, .bottom], 12) }

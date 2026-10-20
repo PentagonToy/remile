@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 @MainActor
 final class HomeModel: ObservableObject {
     let reader = ReadingSession()
+    let overleaf = OverleafLibrary()
     @Published var texProject: TeXProject?
     let assistant = DocumentAssistant(historyKey: "search")
     enum Page { case home, search }
@@ -21,6 +22,7 @@ final class HomeModel: ObservableObject {
     var resultGroups: [SearchResultGroup] { SearchResultGroup.make(results, filter: documentFilter, order: resultOrder) }
     var visibleHits: [LibraryHit] { resultGroups.flatMap(\.hits) }
     @Published var libraryPresented = false
+    @Published var guidePresented = false
     @Published var askPresented = false
     @Published var exploring = false
     @Published var exploredQueries: [String] = []
@@ -107,11 +109,13 @@ final class HomeModel: ObservableObject {
         results = []; selectedHit = nil; queryError = nil; searching = !text.isEmpty
         exploring = false; exploredQueries = []; spellingSuggestions = []
         guard !text.isEmpty else { return }
+        let interpretQuestions = UserDefaults.standard.object(forKey: SearchQuestion.preference) as? Bool ?? true
+        let offerCorrections = UserDefaults.standard.object(forKey: SearchQuestion.spellingPreference) as? Bool ?? true
         searchTask = Task {
             do {
                 try await Task.sleep(for: .milliseconds(250))
-                let hits = try await index.search(text)
-                let suggestions = hits.isEmpty ? try await index.spellingSuggestions(text) : []
+                let hits = try await index.search(text, interpretQuestions: interpretQuestions)
+                let suggestions = offerCorrections && hits.isEmpty ? try await index.spellingSuggestions(text) : []
                 try Task.checkCancellation()
                 guard generation == searchGeneration else { return }
                 results = hits; spellingSuggestions = suggestions; searching = false; expandedDocuments = []
@@ -127,7 +131,7 @@ final class HomeModel: ObservableObject {
     func explore() {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !exploring else { return }
-        let state = AppleIntelligence.status()
+        let engine = AssistantEngine.selected, state = engine.status()
         guard state.ready else { queryError = state.message; return }
         searchTask?.cancel(); let generation = UUID(); searchGeneration = generation
         exploring = true; searching = false; queryError = nil; spellingSuggestions = []
@@ -135,7 +139,7 @@ final class HomeModel: ObservableObject {
             do {
                 let original = try await index.search(text)
                 let vocabulary = try await index.explorationVocabulary()
-                let queries = try await SearchExpansion.plan(query: text, vocabulary: vocabulary)
+                let queries = try await SearchExpansion.plan(query: text, vocabulary: vocabulary, engine: engine)
                 var lists = [(text, original)], used: [String] = []
                 for planned in queries where planned.caseInsensitiveCompare(text) != .orderedSame {
                     try Task.checkCancellation()
@@ -195,21 +199,38 @@ final class HomeModel: ObservableObject {
     }
 
     private static let recentPreference = "reader.recentDocuments"
+    private static let hiddenRecentPreference = "reader.hiddenRecentDocuments"
+    func removeRecent(_ url: URL) {
+        let path = url.standardizedFileURL.path
+        recent.removeAll { $0.standardizedFileURL.path == path }
+        var hidden = Set(UserDefaults.standard.stringArray(forKey: Self.hiddenRecentPreference) ?? [])
+        let system = Set(NSDocumentController.shared.recentDocumentURLs.map { $0.standardizedFileURL.path })
+        hidden = hidden.intersection(system); hidden.insert(path)
+        UserDefaults.standard.set(Array(hidden), forKey: Self.hiddenRecentPreference)
+        UserDefaults.standard.set(recent.map(\.path), forKey: Self.recentPreference)
+        var dates = UserDefaults.standard.dictionary(forKey: "reader.lastOpened") ?? [:]
+        dates.removeValue(forKey: path); UserDefaults.standard.set(dates, forKey: "reader.lastOpened")
+    }
     func clearRecent() {
         recent = []; UserDefaults.standard.removeObject(forKey: Self.recentPreference); UserDefaults.standard.removeObject(forKey: "reader.lastOpened")
+        UserDefaults.standard.removeObject(forKey: Self.hiddenRecentPreference)
         NSDocumentController.shared.clearRecentDocuments(nil)
     }
     func refreshRecent() {
         let saved = (UserDefaults.standard.stringArray(forKey: Self.recentPreference) ?? []).map { URL(fileURLWithPath: $0) }
-        recent = Self.unique(saved + NSDocumentController.shared.recentDocumentURLs)
+        let hidden = Set(UserDefaults.standard.stringArray(forKey: Self.hiddenRecentPreference) ?? [])
+        recent = Self.unique(saved + NSDocumentController.shared.recentDocumentURLs).filter { !hidden.contains($0.standardizedFileURL.path) }
     }
     func lastOpened(_ url: URL) -> Date? {
         (UserDefaults.standard.dictionary(forKey: "reader.lastOpened")?[url.standardizedFileURL.path] as? Double).map(Date.init(timeIntervalSince1970:))
     }
     private func recordRecent(_ url: URL) {
+        var hidden = UserDefaults.standard.stringArray(forKey: Self.hiddenRecentPreference) ?? []
+        hidden.removeAll { $0 == url.standardizedFileURL.path }
+        UserDefaults.standard.set(hidden, forKey: Self.hiddenRecentPreference)
         var dates = UserDefaults.standard.dictionary(forKey: "reader.lastOpened") ?? [:]
         dates[url.standardizedFileURL.path] = Date().timeIntervalSince1970
-        recent = Self.unique([url] + recent + NSDocumentController.shared.recentDocumentURLs)
+        recent = Self.unique([url] + recent + NSDocumentController.shared.recentDocumentURLs).filter { !hidden.contains($0.standardizedFileURL.path) }
         let retained = Set(recent.map { $0.standardizedFileURL.path })
         UserDefaults.standard.set(dates.filter { retained.contains($0.key) }, forKey: "reader.lastOpened")
         UserDefaults.standard.set(recent.map(\.path), forKey: Self.recentPreference)
@@ -228,7 +249,7 @@ final class HomeModel: ObservableObject {
         if panel.runModal() == .OK, let url = panel.url { openTeX(url.pathExtension.lowercased() == "tex" ? url.deletingLastPathComponent() : url) }
     }
     func openTeX(_ root: URL) {
-        do { let project = try TeXProject(root); guard reader.close(), closeTeX() else { return }; texProject = project
+        do { let connection = overleaf.connection(for: root); let project = try TeXProject(root, historyEnabled: connection == nil, displayName: connection?.name); guard reader.close(), closeTeX() else { return }; texProject = project
             project.renamedRoot = { [weak self] old, new in self?.recent.removeAll { $0 == old }; self?.recordRecent(new) }
             recordRecent(project.root); project.compile() }
         catch { self.error = "Unable to open LaTeX project: " + error.localizedDescription }
@@ -283,6 +304,6 @@ final class ReaderNavigation: ObservableObject {
     struct Request { let id = UUID(); let path: String; let page: Int; let terms: [String]; var noteExcerpt: String? = nil }
     @Published var request: Request?
     func reveal(_ hit: LibraryHit, query: String, noteExcerpt: String? = nil) {
-        request = Request(path: hit.path, page: hit.page, terms: query.replacingOccurrences(of: "\"", with: "").split(whereSeparator: \.isWhitespace).map(String.init), noteExcerpt: noteExcerpt)
+        request = Request(path: hit.path, page: hit.page, terms: (hit.matchQuery ?? query).replacingOccurrences(of: "\"", with: "").split(whereSeparator: \.isWhitespace).map(String.init), noteExcerpt: noteExcerpt)
     }
 }

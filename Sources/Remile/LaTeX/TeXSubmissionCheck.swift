@@ -57,7 +57,7 @@ struct TeXSubmissionPopover: View {
                 }
             }
             if check.buffers != project.buffers || check.main != project.main { Text("Source changed. Run the check again.").font(RemileType.caption).foregroundStyle(.secondary) }
-            Text("Fresh LaTeX passes without external bibliography files. Uses your installed engine; your source stays unchanged.").font(RemileType.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Fresh LaTeX passes without external bibliography files. Uses your installed engine. Your source stays unchanged.").font(RemileType.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 if check.running { Button("Stop") { check.stop() } }
                 else { Button("Check again") { project.compareSubmission() } }

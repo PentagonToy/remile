@@ -5,7 +5,10 @@ check_directory="${1:?Provide an absolute output directory under Agents/Reposito
 case "$check_directory" in /*) ;; *) exit 1 ;; esac
 mkdir -p "$check_directory/module-cache"
 cat "$project_directory/Sources/Remile/Assistant/AppleIntelligence.swift" \
+    "$project_directory/Sources/Remile/Assistant/AssistantEngine.swift" \
     "$project_directory/Sources/Remile/Assistant/AssistantPassage.swift" \
+    "$project_directory/Sources/Remile/Assistant/Prompts/AssistantPrompts.swift" \
+    "$project_directory/Sources/Remile/Assistant/Prompts/AssistantAnswerPrompts.swift" \
     "$project_directory/Sources/Remile/Assistant/DocumentAssistant.swift" \
     "$project_directory/Sources/Remile/PDF/PDFAssistantContext.swift" > "$check_directory/reader-assistant-checks.swift"
 cat >> "$check_directory/reader-assistant-checks.swift" <<'SWIFT'

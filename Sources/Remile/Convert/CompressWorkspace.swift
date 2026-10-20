@@ -56,7 +56,7 @@ final class CompressionModel: ObservableObject {
     func save() {
         guard let result, !saving else { return }
         let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]
-        panel.nameFieldStringValue = (input?.deletingPathExtension().lastPathComponent ?? "Document") + " compressed.pdf"
+        panel.nameFieldStringValue = "compressed_" + (input?.deletingPathExtension().lastPathComponent ?? "Document") + ".pdf"
         guard panel.runModal() == .OK, let destination = panel.url, let source = result.batch.outputs.first else { return }
         guard destination.resolvingSymlinksInPath() != input?.resolvingSymlinksInPath() else { message = "Choose a new filename to keep the original PDF."; return }
         saving = true

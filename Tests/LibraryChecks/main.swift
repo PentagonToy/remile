@@ -85,6 +85,9 @@ Task {
         try await store.refresh { _ in }
         summary = try await store.summary()
         try expect(summary.failed == 1 && summary.documents == 3, "Bad PDF is counted without aborting library")
+        let indexed = try await store.indexedDocuments()
+        try expect(indexed.count == 3 && indexed.filter(\.failed).count == 1, "Per-document status distinguishes failed indexing")
+        try expect(indexed.first?.failed == true && indexed.first?.status == "Not indexed", "Documents needing attention appear first")
         try fixture(broken, pages: ["Recovered document\nHelium spectroscopy"])
         try await store.refresh { _ in }
         hits = try await store.search("helium")
@@ -169,6 +172,30 @@ Task {
         hits = try await store.search("helium")
         try expect(summary.documents == 0 && summary.folders.isEmpty && hits.isEmpty, "Removing folder removes only indexed state")
         try expect(FileManager.default.fileExists(atPath: broken.path), "Original PDF survives folder removal")
+        let questionFolder = output.appendingPathComponent("questions")
+        try FileManager.default.createDirectory(at: questionFolder, withIntermediateDirectories: true)
+        try fixture(questionFolder.appendingPathComponent("Methods.pdf"), pages: [
+            "Coupling methods\nPressure and velocity coupling for incompressible flow.",
+            "Transport methods\nUpwind stabilisation for convection dominated flow.",
+            "Unrelated flow\nPressure waves in compressible flow."
+        ])
+        let questionIndex = LibraryIndex(location: output.appendingPathComponent("questions.sqlite"))
+        try await questionIndex.add(questionFolder)
+        try await questionIndex.refresh { _ in }
+        let coupling = try await questionIndex.search("How are pressure and velocity coupled for incompressible flow?")
+        try expect(coupling.count == 1 && coupling.first?.page == 1, "Question keywords retain every substantive constraint")
+        try expect(coupling.first?.matchQuery?.contains("coupling") == true, "Highlight the actual inflected word on the retrieved page")
+        let literalQuestion = try await questionIndex.search("How are pressure and velocity coupled for incompressible flow?", interpretQuestions: false)
+        try expect(literalQuestion.isEmpty, "Disabling question interpretation restores literal search")
+        let transport = try await questionIndex.search("Why is upwinding used for convection dominated flow?")
+        try expect(transport.count == 1 && transport.first?.page == 2, "Question inflections find indexed word families")
+        let strict = try await questionIndex.search("upwinding convection")
+        try expect(strict.isEmpty, "Ordinary keywords remain literal")
+        let quotedQuestion = try await questionIndex.search("\"How are pressure and velocity coupled\"")
+        try expect(quotedQuestion.isEmpty, "Quoted questions remain literal phrases")
+        try expect(SearchQuestion("How is pressure not coupled to velocity?") == nil, "Do not silently remove negation")
+        try expect(SearchQuestion("비압축성 유동에서 압력은 어떻게 연결하나요?") == nil, "No unsupported cross-language expansion")
+        try expect(SearchQuestion("what is x?") == nil, "Very short questions keep literal semantics")
         print("\(checks) library checks passed")
         exit(0)
     } catch {

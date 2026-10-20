@@ -12,6 +12,7 @@ struct MarkdownWorkspace: View {
     @StateObject private var presentation: Presentation
     @StateObject private var zoom = ReaderZoom(text: true)
     @StateObject private var editor = MarkdownEditorController()
+    @StateObject private var assistant = DocumentAssistant()
     @StateObject private var writing = EditorWritingReview()
     @AppStorage("markdown.spellcheck") private var spellcheck = true
     @AppStorage("editor.language") private var language = "Automatic"
@@ -32,6 +33,7 @@ struct MarkdownWorkspace: View {
         @Published var settings = false
         @Published var table: MarkdownTableEditor.State?
         @Published var printing = false
+        @Published var ask = false
         @Published var error: String?
         init(mode: Mode) { self.mode = mode }
     }
@@ -43,12 +45,17 @@ struct MarkdownWorkspace: View {
                 Text("Markdown").font(RemileType.heading)
                 Spacer()
                 if presentation.mode == .split {
-                    Button { preview.revealSource() } label: { Image(systemName: "arrow.left") }.help("Show preview selection in source")
-                    Button { preview.reveal(line: editor.selectedLine) } label: { Image(systemName: "arrow.right") }.help("Show source in preview")
+                    Button { preview.revealSource() } label: { Image(systemName: "arrow.left") }.remileHelp("Show preview selection in source")
+                    Button { preview.reveal(line: editor.selectedLine) } label: { Image(systemName: "arrow.right") }.remileHelp("Show source in preview")
                 }
+                AIToolGroup {
+                AIProviderButton()
+                Button { presentation.ask.toggle() } label: { Image(systemName: "text.bubble") }.remileHelp("Ask about document")
                 EditorWritingReviewButton(review: writing, editor: editor)
-                Button { showExternalEdits.toggle() } label: { Image(systemName: showExternalEdits ? "eye" : "eye.slash") }.help("Show CLI edits").accessibilityLabel("Show CLI edits")
-                Menu { Toggle("Focus paragraph", isOn: $focusMode); Button("Editor settings…") { presentation.settings = true } } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize()
+                }
+
+                Button { showExternalEdits.toggle() } label: { Image(systemName: showExternalEdits ? "eye" : "eye.slash") }.remileHelp(RemileHints.edits(showExternalEdits)).accessibilityLabel("Show AI and CLI edits")
+                Menu { Toggle("Focus paragraph", isOn: $focusMode); Button("Editor settings…") { presentation.settings = true } } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize().remileHelp("Focus mode and editor settings")
                 Button { render() } label: { Label("Render", systemImage: "arrow.clockwise") }.keyboardShortcut(.return, modifiers: [.command])
             }.font(RemileType.callout).buttonStyle(RemileToolStyle()).padding(.horizontal, 16).padding(.vertical, 6).background(RemileStyle.editorBar)
             Divider()
@@ -64,20 +71,24 @@ struct MarkdownWorkspace: View {
                 if presentation.printing { ProgressView().controlSize(.small); Text("Preparing print…") }
                 Text("\(preview.wordCount) words")
                 Text("UTF-8").monospaced()
-            }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.vertical, 9).background(.bar)
+                ReaderThemeButton()
+            }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 12).frame(height: 32).background(.bar)
         }
         .sheet(isPresented: $presentation.settings) { VStack(alignment: .trailing, spacing: 0) { MarkdownSettings(); Button("Done") { presentation.settings = false }.keyboardShortcut(.defaultAction).padding([.horizontal, .bottom], 20) }.background(RemileStyle.background) }
         .sheet(isPresented: Binding(get: { presentation.table != nil }, set: { if !$0 { presentation.table = nil } })) {
             if let state = presentation.table { MarkdownTableEditor(state: state, apply: { editor.applyTable($0, expected: state.source) }, close: { presentation.table = nil }) }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.exportMarkdownPDF"))) { _ in exportPDF() }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.exportMarkdownPDF"))) { event in if event.object as? ReadingSession === session { exportPDF() } }
         .tint(DocumentTone.accent(pdf: false))
         .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.outline)
         .task(id: source + String(spellcheck) + language) { await writing.check(source, enabled: spellcheck, language: language, editor: editor) }
         .task(id: source) { if livePreview || preview.html == nil { await preview.render(source, url: previewURL) } }
         .onChange(of: livePreview) { if livePreview { render() } }
-        .onDisappear { session?.editSource = nil }
+        .onDisappear { session?.editSource = nil; writing.dismissSuggestion(); editor.writingIssueRequested = nil; editor.dismissWriting = nil }
         .onAppear {
+            assistant.useHistory(fileURL?.path)
+            editor.writingIssueRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return false }; return writing?.showSuggestion(at: range, in: view, editor: editor) ?? false }
+            editor.dismissWriting = { [weak writing = writing] in writing?.dismissSuggestion() }
             session?.editSource = { [weak editor = editor, weak state = presentation, weak session = session] before, after in
                 guard let session, case .markdown(let current) = session.document.content, current == before else { return false }
                 state?.mode = .split
@@ -89,12 +100,12 @@ struct MarkdownWorkspace: View {
             preview.sourceSelection = { [weak editor = editor, weak state = presentation] line, text in state?.mode = .split; editor?.reveal(line: line, text: text) }
             editor.syncToPreview = { [weak preview = preview, weak state = presentation] line in state?.mode = .split; preview?.reveal(line: line) }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.print"))) { _ in printDocument() }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.print"))) { event in if event.object as? ReadingSession === session { printDocument() } }
         .alert("Unable to export or print", isPresented: Binding(get: { presentation.error != nil }, set: { if !$0 { presentation.error = nil } })) {
             Button("OK") { presentation.error = nil }
         } message: { Text(presentation.error ?? "") }
         .toolbar {
-            ToolbarItem(placement: .navigation) { Button { presentation.outline.toggle() } label: { Label("Outline", systemImage: "list.bullet.indent") }.help("Show document outline") }
+            ToolbarItem(placement: .navigation) { Button { presentation.outline.toggle() } label: { Label("Outline", systemImage: "list.bullet.indent") }.remileHelp("Show document outline") }
             if #available(macOS 26.0, *) {
                 ToolbarItem(placement: .primaryAction) { ReaderZoomControls(zoom: zoom, text: true) }.sharedBackgroundVisibility(.hidden)
             } else { ToolbarItem(placement: .primaryAction) { ReaderZoomControls(zoom: zoom, text: true) } }
@@ -144,21 +155,29 @@ struct MarkdownWorkspace: View {
                     }.padding(4)
                 } }
             }
-            Divider()
-            VStack(alignment: .leading, spacing: 10) {
-                EditorSidebarBrand(compact: presentation.expanded)
-                Button { presentation.settings = true } label: { Label("Editor settings", systemImage: "gearshape").font(RemileType.callout).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(RemileToolStyle())
-            }.padding(12)
             if !presentation.expanded || preview.sections.isEmpty { Spacer(minLength: 0) }
+            Divider()
+            EditorSidebarFooter(compact: presentation.expanded, title: "Editor settings") { presentation.settings = true }
         }.frame(maxHeight: .infinity, alignment: .top).background(RemileStyle.sidebar)
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: presentation.expanded)
     }
     @ViewBuilder private var documentContent: some View {
+        if presentation.ask {
+            ReaderSplit(side: .trailing, initial: 330, minimum: 240, maximum: 420, minimumContent: 280, preferPaneWhenNarrow: true, label: "Markdown Ask", pane: {
+                AssistantPanel(assistant: assistant, passages: [], topic: fileURL?.deletingPathExtension().lastPathComponent ?? "this document", select: { item in editor.reveal(line: item.location.unit); presentation.ask = false }, close: { presentation.ask = false }, retrieve: { question in
+                    let lines = source.components(separatedBy: "\n")
+                    let passages = stride(from: 0, to: lines.count, by: 16).map { index in AssistantPassage(location: .init(path: fileURL?.path ?? "Untitled.md", unit: index + 1, label: "Line \(index + 1)"), text: lines[index..<min(lines.count, index + 16)].joined(separator: "\n")) }
+                    return AssistantRetrieval.rank(passages, question: question)
+                })
+            }, content: { plainDocumentContent })
+        } else { plainDocumentContent }
+    }
+    @ViewBuilder private var plainDocumentContent: some View {
         switch presentation.mode {
         case .read: previewView
         case .edit: editorView
         case .split:
-            ReaderSplit(initial: 430, minimum: 280, maximum: 1200, minimumContent: 280, label: "Markdown editor", pane: { editorView }, content: { previewView })
+            ReaderSplit(initial: 430, minimum: 280, maximum: 1200, minimumContent: 280, preferPaneWhenNarrow: true, label: "Markdown editor", pane: { editorView }, content: { previewView })
         }
     }
     private var previewURL: URL { fileURL ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Untitled.md") }

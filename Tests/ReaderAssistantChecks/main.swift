@@ -125,6 +125,34 @@ Task { @MainActor in
         try check(afterClear["search"] == nil && afterClear["pdf:fixture"]?.count == 1, "Clear removes only the current conversation")
         try check(AssistantAnswerDisplay.clean("General context: Paris.\n\n**General context:** More detail.") == "Paris.\n\nMore detail.", "Classification labels are removed from displayed/copied prose")
         let assistant = DocumentAssistant()
+        let routed = DocumentAssistant()
+        routed.useEngine(AssistantEngine(status: { (true, "Fixture provider") }, respond: { _, instructions, _ in instructions.hasPrefix("Classify") ? "DOCUMENT" : "Current increases with concentration [1]." }))
+        routed.question = "What happens to current as concentration rises?"
+        routed.ask(passages: [AssistantPassage(location: AssistantLocation(path: "/fixture/source.md", unit: 1, label: "Source"), text: "Current increases with reactant concentration.")], topic: "Experiment")
+        for _ in 0..<100 { if !routed.working { break }; try await Task.sleep(for: .milliseconds(10)) }
+        try check(routed.answer == "Current increases with concentration [1]." && routed.sources.count == 1, "Connected and on-device providers share attribution and answer handling")
+        routed.useEngine(AssistantEngine(status: { (false, "Disconnected") }, respond: { _, _, _ in fatalError("Unavailable provider must not be called") }))
+        try check(!routed.checkAvailability() && routed.availability == "Disconnected", "Disconnected provider blocks requests")
+        var planCalls = 0
+        routed.clear()
+        routed.useEngine(AssistantEngine(status: { (true, "Plan provider") }, singlePass: true, respond: { _, _, _ in planCalls += 1; return "Current increases with concentration [1]." }))
+        routed.question = "What happens to current as concentration rises?"
+        routed.ask(passages: [AssistantPassage(location: AssistantLocation(path: "/fixture/source.md", unit: 1, label: "Source"), text: "Current increases with reactant concentration.")], topic: "Experiment")
+        for _ in 0..<100 { if !routed.working { break }; try await Task.sleep(for: .milliseconds(10)) }
+        try check(planCalls == 1 && routed.sources.count == 1, "Plan questions use one inference while retaining source validation")
+        let longPassage = AssistantPassage(location: .init(path: path, unit: 1, label: "Page 1"), text: String(repeating: "The apparatus was calibrated. ", count: 40) + "The measured activation energy was 42 kJ/mol.")
+        try check(!AssistantEvidence.make([longPassage])[0].text.contains("42 kJ/mol") && AssistantEvidence.make([longPassage], expanded: true)[0].text.contains("42 kJ/mol"), "Cloud evidence retains supporting facts beyond the device excerpt")
+        let wide = try await context.passages(data: bytes, password: "", path: path, question: "concentration", currentPage: 1, selection: nil, expanded: true) { _ in }
+        try check(wide.count == 12 && wide.first?.location.unit == 9, "Cloud PDF retrieval covers more pages while keeping relevant evidence first")
+        routed.clear()
+        var received = "", budget = 0
+        routed.useEngine(AssistantEngine(status: { (true, "Cloud fixture") }, singlePass: true, expandedContext: true, respond: { input, _, tokens in received = input; budget = tokens; return "The activation energy was 42 kJ/mol [1]." }))
+        routed.question = String(repeating: "Please consider the experimental details. ", count: 20) + "What activation energy was measured?"
+        routed.ask(passages: [longPassage], topic: "Experiment", detail: .mid)
+        for _ in 0..<100 { if !routed.working { break }; try await Task.sleep(for: .milliseconds(10)) }
+        try check(received.contains("What activation energy was measured?") && received.contains("42 kJ/mol") && budget == 2400 && routed.sources.count == 1, "Cloud questions preserve longer user instructions, full supporting facts and an appropriate response budget")
+        let ranked = AssistantRetrieval.rank([AssistantPassage(location: .init(path: path, unit: 1, label: "Start"), text: "Unrelated equipment"), longPassage], question: "activation energy")
+        try check(ranked.first?.text.contains("42 kJ/mol") == true, "Markdown retrieval finds relevant later passages")
         if CommandLine.arguments.contains("--live-quality"), assistant.checkAvailability() {
             let cases: [(String, String, String)] = [
                 ("definition-with-application", "what is the pinn?", "The proposed PINN is applied to a flow problem and achieves a smaller prediction error on the benchmark."),

@@ -38,6 +38,16 @@ final class TeXCompileJob: @unchecked Sendable {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = configuration.directory + ":/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         let deadline = Date().addingTimeInterval(90)
+        if engine == .pdf, let items = manager.enumerator(at: source, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) {
+            let converter = URL(fileURLWithPath: configuration.directory).appendingPathComponent("epstopdf")
+            for case let image as URL in items where image.pathExtension.lowercased() == "eps" {
+                let target = image.deletingPathExtension().path + "-eps-converted-to.pdf"
+                guard !manager.fileExists(atPath: target) else { continue }
+                guard manager.isExecutableFile(atPath: converter.path) else { throw TeXFileSystem.Failure(errorDescription: "EPS graphics need epstopdf from your TeX installation.") }
+                let status = try execute(converter, arguments: ["--restricted", "--outfile=" + URL(fileURLWithPath: target).lastPathComponent, "./" + image.lastPathComponent], directory: image.deletingLastPathComponent(), environment: environment, log: handle, logURL: logURL, deadline: deadline)
+                guard status == 0, manager.fileExists(atPath: target) else { throw TeXFileSystem.Failure(errorDescription: "Could not prepare the EPS graphic “\(image.lastPathComponent)”. See the build log.") }
+            }
+        }
         if submissionCheck {
             let tool = URL(fileURLWithPath: configuration.directory).appendingPathComponent(engine == .xe ? "xelatex" : engine == .lua ? "lualatex" : "pdflatex")
             environment["TEXINPUTS"] = source.path + "//:"

@@ -19,3 +19,13 @@ precondition(marked.marker != nil && TeXHistory.read(root).count == 2)
 precondition(TeXHistory.retained(Array(repeating: initial, count: 100)).count == 50)
 precondition(TeXHistory.retained((0..<8).map { _ in TeXHistory.Revision(file: "large", source: String(repeating: "x", count: 3_000_000)) }).count == 5)
 print("Passed history/provenance: deduplication, marked checkpoints, change threshold, count/byte bounds, range rebasing, local-overlap removal and Unicode offsets")
+
+var tracker = EditorProvenance.Tracker()
+let oldCommand = "Hello \\textbff{world}", fixedCommand = "Hello \\textbf{world}"
+tracker.mark(before: oldCommand, after: fixedCommand)
+precondition(!tracker.ranges.isEmpty)
+precondition((fixedCommand as NSString).substring(with: tracker.ranges[0]).contains("textbf"))
+tracker.transition(before: fixedCommand, after: oldCommand)
+precondition(tracker.ranges.isEmpty)
+precondition(EditorProvenance.highlight(before: "😀x", after: "😀").length == 2)
+print("Passed deletion highlighting, native Undo restoration and composed-character checks")

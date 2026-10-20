@@ -7,9 +7,12 @@ mkdir -p "$check_directory/module-cache"
 cat "$project_directory/Sources/Remile/Search/SearchMarkdown.swift" \
     "$project_directory/Sources/Remile/Search/SearchText.swift" \
     "$project_directory/Sources/Remile/Assistant/AppleIntelligence.swift" \
+    "$project_directory/Sources/Remile/Assistant/AssistantEngine.swift" \
     "$project_directory/Sources/Remile/Search/SearchExpansion.swift" \
     "$project_directory/Sources/Remile/Search/LibraryIndex.swift" \
     "$project_directory/Sources/Remile/Assistant/AssistantPassage.swift" \
+    "$project_directory/Sources/Remile/Assistant/Prompts/AssistantPrompts.swift" \
+    "$project_directory/Sources/Remile/Assistant/Prompts/AssistantAnswerPrompts.swift" \
     "$project_directory/Sources/Remile/Assistant/DocumentAssistant.swift" \
     "$project_directory/Sources/Remile/Search/SearchAssistantContext.swift" > "$check_directory/search-assistant-checks.swift"
 cat >> "$check_directory/search-assistant-checks.swift" <<'SWIFT'

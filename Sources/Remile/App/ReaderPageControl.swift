@@ -14,7 +14,7 @@ struct ReaderPageControl: View {
                 .padding(.horizontal, 6).frame(width: 44, height: 28)
                 .background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 5))
                 .overlay(RoundedRectangle(cornerRadius: 5).stroke(RemileStyle.ink.opacity(editing ? 0.6 : 0.25)))
-                .focused($editing).accessibilityLabel("Current page").help("Enter a page number and press Return")
+                .focused($editing).accessibilityLabel("Current page").remileHelp("Enter a page number and press Return")
                 .onSubmit(commit)
                 .onExitCommand { state.text = String(current); editing = false }
             Text("/ \(total)").fixedSize()
