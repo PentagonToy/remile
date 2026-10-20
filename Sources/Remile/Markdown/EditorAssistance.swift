@@ -11,6 +11,8 @@ import SwiftUI
         cancel()
         guard UserDefaults.standard.string(forKey: "assistant.provider") != "Off", UserDefaults.standard.bool(forKey: "editor.aiSuggestions"), !view.hasMarkedText(), view.selectedRange().length == 0 else { return }
         let source = view.string, offset = view.selectedRange().location
+        let remaining = (source as NSString).substring(from: offset).components(separatedBy: .newlines).first ?? ""
+        guard remaining.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         task = Task { @MainActor [weak self, weak view] in
             do {
                 try await Task.sleep(for: .milliseconds(1200))
@@ -20,14 +22,17 @@ import SwiftUI
                 let answer = try await AppleIntelligence.respond(to: "Writing language: \(language)\nBefore cursor:\n<source>\(before)</source>\nAfter cursor:\n<source>\(after)</source>", instructions: AssistantPrompts.completion, maximumTokens: 30)
                 try Task.checkCancellation()
                 guard view.string == source, view.selectedRange() == NSRange(location: offset, length: 0), !view.hasMarkedText() else { return }
+                guard !answer.lowercased().contains("<source"), !answer.lowercased().contains("</source"), !answer.contains("Before cursor:"), !answer.contains("After cursor:") else { return }
                 let text = String(answer.components(separatedBy: .newlines).first?.prefix(48) ?? "")
                 guard !text.isEmpty, !text.contains("```"), !text.contains("\\"), !text.contains("$"), let layout = view.layoutManager, view.textContainer != nil else { return }
                 self.proposal = (source, offset, text)
                 let field = NSTextField(labelWithString: text); field.font = view.font; field.textColor = NSColor.secondaryLabelColor; field.alphaValue = 0.65; field.isSelectable = false
-                let glyph = layout.glyphIndexForCharacter(at: min(offset, max(0, ns.length - 1)))
-                let rect = ns.length == 0 || source.hasSuffix("\n") && offset == ns.length ? layout.extraLineFragmentRect : layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-                let point = ns.length == 0 ? NSPoint.zero : layout.location(forGlyphAt: glyph)
-                field.sizeToFit(); field.frame.origin = NSPoint(x: view.textContainerOrigin.x + rect.minX + point.x + (offset == ns.length && ns.length > 0 && !source.hasSuffix("\n") ? (view.font?.maximumAdvancement.width ?? 8) * 0.55 : 0), y: view.textContainerOrigin.y + rect.minY)
+                guard let window = view.window else { return }
+                layout.ensureLayout(for: view.textContainer!)
+                let caret = view.firstRect(forCharacterRange: NSRange(location: offset, length: 0), actualRange: nil)
+                guard caret.height > 0 else { return }
+                let rect = view.convert(window.convertFromScreen(caret), from: nil)
+                field.sizeToFit(); field.frame.origin = NSPoint(x: rect.minX, y: rect.minY)
                 view.addSubview(field); self.ghost = field
             } catch { }
         }

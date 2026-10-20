@@ -8,7 +8,7 @@ struct GPTMark: View {
     }()
     private static func coloured(_ colour: NSColor) -> NSImage {
         // Native menu labels ignore the SwiftUI tint of this SVG. Preserve the rendered colour.
-        let image = NSImage(size: NSSize(width: 20, height: 20), flipped: false) { rect in
+        let image = NSImage(size: NSSize(width: 17, height: 17), flipped: false) { rect in
             source.draw(in: rect); colour.setFill(); rect.fill(using: .sourceIn); return true
         }
         image.isTemplate = false; return image
@@ -16,7 +16,7 @@ struct GPTMark: View {
     private static let light = coloured(RemileStyle.gold)
     private static let dark = coloured(RemileStyle.amber)
     var body: some View {
-        Image(nsImage: scheme == .dark ? Self.dark : Self.light).renderingMode(.original).resizable().scaledToFit().frame(width: 20, height: 20)
+        Image(nsImage: scheme == .dark ? Self.dark : Self.light).renderingMode(.original).resizable().scaledToFit().frame(width: 17, height: 17)
             .accessibilityLabel("ChatGPT")
     }
 }
@@ -38,7 +38,6 @@ struct AIProviderButton: View {
         } label: { AIProviderSymbol().frame(width: 32, height: 32) }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 32, height: 32, alignment: .center)
             .remileHelp(hint).accessibilityLabel("AI provider").accessibilityValue(provider == "ChatGPT" && usage.reason != nil ? (usage.needsConnection ? "ChatGPT · connection needed" : "Apple Intelligence · automatic fallback") : provider == "Off" ? "Manual · AI off" : provider)
-            .onChange(of: provider) { UserDefaults.standard.set(provider != "Off", forKey: "editor.aiSuggestions") }
             .sheet(isPresented: $state.settings) { ChatGPTSettings() }
     }
     private func option(_ title: String, value: String) -> some View {
@@ -83,6 +82,6 @@ struct AISettingsRow: View {
     @StateObject private var state = Presentation()
     private final class Presentation: ObservableObject { @Published var presented = false }
     var body: some View {
-        Button { state.presented = true } label: { HStack { AIProviderSymbol().frame(width: 24, height: 24); Text("AI & writing suggestions"); Spacer(); Image(systemName: "chevron.right").font(.caption) } }.buttonStyle(.plain).remileHelp("Choose AI, writing suggestions and usage limits").sheet(isPresented: $state.presented) { ChatGPTSettings() }
+        Button { state.presented = true } label: { HStack { AIProviderSymbol().frame(width: 24, height: 24); Text("AI & writing suggestions"); Spacer(); Image(systemName: "chevron.right").font(.caption) }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6).contentShape(Rectangle()) }.buttonStyle(.plain).remileHelp("Choose AI, writing suggestions and usage limits").sheet(isPresented: $state.presented) { ChatGPTSettings() }
     }
 }

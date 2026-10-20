@@ -1,8 +1,10 @@
 # Install and updates
 
-remile. 0.1.0 targets macOS 14 and later. Release packages are being prepared; a version number in the app does not mean a public release has been uploaded. Published packages will appear on [GitHub releases](https://github.com/PentagonToy/remile/releases).
+remile. 0.1.0 targets macOS 14 and later. The Apple Silicon DMG is published on [GitHub releases](https://github.com/PentagonToy/remile/releases).
 
 For DMG installation, drag remile.app to Applications. The app includes its [CLI](cli.md). Settings → General shows the installed version and checks for updates when requested. A newer stable release with a matching DMG opens its download in the browser. The app does not replace itself. No document content or account credentials are included in the GitHub check.
+
+If macOS blocks opening the app, consult [Apple’s downloaded-app guidance](https://support.apple.com/en-au/102445) and verify that your copy came from this project’s release. Quit remile. before upgrading.
 
 ## Build and package
 
@@ -12,6 +14,12 @@ For DMG installation, drag remile.app to Applications. The app includes its [CLI
 
 ## Homebrew
 
-Use a cask for the native app and its bundled CLI. A project-owned tap can distribute it once the versioned DMG has been published. The generated cask installs `remile.app` and links its CLI with the `binary` stanza, following the [Homebrew Cask Cookbook](https://docs.brew.sh/Cask-Cookbook). Submit to the main Homebrew cask repository separately when its acceptance requirements are met. No tap or public cask has been published by this work.
+```sh
+brew install --cask PentagonToy/tap/remile
+brew upgrade --cask remile
+```
 
-For an eventual Homebrew installation, update through Homebrew rather than mixing package-manager updates with manual app replacement. The in-app check remains a link to published release assets.
+The [project tap](https://github.com/PentagonToy/homebrew-tap) installs the native app and bundled CLI. The versioned cask verifies the released DMG checksum. The 0.1.0 package uses an ad hoc signature and has not been notarised by Apple. Homebrew installation does not grant an exception to macOS security checks. No cask hook removes quarantine or disables Gatekeeper.
+
+
+For a Homebrew installation, update through Homebrew rather than mixing package-manager updates with manual app replacement. The in-app check remains a link to published release assets.

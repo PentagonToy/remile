@@ -27,18 +27,23 @@ struct TeXProjectSidebar: View {
         VStack(spacing: 0) {
             HStack {
                 DisclosureGroup("Files", isExpanded: $state.files) { EmptyView() }.font(RemileType.callout.weight(.semibold))
+                if project.selected != project.main {
+                    Button { project.visit(file: project.main) } label: { Image(systemName: "doc.text").frame(width: 22, height: 22) }
+                        .buttonStyle(.plain).remileHelp("Open main document · " + project.main).accessibilityLabel("Open main document")
+                }
                 Toggle(isOn: $showCollections) { Image(systemName: "square.stack.3d.up").frame(width: 22, height: 22) }.toggleStyle(.button).buttonStyle(.plain).remileHelp(showCollections ? "Collections on · click for plain folders" : "Plain folders · click to restore collections").accessibilityLabel("Show collections")
-                Menu { Button("New folder…") { project.newFolder() }; Button("New collection…") { showCollections = true; project.addCollection() } } label: { Image(systemName: "plus").frame(width: 20, height: 22) }.menuStyle(.borderlessButton).fixedSize().remileHelp("New folder or virtual collection")
+                Menu { Button("New file") { state.files = true; project.newFile() }; Button("New folder") { state.files = true; project.newFolder() }; Button("New collection") { state.files = true; showCollections = true; project.addCollection() } } label: { Image(systemName: "plus").frame(width: 20, height: 22) }.menuStyle(.borderlessButton).fixedSize().remileHelp("New file, folder or virtual collection")
             }.padding(12)
             Divider()
-            if state.files { TeXFileTree(project: project, showCollections: showCollections) }
+            if state.files {
+                if let draft = project.newItemDraft { TeXSidebarCreation(project: project, draft: draft).id(draft.id) }
+                TeXFileTree(project: project, showCollections: showCollections)
+            }
             Divider()
             DisclosureGroup("Outline", isExpanded: $state.outline) {
                 if project.outline.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("No project headings").font(RemileType.small).foregroundStyle(.secondary)
-                        Button("Open main document") { project.visit(file: project.main) }.font(RemileType.caption)
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                    Text("No project headings").font(RemileType.small).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
                 } else { ScrollView {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(project.outline) { item in
@@ -70,4 +75,26 @@ private struct TeXProjectSettings: View {
             TeXSettings()
         }.background(RemileStyle.background)
     }
+}
+
+private struct TeXSidebarCreation: View {
+    @ObservedObject var project: TeXProject
+    let draft: TeXProject.NewItemDraft
+    @StateObject private var state = EntryState()
+    private final class EntryState: ObservableObject { @Published var name = "" }
+    @FocusState private var focused: Bool
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Image(systemName: draft.symbol).foregroundStyle(RemileStyle.accent).frame(width: 17)
+                TextField(draft.placeholder, text: $state.name).textFieldStyle(.plain).focused($focused)
+                    .accessibilityLabel(draft.placeholder).onSubmit { commit() }.onExitCommand { project.cancelNewItem() }
+            }.padding(5).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 5))
+            if let error = project.newItemError { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).fixedSize(horizontal: false, vertical: true) }
+        }.padding(.horizontal, 12).padding(.vertical, 6)
+            .onAppear { state.name = draft.initialName; focused = true }
+            .onChange(of: focused) { if !focused { commit() } }
+            .remileHelp("Return confirms the name. Escape or an empty name cancels.")
+    }
+    private func commit() { guard project.newItemDraft?.id == draft.id else { return }; if !project.finishNewItem(state.name) { focused = true } }
 }

@@ -65,3 +65,15 @@ Search adapts to narrow windows with Results and Preview tabs. Result counts sta
 ## Appearance and updates
 
 The sun or moon button in the LaTeX, Markdown and PDF status bars switches directly between light and dark. Home keeps appearance in Settings → General, which offers System, Light and Dark. A change applies immediately throughout the app and is saved for the next launch. System follows macOS. PDF pages retain their document colours. General settings checks GitHub releases when requested and offers a matching stable DMG when a newer version is available. Downloads open in the browser.
+
+The LaTeX compile status sits beside Compile. A green check means the PDF matches the current source, including any source used from the editor. Its hover hint confirms that status. Errors open the compiler diagnostics. Open main document lives in the Files header and appears only while another source file is selected. The configured main document name uses the gold accent in the file list. Changing the main document in Project settings updates that colour immediately.
+
+New source files, folders and collections start as an inline name field in Files. Return or leaving a non-empty name creates the item. Escape or leaving an empty name cancels without writing a folder or collection. New .tex, .bib, .sty and .cls files open in the editor immediately. Existing files are never overwritten. Invalid names keep the field open with a short explanation.
+
+File context menus put Rename, Copy relative path and Reveal in Finder first, followed by Duplicate and Move to Trash. Rename opens a prefilled name field inside Files, with Escape or an empty name keeping the original name. Creation stays in the + menu, empty space and folder menus. Connected Overleaf files also offer Download, which saves a local copy of the current editor content.
+
+Inline AI suggestions clear when switching documents or replacing editor content. Suggestions appear only after existing text on a line, and internal source delimiters are rejected before display.
+
+Select up to 2,000 characters of prose in Markdown or LaTeX and choose Proofread with Apple Intelligence or Proofread with ChatGPT from the context menu. Review a proposed replacement before applying it. This explicit check follows the selected AI, respects Manual mode and excludes code, maths and TeX commands. Automatic underlines use macOS spelling and grammar checks. Optional inline completions appear in grey and insert only with Tab.
+
+AI settings offers separate Grammar suggestions, Word alternatives and local inline completion switches. Apple Intelligence, ChatGPT and Manual share one provider selector. Word alternatives also appear in the context menu for a selected word. An unavailable ChatGPT connection falls back to Apple Intelligence when available, and the suggestion identifies that fallback.

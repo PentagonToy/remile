@@ -5,6 +5,8 @@ import SwiftUI
 final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDelegate {
     private(set) var scroll: NSScrollView?
     private(set) var textView: NSTextView?
+    var synonymsRequested: ((NSRange, NSTextView) -> Void)?
+    var proofreadRequested: ((NSRange, NSTextView) -> Void)?
     var writingIssueRequested: ((NSRange, NSTextView) -> Bool)?
     var dismissWriting: (() -> Void)?
     var writingRanges: [NSRange] = [] { didSet { scheduleStyle() } }
@@ -46,6 +48,8 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         view.delegate = self; view.setAccessibilityLabel("Markdown source")
         view.backgroundColor = NSColor(RemileStyle.surface); view.textColor = NSColor(RemileStyle.ink)
         view.sourceInteraction = { [weak self] in self?.fadeFlash(); self?.dismissWriting?() }
+        view.synonymsSelection = { [weak self, weak view] range in guard let view else { return }; self?.synonymsRequested?(range, view) }
+        view.proofreadSelection = { [weak self, weak view] range in guard let view else { return }; self?.proofreadRequested?(range, view) }
         view.writingSelection = { [weak self, weak view] range in guard let self, let view else { return false }; return self.writingIssueRequested?(range, view) ?? false }
         view.completionKey = { [weak self] event in
             guard let self else { return false }
@@ -54,7 +58,7 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
             if self.texTheme != nil, modifiers == .command, event.charactersIgnoringModifiers == "/" { self.toggleComment(); return true }
             return false
         }
-        view.resigned = { [weak self] in self?.completion.dismiss() }
+        view.resigned = { [weak self] in self?.completion.dismiss(); self?.assistance.cancel() }
         view.syncSelection = { [weak self] in guard let self else { return }; self.syncToPreview?(self.selectedLine) }
         scroll.documentView = view; ReaderScrolling.configure(scroll); self.scroll = scroll; textView = view
         scroll.contentView.postsBoundsChangedNotifications = true
@@ -82,16 +86,16 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
             NSSpellChecker.shared.automaticallyIdentifiesLanguages = language == "Automatic"
             if language != "Automatic" { NSSpellChecker.shared.setLanguage(language) }
         }
-        if !UserDefaults.standard.bool(forKey: "editor.aiSuggestions") { assistance.cancel() }
+        if UserDefaults.standard.string(forKey: "assistant.provider") == "Off" || !UserDefaults.standard.bool(forKey: "editor.aiSuggestions") { assistance.cancel() }
     }
     func update(_ source: String, size: CGFloat, serif: Bool, document: String? = nil) {
         guard let view = textView else { return }
-        if documentID != document { documentID = document; view.undoManager?.removeAllActions(); clearFlash(); completion.dismiss() }
+        if documentID != document { assistance.cancel(); documentID = document; view.undoManager?.removeAllActions(); clearFlash(); completion.dismiss() }
         var needsStyle = !hasStyled
         if view.string != source, !view.hasMarkedText() {
             needsStyle = true
             let selection = view.selectedRange(), origin = scroll?.contentView.bounds.origin ?? .zero
-            clearFlash(); completion.dismiss()
+            clearFlash(); completion.dismiss(); assistance.cancel()
             view.string = source
             view.setSelectedRange(NSIntersectionRange(selection, NSRange(location: 0, length: (source as NSString).length)))
             scroll?.contentView.scroll(to: origin)
@@ -297,6 +301,8 @@ final class MarkdownSourceTextView: NSTextView {
     var syncSelection: () -> Void = {}
     var sourceInteraction: () -> Void = {}
     var completionKey: (NSEvent) -> Bool = { _ in false }
+    var synonymsSelection: (NSRange) -> Void = { _ in }
+    var proofreadSelection: (NSRange) -> Void = { _ in }
     var writingSelection: (NSRange) -> Bool = { _ in false }
     var markdownMode = true
     var resigned: () -> Void = {}
@@ -351,14 +357,31 @@ final class MarkdownSourceTextView: NSTextView {
     }
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let menu = super.menu(for: event) else { return nil }
+        if selectedRange().length > 0 {
+            let proofread = NSMenuItem(title: WritingAlternatives.provider == "ChatGPT" ? "Proofread with ChatGPT" : "Proofread with Apple Intelligence", action: #selector(proofreadSelectedText(_:)), keyEquivalent: "")
+            proofread.target = self; proofread.toolTip = "Review a grammar suggestion before applying it."
+            menu.insertItem(proofread, at: 0)
+            let synonyms = NSMenuItem(title: "Find word alternatives", action: #selector(findWordAlternatives(_:)), keyEquivalent: ""); synonyms.target = self
+            menu.insertItem(synonyms, at: 1); menu.insertItem(.separator(), at: 2)
+        }
         menu.addItem(.separator())
         let item = NSMenuItem(title: "Complete Math Command", action: #selector(completeMathCommand(_:)), keyEquivalent: "")
         item.target = self; item.toolTip = "Inside a formula, type a TeX command and press Option-Escape."
         menu.addItem(item)
         return menu
     }
+    @objc private func findWordAlternatives(_ sender: Any?) { synonymsSelection(selectedRange()) }
+    @objc private func proofreadSelectedText(_ sender: Any?) { proofreadSelection(selectedRange()) }
     @objc private func completeMathCommand(_ sender: Any?) { complete(sender) }
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(proofreadSelectedText(_:)) {
+            return !hasMarkedText() && selectedRange().length > 0 && selectedRange().length <= 2000 && WritingAlternatives.enabled(correction: true)
+        }
+        if menuItem.action == #selector(findWordAlternatives(_:)) {
+            let range = selectedRange()
+            guard !hasMarkedText(), range.length > 0, let word = EditorSynonyms.word(at: range.location, in: string), word.range == range else { return false }
+            return WritingAlternatives.enabled(correction: false)
+        }
         if menuItem.action == #selector(completeMathCommand(_:)) {
             guard !hasMarkedText(), let context = MathCompletion.context(string, selection: selectedRange()) else { return false }
             return !MathCompletion.suggestions(context).isEmpty

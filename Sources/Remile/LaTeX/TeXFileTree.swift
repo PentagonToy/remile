@@ -37,11 +37,12 @@ struct TeXFileTree: NSViewRepresentable {
         private var reloading = false
         private var lastOpened = ""
         private var expanded = Set<String>()
+        private var menuPrepared = false
         private var context: Node?
         init(_ project: TeXProject, showCollections: Bool) { self.project = project; self.showCollections = showCollections }
         func reload() {
             guard let outline else { return }
-            let current = String(showCollections) + project.treeFolders.joined(separator: "|") + project.treeFiles.joined(separator: "|") + String(decoding: (try? JSONEncoder().encode(project.collections)) ?? Data(), as: UTF8.self)
+            let current = project.main + "\n" + String(showCollections) + project.treeFolders.joined(separator: "|") + project.treeFiles.joined(separator: "|") + String(decoding: (try? JSONEncoder().encode(project.collections)) ?? Data(), as: UTF8.self)
             guard current != signature else {
                 if lastOpened != project.selected {
                     lastOpened = project.selected
@@ -67,7 +68,14 @@ struct TeXFileTree: NSViewRepresentable {
                 }
             }
             restore(roots)
-            let rows = IndexSet((0..<outline.numberOfRows).filter { (outline.item(atRow: $0) as? Node).map { selected.contains($0.key) } ?? false })
+            if lastOpened != project.selected {
+                func reveal(_ nodes: [Node]) -> Bool {
+                    for node in nodes { if node.file == project.selected { return true }; if reveal(node.children) { outline.expandItem(node); return true } }; return false
+                }
+                _ = reveal(roots)
+            }
+            let changedSource = lastOpened != project.selected
+            let rows = IndexSet((0..<outline.numberOfRows).filter { (outline.item(atRow: $0) as? Node).map { changedSource ? $0.file == project.selected : selected.contains($0.key) } ?? false })
             outline.selectRowIndexes(rows, byExtendingSelection: false); lastOpened = project.selected; reloading = false
             if animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                 outline.alphaValue = 0.76
@@ -80,6 +88,9 @@ struct TeXFileTree: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
             guard let node = item as? Node else { return nil }
             let cell = NSTableCellView(), label = NSTextField(labelWithString: node.title), icon = NSImageView()
+            let isMain = node.file == project.main && !node.folder
+            label.textColor = isMain ? NSColor(RemileStyle.accent) : .labelColor
+            label.setAccessibilityHelp(isMain ? "Main document used for compilation" : nil)
             label.font = .systemFont(ofSize: 13); label.lineBreakMode = .byTruncatingMiddle; label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             let ext = ((node.file ?? "") as NSString).pathExtension.lowercased()
             let symbol = ["pdf": "doc.richtext", "png": "photo", "jpg": "photo", "jpeg": "photo", "svg": "photo", "eps": "photo", "bib": "books.vertical", "sty": "curlybraces", "cls": "curlybraces"][ext] ?? "doc.text"
@@ -90,7 +101,7 @@ struct TeXFileTree: NSViewRepresentable {
             if node.group != nil { let badge = NSTextField(labelWithString: "collection"); badge.font = .systemFont(ofSize: 9); badge.textColor = .secondaryLabelColor; badge.setContentHuggingPriority(.required, for: .horizontal); stack.addArrangedSubview(badge) }
             cell.addSubview(stack); cell.textField = label; cell.imageView = icon
             NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: cell.leadingAnchor), stack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -5), stack.centerYAnchor.constraint(equalTo: cell.centerYAnchor)])
-            cell.toolTip = node.group != nil ? "Virtual collection · files stay in place" : node.file
+            cell.toolTip = node.group != nil ? "Virtual collection · files stay in place" : isMain ? "Main document · " + project.main : node.file
             return cell
         }
         func outlineViewSelectionDidChange(_ notification: Notification) {
@@ -145,42 +156,83 @@ struct TeXFileTree: NSViewRepresentable {
             guard let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty else { return false }
             project.drop(urls, into: node?.file ?? ""); return true
         }
+        func menuDidClose(_ menu: NSMenu) { menuPrepared = false }
         func menuNeedsUpdate(_ menu: NSMenu) {
+            guard !menuPrepared else { return }; menuPrepared = true
             menu.removeAllItems(); guard let outline else { return }; let node = outline.clickedRow >= 0 ? outline.item(atRow: outline.clickedRow) as? Node : nil; context = node
             func add(_ title: String, _ selector: Selector) { let item = NSMenuItem(title: title, action: selector, keyEquivalent: ""); item.target = self; if title == "Copy relative path" { item.toolTip = "Omits .tex for \\input. Image and PDF extensions stay." }; menu.addItem(item) }
-            add("New folder…", #selector(newFolder)); add(node?.group == nil ? "New collection…" : "New collection inside…", #selector(newCollection)); menu.addItem(.separator())
-            guard let node else { return }
-            if node.group != nil { add("Add files…", #selector(addFiles)); add("Rename collection…", #selector(renameGroup)); add("Remove collection", #selector(removeGroup)) }
-            else if let path = node.file {
-                if !node.folder { add("Copy relative path", #selector(copyPath)); add("Duplicate", #selector(duplicateFiles)) }
-                let submenu = NSMenu()
-                for group in project.collections { let item = NSMenuItem(title: group.name, action: #selector(moveFiles(_:)), keyEquivalent: ""); item.target = self; item.representedObject = group.id.uuidString; submenu.addItem(item) }
-                let ungroup = NSMenuItem(title: "Ungrouped files", action: #selector(moveFiles(_:)), keyEquivalent: ""); ungroup.target = self; submenu.addItem(ungroup)
-                if showCollections { let item = NSMenuItem(title: "Move to collection", action: nil, keyEquivalent: ""); item.submenu = submenu; menu.addItem(item) }
-                add("Reveal in Finder", #selector(revealFile)); add("Rename…", #selector(renameFile))
-                if path != project.main { add("Move to Trash", #selector(trashFile)) }
+            guard let node else {
+                add("New file", #selector(newFile)); add("New folder", #selector(newFolder)); add("New collection", #selector(newCollection)); return
+            }
+            if node.group != nil {
+                add("Rename", #selector(renameGroup)); add("Add files…", #selector(addFiles))
+                add("New collection inside", #selector(newCollection)); menu.addItem(.separator()); add("Remove collection", #selector(removeGroup))
+            } else if let path = node.file {
+                add("Rename", #selector(renameFile)); add("Copy relative path", #selector(copyPath)); add("Reveal in Finder", #selector(revealFile))
+                if project.connected && !node.folder { add("Download…", #selector(downloadFile)) }
+                if !node.folder { add("Duplicate", #selector(duplicateFiles)) }
+                if node.folder { menu.addItem(.separator()); add("New file", #selector(newFile)); add("New folder", #selector(newFolder)) }
+                if showCollections && !project.collections.isEmpty {
+                    let submenu = NSMenu()
+                    for group in project.collections { let item = NSMenuItem(title: group.name, action: #selector(moveFiles(_:)), keyEquivalent: ""); item.target = self; item.representedObject = group.id.uuidString; submenu.addItem(item) }
+                    let ungroup = NSMenuItem(title: "Ungrouped files", action: #selector(moveFiles(_:)), keyEquivalent: ""); ungroup.target = self; submenu.addItem(ungroup)
+                    let item = NSMenuItem(title: "Move to collection", action: nil, keyEquivalent: ""); item.submenu = submenu; menu.addItem(item)
+                }
+                if path != project.main { menu.addItem(.separator()); add("Move to Trash", #selector(trashFile)) }
             }
         }
+
         private var selectedPaths: [String] {
             guard let outline else { return [] }; let selected = outline.selectedRowIndexes.compactMap { outline.item(atRow: $0) as? Node }
             return (selected.contains(where: { $0.key == context?.key }) ? selected : context.map { [$0] } ?? []).compactMap(\.file)
         }
-        @objc private func newFolder() { project.newFolder(in: context?.folder == true ? context?.file ?? "" : ((context?.file ?? "") as NSString).deletingLastPathComponent) }
-        @objc private func newCollection() { UserDefaults.standard.set(true, forKey: "latex.showCollections"); project.addCollection(parent: context?.group) }
+        @objc private func newFile() {
+            let parent = context?.folder == true ? context?.file ?? "" : ((context?.file ?? "") as NSString).deletingLastPathComponent
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.project.newFile(in: parent) }
+        }
+        @objc private func newFolder() {
+            let parent = context?.folder == true ? context?.file ?? "" : ((context?.file ?? "") as NSString).deletingLastPathComponent
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.project.newFolder(in: parent) }
+        }
+        @objc private func newCollection() {
+            let parent = context?.group
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in UserDefaults.standard.set(true, forKey: "latex.showCollections"); self?.project.addCollection(parent: parent) }
+        }
         @objc private func copyPath() { let paths = selectedPaths.map(TeXFileSystem.reference); NSPasteboard.general.clearContents(); NSPasteboard.general.setString(paths.joined(separator: "\n"), forType: .string) }
         @objc private func duplicateFiles() { project.duplicate(selectedPaths) }
         @objc private func addFiles() { if let id = context?.group { project.chooseCollectionFiles(id) } }
         @objc private func addGroup() { project.addCollection(parent: context?.group) }
         @objc private func removeGroup() { if let id = context?.group { project.updateCollections(TeXCollections.removing(id, groups: project.collections)) } }
-        @objc private func renameGroup() { guard let id = context?.group, let name = prompt("Rename collection", value: context?.title ?? ""), let index = project.collections.firstIndex(where: { $0.id == id }) else { return }; var groups = project.collections; groups[index].name = name; project.updateCollections(groups) }
+        @objc private func renameGroup() { beginRename() }
         @objc private func moveFiles(_ sender: NSMenuItem) {
             guard let outline else { return }
             let selected = outline.selectedRowIndexes.compactMap { outline.item(atRow: $0) as? Node }
             let nodes = selected.contains(where: { $0.key == context?.key }) ? selected : context.map { [$0] } ?? []
             project.updateCollections(TeXCollections.assigning(project.treeFiles.filter { path in nodes.compactMap(\.file).contains { path == $0 || path.hasPrefix($0 + "/") } }, to: (sender.representedObject as? String).flatMap(UUID.init(uuidString:)), groups: project.collections, allowed: Set(project.treeFiles)))
         }
-        private func prompt(_ title: String, value: String) -> String? { let alert = NSAlert(); alert.messageText = title; let field = NSTextField(string: value); field.frame = NSRect(x: 0, y: 0, width: 240, height: 24); alert.accessoryView = field; alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "Cancel"); guard alert.runModal() == .alertFirstButtonReturn else { return nil }; let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines); return name.isEmpty ? nil : name }
-        @objc private func renameFile() { if let path = context?.file, let name = prompt("Rename", value: context?.title ?? "") { _ = project.rename(path, to: name) } }
+        @objc private func renameFile() { beginRename() }
+        private func beginRename() {
+            guard !project.compiling, let node = context else { return }
+            // Let native menu tracking finish before the name field takes focus.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                guard let self, !self.project.compiling else { return }
+                self.project.newItemError = nil
+                if let id = node.group { self.project.newItemDraft = .init(kind: .renameCollection(id, node.title)) }
+                else if let path = node.file { self.project.newItemDraft = .init(kind: .rename(path)) }
+            }
+        }
+
+        @objc private func downloadFile() {
+            guard let path = context?.file else { return }
+            let panel = NSSavePanel(); panel.nameFieldStringValue = (path as NSString).lastPathComponent
+            guard panel.runModal() == .OK, let destination = panel.url else { return }
+            do {
+                let source = try TeXFileSystem.url(path, root: project.root)
+                guard source.standardizedFileURL != destination.standardizedFileURL else { return }
+                let data = try project.buffers[path].map { Data($0.utf8) } ?? Data(contentsOf: source)
+                try data.write(to: destination, options: .atomic)
+            } catch { project.message = "Download failed: " + error.localizedDescription }
+        }
         @objc private func revealFile() { if let path = context?.file { NSWorkspace.shared.activateFileViewerSelecting([project.root.appendingPathComponent(path)]) } }
         @objc private func trashFile() { project.trash(selectedPaths) }
     }

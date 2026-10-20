@@ -51,12 +51,45 @@ import AppKit
         }
     }
     func dismissSuggestion() { synonymTask?.cancel(); synonymTask = nil; suggestion?.close(); suggestion = nil }
-    func showSuggestion(at range: NSRange, in view: NSTextView, editor: MarkdownEditorController) -> Bool {
-        guard view.string == source, !checking, view.window != nil else { return false }
-        let issue = issues.first(where: { NSLocationInRange(range.location, $0.range) || NSIntersectionRange($0.range, range).length > 0 })
+    func proofread(_ range: NSRange, in view: NSTextView, editor: MarkdownEditorController) {
+        guard range.location != NSNotFound, range.length > 0, range.length <= 2000, NSMaxRange(range) <= (view.string as NSString).length, WritingAlternatives.enabled(correction: true) else { return }
+        dismissSuggestion()
+        let expected = view.string, selected = (view.string as NSString).substring(with: range)
+        guard !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let state = WritingWordState(); state.title = "Grammar · " + WritingAlternatives.provider; state.width = 360
+        let popover = NSPopover(); popover.behavior = .transient
+        popover.contentViewController = NSHostingController(rootView: WritingWordSuggestion(state: state) { [weak self, weak editor] replacement in
+            editor?.replaceWritingIssue(range, with: replacement, source: expected); self?.dismissSuggestion()
+        })
+        guard let layout = view.layoutManager, let container = view.textContainer else { return }
+        var anchor = layout.boundingRect(forGlyphRange: layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: container)
+        anchor.origin.x += view.textContainerOrigin.x; anchor.origin.y += view.textContainerOrigin.y
+        anchor = anchor.intersection(view.visibleRect)
+        guard !anchor.isEmpty else { return }
+        suggestion = popover; popover.show(relativeTo: anchor, of: view, preferredEdge: .maxY)
+        guard EditorSpellcheck.accepts(range, excluded: EditorSpellcheck.excluded(expected)) else { state.detail = "Select prose without code, maths or TeX commands."; return }
+        state.loading = true
+        synonymTask = Task { @MainActor [weak self, weak popover, weak view] in
+            do {
+                let result = try await WritingAlternatives.suggest(text: selected, context: selected, correction: true)
+                let choices = result.choices
+                guard !Task.isCancelled, self?.suggestion === popover, view?.string == expected else { return }
+                state.title = "Grammar · " + result.provider
+                state.choices = Array(choices.filter { !$0.isEmpty && $0 != selected && $0.utf16.count <= 4000 && !$0.contains("\\") && !$0.contains("$") && !$0.lowercased().contains("<source") && !$0.lowercased().contains("</source") }.prefix(3))
+                state.loading = false
+                state.detail = "No grammar changes suggested."
+            } catch {
+                guard !Task.isCancelled, self?.suggestion === popover else { return }
+                state.loading = false; state.detail = error.localizedDescription
+            }
+        }
+    }
+    func showSuggestion(at range: NSRange, in view: NSTextView, editor: MarkdownEditorController, synonymsOnly: Bool = false) -> Bool {
+        guard view.string == source, (!checking || synonymsOnly), view.window != nil else { return false }
+        let issue = synonymsOnly ? nil : issues.first(where: { NSLocationInRange(range.location, $0.range) || NSIntersectionRange($0.range, range).length > 0 })
         let word = issue == nil ? EditorSynonyms.word(at: range.location, in: source) : nil
-        guard issue != nil || (word != nil && UserDefaults.standard.string(forKey: "assistant.provider") != "Off") else { return false }
-        if let word, issues.contains(where: { NSIntersectionRange(word.range, $0.range).length > 0 }) { return false }
+        guard issue != nil || (word != nil && WritingAlternatives.enabled(correction: false)) else { return false }
+        if !synonymsOnly, let word, issues.contains(where: { NSIntersectionRange(word.range, $0.range).length > 0 }) { return false }
         dismissSuggestion()
         let popover = NSPopover(); popover.behavior = .transient; popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let state = WritingWordState()
@@ -75,27 +108,23 @@ import AppKit
         let centre = max(visible.minX + 118, min(visible.maxX - 118, anchor.midX))
         anchor.origin.x = centre - anchor.width / 2
         suggestion = popover; popover.show(relativeTo: anchor, of: view, preferredEdge: .maxY)
-        let wantsGPT = UserDefaults.standard.string(forKey: "assistant.provider") == "ChatGPT" && (UserDefaults.standard.object(forKey: issue == nil ? "chatgpt.synonyms" : "chatgpt.grammar") as? Bool ?? true) && AIUsage.shared.reason == nil
-        if wantsGPT || word != nil {
+        if WritingAlternatives.enabled(correction: issue != nil) {
             state.loading = true
-            synonymTask = Task { @MainActor [weak self, weak popover] in
+            synonymTask = Task { @MainActor [weak self, weak popover, weak view] in
                 do {
-                    let choices: [String]
-                    if wantsGPT {
-                        let raw = expected as NSString, start = max(0, target.location - 240), end = min(raw.length, NSMaxRange(target) + 240)
-                        let context = raw.substring(with: NSRange(location: start, length: end - start))
-                        choices = try await WritingAlternatives.choices(text: raw.substring(with: target), context: context, correction: issue != nil)
-                    } else if let word { choices = try await EditorSynonyms.suggest(word) }
-                    else { choices = [] }
-                    guard !Task.isCancelled, self?.suggestion === popover else { return }
-                    if !choices.isEmpty { state.choices = choices }; state.loading = false
+                    let raw = expected as NSString, start = max(0, target.location - 240), end = min(raw.length, NSMaxRange(target) + 240)
+                    let context = raw.substring(with: NSRange(location: start, length: end - start))
+                    let result = try await WritingAlternatives.suggest(text: raw.substring(with: target), context: context, correction: issue != nil)
+                    guard !Task.isCancelled, self?.suggestion === popover, view?.string == expected else { return }
+                    state.title = (issue?.message ?? "Synonyms") + " · " + result.provider
+                    if !result.choices.isEmpty { state.choices = result.choices }; state.loading = false
                 } catch {
                     guard !Task.isCancelled, self?.suggestion === popover else { return }
-                    if let word, let choices = try? await EditorSynonyms.suggest(word) { state.choices = choices }
-                    state.loading = false; state.detail = state.choices.isEmpty ? "No suggestions" : nil
+                    state.loading = false; state.detail = state.choices.isEmpty ? error.localizedDescription : nil
                 }
             }
         }
+
         return true
     }
 
@@ -130,6 +159,7 @@ struct EditorWritingReviewButton: View {
 
 @MainActor private final class WritingWordState: ObservableObject {
     @Published var title = ""
+    var width: CGFloat = 220
     @Published var choices: [String] = []
     @Published var loading = false
     @Published var detail: String?
@@ -140,11 +170,11 @@ private struct WritingWordSuggestion: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(state.title).font(RemileType.caption).foregroundStyle(.secondary)
-            if state.loading { ProgressView().controlSize(.small).accessibilityLabel("Finding synonyms") }
+            if state.loading { ProgressView().controlSize(.small).accessibilityLabel("Finding writing suggestions") }
             else if state.choices.isEmpty { Text(state.detail ?? "No suggestions").font(RemileType.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             ForEach(Array(state.choices.enumerated()), id: \.offset) { _, choice in
-                Button { apply(choice) } label: { Text(choice).font(RemileType.callout.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }.buttonStyle(.plain)
+                Button { apply(choice) } label: { Text(choice).font(RemileType.callout.weight(.medium)).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }.buttonStyle(.plain)
             }
-        }.padding(14).frame(width: 220).background(RemileStyle.background)
+        }.padding(14).frame(width: state.width).background(RemileStyle.background)
     }
 }

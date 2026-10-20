@@ -84,9 +84,11 @@ struct MarkdownWorkspace: View {
         .task(id: source + String(spellcheck) + language) { await writing.check(source, enabled: spellcheck, language: language, editor: editor) }
         .task(id: source) { if livePreview || preview.html == nil { await preview.render(source, url: previewURL) } }
         .onChange(of: livePreview) { if livePreview { render() } }
-        .onDisappear { session?.editSource = nil; writing.dismissSuggestion(); editor.writingIssueRequested = nil; editor.dismissWriting = nil }
+        .onDisappear { session?.editSource = nil; writing.dismissSuggestion(); editor.synonymsRequested = nil; editor.proofreadRequested = nil; editor.writingIssueRequested = nil; editor.dismissWriting = nil }
         .onAppear {
             assistant.useHistory(fileURL?.path)
+            editor.synonymsRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return }; _ = writing?.showSuggestion(at: range, in: view, editor: editor, synonymsOnly: true) }
+            editor.proofreadRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return }; writing?.proofread(range, in: view, editor: editor) }
             editor.writingIssueRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return false }; return writing?.showSuggestion(at: range, in: view, editor: editor) ?? false }
             editor.dismissWriting = { [weak writing = writing] in writing?.dismissSuggestion() }
             session?.editSource = { [weak editor = editor, weak state = presentation, weak session = session] before, after in

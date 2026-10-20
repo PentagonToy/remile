@@ -23,7 +23,39 @@ Convert, compress, combine and export documents when you need to. Suggested sour
 
 ## Begin with a document
 
-Open a Markdown file or PDF, return to a recent document, or bring a LaTeX project into the workspace. Add a folder to Library when you want to find passages across your documents. Your files stay on your Mac; you choose when to connect AI or synchronise with Overleaf.
+Open a Markdown file or PDF, return to a recent document, or bring a LaTeX project into the workspace. Add a folder to Library when you want to find passages across your documents. Your files stay on your Mac. You choose when to connect AI or synchronise with Overleaf.
+
+## Install
+
+### Homebrew
+
+With [Homebrew](https://brew.sh) installed:
+
+```sh
+brew install --cask PentagonToy/tap/remile
+```
+
+Update with `brew upgrade --cask remile`. The cask installs the app and the `remile` CLI.
+
+### Download
+
+Download [remile. 0.1.0 for Apple Silicon](https://github.com/PentagonToy/remile/releases/download/v0.1.0/remile-0.1.0-arm64.dmg), open the DMG and drag **remile.app** into **Applications**. Checksums are included with the [release](https://github.com/PentagonToy/remile/releases/tag/v0.1.0).
+
+### Requirements
+
+| Component | Requirement |
+| --- | --- |
+| Mac | Apple Silicon, M1 or later. This release contains an arm64 build. |
+| macOS | Targets macOS 14 Sonoma and later. Release validation used macOS 27 on an M1 Pro. |
+| Reading, writing and local search | No AI account or TeX installation required. |
+| LaTeX, optional | A local TeX installation with `latexmk`, such as MacTeX or TeX Live. |
+| Overleaf, optional | Internet, Git and Git access to your Overleaf project. |
+| Apple Intelligence, optional | macOS 26 or later on an eligible Mac, with Apple Intelligence enabled. |
+| ChatGPT, optional | Internet and an eligible connected ChatGPT account. Account limits apply. |
+| Package trust | Version 0.1.0 uses an ad hoc signature and is not Apple-notarised. macOS may block its first launch. |
+| Licence | [MIT](LICENSE). Platform components, external tools and connected services retain their own terms. |
+
+If macOS blocks the first launch, read [Apple’s guidance for opening downloaded apps](https://support.apple.com/en-au/102445). The app never disables macOS security checks. See [installation and updates](docs/distribution.md) for package details and the optional CLI setup after a DMG install.
 
 ## Development
 
