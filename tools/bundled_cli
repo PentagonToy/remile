@@ -1,0 +1,4 @@
+#!/bin/zsh
+set -eu
+script_directory="${0:A:h}"
+exec "$script_directory/../../MacOS/Remile" --cli "$@"

@@ -1,0 +1,4 @@
+/agent/
+/.build/
+/.swiftpm/
+.DS_Store
