@@ -35,6 +35,19 @@ import Network
         network.start(queue: DispatchQueue(label: "local.remile.overleaf.reachability"))
     }
     deinit { network.cancel() }
+    static func syncAge(_ date: Date, now: Date) -> String {
+        let minutes = max(0, Int(now.timeIntervalSince(date) / 60))
+        return minutes == 0 ? "Synced just now" : "Synced \(minutes) min ago"
+    }
+    func renameProject(_ id: UUID, to name: String) async throws {
+        guard !busy, !offlineMode, hasNetwork, let project = projects.first(where: { $0.id == id }) else { throw OverleafProjectRename.Failure.unavailable }
+        busy = true; error = nil; defer { busy = false }
+        try await OverleafProjectRename.rename(project, to: name)
+        var updated = projects
+        if let index = updated.firstIndex(where: { $0.id == id }) { updated[index].name = name }
+        do { try persist(updated) }
+        catch { projects = updated; self.error = "Renamed on Overleaf. The local project name could not be saved." }
+    }
     func title(for root: URL) -> String {
         guard let project = connection(for: root) else { return "LaTeX" }
         if !offlineMode, hasNetwork, OverleafCredential.locked(project.profileID) { return "Overleaf · Locked" }

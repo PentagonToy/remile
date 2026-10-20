@@ -105,7 +105,7 @@ struct TeXFileTree: NSViewRepresentable {
             return cell
         }
         func outlineViewSelectionDidChange(_ notification: Notification) {
-            guard !reloading, let outline, outline.selectedRowIndexes.count == 1, let node = outline.item(atRow: outline.selectedRow) as? Node, let path = node.file, project.buffers[path] != nil else { return }
+            guard !reloading, let outline, outline.selectedRowIndexes.count == 1, let node = outline.item(atRow: outline.selectedRow) as? Node, let path = node.file else { return }
             project.selected = path
         }
         func outlineViewItemDidExpand(_ notification: Notification) { expansion(notification, value: true) }

@@ -22,8 +22,42 @@ struct TeXProjectSidebar: View {
     @StateObject private var state = SidebarState()
     @AppStorage("latex.showCollections") private var showCollections = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private final class SidebarState: ObservableObject { @Published var settings = false; @Published var outline = true; @Published var files = true }
+    private final class SidebarState: ObservableObject { @Published var settings = false; @Published var outline = true; @Published var files = true; @Published var filesHeight: CGFloat?; var dragOrigin: CGFloat? }
     var body: some View {
+        VStack(spacing: 0) {
+            if state.files && state.outline {
+                GeometryReader { geometry in
+                    let available = max(0, geometry.size.height - 8)
+                    let minimum = min(100, available / 2)
+                    let height = min(available - minimum, max(minimum, state.filesHeight ?? available - 200))
+                    VStack(spacing: 0) {
+                        filesPane.frame(height: height).clipped()
+                        ZStack { Color.clear; Divider() }.frame(height: 8).contentShape(Rectangle())
+                            .background(TeXSidebarResizeCursor().allowsHitTesting(false))
+                            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("tex.sidebar.split")).onChanged { event in
+                                if state.dragOrigin == nil { state.dragOrigin = height }
+                                state.filesHeight = min(available - minimum, max(minimum, (state.dragOrigin ?? height) + event.translation.height))
+                            }.onEnded { _ in state.dragOrigin = nil })
+                            .accessibilityElement().accessibilityLabel("Resize Files and Outline").accessibilityValue("\(Int(height)) points")
+                            .accessibilityAdjustableAction { direction in state.filesHeight = min(available - minimum, max(minimum, height + (direction == .increment ? 20 : -20))) }
+                            .remileHelp("Drag to resize Files and Outline")
+                        outlinePane.frame(height: max(0, available - height), alignment: .top).clipped()
+                    }.coordinateSpace(name: "tex.sidebar.split").transaction { if state.dragOrigin != nil { $0.animation = nil } }
+                }
+            } else {
+                filesPane
+                Divider()
+                outlinePane
+                if !state.files && !state.outline { Spacer(minLength: 0) }
+            }
+            Divider()
+            EditorSidebarFooter(compact: state.files, title: "Project settings") { state.settings.toggle() }
+                .popover(isPresented: $state.settings, arrowEdge: .trailing) { TeXProjectSettings(project: project).frame(width: 440, height: 540) }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(RemileStyle.sidebar)
+            .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.files)
+            .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.outline)
+    }
+    private var filesPane: some View {
         VStack(spacing: 0) {
             HStack {
                 DisclosureGroup("Files", isExpanded: $state.files) { EmptyView() }.font(RemileType.callout.weight(.semibold))
@@ -39,7 +73,9 @@ struct TeXProjectSidebar: View {
                 if let draft = project.newItemDraft { TeXSidebarCreation(project: project, draft: draft).id(draft.id) }
                 TeXFileTree(project: project, showCollections: showCollections)
             }
-            Divider()
+        }
+    }
+    private var outlinePane: some View {
             DisclosureGroup("Outline", isExpanded: $state.outline) {
                 if project.outline.isEmpty {
                     Text("No project headings").font(RemileType.small).foregroundStyle(.secondary)
@@ -50,16 +86,10 @@ struct TeXProjectSidebar: View {
                             Button { project.visit(file: item.file, line: item.line) } label: { Text(item.title).font(RemileType.caption).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading).padding(.leading, CGFloat(item.level) * 14).padding(.vertical, 5) }.buttonStyle(.plain).remileHelp(item.file + ":" + String(item.line + 1))
                         }
                     }
-                }.frame(height: min(180, CGFloat(project.outline.count) * 40)) }
-            }.font(RemileType.callout).padding(12).remileHelp("Project headings, including linked LaTeX files")
-            if !state.files { Spacer(minLength: 0) }
-            Divider()
-            EditorSidebarFooter(compact: state.files, title: "Project settings") { state.settings.toggle() }
-                .popover(isPresented: $state.settings, arrowEdge: .trailing) { TeXProjectSettings(project: project).frame(width: 440, height: 540) }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(RemileStyle.sidebar)
-            .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.files)
-            .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.outline)
+                }.frame(maxHeight: .infinity) }
+            }.font(RemileType.callout).padding(12).frame(maxHeight: state.outline ? .infinity : nil, alignment: .topLeading).remileHelp("Project headings, including linked LaTeX files")
     }
+
 }
 
 private struct TeXProjectSettings: View {
@@ -91,10 +121,19 @@ private struct TeXSidebarCreation: View {
                     .accessibilityLabel(draft.placeholder).onSubmit { commit() }.onExitCommand { project.cancelNewItem() }
             }.padding(5).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 5))
             if let error = project.newItemError { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).fixedSize(horizontal: false, vertical: true) }
-        }.padding(.horizontal, 12).padding(.vertical, 6)
+        }.background(InlineEditBoundary { commit() }).padding(.horizontal, 12).padding(.vertical, 6)
             .onAppear { state.name = draft.initialName; focused = true }
             .onChange(of: focused) { if !focused { commit() } }
             .remileHelp("Return confirms the name. Escape or an empty name cancels.")
     }
     private func commit() { guard project.newItemDraft?.id == draft.id else { return }; if !project.finishNewItem(state.name) { focused = true } }
+}
+
+private struct TeXSidebarResizeCursor: NSViewRepresentable {
+    final class Region: NSView {
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeUpDown) }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+    func makeNSView(context: Context) -> Region { Region() }
+    func updateNSView(_ view: Region, context: Context) { view.window?.invalidateCursorRects(for: view) }
 }

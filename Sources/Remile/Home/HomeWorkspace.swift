@@ -94,7 +94,7 @@ struct HomeWorkspace: View {
                             else {
                                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: narrow ? 2 : 3), spacing: 6) {
                                     ForEach(Array(model.recent.prefix(narrow && compact ? 4 : 6)), id: \.self) { url in
-                                        Button { open(url) } label: { RecentReadingRow(url: url, openedAt: model.lastOpened(url), displayName: model.overleaf.connection(for: url)?.name).frame(height: compact ? 68 : 88).onDrag { NSItemProvider(object: url as NSURL) } }.buttonStyle(RemilePressStyle())
+                                        Button { open(url) } label: { RecentReadingRow(url: url, openedAt: model.lastOpened(url), displayName: model.overleaf.connection(for: url)?.name, overleaf: model.overleaf.connection(for: url) != nil).frame(height: compact ? 68 : 88).onDrag { NSItemProvider(object: url as NSURL) } }.buttonStyle(RemilePressStyle())
                                             .contextMenu {
                                                 Button("Reveal in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                                                 Button("Remove from Recent", systemImage: "clock.badge.xmark") { model.removeRecent(url) }
