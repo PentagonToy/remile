@@ -60,7 +60,7 @@ Task { @MainActor in
         try check(!AssistantEvidence.isGeneralContext("General context: Invented source [99]."), "General-context mode cannot bypass numeric source validation")
         try check(AssistantEvidence.citations(in: "A range [1–2].", sources: AssistantEvidence.make(passages))?.count == 2, "Common numeric citation ranges resolve to supplied pages")
         try check(AssistantEvidence.citations(in: "Invalid range [1–99].", sources: AssistantEvidence.make(passages)) == nil, "Out-of-bounds citation ranges are rejected")
-        let defaults = UserDefaults(suiteName: "DeerstalkerChecks-\(UUID().uuidString)")!
+        let defaults = UserDefaults(suiteName: "RemileChecks-\(UUID().uuidString)")!
         try check(AssistantResponseDetail.current(in: defaults) == .mid, "Response detail defaults to Mid")
         defaults.set("High", forKey: AssistantResponseDetail.preference)
         try check(AssistantResponseDetail.current(in: defaults) == .high, "Response detail persists independently of conversation state")
@@ -80,6 +80,33 @@ Task { @MainActor in
         try check(equation.ranges(in: "The result is x - y at the electrode surface.").isEmpty, "Changed mathematical operators cannot masquerade as the cited passage")
         try check(AssistantQuestionRoute.hasTopicOverlap("Is concentration like a tap?", evidence: AssistantEvidence.make(passages)), "A metaphor about the source topic keeps its document evidence")
         try check(!AssistantQuestionRoute.hasTopicOverlap("What is the capital of France?", evidence: AssistantEvidence.make(passages)), "An unrelated question has no artificial document-topic overlap")
+        try check(AssistantQuestionRoute.definitionSubject(in: "what is the PINN?") == "PINN", "A standalone acronym question requests a definition before document routing")
+        try check(AssistantQuestionRoute.definitionSubject(in: "What does PINN stand for?") == "PINN", "Acronym expansion requests retain the requested term")
+        try check(AssistantQuestionRoute.definitionSubject(in: "Define a physics-informed neural network.") == "physics-informed neural network", "Multiword technical terms remain intact")
+        try check(AssistantQuestionRoute.definitionSubject(in: "What is the PINN used in this paper?") == nil, "A paper-specific question retains its document contract")
+        try check(AssistantQuestionRoute.definitionSubject(in: "What happens to current when concentration rises?") == nil, "A causal question is not mistaken for a term definition")
+        try check(AssistantQuestionRoute.definitionSubject(in: "What is it?") == nil, "A deictic follow-up needs its previous context")
+        try check(AssistantQuestionRoute.retrievalQuery("What is PINN?", previousQuestion: "Combustion modelling results") == "What is PINN?", "A fresh question does not inherit unrelated retrieval terms")
+        try check(AssistantQuestionRoute.retrievalQuery("How does that work?", previousQuestion: "PINN") == "How does that work?\nPINN", "An actual follow-up retains useful retrieval context")
+        let applied = AssistantEvidence(number: 1, location: passages[0].location, text: "PINN is applied to the flow problem. The proposed model improves its prediction error.")
+        let defined = AssistantEvidence(number: 2, location: passages[0].location, text: "Physics-informed neural networks (PINNs) incorporate physical equations into training. The paper reports an unrelated result.")
+        try check(AssistantQuestionRoute.definitionEvidence("PINN", from: [applied]).isEmpty, "A term's application does not count as definitional evidence")
+        let property = AssistantEvidence(number: 1, location: passages[0].location, text: "PINN is accurate on this benchmark. Mass fraction is dimensionless.")
+        try check(AssistantQuestionRoute.definitionEvidence("PINN", from: [property]).isEmpty && AssistantQuestionRoute.definitionEvidence("mass fraction", from: [property]).isEmpty, "A reported property is not substituted for a definition")
+        let definitionSources = AssistantQuestionRoute.definitionEvidence("PINN", from: [applied, defined])
+        try check(definitionSources.count == 1 && definitionSources[0].number == 2 && !definitionSources[0].text.contains("unrelated result"), "A definition keeps its real source identifier and omits unrelated paper results")
+        try check(AssistantQuestionRoute.definitionEvidence("pinn", from: [defined]).count == 1 && AssistantQuestionRoute.definitionEvidence("PINNs", from: [defined]).count == 1, "Lowercase questions and plural acronyms still match explicit expansions")
+        let massDefinition = AssistantEvidence(number: 3, location: passages[0].location, text: "Mass fraction is defined as a constituent mass divided by the total mixture mass.")
+        try check(AssistantQuestionRoute.definitionEvidence("mass fraction", from: [massDefinition]).count == 1, "An explicit multiword definition keeps document support")
+        let accidental = AssistantEvidence(number: 4, location: passages[0].location, text: "We evaluate our numerical solver (PINN) on a benchmark.")
+        try check(AssistantQuestionRoute.definitionEvidence("PINN", from: [accidental]).isEmpty, "An arbitrary parenthesised acronym is not an established expansion")
+        let usage = AssistantEvidence(number: 5, location: passages[0].location, text: "The proposed PINN is applied to a flow problem and achieves a smaller prediction error on the benchmark.")
+        try check(AssistantQuestionRoute.definitionContext("pinn", from: [usage]) == "The proposed PINN is applied to a flow problem", "A short term-usage hint disambiguates an acronym without carrying later research outcomes")
+        let turbulence = AssistantEvidence(number: 1, location: passages[0].location, text: "The model uses a standard k-epsilon turbulence closure for unresolved stresses.")
+        try check(AssistantQuestionRoute.uncoveredFacet(in: "What combustion model does this paper use?", evidence: [turbulence]) == "combustion model", "A related turbulence method cannot substitute for an unsupported combustion model")
+        try check(AssistantQuestionRoute.uncoveredFacet(in: "Which turbulence closure does the paper use?", evidence: [turbulence]) == nil, "A named facet present in the evidence keeps normal generation")
+        try check(AssistantQuestionRoute.uncoveredFacet(in: "Which radiation model is used?", evidence: [turbulence]) == "radiation model", "The evidence-coverage guard works for other model categories")
+        try check(AssistantQuestionRoute.uncoveredFacet(in: "What is a combustion model?", evidence: [turbulence]) == nil, "A general definition is not rejected as a document-method request")
         let historyURL = output.appendingPathComponent("history-fixture.json")
         var oldTurn = AssistantTurn(question: "Old question")
         oldTurn.createdAt = Date().addingTimeInterval(-60 * 86400)
@@ -98,6 +125,33 @@ Task { @MainActor in
         try check(afterClear["search"] == nil && afterClear["pdf:fixture"]?.count == 1, "Clear removes only the current conversation")
         try check(AssistantAnswerDisplay.clean("General context: Paris.\n\n**General context:** More detail.") == "Paris.\n\nMore detail.", "Classification labels are removed from displayed/copied prose")
         let assistant = DocumentAssistant()
+        if CommandLine.arguments.contains("--live-quality"), assistant.checkAvailability() {
+            let cases: [(String, String, String)] = [
+                ("definition-with-application", "what is the pinn?", "The proposed PINN is applied to a flow problem and achieves a smaller prediction error on the benchmark."),
+                ("definition-with-source", "What is PINN?", "Physics-informed neural networks (PINNs) are neural networks trained with a loss that penalises violations of physical equations."),
+                ("unsupported-combustion", "What combustion model does this paper use?", "The model uses a standard k-epsilon turbulence closure to represent unresolved turbulent stresses. A passive scalar is transported.")
+            ]
+            for (name, question, text) in cases {
+                assistant.clear(); assistant.question = question
+                let started = Date()
+                assistant.ask(passages: [AssistantPassage(location: AssistantLocation(path: "/fixture/Quality.md", unit: 1, label: "Section 1"), text: text)], topic: "quality fixture", detail: .low)
+                for _ in 0..<900 { if !assistant.working { break }; try await Task.sleep(for: .milliseconds(100)) }
+                let transcript = "Question: \(question)\nPassage: \(text)\nElapsed seconds: \(Date().timeIntervalSince(started))\nAnswer: \(assistant.answer)\nSources: \(assistant.sources.map(\.number))\nGeneral: \(assistant.turns.last?.generalContext == true)\n"
+                try transcript.write(to: output.appendingPathComponent(name + ".txt"), atomically: true, encoding: .utf8)
+                print(transcript)
+                try check(!assistant.working && !assistant.answer.isEmpty && assistant.message == nil, "Live quality fixture returns a complete answer: \(name)")
+                let response = assistant.answer.lowercased()
+                if name.hasPrefix("definition") {
+                    try check(response.contains("physics") && response.contains("neural"), "A PINN definition explains the requested term: \(name)")
+                    try check(!response.contains("benchmark") && !response.contains("prediction error"), "A definition does not substitute a paper result: \(name)")
+                    try check(name == "definition-with-source" ? !assistant.sources.isEmpty : assistant.turns.last?.generalContext == true, "Definition support is attributed accurately: \(name)")
+                } else {
+                    try check(response.range(of: "not (?:specified|provided|established|described|identify|state|mention)|does(?:n.t| not)|cannot|no combustion|not.*combustion", options: .regularExpression) != nil, "Unsupported combustion details are not invented")
+                }
+
+            }
+            assistant.clear()
+        }
         if CommandLine.arguments.contains("--live"), assistant.checkAvailability() {
             assistant.question = "What happens to electrode current when concentration increases?"
             assistant.ask(topic: "Experiment") { question in

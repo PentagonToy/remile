@@ -17,7 +17,7 @@ let view = PDFView(frame: CGRect(x: 0, y: 0, width: 700, height: 800))
 view.document = liveDocument
 model.attach(view)
 view.setCurrentSelection(page.selection(for: page.bounds(for: .mediaBox)), animate: false)
-verify(model.assistantSelection?.page == 1 && model.assistantSelection?.text.contains("Deerstalker") == true, "Ask captures only selected text owned by the current reader")
+verify(model.assistantSelection?.page == 1 && model.assistantSelection?.text.contains("Remile") == true, "Ask captures only selected text owned by the current reader")
 let foreignDocument = PDFDocument(data: try Data(contentsOf: url))!
 let foreignPage = foreignDocument.page(at: 0)!
 view.document = foreignDocument
@@ -68,17 +68,17 @@ func waitUntil(_ done: () -> Bool) {
     let deadline = Date().addingTimeInterval(3)
     while !done() && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
 }
-model.query = "Deerstalker"
+model.query = "Remile"
 model.search()
 waitUntil { !model.searching }
 verify(model.matches.count == 1, "Async document search finds the page text")
-model.query = "Deerstalker"
+model.query = "Remile"
 model.search()
 model.query = "no-such-search-token"
 model.search()
 waitUntil { !model.searching }
 verify(model.matches.isEmpty, "Replacing a query discards stale results")
-model.query = "Deerstalker"
+model.query = "Remile"
 model.search()
 model.stop()
 RunLoop.current.run(until: Date().addingTimeInterval(0.35))
@@ -89,7 +89,7 @@ verify(model.threads.contains { $0.replies.count == 4 }, "Reply cards group bene
 model.stop()
 let destinationSession = PDFSession()
 destinationSession.load(try Data(contentsOf: url))
-destinationSession.revealLibraryPage(1, terms: ["Deerstalker"])
+destinationSession.revealLibraryPage(1, terms: ["Remile"])
 let destinationView = PDFView(frame: CGRect(x: 0, y: 0, width: 700, height: 800))
 destinationView.document = destinationSession.document
 destinationSession.attach(destinationView)
@@ -117,7 +117,7 @@ protectedSession.load(try Data(contentsOf: url))
 verify(protectedSession.assistantPassword.isEmpty, "Replacing the PDF discards its unlock credential")
 protectedSession.stop()
 let pending = PDFSession(); pending.load(try Data(contentsOf: url))
-pending.revealLibraryPage(1, terms: [], excerpt: "Deerstalker")
+pending.revealLibraryPage(1, terms: [], excerpt: "Remile")
 let replacement = PDFDocument(); replacement.insert(PDFPage(), at: 0)
 pending.load(replacement.dataRepresentation()!)
 let replacedView = PDFView(); replacedView.document = pending.document; pending.attach(replacedView)

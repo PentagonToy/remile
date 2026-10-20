@@ -1,0 +1,89 @@
+import SwiftUI
+import AppKit
+
+/// Only the central grip resizes a pane. The remaining divider is visual, not a drag target.
+struct ReaderSplit<Pane: View, Content: View>: View {
+    enum Side { case leading, trailing }
+    var side: Side = .leading
+    var initial: CGFloat = 280
+    var minimum: CGFloat = 240
+    var maximum: CGFloat = 440
+    var minimumContent: CGFloat = 380
+    var label = "Sidebar"
+    var revealToken = ""
+    @ViewBuilder let pane: () -> Pane
+    @ViewBuilder let content: () -> Content
+    @StateObject private var state = SplitState()
+    private final class SplitState: ObservableObject {
+        @Published var width: CGFloat?
+        var origin: CGFloat?
+        @Published var collapsed = 0
+    }
+    static var handleWidth: CGFloat { 14 }
+    static func constrained(_ width: CGFloat, available: CGFloat, minimum: CGFloat, maximum: CGFloat, content: CGFloat) -> CGFloat {
+        min(max(minimum, available - handleWidth - content), max(minimum, min(maximum, width)))
+    }
+    var body: some View {
+        GeometryReader { geometry in
+            let width = Self.constrained(state.width ?? initial, available: geometry.size.width, minimum: minimum, maximum: maximum, content: minimumContent)
+            let effective = state.collapsed < 0 ? 0 : state.collapsed > 0 ? max(0, geometry.size.width - Self.handleWidth) : width
+            let remaining = max(0, geometry.size.width - Self.handleWidth - effective)
+            HStack(spacing: 0) {
+                if side == .leading {
+                    pane().frame(width: effective).clipped().allowsHitTesting(state.collapsed != -1).accessibilityHidden(state.collapsed == -1)
+                    grip(width: width, available: geometry.size.width)
+                    content().frame(width: remaining).clipped().allowsHitTesting(state.collapsed != 1).accessibilityHidden(state.collapsed == 1)
+                } else {
+                    content().frame(width: remaining).clipped().allowsHitTesting(state.collapsed != 1).accessibilityHidden(state.collapsed == 1)
+                    grip(width: width, available: geometry.size.width)
+                    pane().frame(width: effective).clipped().allowsHitTesting(state.collapsed != -1).accessibilityHidden(state.collapsed == -1)
+                }
+            }.frame(width: geometry.size.width, height: geometry.size.height)
+                .coordinateSpace(name: "reader.split." + label)
+                .transaction { if state.origin != nil { $0.animation = nil } }
+                .animation(reduceMotion ? nil : RemileMotion.panel, value: state.collapsed)
+                .onChange(of: revealToken) { state.collapsed = 0 }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private func grip(width: CGFloat, available: CGFloat) -> some View {
+        ZStack {
+            Rectangle().fill(Color.primary.opacity(0.09)).frame(width: 1).allowsHitTesting(false)
+            if state.collapsed != 0 {
+                Button { state.collapsed = 0 } label: {
+                    Image(systemName: (state.collapsed < 0) == (side == .leading) ? "chevron.right" : "chevron.left").font(.system(size: 10, weight: .semibold)).frame(width: 14, height: 40).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
+                }.buttonStyle(.plain).help("Restore split view").accessibilityLabel("Restore " + label)
+            } else {
+            HStack(spacing: 2) {
+                ForEach(0..<3) { _ in Capsule().fill(RemileStyle.ink.opacity(0.45)).frame(width: 1, height: 11) }
+            }.frame(width: 12, height: 40)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 3))
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(.primary.opacity(0.12)))
+                .frame(width: Self.handleWidth, height: 60).contentShape(Rectangle().inset(by: -5))
+                .background(ResizeCursorRegion().allowsHitTesting(false))
+                .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .named("reader.split." + label)).onChanged { event in
+                    if state.origin == nil { state.origin = width }
+                    let delta = event.translation.width * (side == .leading ? 1 : -1)
+                    state.width = Self.constrained((state.origin ?? width) + delta, available: available, minimum: minimum, maximum: maximum, content: minimumContent)
+                }.onEnded { event in
+                    let proposed = (state.origin ?? width) + event.translation.width * (side == .leading ? 1 : -1)
+                    if proposed < minimum * 0.55 { state.collapsed = -1 }
+                    else if proposed > available - Self.handleWidth - minimumContent * 0.45 { state.collapsed = 1 }
+                    state.origin = nil
+                })
+                .accessibilityElement().accessibilityLabel("Resize " + label).accessibilityValue("\(Int(width)) points")
+                .accessibilityAdjustableAction { direction in
+                    state.width = Self.constrained(width + (direction == .increment ? 20 : -20), available: available, minimum: minimum, maximum: maximum, content: minimumContent)
+                }.accessibilityAction(named: "Collapse " + label) { state.collapsed = -1 }.help("Resize " + label)
+            }
+        }.frame(width: Self.handleWidth).frame(maxHeight: .infinity)
+    }
+}
+private struct ResizeCursorRegion: NSViewRepresentable {
+    final class Region: NSView {
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeLeftRight) }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+    func makeNSView(context: Context) -> Region { let view = Region(); view.identifier = NSUserInterfaceItemIdentifier("reader.resize-grip"); return view }
+    func updateNSView(_ view: Region, context: Context) { view.window?.invalidateCursorRects(for: view) }
+}

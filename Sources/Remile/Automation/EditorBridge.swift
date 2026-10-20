@@ -1,0 +1,140 @@
+import Foundation
+import CryptoKit
+
+/// A per-user file mailbox. Operations are fixed; no arbitrary commands are evaluated.
+enum EditorBridge {
+    struct Request: Codable {
+        var id: UUID = UUID()
+        let operation: String
+        var file: String?
+        var source: String?
+        var expectedSHA256: String?
+        var action: String?
+        var name: String?
+        var output: String?
+        var kind: String?
+        var apply: Bool?
+        var scratch: Bool?
+        var submissionCheck: Bool?
+        var start: Int?
+        var length: Int?
+    }
+    static var directory: URL { FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app/Automation") }
+    static func digest(_ source: String) -> String { SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined() }
+    @MainActor static func serve(_ home: HomeModel) async {
+        let manager = FileManager.default, folder = directory
+        do { try manager.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]); try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) } catch { return }
+        while !Task.isCancelled {
+            let requests = ((try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isSymbolicLinkKey])) ?? []).filter { $0.lastPathComponent.hasSuffix(".request.json") }.prefix(20)
+            for file in requests {
+                do {
+                    let attributes = try manager.attributesOfItem(atPath: file.path)
+                    guard attributes[.type] as? FileAttributeType == .typeRegular, (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(), (attributes[.size] as? Int ?? Int.max) < 5_000_000 else { continue }
+                    let request = try JSONDecoder().decode(Request.self, from: Data(contentsOf: file))
+                    guard file.lastPathComponent == request.id.uuidString + ".request.json" else { continue }
+                    let response = await handle(request, home: home)
+                    let output = folder.appendingPathComponent(request.id.uuidString + ".response.json")
+                    guard !manager.fileExists(atPath: output.path) else { continue }
+                    let bytes = try JSONSerialization.data(withJSONObject: response, options: [.sortedKeys])
+                    try bytes.write(to: output, options: [.atomic]); try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: output.path); try manager.removeItem(at: file)
+                } catch { try? manager.removeItem(at: file) }
+            }
+            do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+        }
+    }
+    @MainActor private static func handle(_ request: Request, home: HomeModel) async -> [String: Any] {
+        if request.operation == "open" {
+            guard let path = request.file, path.hasPrefix("/"), FileManager.default.fileExists(atPath: path) else { return ["ok": false, "error": "Provide an existing absolute path."] }
+            home.open(URL(fileURLWithPath: path)); return ["ok": home.error == nil, "message": home.error ?? "", "opening": home.opening]
+        }
+        if request.operation == "status" {
+            return ["ok": true, "kind": home.texProject == nil ? "document" : "latex-local", "path": home.texProject?.root.path ?? home.reader.url?.path ?? "", "dirty": home.texProject?.dirty ?? home.reader.dirty, "compiling": home.texProject?.compiling ?? false, "selected": home.texProject?.selected ?? "", "pages": home.texProject?.pdf?.pageCount ?? 0, "errors": home.texProject?.diagnostics.filter { $0.severity == .error }.count ?? 0, "warnings": home.texProject?.diagnostics.filter { $0.severity == .warning }.count ?? 0, "historyMinutes": TeXHistory.intervalMinutes, "aiSuggestions": UserDefaults.standard.bool(forKey: "editor.aiSuggestions")]
+        }
+        if home.texProject == nil, home.reader.url != nil, case .markdown(let source) = home.reader.document.content {
+            return await markdown(request, reader: home.reader, source: source)
+        }
+        guard let project = home.texProject else { return ["ok": false, "error": "Open a local LaTeX project first."] }
+        let file = request.file ?? project.selected
+        switch request.operation {
+        case "submission-compare":
+            if request.kind != "status" {
+                guard !project.compiling else { return ["ok": false, "error": "Compilation is already running."] }
+                project.compareSubmission()
+            }
+            return ["ok": true, "running": project.submission.running, "sourceChanged": project.buffers != project.submission.buffers || project.main != project.submission.main, "sourceHashes": project.submission.buffers.mapValues(digest), "results": project.submission.json]
+        case "logs":
+            return ["ok": true, "compiling": project.compiling, "log": String(project.log.suffix(min(150000, max(1, request.length ?? 150000)))), "diagnostics": project.diagnostics.map { ["id": $0.id, "severity": String(describing: $0.severity), "message": $0.message, "file": $0.file ?? "", "line": $0.line ?? 0] as [String: Any] }, "sourceHashes": project.buffers.mapValues(digest)]
+        case "read":
+            guard let source = project.buffers[file] else { return ["ok": false, "error": "No editable file at this project-relative path."] }
+            return ["ok": true, "file": file, "source": source, "sha256": digest(source), "dirty": project.dirty, "externalEdits": (project.externalEdits[file] ?? []).map { ["start": $0.location, "length": $0.length] }, "externalEditsSessionOnly": true]
+        case "select":
+            guard project.buffers[file] != nil else { return ["ok": false, "error": "No editable file at this project-relative path."] }
+            project.visit(file: file); return ["ok": true, "file": file]
+        case "replace":
+            guard !project.compiling, let current = project.buffers[file], request.expectedSHA256 == digest(current), let source = request.source, source.utf8.count <= 4_000_000 else { return ["ok": false, "error": "Source conflict, invalid file or compilation in progress. Read the current source hash first."] }
+            guard project.applyTool(file: file, before: current, after: source, name: "CLI edit", feedback: false) else { return ["ok": false, "error": project.message ?? "Could not apply edit."] }
+            project.markExternalEdit(file: file, before: current, after: source)
+            return ["ok": true, "file": file, "sha256": digest(source), "saved": false]
+        case "save": return ["ok": project.save(), "message": project.message ?? ""]
+        case "compile", "submission-check":
+            guard !project.compiling else { return ["ok": false, "error": "Compilation is already running."] }
+            let check = request.operation == "submission-check" || request.submissionCheck == true
+            project.compile(scratch: request.scratch ?? false, submissionCheck: check); return ["ok": project.compiling, "compiling": project.compiling, "submissionCheck": check, "missingTools": TeXConfiguration.current.missingTools(buffers: project.buffers, submissionCheck: check)]
+        case "history": return ["ok": true, "revisions": project.revisions.map { ["id": $0.id.uuidString, "file": $0.file, "date": $0.date.timeIntervalSince1970, "marker": $0.marker ?? ""] }]
+        case "rename":
+            guard let name = request.name else { return ["ok": false, "error": "Provide --name."] }
+            return ["ok": request.kind == "project" ? project.renameProject(to: name) : project.rename(file, to: name), "message": project.message ?? ""]
+        case "transform":
+            do {
+                guard let action = request.action, let before = project.buffers[file] else { throw TeXSourceTools.Failure(errorDescription: "Provide an action and editable file.") }
+                let range = request.start.map { NSRange(location: max(0, $0), length: max(0, request.length ?? 0)) }
+                let edit = try TeXTools.prepare(action, project: project, file: file, range: range)
+                if request.apply == true {
+                    guard request.expectedSHA256 == digest(before) else { throw TeXSourceTools.Failure(errorDescription: "Source conflict. Read the current SHA-256 before applying.") }
+                    let applied = project.applyTool(file: file, before: before, after: edit.source, name: edit.title, feedback: false)
+                    if applied { project.markExternalEdit(file: file, before: before, after: edit.source) }
+                    return ["ok": applied, "saved": false, "sha256": digest(project.buffers[file] ?? "")]
+                }
+                return ["ok": true, "file": file, "title": edit.title, "count": edit.count, "beforeSHA256": digest(before), "source": edit.source, "saved": false]
+            } catch { return ["ok": false, "error": error.localizedDescription] }
+        case "export":
+            do {
+                guard let output = request.output, output.hasPrefix("/"), !FileManager.default.fileExists(atPath: output), !URL(fileURLWithPath: output).resolvingSymlinksInPath().path.hasPrefix(project.root.resolvingSymlinksInPath().path + "/") else { throw TeXSourceTools.Failure(errorDescription: "Use a new absolute output file outside the project.") }
+                let target = URL(fileURLWithPath: output), root = project.root, buffers = project.buffers
+                if request.kind == "source" { guard target.pathExtension.lowercased() == "zip" else { throw TeXSourceTools.Failure(errorDescription: "Source archives use .zip.") }; try await Task.detached { try TeXSourceSnapshot.export(root: root, buffers: buffers, to: target) }.value }
+                else if request.kind == "pdf", let pdf = project.build?.pdf { guard target.pathExtension.lowercased() == "pdf" else { throw TeXSourceTools.Failure(errorDescription: "PDF export uses .pdf.") }; try await Task.detached { try Data(contentsOf: pdf).write(to: target, options: .atomic) }.value }
+                else { throw TeXSourceTools.Failure(errorDescription: "Choose --kind source or a successfully compiled PDF.") }
+                return ["ok": true, "output": output]
+            } catch { return ["ok": false, "error": error.localizedDescription] }
+        default: return ["ok": false, "error": "Unknown operation."]
+        }
+    }
+    @MainActor private static func markdown(_ request: Request, reader: ReadingSession, source: String) async -> [String: Any] {
+        if let file = request.file, file != reader.url?.path, file != reader.url?.lastPathComponent { return ["ok": false, "error": "The requested Markdown file is not open."] }
+        switch request.operation {
+        case "read": return ["ok": true, "file": reader.url?.path ?? "", "source": source, "sha256": digest(source), "dirty": reader.dirty, "externalEdits": reader.externalEdits.map { ["start": $0.location, "length": $0.length] }, "externalEditsSessionOnly": true]
+        case "replace":
+            guard request.expectedSHA256 == digest(source), let after = request.source, after.utf8.count <= 4_000_000, let edit = reader.editSource else { return ["ok": false, "error": "Source conflict or editor not ready. Read the current source hash first."] }
+            guard await edit(source, after) else { return ["ok": false, "error": "The source changed or editor is not ready. Read it again before retrying."] }
+            reader.markExternalEdit(before: source, after: after)
+            return ["ok": true, "sha256": digest(after), "saved": false]
+        case "save":
+            guard !reader.isUntitled else { return ["ok": false, "error": "Choose a filename in the app, or export a source copy first."] }
+            return ["ok": reader.save()]
+        case "export":
+            do {
+                guard let output = request.output, output.hasPrefix("/"), !FileManager.default.fileExists(atPath: output) else { throw TeXSourceTools.Failure(errorDescription: "Use a new absolute output file.") }
+                let target = URL(fileURLWithPath: output)
+                if request.kind == "source", ["md", "markdown"].contains(target.pathExtension.lowercased()) { try Data(source.utf8).write(to: target, options: .atomic) }
+                else if request.kind == "pdf", target.pathExtension.lowercased() == "pdf" {
+                    let url = reader.url ?? target
+                    let html = try await Task.detached { var renderer = MarkdownHTML(baseURL: url); return try renderer.document(source) }.value
+                    try await MarkdownPDF.write(html, to: target)
+                } else { throw TeXSourceTools.Failure(errorDescription: "Choose source (.md) or pdf (.pdf).") }
+                return ["ok": true, "output": output]
+            } catch { return ["ok": false, "error": error.localizedDescription] }
+        default: return ["ok": false, "error": "This operation requires a local LaTeX project. Markdown supports read, replace, save and export."]
+        }
+    }
+
+}

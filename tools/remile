@@ -1,0 +1,2 @@
+#!/bin/zsh
+exec /Applications/remile.app/Contents/MacOS/Remile --cli "$@"

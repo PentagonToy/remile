@@ -31,6 +31,10 @@ try verify(html.contains("src=\"data:image/png;base64,"), "Local images embedded
 try verify(html.contains("<mfrac>") && html.contains("<msup>"), "Inline and display math both render")
 try verify(!html.contains("<script>"), "Raw source cannot insert scripts")
 try verify(html.contains("script-src 'none'") && html.contains("connect-src 'none'"), "Self-contained page forbids scripts and network")
+var links = MarkdownHTML(baseURL: directory.appendingPathComponent("fixture.md"))
+let linkHTML = try links.document("[Reference](https://example.com/paper?q=one&b=two) and [unsafe](javascript:alert)")
+try verify(linkHTML.contains("href=\"https://example.com/paper?q=one&amp;b=two\""), "Readable links retain escaped destinations")
+try verify(!linkHTML.contains("href=\"javascript:"), "Non-web destinations cannot become active links")
 for source in ["![Remote](https://example.invalid/x.png)", "![Escape](../image.png)", "![Missing](missing.png)", "```\nunfinished", "$$\nx^2", ""] {
     var failed = false
     do { var local = MarkdownHTML(baseURL: directory.appendingPathComponent("fixture.md")); _ = try local.document(source) } catch { failed = true }

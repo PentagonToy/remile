@@ -1,0 +1,351 @@
+import SwiftUI
+import PDFKit
+
+struct PDFWorkspace: View {
+    let data: Data
+    var fileURL: URL? = nil
+    @ObservedObject private var navigation = ReaderNavigation.shared
+    let updateDocument: (Data) -> Void
+    @StateObject private var session = PDFSession()
+    @StateObject private var assistant = DocumentAssistant()
+    @StateObject private var presentation = Presentation()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private let assistantContext = PDFAssistantContext()
+    private final class Presentation: ObservableObject {
+        @Published var ask = false
+        @Published var selectedPassages: [AssistantPassage] = []
+        @Published var translation: SelectionTranslation?
+        @Published var ocr = false
+        let untitledPath = "/remile-untitled-" + UUID().uuidString + "/Untitled.pdf"
+    }
+    @Environment(\.undoManager) private var undoManager
+    @FocusState private var searchFocused: Bool
+    @StateObject private var zoom = ReaderZoom()
+
+    init(data: Data, fileURL: URL? = nil, session: PDFSession? = nil, showAsk: Bool = false, updateDocument: @escaping (Data) -> Void) {
+        self.data = data; self.fileURL = fileURL; self.updateDocument = updateDocument
+        _session = StateObject(wrappedValue: session ?? PDFSession())
+        let state = Presentation(); state.ask = showAsk
+        _presentation = StateObject(wrappedValue: state)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            readingHeader
+            readingColumns.frame(maxWidth: .infinity, maxHeight: .infinity).layoutPriority(1)
+            if let message = session.citationStatus {
+                HStack {
+                    Text(message).font(RemileType.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Dismiss") { session.dismissCitationStatus() }
+                }.padding(10).background(.bar)
+            }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { assistant.useHistory(fileURL.map { "pdf:" + $0.path }); session.undoManager = undoManager; session.load(data); session.loadComments(); revealLibraryPage(); if !session.query.isEmpty { session.search() } }
+        .onChange(of: data) { _, data in assistant.cancel(); presentation.selectedPassages = []; session.load(data) }
+        .onChange(of: fileURL) { assistant.useHistory(fileURL.map { "pdf:" + $0.path }) }
+        .onChange(of: navigation.request?.id) { revealLibraryPage() }
+        .onDisappear { assistant.cancel(); session.stop() }
+        .onChange(of: session.query) { session.search() }
+        .onChange(of: session.caseSensitive) { session.search() }
+        .onChange(of: session.committedData) { _, bytes in if let bytes { assistant.cancel(); updateDocument(bytes) } }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.print"))) { _ in session.printDocument() }
+        .modifier(SelectionTranslationModifier(request: $presentation.translation))
+        .sheet(isPresented: $presentation.ocr) { PDFDocumentOCRSheet(data: session.committedData ?? data, password: session.assistantPassword) }
+    }
+
+    @ViewBuilder private var readingColumns: some View {
+        if session.showsSidebar {
+            ReaderSplit(initial: 280, minimum: 260, maximum: 340, minimumContent: presentation.ask ? 720 : 380, label: "document sidebar", pane: { sidebar }, content: { readingAndAsk })
+        } else { readingAndAsk }
+    }
+    @ViewBuilder private var readingAndAsk: some View {
+        if presentation.ask {
+            ReaderSplit(side: .trailing, initial: 360, minimum: 320, maximum: 440, minimumContent: 380, label: "Ask panel", pane: { assistantPanel }, content: { readingCanvas })
+        } else { readingCanvas }
+    }
+    private var readingCanvas: some View {
+        Group {
+            if let document = session.document, !document.isLocked {
+                if session.showsOverview {
+                    PDFThumbnailOverview(session: session)
+                } else {
+                    PDFReader(session: session, zoom: zoom, selectionActions: selectionActions)
+                }
+            } else if session.document?.isLocked == true {
+                VStack(spacing: 16) {
+                    Image(systemName: "lock.doc").font(.largeTitle).foregroundStyle(.secondary)
+                    Text("Unlock this PDF").font(.title2)
+                    SecureField("Password", text: $session.password)
+                        .textFieldStyle(.roundedBorder).frame(width: 260).onSubmit { session.unlock() }
+                    if let error = session.passwordError { Text(error).foregroundStyle(.red).font(RemileType.callout) }
+                    Button("Unlock") { session.unlock() }.buttonStyle(.borderedProminent).disabled(session.password.isEmpty)
+                }
+            } else {
+                ContentUnavailableView("Unable to open PDF", systemImage: "doc.badge.exclamationmark", description: Text("The document may be damaged or unsupported."))
+            }
+        }.frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
+    }
+    private var assistantPanel: some View {
+        AssistantPanel(assistant: assistant, passages: [], topic: fileURL?.deletingPathExtension().lastPathComponent ?? "this PDF", select: { source in
+            let location = source.location
+            guard location.path == assistantPath else { return }
+            session.revealLibraryPage(location.unit, terms: [], excerpt: source.text)
+        }, close: { toggleAssistant() }, retrieve: { question in
+            guard session.document?.allowsCopying == true, session.document?.isLocked == false else { throw PDFAssistantContext.Failure.restricted }
+            let retrieved = try await assistantContext.passages(data: session.committedData ?? data, password: session.assistantPassword, path: assistantPath, question: question,
+                currentPage: session.currentPage, selection: presentation.selectedPassages.first.map { (page: $0.location.unit, text: $0.text) } ?? session.assistantSelection) { fraction in
+                    await assistant.reportProgress(fraction)
+                }
+            return presentation.selectedPassages + retrieved.filter { passage in !presentation.selectedPassages.contains { $0.id == passage.id } }
+        }, selection: presentation.selectedPassages.isEmpty ? nil : presentation.selectedPassages.map(\.text).joined(separator: "\n"), clearSelection: { presentation.selectedPassages = [] }).transition(.move(edge: .trailing).combined(with: .opacity))
+    }
+
+    private var readingHeader: some View {
+        VStack(spacing: 0) {
+            readingControls
+            Divider()
+            if session.isEditing || session.editingError != nil {
+                VStack(alignment: .leading, spacing: 0) {
+                    if session.isEditing { editingStrip.transition(.opacity) }
+                    if let error = session.editingError {
+                        HStack {
+                            Image(systemName: "exclamationmark.circle").foregroundStyle(.red)
+                            Text(error).font(RemileType.callout)
+                            Spacer()
+                            Button { session.dismissEditingError() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Dismiss message")
+                        }.padding(.horizontal, 16).padding(.vertical, 10)
+                    }
+                    Divider()
+                }.background(.bar)
+            }
+        }.background(.bar)
+    }
+
+
+    private var readingControls: some View {
+        HStack(spacing: 12) {
+            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.showsSidebar.toggle() } } label: { Image(systemName: "sidebar.left") }.help("Pages, outline, search and comments").accessibilityLabel("Toggle document sidebar")
+            HStack(spacing: 6) {
+                Button { session.previousPage() } label: { Image(systemName: "chevron.up") }.help("Previous page").disabled(session.showsOverview || session.currentPage <= 1)
+                ReaderPageControl(current: session.currentPage, total: session.document?.pageCount ?? 0, go: session.goToPage)
+                Button { session.nextPage() } label: { Image(systemName: "chevron.down") }.help("Next page").disabled(session.showsOverview || session.currentPage >= (session.document?.pageCount ?? 0))
+            }
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                    if session.showsOverview, let page = session.document?.page(at: max(0, session.currentPage - 1)) { session.openOverviewPage(page) }
+                    else {
+                        session.selectedOverviewPages = Set(session.document?.page(at: max(0, session.currentPage - 1)).map { [ObjectIdentifier($0)] } ?? [])
+                        session.showsOverview = true
+                    }
+                }
+            } label: { Image(systemName: session.showsOverview ? "doc.text" : "square.grid.2x2") }
+                .help(session.showsOverview ? "Read document" : "Page overview").accessibilityLabel(session.showsOverview ? "Read document" : "Page overview")
+                .disabled(session.document?.isLocked != false)
+            Button { session.firstPageAlone = false; session.twoPage.toggle() } label: { Image(systemName: session.twoPage ? "book" : "doc") }
+                .help(session.twoPage ? "Switch to single page" : "Switch to two pages").accessibilityLabel("Page layout").accessibilityValue(session.twoPage ? "Two pages" : "Single page")
+            Spacer(minLength: 12)
+            Button { presentation.ocr = true } label: { Label("Scan & OCR", systemImage: "text.viewfinder") }.help("Recognise text throughout this PDF with Apple Vision").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
+            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.toggleEditing() } } label: { Label(session.isEditing ? "Done" : "Edit PDF", systemImage: session.isEditing ? "checkmark" : "pencil") }.disabled(!session.canEdit)
+            Button { toggleAssistant() } label: { Image(systemName: "sparkles") }.help("Ask (on-device)").accessibilityLabel("Ask (on-device)").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
+            ReaderZoomControls(zoom: zoom).disabled(session.showsOverview)
+            Button { session.sidebar = .search; session.showsSidebar = true; searchFocused = true } label: { Image(systemName: "magnifyingglass") }.help("Find in document").keyboardShortcut("f")
+        }.buttonStyle(RemileToolStyle()).font(RemileType.callout).labelStyle(.titleAndIcon).padding(.horizontal, 16).padding(.vertical, 10)
+    }
+
+    private var selectionActions: PDFSelectionActions {
+        PDFSelectionActions(highlight: { context, color in
+            guard context.document === session.document, session.select(context.selection) else { return }; session.highlightSelection(color: color)
+        }, addNote: { context in
+            guard context.document === session.document, session.select(context.selection) else { return }; session.beginComment()
+        }, ask: { context in
+            guard context.document === session.document else { return }
+            assistant.cancel(); presentation.selectedPassages = context.passages(path: assistantPath)
+            if assistant.question.isEmpty { assistant.question = "Explain the selected passage." }
+            withAnimation(reduceMotion ? nil : RemileMotion.panel) { presentation.ask = true }
+        }, translate: { context in
+            guard context.document === session.document else { return }; presentation.translation = SelectionTranslation(text: context.text)
+        })
+    }
+
+    private var editingStrip: some View {
+        HStack(spacing: 16) {
+            Text("Edit PDF").font(RemileType.heading)
+            PDFPageSizeControl(session: session).disabled(!session.canArrangePages)
+            Button { session.beginComment() } label: { Label("Note", systemImage: "text.bubble") }
+                .disabled(session.document?.allowsCommenting != true).help("Add a note at the selection or current page")
+            Button { session.highlightSelection() } label: { Label("Highlight", systemImage: "highlighter") }
+                .disabled(!session.canHighlight).help("Highlight selected text")
+            Divider().frame(height: 20)
+            Button { session.rotateCurrentPage(clockwise: false) } label: { Image(systemName: "rotate.left") }
+                .disabled(session.document?.allowsDocumentAssembly != true).help("Rotate current page left")
+            Button { session.rotateCurrentPage(clockwise: true) } label: { Image(systemName: "rotate.right") }
+                .disabled(session.document?.allowsDocumentAssembly != true).help("Rotate current page right")
+            Spacer(minLength: 12)
+            Text("Page text is read-only").font(RemileType.callout).foregroundStyle(.secondary)
+        }
+        .buttonStyle(.borderless).padding(.horizontal, 16).padding(.vertical, 12)
+    }
+
+    private var assistantPath: String { fileURL?.path ?? presentation.untitledPath }
+    private func toggleAssistant() {
+        if presentation.ask { assistant.cancel() }
+        withAnimation(reduceMotion ? nil : RemileMotion.panel) { presentation.ask.toggle() }
+    }
+
+    private func revealLibraryPage() {
+        guard let request = navigation.request, let fileURL,
+              fileURL.resolvingSymlinksInPath().path == URL(fileURLWithPath: request.path).resolvingSymlinksInPath().path else { return }
+        session.revealLibraryPage(request.page, terms: request.terms, excerpt: request.noteExcerpt, addNote: request.noteExcerpt != nil)
+        navigation.request = nil
+    }
+
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 5) {
+                ForEach(PDFSession.Sidebar.allCases, id: \.self) { tab in
+                    Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.sidebar = tab } } label: {
+                        Image(systemName: sidebarSymbol(tab)).frame(maxWidth: .infinity).frame(height: 30)
+                            .foregroundStyle(session.sidebar == tab ? RemileStyle.accent : RemileStyle.ink.opacity(0.7))
+                            .overlay(alignment: .topTrailing) {
+                                if tab == .comments && !session.comments.isEmpty { Circle().fill(RemileStyle.accent).frame(width: 6, height: 6).padding(4).accessibilityLabel("\(session.comments.count) comments") }
+                            }
+                            .background(session.sidebar == tab ? RemileStyle.accent.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+                    }.buttonStyle(.plain).help(tab.rawValue).accessibilityLabel("Show " + tab.rawValue).accessibilityValue(session.sidebar == tab ? "Selected" : "")
+                }
+            }.padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
+            Text(session.sidebar.rawValue).font(RemileType.heading).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.bottom, 10)
+            switch session.sidebar {
+            case .pages: if let document = session.document { PDFPagesPanel(document: document, currentPage: session.currentPage, select: session.goToPage) }
+            case .outline: if let document = session.document { PDFOutlinePanel(document: document, select: session.goToOutline) }
+            case .search: searchPanel
+            case .comments: commentsPanel
+            case .highlights: highlightsPanel
+            }
+        }.frame(maxHeight: .infinity, alignment: .top).background(RemileStyle.sidebar)
+    }
+    private func sidebarSymbol(_ tab: PDFSession.Sidebar) -> String {
+        switch tab {
+        case .pages: return "doc.on.doc"
+        case .outline: return "list.bullet.indent"
+        case .search: return "magnifyingglass"
+        case .comments: return "text.bubble"
+        case .highlights: return "highlighter"
+        }
+    }
+
+    private var searchPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("Find in this PDF", text: $session.query).textFieldStyle(.roundedBorder)
+                .focused($searchFocused).onAppear { searchFocused = true }
+            Toggle("Match case", isOn: $session.caseSensitive).toggleStyle(.checkbox)
+            if session.searching { ProgressView("Searching…").controlSize(.small) }
+            Text(session.resultLimitReached ? "First 500 matches · refine your search" : "\(session.matches.count) matches").font(RemileType.caption).foregroundStyle(.secondary)
+            if !session.query.isEmpty && !session.searching && session.matches.isEmpty {
+                Text("No matching text. Scanned pages may need OCR.").font(RemileType.callout).foregroundStyle(.secondary)
+            }
+            List {
+                ForEach(Array(Set(session.matches.map(\.page))).sorted(), id: \.self) { page in
+                    Section("Page \(page) · \(session.matches.filter { $0.page == page }.count)") {
+                        ForEach(session.matches.filter { $0.page == page }) { match in
+                            Button { session.reveal(match) } label: {
+                                Text(SearchExcerpt.highlight(match.text, query: session.query, caseSensitive: session.caseSensitive)).lineLimit(4).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5)
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
+            }.listStyle(.plain).scrollContentBackground(.hidden)
+        }.padding(.horizontal, 12)
+    }
+
+    private var highlightsPanel: some View {
+        Group {
+            if session.highlights.isEmpty { ContentUnavailableView("No highlights", systemImage: "highlighter") }
+            else {
+                List(session.highlights) { mark in
+                    Button { session.reveal(mark) } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            RoundedRectangle(cornerRadius: 2).fill(Color(nsColor: mark.annotation.color).opacity(1)).frame(width: 5)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("Page \(mark.pageNumber)").font(RemileType.caption).foregroundStyle(.secondary)
+                                Text(mark.text).lineLimit(4).multilineTextAlignment(.leading)
+                            }
+                        }.padding(.vertical, 5)
+                    }.buttonStyle(.plain)
+                }.listStyle(.plain).scrollContentBackground(.hidden)
+            }
+        }.onAppear { session.loadComments() }
+    }
+
+    private var commentsPanel: some View {
+        VStack(spacing: 0) {
+            commentList
+            if let context = session.draftContext {
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(session.isReplyDraft ? "Reply" : "New note").font(RemileType.heading)
+                    Text(context).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(3)
+                    TextField("Author (optional)", text: $session.author).textFieldStyle(.roundedBorder)
+                    TextEditor(text: $session.draft).frame(height: 90).border(.secondary.opacity(0.2))
+                        .accessibilityLabel("New comment")
+                    HStack {
+                        Button("Cancel") { session.cancelComment() }
+                        Spacer()
+                        Button(session.isReplyDraft ? "Add reply" : "Add note") { session.saveComment() }.buttonStyle(.borderedProminent)
+                            .disabled(session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }.padding(12)
+            }
+        }
+    }
+
+    private var commentList: some View {
+        Group {
+            if session.loadingComments && session.comments.isEmpty {
+                ProgressView("Loading comments…").frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if session.comments.isEmpty {
+                ContentUnavailableView("No comments", systemImage: "text.bubble", description: Text("Comments saved in this PDF will appear here.")).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(session.threads) { thread in
+                                VStack(alignment: .leading, spacing: 10) {
+                                    commentCard(thread.root)
+                                    ForEach(thread.replies) { reply in
+                                        commentCard(reply).padding(.leading, 16)
+                                    }
+                                }
+                            }
+                        }.padding(12)
+                    }
+                    .onChange(of: session.selectedComment) { _, id in if let id { proxy.scrollTo(id, anchor: .center) } }
+                }
+            }
+        }.onAppear { session.loadComments() }
+    }
+    private func commentCard(_ comment: PDFSession.Comment) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(comment.author).font(RemileType.caption.bold())
+                Spacer()
+                Button("p. \(comment.pageNumber)") { session.reveal(comment) }
+                    .buttonStyle(.plain).font(RemileType.caption).foregroundStyle(.secondary)
+                    .help("Show comment on the page")
+            }
+            Text(comment.text).textSelection(.enabled).multilineTextAlignment(.leading)
+            HStack {
+                if let date = comment.annotation.modificationDate {
+                    Text(date, style: .date).font(RemileType.small).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Reply") { session.beginReply(comment) }.buttonStyle(.borderless).font(RemileType.caption)
+                    .disabled(session.document?.allowsCommenting != true || session.document?.isEncrypted == true)
+            }
+        }
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(session.selectedComment == comment.id ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+        .id(comment.id)
+    }
+
+}

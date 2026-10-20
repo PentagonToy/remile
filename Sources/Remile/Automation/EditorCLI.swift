@@ -1,0 +1,96 @@
+import Foundation
+import AppKit
+
+@MainActor enum EditorCLI {
+    static func run(_ arguments: [String]) -> Int32 {
+        do {
+            let command = arguments.first ?? "help", options = Array(arguments.dropFirst())
+            func option(_ key: String) -> String? { options.firstIndex(of: key).flatMap { options.indices.contains($0 + 1) ? options[$0 + 1] : nil } }
+            switch command {
+            case "help", "--help":
+                return emit(["ok": true, "usage": "remile --cli COMMAND", "commands": ["combine /absolute/one /absolute/two --output /absolute/new.pdf|new.md", "compress /absolute/input.pdf --output /absolute/new.pdf [--quality small|balanced|high] [--grayscale]", "status", "logs [--tail characters]", "read [--file relative.tex]", "select --file relative.tex", "replace --file relative.tex --source-file /absolute/file --expected-sha256 HASH", "save", "compile [--scratch] [--submission-check]", "submission-compare [--status]", "history", "doctor", "transform --action strip-notes|embed-bibliography|toggle-comment|indent|outdent [--file relative.tex] [--start UTF16 --length UTF16] [--apply --expected-sha256 HASH]", "rename --file relative.tex --name NEW [--kind project]", "export --kind pdf|source --output /absolute/new-file", "open /absolute/path", "inspect /absolute/project", "build /absolute/project --output /absolute/new-directory [--main main.tex]"]])
+            case "combine", "compress":
+                guard let output = option("--output"), output.hasPrefix("/"), !FileManager.default.fileExists(atPath: output) else { throw Failure("Choose a new absolute output file.") }
+                NSApplication.shared.setActivationPolicy(.prohibited)
+                let target = URL(fileURLWithPath: output)
+                if command == "combine" {
+                    var paths: [String] = [], index = 0
+                    while index < options.count {
+                        if options[index] == "--output" { index += 2; continue }
+                        guard options[index].hasPrefix("/"), FileManager.default.fileExists(atPath: options[index]) else { throw Failure("Provide existing absolute input files.") }
+                        paths.append(options[index]); index += 1
+                    }
+                    guard paths.count >= 2 else { throw Failure("Choose at least two files to combine.") }
+                    let inputs = paths.map { URL(fileURLWithPath: $0) }, kind = try DocumentTools.kind(inputs)
+                    guard kind == .pdf ? target.pathExtension.lowercased() == "pdf" : target.pathExtension.lowercased() == "md" else { throw Failure("Use .pdf for PDFs or .md for Markdown.") }
+                    try DocumentTools.create(.combine, inputs: inputs, destination: target)
+                    return emit(["ok": true, "output": output, "inputs": paths.count, "kind": kind.rawValue])
+                }
+                guard let path = options.first, path.hasPrefix("/"), URL(fileURLWithPath: path).pathExtension.lowercased() == "pdf", target.pathExtension.lowercased() == "pdf" else { throw Failure("Choose PDF input and output files.") }
+                let quality: CompressionSettings.Quality
+                switch option("--quality") ?? "balanced" { case "small": quality = .small; case "balanced": quality = .balanced; case "high": quality = .high; default: throw Failure("Choose small, balanced or high quality.") }
+                let reply = CompressionReply(), input = URL(fileURLWithPath: path), settings = CompressionSettings(grayscale: options.contains("--grayscale"), quality: quality)
+                Task.detached {
+                    do { reply.set(.success(try await PDFCompressor().prepare(input, settings: settings) { _, _ in })) }
+                    catch { reply.set(.failure(error)) }
+                }
+                while reply.value == nil { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+                let result = try reply.value!.get(); defer { DocumentConverter.discard(result.batch) }
+                guard let file = result.batch.outputs.first else { throw Failure("Compression did not produce a PDF.") }
+                try Data(contentsOf: file).write(to: target, options: .atomic)
+                return emit(["ok": true, "output": output, "originalBytes": result.originalBytes, "outputBytes": result.outputBytes, "reduced": result.reduced])
+            case "doctor": return emit(["ok": true, "binaryDirectory": TeXConfiguration.current.directory, "missingTools": TeXConfiguration.current.missingTools(buffers: [:]), "historyMinutes": TeXHistory.intervalMinutes, "installCommand": "brew install --cask mactex-no-gui"])
+            case "inspect", "build":
+                guard let path = options.first, path.hasPrefix("/") else { throw Failure("Provide an absolute project directory.") }
+                let root = URL(fileURLWithPath: path), paths = try TeXFileSystem.paths(root)
+                var buffers: [String: String] = [:]
+                for file in paths where ["tex", "bib", "sty", "cls"].contains((file as NSString).pathExtension.lowercased()) {
+                    let bytes = try Data(contentsOf: root.appendingPathComponent(file)); guard bytes.count <= 4_000_000, let source = String(data: bytes, encoding: .utf8) else { throw Failure("Source is too large or is not UTF-8.") }; buffers[file] = source
+                }
+                let mains = buffers.keys.filter { buffers[$0]!.contains("\\documentclass") }.sorted()
+                if command == "inspect" { return emit(["ok": true, "root": root.path, "files": paths, "mainCandidates": mains, "latexmk": TeXConfiguration.current.available]) }
+                guard let output = option("--output"), output.hasPrefix("/"), !FileManager.default.fileExists(atPath: output), !URL(fileURLWithPath: output).standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path + "/") else { throw Failure("Use a new absolute output directory outside the project.") }
+                let main = option("--main") ?? (mains.contains("main.tex") ? "main.tex" : mains.first ?? "")
+                guard buffers[main] != nil else { throw Failure("Select a valid main document.") }
+                let result = try TeXCompileJob().run(root: root, main: main, buffers: buffers, configuration: .current, output: URL(fileURLWithPath: output), scratch: options.contains("--scratch"), submissionCheck: options.contains("--submission-check"))
+                let code = emit(["ok": result.success, "pdf": result.output.path, "log": URL(fileURLWithPath: output).appendingPathComponent("compiler.log").path, "diagnostics": TeXDiagnostics.parse(result.log).map { ["severity": String(describing: $0.severity), "message": $0.message, "file": $0.file ?? "", "line": $0.line ?? 0] as [String: Any] }]); return result.success ? code : 1
+            case "submission-compare", "open", "status", "read", "select", "replace", "save", "compile", "history", "transform", "rename", "export", "logs":
+                let operation = command == "compile" && options.contains("--submission-check") ? "submission-check" : command
+                var request = EditorBridge.Request(operation: operation, file: command == "open" ? options.first : option("--file"))
+                request.action = option("--action"); request.name = option("--name"); request.kind = option("--kind"); request.output = option("--output")
+                if command == "submission-compare", options.contains("--status") { request.kind = "status" }
+                request.apply = options.contains("--apply"); request.scratch = options.contains("--scratch"); request.submissionCheck = options.contains("--submission-check"); request.expectedSHA256 = option("--expected-sha256")
+                request.start = option("--start").flatMap(Int.init); request.length = option("--length").flatMap(Int.init)
+                if command == "logs" { request.length = option("--tail").flatMap(Int.init) }
+                if command == "replace" {
+                    guard let path = option("--source-file"), path.hasPrefix("/"), let hash = option("--expected-sha256") else { throw Failure("Replace requires --source-file and --expected-sha256.") }
+                    let data = try Data(contentsOf: URL(fileURLWithPath: path)); guard data.count <= 4_000_000, let source = String(data: data, encoding: .utf8) else { throw Failure("Source must be UTF-8 and at most 4 MB.") }
+                    request.source = source; request.expectedSHA256 = hash
+                }
+                let folder = EditorBridge.directory
+                guard FileManager.default.fileExists(atPath: folder.path) else { throw Failure("Start remile. before using live commands.") }
+                let input = folder.appendingPathComponent(request.id.uuidString + ".request.json"), output = folder.appendingPathComponent(request.id.uuidString + ".response.json")
+                defer { try? FileManager.default.removeItem(at: input); try? FileManager.default.removeItem(at: output) }
+                try JSONEncoder().encode(request).write(to: input, options: [.atomic]); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: input.path)
+                let deadline = Date().addingTimeInterval(10)
+                while Date() < deadline {
+                    if FileManager.default.fileExists(atPath: output.path) { let response = try JSONSerialization.jsonObject(with: Data(contentsOf: output)) as? [String: Any] ?? [:]; return emit(response) }
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+                throw Failure("The app did not respond. Close modal dialogues and try again.")
+            default: throw Failure("Unknown command. Use --cli help.")
+            }
+        } catch { return emit(["ok": false, "error": error.localizedDescription]) }
+    }
+    private final class CompressionReply: @unchecked Sendable {
+        private let lock = NSLock()
+        private var result: Result<PDFCompressor.Result, Error>?
+        var value: Result<PDFCompressor.Result, Error>? { lock.lock(); defer { lock.unlock() }; return result }
+        func set(_ value: Result<PDFCompressor.Result, Error>) { lock.lock(); result = value; lock.unlock() }
+    }
+    private struct Failure: LocalizedError { let errorDescription: String?; init(_ message: String) { errorDescription = message } }
+    private static func emit(_ value: [String: Any]) -> Int32 {
+        let bytes = (try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])) ?? Data("{}".utf8)
+        FileHandle.standardOutput.write(bytes); FileHandle.standardOutput.write(Data("\n".utf8)); return value["ok"] as? Bool == false ? 1 : 0
+    }
+}

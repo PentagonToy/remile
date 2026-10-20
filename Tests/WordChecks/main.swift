@@ -27,7 +27,7 @@ func runChecks() async throws {
     let long = PDFDocument(url: batch.items[1].output!)!
     try check(long.pageCount > 2 && long.page(at: long.pageCount - 1)?.string?.contains("FinalWordMarker") == true, "Long document paginates to final content")
     try check((long.string ?? "").components(separatedBy: "hydrogen").count - 1 == 180, "Paragraphs neither duplicate nor disappear")
-    try check(!(rich.string ?? "").contains("DEERSTALKER"), "Internal image placeholders never reach PDF text")
+    try check(!(rich.string ?? "").contains("REMILE"), "Internal image placeholders never reach PDF text")
     let page = rich.page(at: 0)!
     func bounds(_ text: String) -> CGRect { page.selection(for: (page.string! as NSString).range(of: text))!.bounds(for: page) }
     try check(abs(bounds("Element").midY - bounds("Value").midY) < 2 && bounds("Value").minX > bounds("Element").maxX, "Table columns retain their visual positions")
@@ -81,7 +81,7 @@ func runChecks() async throws {
         let text = layoutPDF.page(at: index)?.string ?? ""
         try check(text.contains(title) && text.contains("Page \(index + 1) of 3"), "Correct header variant and resolved PAGE/NUMPAGES on page \(index + 1)")
         try check(text.contains(["BodyOne", "BodyTwo", "BodyThree"][index]), "Body text remains on its own page")
-        try check(!text.contains("DEERSTALKER"), "No private field or artwork markers reach output")
+        try check(!text.contains("REMILE"), "No private field or artwork markers reach output")
     }
     let artPage = layoutPDF.page(at: 0)!
     let artContext = CGContext(data: nil, width: 600, height: 849, bitsPerComponent: 8, bytesPerRow: 2400, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!

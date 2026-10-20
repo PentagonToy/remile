@@ -8,9 +8,9 @@ case "$check_directory" in
     *) print -u2 "The output directory must be absolute."; exit 1 ;;
 esac
 mkdir -p "$check_directory/module-cache"
-cat "$project_directory/Sources/Deerstalker/PDF/PDFReplyWriter.swift" \
-    "$project_directory/Sources/Deerstalker/PDF/PDFCommentGraph.swift" \
-    "$project_directory/Sources/Deerstalker/PDF/PDFNotes.swift" \
-    "$project_directory/Sources/Deerstalker/Markdown/MarkdownBlocks.swift" \
+cat "$project_directory/Sources/Remile/PDF/PDFReplyWriter.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFCommentGraph.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFNotes.swift" \
+    "$project_directory/Sources/Remile/Markdown/MarkdownBlocks.swift" \
     "$project_directory/Tests/ModelChecks/main.swift" > "$check_directory/model-checks.swift"
 swift -module-cache-path "$check_directory/module-cache" "$check_directory/model-checks.swift" "$check_directory"

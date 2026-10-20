@@ -6,7 +6,7 @@ case "$check_directory" in /*) ;; *) exit 1 ;; esac
 mkdir -p "$check_directory/module-cache"
 : > "$check_directory/interface-checks.swift"
 while IFS= read -r source; do
-    [[ "$source" == */DeerstalkerApp.swift ]] && continue
+    [[ "$source" == */RemileApp.swift ]] && continue
     cat "$source" >> "$check_directory/interface-checks.swift"
     print >> "$check_directory/interface-checks.swift"
 done < <(rg --files "$project_directory/Sources" -g '*.swift' | sort)

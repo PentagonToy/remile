@@ -58,4 +58,20 @@ if CommandLine.arguments.count > 2, FileManager.default.fileExists(atPath: Comma
     do { try DocumentTools.create(.combine, inputs: [URL(fileURLWithPath: CommandLine.arguments[2])], destination: rejectedOutput) } catch { rejected = true }
     verify(rejected && !FileManager.default.fileExists(atPath: rejectedOutput.path), "Threaded comments are rejected rather than flattened")
 }
+let mdA = output.appendingPathComponent("First.md"), mdB = output.appendingPathComponent("Second.markdown")
+let sourceA = "# First\n\n$\\alpha$", sourceB = "## Second\n\nKeep **source**."
+try sourceA.write(to: mdA, atomically: true, encoding: .utf8)
+try sourceB.write(to: mdB, atomically: true, encoding: .utf8)
+let mergedMD = output.appendingPathComponent("Combined.md")
+try DocumentTools.create(.combine, inputs: [mdB, mdA], destination: mergedMD)
+let mergedSource = try String(contentsOf: mergedMD, encoding: .utf8)
+verify(mergedSource == sourceB + "\n\n" + sourceA, "Markdown follows explicit order and preserves exact source")
+let markdownKind = try DocumentTools.kind([mdA, mdB])
+verify(markdownKind == .markdown, "Markdown output kind")
+rejected = false
+let mixedOutput = output.appendingPathComponent("Mixed.md")
+do { try DocumentTools.create(.combine, inputs: [first, mdA], destination: mixedOutput) } catch { rejected = true }
+verify(rejected && !FileManager.default.fileExists(atPath: mixedOutput.path), "Mixed PDF and Markdown fail before output")
+let unchangedMD = try String(contentsOf: mdA, encoding: .utf8)
+verify(unchangedMD == sourceA, "Markdown original survives")
 print("\(checks) document tool checks passed")

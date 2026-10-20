@@ -87,6 +87,7 @@ Task { @MainActor in
         window.contentView = host; host.frame = CGRect(origin: .zero, size: size)
         window.orderFront(nil)
         try? await Task.sleep(for: .milliseconds(350))
+        if name.hasPrefix("markdown") { try? await Task.sleep(for: .milliseconds(1000)) }
         host.layoutSubtreeIfNeeded()
         let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
         host.cacheDisplay(in: host.bounds, to: bitmap)
@@ -102,7 +103,7 @@ Task { @MainActor in
         let queued = ConversionModel(); queued.inputs = [URL(fileURLWithPath: "/tmp/Research notes.md"), URL(fileURLWithPath: "/tmp/Diagram.png")]
         await snapshot(ConvertWorkspace(model: queued), name: "convert-queue-" + theme, size: NSSize(width: 940, height: 600), dark: dark)
         let ready = ConversionModel()
-        let temp = output.appendingPathComponent("Deerstalker-Convert-" + UUID().uuidString)
+        let temp = output.appendingPathComponent("Remile-Convert-" + UUID().uuidString)
         try! FileManager.default.createDirectory(at: temp, withIntermediateDirectories: false)
         let pdf = temp.appendingPathComponent("Preview.pdf"); try! (data as Data).write(to: pdf)
         let item = ConversionItem(input: URL(fileURLWithPath: "/tmp/Research notes.md"), kind: "Markdown", output: pdf, message: nil)

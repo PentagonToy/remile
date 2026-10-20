@@ -24,7 +24,7 @@ for name in ("threaded.pdf", "threaded-redo.pdf"):
     assert len(links) == 3
     assert {item["child"] for item in links} == {"First reply", "Nested reply", "Sibling reply"}
     assert next(item for item in links if item["child"] == "Nested reply")["parent"] == "First reply"
-    assert "Deerstalker keeps document text." in reader.pages[0].extract_text()
+    assert "Remile keeps document text." in reader.pages[0].extract_text()
     results[name] = links
 (folder / "independent-check.json").write_text(json.dumps(results, ensure_ascii=False, indent=2) + "\n")
 if (folder / "independent-output.pdf").exists():

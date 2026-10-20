@@ -2,8 +2,8 @@
 import PackageDescription
 
 let package = Package(
-    name: "Deerstalker",
+    name: "Remile",
     platforms: [.macOS(.v14)],
-    products: [.executable(name: "Deerstalker", targets: ["Deerstalker"])],
-    targets: [.executableTarget(name: "Deerstalker")]
+    products: [.executable(name: "Remile", targets: ["Remile"])],
+    targets: [.executableTarget(name: "Remile")]
 )

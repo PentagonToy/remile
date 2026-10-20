@@ -13,7 +13,7 @@ var bounds = CGRect(x: 0, y: 0, width: 500, height: 600)
 let context = CGContext(consumer: CGDataConsumer(data: buffer)!, mediaBox: &bounds, nil)!
 context.beginPDFPage(nil)
 context.textPosition = CGPoint(x: 40, y: 500)
-let line = CTLineCreateWithAttributedString(NSAttributedString(string: "Deerstalker keeps document text.", attributes: [.font: NSFont.systemFont(ofSize: 15)]))
+let line = CTLineCreateWithAttributedString(NSAttributedString(string: "Remile keeps document text.", attributes: [.font: NSFont.systemFont(ofSize: 15)]))
 CTLineDraw(line, context)
 context.endPDFPage()
 context.closePDF()
