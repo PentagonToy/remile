@@ -23,3 +23,11 @@ Sources: [OpenAI accounts and usage](https://developers.openai.com/siwc/token-sh
 ### Saved connections
 
 Locked means remile. could not read its saved ChatGPT connection from macOS Keychain. There is no inactivity timer. The unlocked connection remains in memory for the current process. Restarting the app clears that memory; a development rebuild can also change the app’s signing identity and require macOS approval again. Unlock connection requests access through macOS without removing the saved account. Token renewal is separate from this local lock. Release builds should use a consistent Developer ID signing identity.
+
+## Check a selected sentence
+
+Select prose in the Markdown or LaTeX editor, then right-click and choose **Proofread with Apple Intelligence or Proofread with ChatGPT**. The check follows the AI selected in Settings and shows proposed replacements for review. Apple Intelligence stays on this Mac. ChatGPT sends the selected text when requested. Click a replacement to apply it, or dismiss the panel to keep your text. Undo restores the original. The check accepts up to 2,000 characters and excludes code, maths and TeX commands. Manual mode turns it off.
+
+Automatic spelling and grammar underlines come from macOS. Optional grey inline completions are separate. Tab accepts a completion and Escape dismisses it. Switching files clears the previous completion.
+
+AI settings offers separate Grammar suggestions, Word alternatives and local inline completion switches. Apple Intelligence, ChatGPT and Manual share one provider selector. Word alternatives also appear in the context menu for a selected word. An unavailable ChatGPT connection falls back to Apple Intelligence when available, and the suggestion identifies that fallback.

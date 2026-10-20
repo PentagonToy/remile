@@ -56,13 +56,8 @@ enum TeXCollections {
 
 extension TeXProject {
     func addCollection(parent: UUID? = nil) {
-        let alert = NSAlert(); alert.messageText = "New collection"; alert.informativeText = "Files keep their original paths."
-        let field = NSTextField(string: ""); field.placeholderString = "Collection name"; field.frame = NSRect(x: 0, y: 0, width: 260, height: 24); alert.accessoryView = field
-        alert.addButton(withTitle: "Create"); alert.addButton(withTitle: "Cancel"); alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        updateCollections(collections + [TeXCollections.Group(name: name, parent: parent)])
+        guard !compiling else { return }
+        newItemError = nil; newItemDraft = NewItemDraft(kind: .collection(parent))
     }
     func updateCollections(_ value: [TeXCollections.Group]) {
         do { try TeXCollections.write(value, root: root); collections = value }

@@ -13,6 +13,18 @@ import UniformTypeIdentifiers
     @Published var treeFolders: [String] = []
     @Published private(set) var fileRevision = 0
     @Published var collections: [TeXCollections.Group] = []
+    enum NewItemKind { case file(String), folder(String), collection(UUID?), rename(String), renameCollection(UUID, String) }
+    struct NewItemDraft: Identifiable {
+        let id = UUID()
+        let kind: NewItemKind
+        var isCollection: Bool { switch kind { case .collection, .renameCollection: return true; default: return false } }
+        var placeholder: String { switch kind { case .file: return "File name.tex"; case .folder: return "Folder name"; case .collection: return "Collection name"; case .rename, .renameCollection: return "New name" } }
+        var symbol: String { switch kind { case .file: return "doc.text"; case .folder: return "folder"; case .collection, .renameCollection: return "square.stack.3d.up"; case .rename: return "doc.text" } }
+        var initialName: String { switch kind { case .rename(let path): return (path as NSString).lastPathComponent; case .renameCollection(_, let name): return name; default: return "" } }
+    }
+    @Published var newItemDraft: NewItemDraft?
+    @Published var newItemError: String?
+
     @Published var selected: String {
         didSet {
             guard oldValue != selected else { return }
@@ -229,7 +241,7 @@ import UniformTypeIdentifiers
             updateCollections(collections.map { var group = $0; group.paths = group.paths.map(mapped); return group })
             backFiles = backFiles.map(mapped); forwardFiles = forwardFiles.map(mapped); build = nil
             outputCurrent = false; fileRevision += 1
-            message = "Moved. TeX references may need updating."
+            message = "Check TeX references after moving or renaming a file."
         } catch { message = error.localizedDescription }
     }
     func trash(_ path: String) { trash([path]) }
@@ -253,16 +265,51 @@ import UniformTypeIdentifiers
             } catch { message = error.localizedDescription }
         }
     }
+    func newFile(in parent: String = "") {
+        guard !compiling else { return }
+        newItemError = nil; newItemDraft = NewItemDraft(kind: .file(parent))
+    }
     func newFolder(in parent: String = "") {
         guard !compiling else { return }
-        let alert = NSAlert(); alert.messageText = "New folder"; if connected { alert.informativeText = "Overleaf receives folders when they contain a file." }
-        let field = NSTextField(string: ""); field.placeholderString = "Folder name"; field.frame = NSRect(x: 0, y: 0, width: 240, height: 24); alert.accessoryView = field
-        alert.addButton(withTitle: "Create"); alert.addButton(withTitle: "Cancel"); alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, !name.contains("/"), !name.hasPrefix(".") else { message = "Choose a folder name."; return }
-        do { let path = parent.isEmpty ? name : parent + "/" + name; try FileManager.default.createDirectory(at: TeXFileSystem.url(path, root: root), withIntermediateDirectories: false); treeFolders = try TeXFileSystem.folders(root); fileRevision += 1 }
-        catch { message = error.localizedDescription }
+        newItemError = nil; newItemDraft = NewItemDraft(kind: .folder(parent))
+    }
+    func cancelNewItem() { newItemDraft = nil; newItemError = nil }
+    @discardableResult func finishNewItem(_ text: String) -> Bool {
+        guard let draft = newItemDraft else { return true }
+        let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { cancelNewItem(); return true }
+        guard !compiling else { newItemError = "Wait for compilation to finish."; return false }
+        do {
+            switch draft.kind {
+            case .rename(let path):
+                guard rename(path, to: name) else { throw TeXFileSystem.Failure(errorDescription: message ?? "Could not rename this item.") }
+            case .renameCollection(let id, _):
+                guard let index = collections.firstIndex(where: { $0.id == id }) else { throw TeXFileSystem.Failure(errorDescription: "This collection no longer exists.") }
+                var groups = collections; groups[index].name = name
+                try TeXCollections.write(groups, root: root); collections = groups
+            case .file(let parent):
+                guard !name.contains("/"), !name.hasPrefix("."), !name.contains("\n"), !name.contains("\r") else { throw TeXFileSystem.Failure(errorDescription: "Choose a file name without slashes, line breaks or a leading dot.") }
+                guard ["tex", "bib", "sty", "cls"].contains((name as NSString).pathExtension.lowercased()) else { throw TeXFileSystem.Failure(errorDescription: "Use .tex, .bib, .sty or .cls for a source file.") }
+                guard files.count < 2000, treeFiles.count < 10000 else { throw CocoaError(.fileWriteOutOfSpace) }
+                let path = parent.isEmpty ? name : parent + "/" + name
+                let url = try TeXFileSystem.url(path, root: root)
+                guard !FileManager.default.fileExists(atPath: url.path) else { throw TeXFileSystem.Failure(errorDescription: "That name already exists.") }
+                try Data().write(to: url, options: .withoutOverwriting)
+                original[path] = ""; buffers[path] = ""; files.append(path); files.sort(); treeFiles.append(path); treeFiles.sort()
+                fileRevision += 1; visit(file: path)
+            case .folder(let parent):
+                guard !name.contains("/"), !name.hasPrefix(".") else { throw TeXFileSystem.Failure(errorDescription: "Choose a folder name without slashes or a leading dot.") }
+                let path = parent.isEmpty ? name : parent + "/" + name
+                let url = try TeXFileSystem.url(path, root: root)
+                guard !FileManager.default.fileExists(atPath: url.path) else { throw TeXFileSystem.Failure(errorDescription: "That name already exists.") }
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+                treeFolders = try TeXFileSystem.folders(root); fileRevision += 1
+            case .collection(let parent):
+                let groups = collections + [TeXCollections.Group(name: name, parent: parent)]
+                try TeXCollections.write(groups, root: root); collections = groups
+            }
+            cancelNewItem(); return true
+        } catch { newItemError = error.localizedDescription; return false }
     }
     func duplicate(_ paths: [String]) {
         guard !compiling, save() else { return }
@@ -334,7 +381,7 @@ import UniformTypeIdentifiers
     var canSync: Bool { build != nil && !syncing && !compiling }
     private func currentBuild() -> TeXBuild? {
         guard let build else { message = "Compile to enable source/PDF navigation."; return nil }
-        guard build.buffers == buffers, build.main == main else { message = "Compile changes before synchronising."; return nil }
+        guard build.buffers == buffers, build.main == main else { message = "Recompile to match source and PDF."; return nil }
         return build
     }
     func syncToPDF(line: Int) {
@@ -345,7 +392,7 @@ import UniformTypeIdentifiers
             do {
                 let location = try await Task.detached { try TeXSync.forward(build, file: file, line: line) }.value
                 guard let self, !Task.isCancelled, !self.compiling, self.build?.pdf == build.pdf else { return }
-                guard self.buffers == build.buffers, self.main == build.main else { self.message = "Compile changes before synchronising."; return }
+                guard self.buffers == build.buffers, self.main == build.main else { self.message = "Recompile to match source and PDF."; return }
                 self.showsLog = false; self.pdfJump = PDFJump(location: location)
             } catch { self?.message = error.localizedDescription }
         }
@@ -358,7 +405,7 @@ import UniformTypeIdentifiers
             do {
                 let target = try await Task.detached { try TeXSync.reverse(build, location: location) }.value
                 guard let self, !Task.isCancelled, !self.compiling, self.build?.pdf == build.pdf else { return }
-                guard self.buffers == build.buffers, self.main == build.main else { self.message = "Compile changes before synchronising."; return }
+                guard self.buffers == build.buffers, self.main == build.main else { self.message = "Recompile to match source and PDF."; return }
                 self.selected = target.file; self.sourceJump = SourceJump(location: target)
             } catch { self?.message = error.localizedDescription }
         }
