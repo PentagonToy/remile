@@ -220,7 +220,7 @@ struct ConvertWorkspace: View {
                 }
                 if let message = item.message { Text(message).font(RemileType.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
                 if let output = item.output { ConversionPreview(url: output).id(output).frame(maxWidth: .infinity, maxHeight: .infinity) }
-                else { ContentUnavailableView("This file needs attention", systemImage: "doc.badge.exclamationmark").frame(maxWidth: .infinity, maxHeight: .infinity) }
+                else { ContentUnavailableView("This file needs attention", systemImage: "exclamationmark.triangle").frame(maxWidth: .infinity, maxHeight: .infinity) }
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "doc.richtext").font(.system(size: 40, weight: .ultraLight)).foregroundStyle(.secondary)
@@ -317,7 +317,7 @@ struct ConversionPreview: View {
                 Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityLabel("Converted page \(model.page + 1)")
             } else {
-                ContentUnavailableView("Preview unavailable", systemImage: "doc.badge.exclamationmark")
+                ContentUnavailableView("Preview unavailable", systemImage: "exclamationmark.triangle")
             }
         }.task { model.show(initialPage) }.onDisappear { model.stop() }
     }

@@ -4,17 +4,37 @@ import WebKit
 /// A short-lived authentication surface, never the document editor.
 @MainActor final class OverleafSignInSession: NSObject, ObservableObject, WKNavigationDelegate {
     let web: WKWebView
+    private var networkLease: UUID?
     @Published var signedIn = false
     init(profile: UUID) {
         let config = WKWebViewConfiguration(); config.websiteDataStore = WKWebsiteDataStore(forIdentifier: profile)
         web = WKWebView(frame: .zero, configuration: config)
         super.init(); web.navigationDelegate = self
-        web.load(URLRequest(url: URL(string: "https://www.overleaf.com/login")!))
+        networkLease = try? NetworkAccess.gate.watch { [weak self] in Task { @MainActor in self?.web.stopLoading(); self?.web.navigationDelegate = nil; self?.web.loadHTMLString("<p>Offline mode is on.</p>", baseURL: nil) } }
+        if !NetworkAccess.offline { web.load(URLRequest(url: URL(string: "https://www.overleaf.com/login")!)) }
+        else { web.navigationDelegate = nil; web.loadHTMLString("<p>Offline mode is on.</p>", baseURL: nil) }
     }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let url = action.request.url else { decisionHandler(.cancel); return }
-        if url.host == "www.overleaf.com", url.path == "/project" || url.path.hasPrefix("/project/") { signedIn = true; decisionHandler(.cancel); return }
+        guard !NetworkAccess.offline, let url = action.request.url else { decisionHandler(.cancel); return }
+        if action.targetFrame?.isMainFrame != false, Self.isProjectPage(url) {
+            completeSignIn(); decisionHandler(.cancel); return
+        }
         decisionHandler(url.scheme == "https" ? .allow : .cancel)
+    }
+    deinit { if let networkLease { NetworkAccess.gate.release(networkLease) } }
+    static func isProjectPage(_ url: URL) -> Bool {
+        ["www.overleaf.com", "overleaf.com"].contains(url.host ?? "") && (url.path == "/project" || url.path.hasPrefix("/project/"))
+    }
+    static func isAuthenticatedProjectList(_ response: HTTPURLResponse) -> Bool {
+        guard let url = response.url, ["www.overleaf.com", "overleaf.com"].contains(url.host ?? ""), url.path == "/user/projects", response.statusCode == 200 else { return false }
+        return response.mimeType?.lowercased() == "application/json"
+    }
+    private func completeSignIn() { web.isHidden = true; signedIn = true }
+    func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if response.isForMainFrame, let http = response.response as? HTTPURLResponse, Self.isAuthenticatedProjectList(http) {
+            completeSignIn(); decisionHandler(.cancel); return
+        }
+        decisionHandler(.allow)
     }
 }
 

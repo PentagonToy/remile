@@ -89,3 +89,11 @@ check(TeXFileSystem.reference("sections/introduction.tex") == "sections/introduc
 check(TeXFileSystem.reference("figures/diagram.pdf") == "figures/diagram.pdf" && TeXFileSystem.reference("figures/photo.png") == "figures/photo.png", "image references preserve their extensions")
 check(TeXFileSystem.topLevel(["a", "a/b.tex", "c.tex"]) == ["a", "c.tex"], "bulk file moves do not move a child twice")
 print("Passed \(count) native connection checks")
+
+let tagProject = "6ad72e207e5cd74f01fe6b18"
+let tagFixture = try JSONSerialization.data(withJSONObject: [["_id": "tag-a", "name": "Research", "color": "#e88a33", "project_ids": [tagProject, tagProject]], ["_id": "tag-b", "name": "Course", "color": "hsl(210, 70%, 45%)", "project_ids": [tagProject]], ["_id": "broken", "name": "Ignore"]])
+let tags = try OverleafWebClient.parseTags(tagFixture)
+try check(tags[tagProject]?.count == 2, "tag membership is deduplicated")
+try check(tags[tagProject]?.map(\.name) == ["Course", "Research"], "tag names are sorted without changing membership")
+try check(tags[tagProject]?.last?.color == "#e88a33", "tag source colour retained for display adaptation")
+print("Passed optional Overleaf tag metadata parsing")

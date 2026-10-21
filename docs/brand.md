@@ -27,4 +27,4 @@ Use native system type for controls, monospaced type for source and a native ser
 >
 > — remile.
 
-Keep the artwork static. Section transitions last about 0.36 seconds and respect Reduce Motion.
+Preserve the supplied artwork. The Home banner animates its lighthouse beam and a brief offline/online flight. Section transitions last about 0.36 seconds. General → Animations and system Reduce Motion control added motion.

@@ -11,7 +11,7 @@ struct EditorSidebarBrand: View {
             }
             if !compact {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Across time, a few words find you here.").font(.system(size: 18, weight: .regular, design: .serif)).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+                    Text(RemileBrand.tagline).font(.system(size: 18, weight: .regular, design: .serif)).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
                     Text("— remile.").font(.system(size: 14, design: .serif)).foregroundStyle(RemileStyle.accent)
                 }.padding(.horizontal, 4).padding(.bottom, 8).transition(.opacity)
             }

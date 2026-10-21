@@ -7,7 +7,17 @@ final class PDFCommentGraph {
     private var importIsComplete = true
     private weak var sourceDocument: PDFDocument?
 
-    init(document: PDFDocument) {
+    let allowsSignatureChanges: Bool
+    private(set) var signaturePreservedData: Data?
+    private let signed: Bool
+    private let signatureSource: PDFSignedAnnotations.Source?
+    private var signedWriter: PDFSignedAnnotations?
+    private var signatureError: Error?
+
+    init(document: PDFDocument, sourceData: Data? = nil, allowSignatureChanges: Bool = false) {
+        allowsSignatureChanges = allowSignatureChanges
+        signed = PDFFormPreservation.hasDigitalSignature(document)
+        signatureSource = signed ? sourceData.map { PDFSignedAnnotations.Source(document: document, data: $0) } : nil
         sourceDocument = document
         // PDFKit can omit an outline that has never been materialised before its first write.
         _ = document.outlineRoot
@@ -78,7 +88,22 @@ final class PDFCommentGraph {
         for (child, parent) in other.parents { parents[child] = parent }
     }
 
+    private func prepareSignedWriter() throws {
+        guard signed, signedWriter == nil else { return }
+        if let signatureError { throw signatureError }
+        do {
+            guard let signatureSource else { throw PDFSignedAnnotations.Failure.unsupported }
+            signedWriter = try PDFSignedAnnotations(source: signatureSource)
+        } catch { signatureError = error; throw error }
+    }
+    func validateAnnotationSave() throws {
+        if signed, !allowsSignatureChanges { try prepareSignedWriter() }
+    }
+
     func serialize(_ document: PDFDocument) throws -> Data {
+        signaturePreservedData = nil
+        do { try prepareSignedWriter() } catch { if !allowsSignatureChanges { throw error } }
+        let forms = try PDFFormPreservation.snapshot(document)
         guard sourceDocument === document, importIsComplete, let bytes = document.dataRepresentation() else { throw PDFReplyWriter.Failure.unsupported }
         let file = try PDFReplyWriter.File(bytes)
         let pages = try file.pages()
@@ -113,9 +138,14 @@ final class PDFCommentGraph {
                 let value = try file.object(ref)
                 guard value["Subtype"]?.name == annotation.type,
                       let rect = value["Rect"]?.array, rect.count == 4,
-                      let x = rect[0].number, let y = rect[1].number, let maxX = rect[2].number, let maxY = rect[3].number,
-                      abs(x - annotation.bounds.minX) < 0.01, abs(y - annotation.bounds.minY) < 0.01,
-                      abs(maxX - annotation.bounds.maxX) < 0.01, abs(maxY - annotation.bounds.maxY) < 0.01 else { throw PDFReplyWriter.Failure.unsupported }
+                      let x = rect[0].number, let y = rect[1].number, let maxX = rect[2].number, let maxY = rect[3].number else { throw PDFReplyWriter.Failure.unsupported }
+                func matches(_ bounds: CGRect) -> Bool {
+                    abs(bounds.minX - annotation.bounds.minX) < 0.01 && abs(bounds.minY - annotation.bounds.minY) < 0.01 &&
+                    abs(bounds.maxX - annotation.bounds.maxX) < 0.01 && abs(bounds.maxY - annotation.bounds.maxY) < 0.01
+                }
+                let stored = CGRect(x: x, y: y, width: maxX - x, height: maxY - y)
+                // PDFKit presents Text notes as a 24pt icon at the stored rectangle's top-left.
+                guard matches(stored) || (annotation.type == "Text" && matches(CGRect(x: x, y: maxY - 24, width: 24, height: 24))) else { throw PDFReplyWriter.Failure.unsupported }
                 refs[ObjectIdentifier(annotation)] = ref
                 pageIndices[ObjectIdentifier(annotation)] = index
             }
@@ -135,7 +165,19 @@ final class PDFCommentGraph {
         }
         var outputNames: [PDFReplyWriter.Reference: String] = [:]
         for (id, ref) in refs { if let name = names[id] { outputNames[ref] = name } }
-        return try PDFReplyWriter.write(file, links: links, names: outputNames)
+        signaturePreservedData = nil
+        if let signedWriter {
+            do {
+                let preserved = try signedWriter.serialize(document, rewritten: file, refs: refs, names: outputNames, links: links)
+                signaturePreservedData = preserved
+                return preserved
+            } catch { if !allowsSignatureChanges { throw error } }
+        }
+        let result = try PDFReplyWriter.write(file, links: links, names: outputNames)
+        if forms != nil, !(signed && allowsSignatureChanges) {
+            guard let reopened = PDFDocument(data: result), try PDFFormPreservation.snapshot(reopened) == forms else { throw PDFReplyWriter.Failure.unsupported }
+        }
+        return result
     }
 
     private static func name(_ key: String, _ dictionary: CGPDFDictionaryRef) -> String? {

@@ -52,6 +52,23 @@ enum EditorBridge {
         if request.operation == "status" {
             return ["ok": true, "kind": home.texProject == nil ? "document" : "latex-local", "path": home.texProject?.root.path ?? home.reader.url?.path ?? "", "dirty": home.texProject?.dirty ?? home.reader.dirty, "compiling": home.texProject?.compiling ?? false, "selected": home.texProject?.selected ?? "", "pages": home.texProject?.pdf?.pageCount ?? 0, "errors": home.texProject?.diagnostics.filter { $0.severity == .error }.count ?? 0, "warnings": home.texProject?.diagnostics.filter { $0.severity == .warning }.count ?? 0, "historyMinutes": TeXHistory.intervalMinutes, "aiSuggestions": UserDefaults.standard.bool(forKey: "editor.aiSuggestions"), "compileCurrent": home.texProject?.outputCurrent ?? false]
         }
+        if request.operation == "library-search" {
+            do {
+                guard let query = request.source else { return ["ok": false, "error": "Provide a search question or keywords."] }
+                let response = try await home.librarySearch(query, boost: request.apply != false)
+                return ["ok": true, "engine": response.phrases.isEmpty ? "B0" : "B-guided", "expansionPhrases": response.phrases, "hits": response.hits.map { hit in
+                    ["path": hit.path, "page": hit.page, "excerpt": hit.excerpt, "score": hit.score, "matchQuery": hit.matchQuery ?? query] as [String: Any]
+                }]
+            } catch { return ["ok": false, "error": error.localizedDescription] }
+        }
+        if request.operation == "pdf-read" {
+            do {
+                guard home.texProject == nil, let inspect = home.reader.pdfInspection else { return ["ok": false, "error": "Open a PDF in the reader first, or supply an absolute PDF path."] }
+                var result = try inspect(request.start, request.source, request.output)
+                result["path"] = home.reader.url?.path ?? ""; result["dirty"] = home.reader.dirty
+                return result
+            } catch { return ["ok": false, "error": error.localizedDescription] }
+        }
         if request.operation == "comments" {
             do {
                 if let root = home.texProject?.root, let project = home.overleaf.connection(for: root) {

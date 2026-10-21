@@ -70,6 +70,8 @@ enum OverleafGit {
     }
     /// Git output is bounded on disk, so large repositories cannot block a full pipe.
     static func run(_ args: [String], at directory: URL, credential: UUID? = nil, allowFailure: Bool = false, input: Data? = nil) throws -> Result {
+        let networking = args.contains { $0.hasPrefix("https://") || $0.hasPrefix("http://") || $0.hasPrefix("ssh://") }
+        if networking { try NetworkAccess.requireOnline() }
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("remile-git-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: scratch) }
@@ -95,7 +97,9 @@ enum OverleafGit {
         process.environment = environment; process.standardOutput = stdout; process.standardError = stderr
         if let input { let path = scratch.appendingPathComponent("input"); try input.write(to: path); process.standardInput = try FileHandle(forReadingFrom: path) }
         else { process.standardInput = FileHandle.nullDevice }
-        try process.run()
+        var lease: UUID?
+        if networking { lease = try NetworkAccess.gate.start(process) } else { try process.run() }
+        defer { if let lease { NetworkAccess.gate.release(lease) } }
         let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + 90, execute: watchdog)
         process.waitUntilExit(); watchdog.cancel()

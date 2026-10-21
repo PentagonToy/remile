@@ -13,7 +13,7 @@ remile version
 remile status
 ```
 
-Keep an existing command if that name is already in use. The future Homebrew cask will manage this symlink through its `binary` stanza. The bundled launcher resolves the installed app location and calls the same native CLI used by `tools/remile`.
+Keep an existing command if that name is already in use. Homebrew manages its CLI link through the cask. The bundled launcher resolves the installed app location and calls the same native CLI used by `tools/remile`.
 
 ## Document tools
 
@@ -42,6 +42,8 @@ Live commands target the active remile. document window. Switching windows chang
 | --- | --- |
 | `open /path/document` | Open a document or project |
 | `status` | Read document state and compile counts |
+| `library-search "question or keywords" [--no-boost]` | Search the current local library with the same engine and boosting policy as the app; return ranked paths, pages, excerpts and matched terms |
+| `pdf-read [/path/document.pdf] [--page N] [--find text] [--render /path/new.png]` | Read PDF page text, annotation data and search bounds; optionally render a page image |
 | `read [--file relative.tex]` | Read the buffer, SHA-256 and CLI edit ranges |
 | `replace --source-file /path/source --expected-sha256 HASH [--file relative.tex]` | Apply an undoable buffer edit |
 | `save` | Save the current document or project |
@@ -73,3 +75,11 @@ The application processes fixed requests through `~/Library/Application Support/
 Comment exports contain the document filename rather than its local path. JSON includes a schema version, stable annotation identifiers, page, author, text, optional highlight quote, modification time and reply parent. File exports require a new `.md` or `.json` path.
 
 For a connected Overleaf project, `comments` exports the latest snapshot from its native Comments view. Account credentials remain inside the app.
+
+## PDF page context
+
+`pdf-read /absolute/document.pdf --page 18 --find "Linear" --render /absolute/new.png` works without opening an editor. Page numbers start at one. The JSON response includes page count, label, bounded text, annotation types/text/rectangles and search rectangles in PDF page points with a bottom-left origin. The optional image uses a new PNG path and a maximum thumbnail dimension of 1600 points. Locked PDFs and copying restrictions are honoured.
+
+Without a document path, `pdf-read` reads the current reader page, including unsaved annotation edits, and reports whether the document has unsaved changes. Text is capped at 64,000 characters, annotations at 500 and matches at 100 per page; the response flags truncated text. This command reads context without editing the PDF or changing its visible page.
+
+Library search uses B0 for keywords and optionally B-guided for questions. `--no-boost`, Work offline and Manual mode keep the request on B0. The response identifies the engine and accepted expansion phrases. It does not change the search field or document selection. Start the app before issuing this live command; allow up to 60 seconds for the initial resident index and model preparation.

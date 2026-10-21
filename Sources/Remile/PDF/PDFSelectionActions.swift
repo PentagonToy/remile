@@ -1,5 +1,6 @@
 import AppKit
 import PDFKit
+import QuartzCore
 
 /// An owned selection, captured when the menu opens rather than when an action runs.
 @MainActor
@@ -38,14 +39,96 @@ struct PDFSelectionActions {
     var ask: ((PDFSelectionContext) -> Void)?
     var translate: ((PDFSelectionContext) -> Void)?
     var canAnnotate: ((PDFSelectionContext) -> Bool)?
+    var removeHighlight: ((PDFDocument, PDFAnnotation) -> Void)?
 }
 
 /// Reader and Search use the same explicit native menu, without swizzling PDFKit.
 @MainActor
 final class PDFSelectionView: PDFView {
     var selectionActions = PDFSelectionActions()
+    var drawingTool: PDFDrawingTool? { didSet { if oldValue != drawingTool { cancelDrawing(); window?.invalidateCursorRects(for: self) } } }
+    var drawingColor: NSColor = .systemRed
+    var beginDrawing: (() -> Bool)?
+    var commitDrawing: ((PDFPage, PDFAnnotation) -> Void)?
+    var finishDrawing: (() -> Void)?
+    private var drawingPage: PDFPage?
+    private var drawingPoints = [CGPoint]()
+    private var previewLayer: CAShapeLayer?
+    private var previewPath: CGMutablePath?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let target = super.hitTest(point)
+        return drawingTool != nil && target != nil && !(target is NSScroller) ? self : target
+    }
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if drawingTool != nil { addCursorRect(bounds, cursor: .crosshair) }
+    }
+    override func mouseDown(with event: NSEvent) {
+        guard drawingTool != nil else { super.mouseDown(with: event); return }
+        cancelDrawing()
+        guard beginDrawing?() ?? true else { return }
+        window?.makeFirstResponder(self)
+        let location = convert(event.locationInWindow, from: nil)
+        guard let page = page(for: location, nearest: false), page.document === document else { return }
+        let point = convert(location, to: page)
+        guard page.bounds(for: .cropBox).contains(point) else { return }
+        drawingPage = page; drawingPoints = [point]
+        let path = CGMutablePath(); path.move(to: location); previewPath = path
+    }
+    override func mouseDragged(with event: NSEvent) {
+        guard let tool = drawingTool else { super.mouseDragged(with: event); return }
+        guard let page = drawingPage, page.document === document, drawingPoints.count < 10_000 else { return }
+        let point = convert(convert(event.locationInWindow, from: nil), to: page)
+        let crop = page.bounds(for: .cropBox)
+        guard crop.contains(point) else { return }
+        if let previous = drawingPoints.last, hypot(previous.x - point.x, previous.y - point.y) < 0.5 { return }
+        drawingPoints.append(point)
+        // Preview a vector path; never rebuild PDF annotation appearances on pointer movement.
+        if previewLayer == nil {
+            wantsLayer = true
+            let preview = CAShapeLayer(); preview.zPosition = 1000; preview.frame = bounds
+            preview.fillColor = nil; preview.strokeColor = drawingColor.cgColor
+            preview.lineWidth = 2 * scaleFactor; preview.lineCap = .round; preview.lineJoin = .round
+            preview.actions = ["path": NSNull(), "position": NSNull(), "bounds": NSNull()]
+            layer?.addSublayer(preview); previewLayer = preview
+        }
+        let location = convert(point, from: page)
+        if tool == .ink { previewPath?.addLine(to: location) }
+        else {
+            let first = convert(drawingPoints[0], from: page)
+            let rect = CGRect(x: min(first.x, location.x), y: min(first.y, location.y), width: abs(location.x - first.x), height: abs(location.y - first.y))
+            let path = CGMutablePath()
+            if tool == .rectangle { path.addRect(rect) } else { path.addEllipse(in: rect) }
+            previewPath = path
+        }
+        previewLayer?.path = previewPath
+    }
+    override func mouseUp(with event: NSEvent) {
+        guard let tool = drawingTool else { super.mouseUp(with: event); return }
+        let page = drawingPage, points = drawingPoints
+        cancelDrawing()
+        guard let page, page.document === document, let annotation = tool.annotation(points: points, on: page, color: drawingColor) else { return }
+        commitDrawing?(page, annotation)
+    }
+    override func scrollWheel(with event: NSEvent) {
+        if drawingPage != nil { cancelDrawing() }
+        super.scrollWheel(with: event)
+    }
+    override func keyDown(with event: NSEvent) {
+        if drawingTool != nil, event.keyCode == 53 { cancelDrawing(); finishDrawing?(); return }
+        super.keyDown(with: event)
+    }
+    func cancelDrawing() {
+        previewLayer?.removeFromSuperlayer(); previewLayer = nil; previewPath = nil
+        drawingPage = nil; drawingPoints = []
+    }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        cancelDrawing()
+        let location = convert(event.locationInWindow, from: nil)
+        let targetPage = page(for: location, nearest: false)
+        let target = targetPage.flatMap { page in page.annotations.last { ["Highlight", "Underline", "Squiggly", "StrikeOut", "Ink", "Square", "Circle"].contains($0.type ?? "") && $0.bounds.contains(convert(location, to: page)) } }
         if PDFSelectionContext(selection: currentSelection, document: document) == nil {
             let point = convert(event.locationInWindow, from: nil)
             if let page = page(for: point, nearest: false), page.document === document,
@@ -53,7 +136,14 @@ final class PDFSelectionView: PDFView {
                 setCurrentSelection(word, animate: false)
             }
         }
-        return selectionMenu(for: currentSelection)
+        let menu = selectionMenu(for: currentSelection)
+        if let target, let document, selectionActions.removeHighlight != nil {
+            let command = HighlightRemovalCommand(view: self, document: document, annotation: target)
+            let item = NSMenuItem(title: ["Ink", "Square", "Circle"].contains(target.type ?? "") ? "Delete Drawing" : "Delete Highlight", action: #selector(HighlightRemovalCommand.invoke(_:)), keyEquivalent: "")
+            item.target = command; item.representedObject = command; item.isEnabled = command.isEnabled
+            menu.insertItem(.separator(), at: 0); menu.insertItem(item, at: 0)
+        }
+        return menu
     }
 
     func selectionMenu(for selection: PDFSelection?) -> NSMenu {
@@ -88,6 +178,16 @@ final class PDFSelectionView: PDFView {
         item.representedObject = command; item.isEnabled = command.isEnabled
         return item
     }
+}
+
+@MainActor
+private final class HighlightRemovalCommand: NSObject {
+    weak var view: PDFSelectionView?
+    let document: PDFDocument
+    let annotation: PDFAnnotation
+    init(view: PDFSelectionView, document: PDFDocument, annotation: PDFAnnotation) { self.view = view; self.document = document; self.annotation = annotation }
+    var isEnabled: Bool { view?.document === document && annotation.page?.document === document && !document.isLocked && !document.isEncrypted && document.allowsCommenting && view?.selectionActions.removeHighlight != nil }
+    @objc func invoke(_ sender: NSMenuItem) { guard isEnabled else { return }; view?.selectionActions.removeHighlight?(document, annotation) }
 }
 
 @MainActor

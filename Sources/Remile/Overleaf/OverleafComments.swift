@@ -6,7 +6,7 @@ struct OverleafComments: View {
     let connection: OverleafConnection
     let close: () -> Void
     @StateObject private var state = State()
-    private final class State: ObservableObject { @Published var busy = false; @Published var error: String?; @Published var signIn = false }
+    private final class State: ObservableObject { @Published var busy = false; @Published var error: String?; @Published var signIn = false; @Published var needsSignIn = false }
     private var archive: OverleafThreadArchive? { library.comments[connection.id] }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -18,7 +18,7 @@ struct OverleafComments: View {
                 Button("Done", action: close).keyboardShortcut(.cancelAction)
             }
             if let error = state.error {
-                HStack { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning); Spacer(); Button("Sign in") { state.signIn = true } }
+                HStack { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning); Spacer(); if state.needsSignIn { Button("Sign in") { state.signIn = true } } }
             }
             if let archive, archive.threads.isEmpty {
                 ContentUnavailableView("No comments", systemImage: "text.bubble").frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -39,9 +39,9 @@ struct OverleafComments: View {
             .sheet(isPresented: $state.signIn, onDismiss: { Task { await refresh() } }) { OverleafSignIn(profile: connection.profileID) { state.signIn = false } }
     }
     private func refresh() async {
-        guard !state.busy else { return }; state.busy = true; state.error = nil
+        guard !state.busy else { return }; state.busy = true; state.error = nil; state.needsSignIn = false
         do { library.comments[connection.id] = try await OverleafWebClient.comments(connection) }
-        catch { state.error = error.localizedDescription }
+        catch { state.error = error.localizedDescription; state.needsSignIn = (error as? OverleafWebClient.Failure) == .signIn }
         state.busy = false
     }
     private func export(json: Bool) {
@@ -49,6 +49,6 @@ struct OverleafComments: View {
         let panel = NSSavePanel(); panel.allowedContentTypes = json ? [.json] : [.remileMarkdown]
         panel.nameFieldStringValue = connection.name.replacingOccurrences(of: "/", with: "-") + " comments." + (json ? "json" : "md")
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try archive.data(json: json).write(to: url, options: .atomic) } catch { state.error = error.localizedDescription }
+        do { try archive.data(json: json).write(to: url, options: .atomic) } catch { state.error = error.localizedDescription; state.needsSignIn = (error as? OverleafWebClient.Failure) == .signIn }
     }
 }

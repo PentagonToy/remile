@@ -9,6 +9,7 @@ enum ReaderScrolling {
             scroll.verticalScrollElasticity = enabled && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? .allowed : .none
             scroll.horizontalScrollElasticity = .none
             scroll.usesPredominantAxisScrolling = true
+            NativeScrollMotion.attach(scroll)
         }
         for child in view.subviews { configure(child) }
     }

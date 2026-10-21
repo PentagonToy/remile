@@ -14,6 +14,7 @@ import UniformTypeIdentifiers
     @Published private(set) var treeFiles: [String]
     @Published var treeFolders: [String] = []
     @Published private(set) var fileRevision = 0
+    @Published private(set) var editRevision = 0
     @Published var collections: [TeXCollections.Group] = []
     enum NewItemKind { case file(String), folder(String), collection(UUID?), rename(String), renameCollection(UUID, String) }
     struct NewItemDraft: Identifiable {
@@ -45,6 +46,7 @@ import UniformTypeIdentifiers
         didSet {
             let changed = Set(buffers.keys).union(oldValue.keys).filter { buffers[$0] != oldValue[$0] }
             guard !changed.isEmpty else { return }
+            editRevision += 1
             outputCurrent = false
             if !compiling && (!log.isEmpty || pdf != nil) { message = "Edited · recompile" }
             if submissionCheck, message != "Source changed · recheck" { message = "Source changed · recheck" }
@@ -60,6 +62,8 @@ import UniformTypeIdentifiers
     private var pendingHistory = Set<String>()
     @Published var outline: [TeXOutlineItem] = []
     @Published var setupNeeded = false
+    @Published var compileFailed = false
+    @Published var setupIssue: TeXSetupIssue?
     @Published var renamingFile: String?
     var editSource: ((String, String, String, String) -> Bool)?
     private var outlineTask: Task<Void, Never>?
@@ -142,7 +146,8 @@ import UniformTypeIdentifiers
     }
     func compile(output: URL? = nil, scratch: Bool = false, submissionCheck: Bool = false) {
         guard !compiling else { return }
-        if TeXConfiguration.current.missingTools(buffers: buffers, submissionCheck: submissionCheck).isEmpty == false { setupNeeded = true; message = "TeX tools are missing."; return }
+        if TeXConfiguration.current.missingTools(buffers: buffers, submissionCheck: submissionCheck).isEmpty == false { setupIssue = nil; setupNeeded = true; compileFailed = true; message = "TeX tools are missing."; return }
+        setupIssue = nil; setupNeeded = false; compileFailed = false
         self.submissionCheck = submissionCheck
         compileID = UUID(); let id = compileID
         let job = TeXCompileJob { [weak self] output in
@@ -165,8 +170,19 @@ import UniformTypeIdentifiers
                     TeXCache.discard(self.cachedBuild); self.cachedBuild = managed ? destination : nil; retained = managed
                     self.build = TeXBuild(pdf: result.output, source: destination.appendingPathComponent("Source"), executable: URL(fileURLWithPath: configuration.directory).appendingPathComponent("synctex"), buffers: buffers, main: main)
                 }
-                else { self.message = submissionCheck ? "Submission check failed" : "Compilation failed"; self.showsLog = true }
-            } catch { self?.message = error is CancellationError ? "Compilation stopped" : error.localizedDescription }
+                else {
+                    self.message = submissionCheck ? "Submission check failed" : "Compilation failed"; self.showsLog = true
+                    self.setupIssue = TeXSetupIssue.detect(result.log); self.setupNeeded = true; self.compileFailed = true
+                }
+            } catch {
+                if let self, self.compileID == id {
+                    self.message = error is CancellationError ? "Compilation stopped" : error.localizedDescription
+                    let captured = (try? String(contentsOf: destination.appendingPathComponent("compiler.log"), encoding: .utf8)) ?? ""
+                    self.log = String((captured + "\n" + (self.message ?? "Compilation failed")).suffix(150000))
+                    self.diagnostics = TeXDiagnostics.parse(self.log)
+                    if !(error is CancellationError) { self.showsLog = true; self.setupIssue = TeXSetupIssue.detect(self.log); self.setupNeeded = true; self.compileFailed = true }
+                }
+            }
             self?.compiling = false; self?.job = nil
         }
     }

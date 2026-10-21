@@ -1,0 +1,63 @@
+import Foundation
+var checks = 0
+func check(_ value: Bool, line: UInt = #line) { precondition(value, "Failed check at test line \(line)"); checks += 1 }
+let log = "! LaTeX Error: File `soul.sty' not found.\n! LaTeX Error: File `newtxmath.sty' not found."
+let issue = TeXSetupIssue.detect(log)!
+check(issue.files == ["newtxmath.sty", "soul.sty"])
+let repository = TeXPackageResolver.parse("newtx:\n texmf-dist/tex/latex/newtx/newtxmath.sty\nsoul:\n texmf-dist/tex/generic/soul/soul.sty", files: issue.files)
+check(issue.commands(directory: "/Library/TeX/texbin", resolution: repository) == ["sudo '/Library/TeX/texbin/tlmgr' install newtx soul"])
+check(issue.commands(directory: "/Library/TeX/texbin").allSatisfy { $0.contains(" search --global ") })
+check(TeXSetupIssue.detect("All done") == nil)
+let custom = TeXSetupIssue.detect("! LaTeX Error: File `my-journal.cls' not found.")!
+check(custom.commands(directory: "/TeX path/it's bin")[0].contains("search --global --file '/my-journal\\.cls$'"))
+check(!custom.commands(directory: "/TeX path/it's bin")[0].contains(" install "))
+check(TeXSetupIssue.detect("Required program gs not found in PATH")!.commands(directory: "/Library/TeX/texbin") == ["brew install ghostscript"])
+let fontLog = "! I can't find file `rsfs10'.\n! Emergency stop.\n./main.tex:43: Font U/rsfs/m/n/10=rsfs10 at 10.0pt not loadable: Metric (TFM) file not found.\n./main.tex:43: ==> Fatal error occurred, no output PDF file produced!"
+let fontIssue = TeXSetupIssue.detect(fontLog)!
+check(fontIssue.files == ["rsfs10.tfm"])
+let fonts = TeXPackageResolver.parse("rsfs:\n texmf-dist/fonts/tfm/public/rsfs/rsfs10.tfm", files: fontIssue.files)
+check(fontIssue.commands(directory: "/Library/TeX/texbin", resolution: fonts) == ["sudo '/Library/TeX/texbin/tlmgr' install rsfs"])
+let unknownFont = TeXSetupIssue.detect("Font U/custom/m/n/10=custom-font at 10pt not loadable: Metric (TFM) file not found.")!
+check(unknownFont.commands(directory: "/Library/TeX/texbin") == ["'/Library/TeX/texbin/tlmgr' search --global --file '/custom-font\\.tfm$'"])
+check(TeXSetupIssue.detect("Font U/rsfs/m/n/10=rsfs10 at 10.0pt") == nil)
+let failure = TeXDiagnostics.parse(fontLog)
+check(TeXDiagnostics.primaryError(failure)?.message.contains("not loadable") == true)
+check(TeXDiagnostics.primaryError(TeXDiagnostics.parse("Package acronym Warning: Acronym AI is not defined on input line 40.")) == nil)
+check(TeXEnvironment.declaredFiles(["main.tex": "\\usepackage{mathrsfs}"]) == ["mathrsfs.sty"])
+let courier = TeXSetupIssue.detect("./3_methodology.tex:51: Font T1/pcr/m/n/10=pcrr8t at 10.0pt not loadable: Metri\nc (TFM) file not found.")!
+let courierRepository = TeXPackageResolver.parse("courier:\n texmf-dist/fonts/tfm/adobe/courier/pcrr8t.tfm", files: courier.files)
+check(courier.commands(directory: "/Library/TeX/texbin", resolution: courierRepository) == ["sudo '/Library/TeX/texbin/tlmgr' install courier"])
+check(TeXEnvironment.declaredFiles(["main.tex": "\\usepackage{times}"]) == ["times.sty"])
+let arbitrary = TeXSetupIssue(files: ["future-font.tfm", "future-package.sty"])
+let arbitraryRepository = TeXPackageResolver.parse("fresh-package:\n texmf-dist/tex/latex/fresh/future-package.sty\n texmf-dist/fonts/tfm/fresh/future-font.tfm", files: arbitrary.files)
+check(arbitrary.commands(directory: "/Library/TeX/texbin", resolution: arbitraryRepository) == ["sudo '/Library/TeX/texbin/tlmgr' install fresh-package"])
+let ambiguous = TeXPackageResolver.parse("first:\n texmf-dist/tex/latex/first/shared.sty\nsecond:\n texmf-dist/tex/latex/second/shared.sty", files: ["shared.sty"])
+check(TeXSetupIssue(files: ["shared.sty"]).commands(directory: "/Library/TeX/texbin", resolution: ambiguous).allSatisfy { !$0.contains(" install ") })
+let docOnly = TeXPackageResolver.parse("examples:\n texmf-dist/doc/latex/demo/private.cls", files: ["private.cls"])
+check(docOnly.owners.isEmpty)
+check(TeXSetupIssue.detect("tlmgr itself needs to be updated.")!.commands(directory: "/Library/TeX/texbin") == ["sudo '/Library/TeX/texbin/tlmgr' update --self"])
+let mixedLog = fontLog + "\n./main.tex:52: Undefined control sequence.\nPackage demo Warning: Something harmless."
+let mixed = TeXBuildReport(log: mixedLog, diagnostics: TeXDiagnostics.parse(mixedLog), missingTools: ["latexmk"])
+check(mixed.problems.filter { $0.category == .dependencies }.count == 1 && mixed.problems.filter { $0.category == .tools }.count == 1)
+check(mixed.problems.contains { $0.category == .source && $0.message.contains("Undefined control sequence") })
+check(!mixed.problems.contains { $0.message.hasPrefix("! Emergency stop") })
+let advice = try TeXDiagnosticAdvice.parse(#"{"summary":"A font is missing.","steps":["Check the repository owner."],"commands":[]}"#)
+check(advice.steps.count == 1)
+check((try? TeXDiagnosticAdvice.parse(#"{"summary":"Bad","steps":[],"commands":["one\ntwo"]}"#)) == nil)
+check((try? TeXDiagnosticAdvice.parse(#"{"summary":"Missing required fields"}"#)) == nil)
+let aiInput = try TeXDiagnosticAdvice.input(log: String(repeating: "x", count: 20_000), diagnostics: [], directory: "/Library/TeX/texbin", resolution: nil)
+check(aiInput.utf8.count < 5000 && !aiInput.contains("sourceBuffers"))
+let declared = TeXEnvironment.declaredFiles(["main.tex": "\\documentclass{local-journal}\n%\\usepackage{ignore-me}\n\\usepackage{soul,framed}\n\\usepackage{\\dynamic}"])
+check(declared == ["framed.sty", "local-journal.cls", "soul.sty"])
+let output = URL(fileURLWithPath: CommandLine.arguments[1])
+let root = output.appendingPathComponent("project")
+try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+try "Local class".write(to: root.appendingPathComponent("local-journal.cls"), atomically: true, encoding: .utf8)
+let basic = TeXEnvironment.check(configuration: .current, buffers: nil, root: nil)
+check(!basic.projectChecked && basic.checkedFiles == 0 && basic.ready)
+let absent = TeXEnvironment.check(configuration: .init(directory: output.appendingPathComponent("not-a-tex-installation").path, engine: .pdf), buffers: nil, root: nil)
+check(!absent.ready && absent.missingTools.contains("latexmk") && absent.missingTools.contains("kpsewhich"))
+let project = TeXEnvironment.check(configuration: .current, buffers: ["main.tex":"\\documentclass{local-journal}\n\\usepackage{remile-absent-spec}"], root: root)
+check(project.projectChecked && project.checkedFiles == 2)
+check(project.missingFiles == ["remile-absent-spec.sty"] && project.unverifiedFiles.isEmpty && project.issue != nil)
+print("Passed \(checks) TeX guidance and read-only environment checks")

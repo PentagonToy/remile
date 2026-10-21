@@ -10,9 +10,15 @@ import WebKit
         await OverleafWebIdentity.remember(profile)
         return bytes
     }
+    struct Tag: Codable, Identifiable, Equatable, Sendable {
+        let id: String
+        let name: String
+        let color: String?
+    }
     struct Project: Identifiable, Equatable, Sendable {
         let id: String
         let name: String
+        var tags: [Tag] = []
     }
     enum Failure: LocalizedError {
         case signIn, response
@@ -22,6 +28,7 @@ import WebKit
         func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
     }
     static func request(_ path: String, profile: UUID) async throws -> Data {
+        try NetworkAccess.requireOnline()
         await OverleafWebIdentity.restore(profile)
         let store = WKWebsiteDataStore(forIdentifier: profile).httpCookieStore
         let cookies = await store.allCookies()
@@ -39,6 +46,7 @@ import WebKit
         request.setValue("https://www.overleaf.com/", forHTTPHeaderField: "Referer")
         let config = URLSessionConfiguration.ephemeral; config.httpCookieStorage = nil; config.urlCache = nil
         let session = URLSession(configuration: config, delegate: RedirectPolicy(), delegateQueue: nil)
+        let lease = try NetworkAccess.gate.watch(session); defer { NetworkAccess.gate.release(lease) }
         defer { session.invalidateAndCancel() }
         let (bytes, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure.response }
@@ -50,7 +58,22 @@ import WebKit
         await OverleafWebIdentity.remember(profile)
         return bytes
     }
-    static func projects(_ profile: UUID) async throws -> [Project] { try parseProjects(await request("/user/projects", profile: profile)) }
+    static func projects(_ profile: UUID) async throws -> [Project] {
+        let projects = try parseProjects(await request("/user/projects", profile: profile))
+        // Tags are optional metadata. An unavailable tag endpoint must not hide projects.
+        guard let data = try? await request("/tag", profile: profile), let tags = try? parseTags(data) else { return projects }
+        return projects.map { project in var item = project; item.tags = tags[item.id] ?? []; return item }
+    }
+    nonisolated static func parseTags(_ data: Data) throws -> [String: [Tag]] {
+        guard data.count <= 8_000_000, let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]], rows.count <= 10_000 else { throw Failure.response }
+        var result: [String: [Tag]] = [:]
+        for row in rows {
+            guard let id = row["_id"] as? String, let name = row["name"] as? String, !name.isEmpty, let projects = row["project_ids"] as? [String], projects.count <= 10_000 else { continue }
+            let tag = Tag(id: id, name: String(name.prefix(200)), color: row["color"] as? String)
+            for project in Set(projects) { if result[project, default: []].contains(where: { $0.id == id }) == false { result[project, default: []].append(tag) } }
+        }
+        return result.mapValues { $0.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending } }
+    }
     nonisolated static func parseProjects(_ data: Data) throws -> [Project] {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], let rows = object["projects"] as? [[String: Any]], rows.count <= 10_000 else { throw Failure.response }
         var seen = Set<String>()

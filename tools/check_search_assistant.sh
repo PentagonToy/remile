@@ -9,6 +9,8 @@ cat "$project_directory/Sources/Remile/Search/SearchMarkdown.swift" \
     "$project_directory/Sources/Remile/Assistant/AppleIntelligence.swift" \
     "$project_directory/Sources/Remile/Assistant/AssistantEngine.swift" \
     "$project_directory/Sources/Remile/Search/SearchExpansion.swift" \
+    "$project_directory/Sources/Remile/Search/SearchLexicon.swift" \
+    "$project_directory/Sources/Remile/Search/SparseSearchRanker.swift" \
     "$project_directory/Sources/Remile/Search/LibraryIndex.swift" \
     "$project_directory/Sources/Remile/Assistant/AssistantPassage.swift" \
     "$project_directory/Sources/Remile/Assistant/Prompts/AssistantPrompts.swift" \

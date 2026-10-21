@@ -10,6 +10,8 @@ cat "$project_directory/Sources/Remile/Search/SearchMarkdown.swift" \
     "$project_directory/Sources/Remile/Assistant/AssistantEngine.swift" \
     "$project_directory/Sources/Remile/Assistant/Prompts/AssistantPrompts.swift" \
     "$project_directory/Sources/Remile/Search/SearchExpansion.swift" \
+    "$project_directory/Sources/Remile/Search/SearchLexicon.swift" \
+    "$project_directory/Sources/Remile/Search/SparseSearchRanker.swift" \
     "$project_directory/Sources/Remile/Search/LibraryIndex.swift" \
     "$project_directory/Tests/LibraryChecks/main.swift" > "$check_directory/library-checks.swift"
 swift -module-cache-path "$check_directory/module-cache" "$check_directory/library-checks.swift" "$check_directory/fixtures"

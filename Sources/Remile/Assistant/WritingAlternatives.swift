@@ -2,14 +2,15 @@ import Foundation
 
 @MainActor enum WritingAlternatives {
     static var provider: String { UserDefaults.standard.string(forKey: "assistant.provider") ?? "Apple Intelligence" }
-    static func enabled(correction: Bool) -> Bool { provider != "Off" && (UserDefaults.standard.object(forKey: correction ? "chatgpt.grammar" : "chatgpt.synonyms") as? Bool ?? true) }
+    static func enabled(correction: Bool) -> Bool { provider != "Off" && AIConfiguration.writingEnabled && (UserDefaults.standard.object(forKey: correction ? "chatgpt.grammar" : "chatgpt.synonyms") as? Bool ?? true) }
     static func suggest(text: String, context: String, correction: Bool) async throws -> (choices: [String], provider: String) {
         guard enabled(correction: correction) else { throw ChatGPTIdentity.Failure("Writing suggestions are off in AI settings.") }
         if provider == "ChatGPT", AIUsage.shared.reason == nil {
             do { return (try await choices(text: text, context: context, correction: correction), "ChatGPT") }
             catch is CancellationError { throw CancellationError() }
-            catch { guard AppleIntelligence.status().ready else { throw error } }
+            catch { guard AIConfiguration.fallbackEnabled, AppleIntelligence.status().ready else { throw error } }
         }
+        if provider == "ChatGPT", !AIConfiguration.fallbackEnabled { throw ChatGPTIdentity.Failure(AIUsage.shared.reason ?? "ChatGPT is unavailable.") }
         try Task.checkCancellation()
         let values = correction ? try await EditorSynonyms.proofread(text) : try await EditorSynonyms.suggest(.init(range: NSRange(location: 0, length: (text as NSString).length), text: text, context: context))
         return (values, provider == "ChatGPT" ? "Apple Intelligence · fallback" : "Apple Intelligence")

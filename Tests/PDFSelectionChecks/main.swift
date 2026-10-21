@@ -125,5 +125,32 @@ orderView.document = reordering
 let beforeReorder = PDFSelectionContext(selection: reordering.page(at: 0)!.selection(for: NSRange(location: 0, length: 7)), document: reordering)!
 reordering.exchangePage(at: 0, withPageAt: 1)
 expect(!beforeReorder.isValid(in: orderView), "Page reordering invalidates old source indices")
+view.document = document; view.go(to: page); view.layoutDocumentView()
+var drawings: [PDFAnnotation] = []
+view.commitDrawing = { owner, annotation in
+    expect(owner === page, "Drawing commits to the page where the gesture started")
+    drawings.append(annotation)
+}
+func pointer(_ type: NSEvent.EventType, x: CGFloat, y: CGFloat) -> NSEvent {
+    let location = view.convert(view.convert(CGPoint(x: x, y: y), from: page), to: nil)
+    return NSEvent.mouseEvent(with: type, location: location, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
+}
+for tool in PDFDrawingTool.allCases {
+    view.drawingTool = tool
+    view.mouseDown(with: pointer(.leftMouseDown, x: 100, y: 600))
+    for step in 1...40 { view.mouseDragged(with: pointer(.leftMouseDragged, x: 100 + CGFloat(step), y: 600 + CGFloat(step))) }
+    expect(page.annotations.isEmpty, "Pointer movement never mutates PDF annotation objects")
+    expect(view.layer?.sublayers?.filter { $0 is CAShapeLayer }.count == 1, "One vector preview layer is reused for the complete gesture")
+    let count = drawings.count
+    view.mouseUp(with: pointer(.leftMouseUp, x: 140, y: 640))
+    expect(drawings.count == count + 1, "A gesture produces exactly one annotation at mouse-up")
+    expect(view.layer?.sublayers?.contains { $0 is CAShapeLayer } != true, "Preview resources are removed after commit")
+}
+view.mouseDown(with: pointer(.leftMouseDown, x: 100, y: 600))
+view.mouseDragged(with: pointer(.leftMouseDragged, x: 140, y: 640))
+let beforeCancel = drawings.count
+view.cancelDrawing()
+expect(drawings.count == beforeCancel && page.annotations.isEmpty, "Cancelling a gesture retains neither an annotation nor a write")
+expect(PDFDrawingTool.rectangle.annotation(points: [.zero, .zero], on: page, color: .red) == nil, "Zero-size shapes are ignored")
 print("\(checks) PDF selection checks passed. Synthetic native PDFs; no user file or clipboard change.")
 }

@@ -35,6 +35,7 @@ model.beginComment()
 model.draft = "Session note"
 undo.beginUndoGrouping()
 model.saveComment()
+_ = try model.prepareSave()
 undo.endUndoGrouping()
 verify(writes == 1 && model.committedData != nil, "Note commits into document pipeline")
 verify(model.draft.isEmpty && model.draftContext == nil, "Successful save clears draft")
@@ -42,10 +43,10 @@ let ownCommit = model.committedData!
 model.load(ownCommit)
 verify(model.document === liveDocument, "Own writeback preserves PDF identity and reading state")
 let addedCount = page.annotations.filter { $0.type == "Text" }.count
-undo.undo()
+undo.undo(); _ = try model.prepareSave()
 verify(page.annotations.filter { $0.type == "Text" }.count == addedCount - 1, "Undo removes the note")
 verify(writes == 2, "Undo updates document pipeline")
-undo.redo()
+undo.redo(); _ = try model.prepareSave()
 verify(page.annotations.filter { $0.type == "Text" }.count == addedCount, "Redo restores the note")
 let parent = page.annotations.first { $0.type == "Text" && $0.contents == "First reply" }!
 let comment = PDFSession.Comment(id: ObjectIdentifier(parent), annotation: parent, page: page, pageNumber: 1, author: "Reviewer", text: parent.contents!, parent: nil)
@@ -56,13 +57,14 @@ model.beginReply(comment)
 verify(model.draft == "Session reply" && model.draftContext == capturedContext, "Second reply command retains draft and parent")
 undo.beginUndoGrouping()
 model.saveComment()
+_ = try model.prepareSave()
 undo.endUndoGrouping()
 let replyBytes = model.committedData!
 let reopened = PDFDocument(data: replyBytes)!
 verify(PDFCommentGraph(document: reopened).parents.count == 4, "Session reply persists alongside imported replies")
-undo.undo()
+undo.undo(); _ = try model.prepareSave()
 verify(PDFCommentGraph(document: PDFDocument(data: model.committedData!)!).parents.count == 3, "Reply undo preserves imported thread")
-undo.redo()
+undo.redo(); _ = try model.prepareSave()
 verify(PDFCommentGraph(document: PDFDocument(data: model.committedData!)!).parents.count == 4, "Reply redo restores parent relation")
 func waitUntil(_ done: () -> Bool) {
     let deadline = Date().addingTimeInterval(3)

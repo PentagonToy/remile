@@ -52,6 +52,10 @@ import Security
         super.init(); web.navigationDelegate = self
     }
     func load() async throws -> Data {
+        try NetworkAccess.requireOnline()
+        let lease = try NetworkAccess.gate.watch { [weak self] in Task { @MainActor in
+            self?.web.stopLoading(); self?.web.navigationDelegate = nil; self?.web.loadHTMLString("", baseURL: nil); self?.finish(.failure(NetworkAccessGate.Offline()))
+        } }; defer { NetworkAccess.gate.release(lease) }
         defer { timer?.cancel(); web.stopLoading(); web.navigationDelegate = nil }
         return try await withCheckedThrowingContinuation { result in
             self.result = result
@@ -61,7 +65,7 @@ import Security
     }
     private func finish(_ value: Result<Data, Error>) { guard let result else { return }; self.result = nil; result.resume(with: value) }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard action.request.url == url else { decisionHandler(.cancel); finish(.failure(OverleafWebClient.Failure.signIn)); return }
+        guard !NetworkAccess.offline, action.request.url == url else { decisionHandler(.cancel); finish(.failure(OverleafWebClient.Failure.signIn)); return }
         decisionHandler(.allow)
     }
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {

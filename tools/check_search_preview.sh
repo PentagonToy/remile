@@ -6,7 +6,9 @@ case "$check_directory" in /*) ;; *) exit 1 ;; esac
 mkdir -p "$check_directory/module-cache"
 cat "$project_directory/Sources/Remile/Assistant/AssistantPassage.swift" \
     "$project_directory/Sources/Remile/PDF/PDFCitation.swift" \
+    "$project_directory/Sources/Remile/App/AnimationPolicy.swift" \
     "$project_directory/Sources/Remile/App/RemileStyle.swift" \
+    "$project_directory/Sources/Remile/App/RemileHelp.swift" \
     "$project_directory/Sources/Remile/App/ReaderZoom.swift" \
     "$project_directory/Sources/Remile/Search/SearchMarkdown.swift" \
     "$project_directory/Sources/Remile/Search/SearchText.swift" \
@@ -14,13 +16,21 @@ cat "$project_directory/Sources/Remile/Assistant/AssistantPassage.swift" \
     "$project_directory/Sources/Remile/Assistant/AssistantEngine.swift" \
     "$project_directory/Sources/Remile/Assistant/Prompts/AssistantPrompts.swift" \
     "$project_directory/Sources/Remile/Search/SearchExpansion.swift" \
+    "$project_directory/Sources/Remile/Search/SearchLexicon.swift" \
+    "$project_directory/Sources/Remile/Search/SparseSearchRanker.swift" \
     "$project_directory/Sources/Remile/Search/LibraryIndex.swift" \
     "$project_directory/Sources/Remile/Search/SearchResultGroup.swift" \
     "$project_directory/Sources/Remile/Search/SearchCover.swift" \
     "$project_directory/Sources/Remile/PDF/HighlightPalette.swift" \
     "$project_directory/Sources/Remile/PDF/PDFReplyWriter.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFFormPreservation.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFSignedAnnotations.swift" \
     "$project_directory/Sources/Remile/PDF/PDFCommentGraph.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFNotes.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFEditing.swift" \
     "$project_directory/Sources/Remile/PDF/PDFHighlightStore.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFEditProtection.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFDrawing.swift" \
     "$project_directory/Sources/Remile/PDF/PDFSelectionActions.swift" \
     "$project_directory/Sources/Remile/PDF/PDFSelectionPassages.swift" \
     "$project_directory/Sources/Remile/PDF/SelectionTranslation.swift" \

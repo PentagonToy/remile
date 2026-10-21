@@ -8,7 +8,7 @@ enum PDFPageAssembly {
         (0..<document.pageCount).compactMap { document.page(at: $0) }
     }
 
-    static func imported(_ urls: [URL]) throws -> ([PDFPage], [PDFCommentGraph], [PDFDocument]) {
+    static func imported(_ urls: [URL], allowSignatureChanges: Bool = false) throws -> ([PDFPage], [PDFCommentGraph], [PDFDocument]) {
         guard !urls.isEmpty, urls.count <= 50, urls.allSatisfy({ $0.isFileURL && $0.pathExtension.lowercased() == "pdf" }) else {
             throw Failure.files
         }
@@ -21,9 +21,9 @@ enum PDFPageAssembly {
             size += count
             let bytes = try Data(contentsOf: url, options: .mappedIfSafe)
             guard bytes.count <= maximumImportBytes, let source = PDFDocument(data: bytes) else { throw Failure.files }
-            try PDFEditing.validate(source, assembly: true)
+            try PDFEditing.validate(source, assembly: true, allowSignatureChanges: allowSignatureChanges)
             guard source.allowsCopying, pages.count + source.pageCount <= 10000 else { throw Failure.size }
-            let graph = PDFCommentGraph(document: source)
+            let graph = PDFCommentGraph(document: source, sourceData: bytes, allowSignatureChanges: allowSignatureChanges)
             // Refuse files whose reply graph cannot survive even a no-op write.
             _ = try graph.serialize(source)
             pages += self.pages(source); graphs.append(graph); sources.append(source)
@@ -32,7 +32,7 @@ enum PDFPageAssembly {
     }
 
     static func apply(_ pages: [PDFPage], in document: PDFDocument, graph: PDFCommentGraph, sourceData: Data? = nil) throws -> Data {
-        try PDFEditing.validate(document, assembly: true)
+        try PDFEditing.validate(document, assembly: true, allowSignatureChanges: graph.allowsSignatureChanges)
         guard !pages.isEmpty, pages.count <= 10000, Set(pages.map(ObjectIdentifier.init)).count == pages.count else { throw PDFEditing.Failure.invalid }
         let before = self.pages(document)
         let contents = pages.map { $0.string }

@@ -50,6 +50,9 @@ final class PDFSession: NSObject, ObservableObject {
     @Published var twoPage = false
     @Published var firstPageAlone = false
     @Published var isEditing = false
+    let protection = PDFEditProtection()
+    @Published var drawingTool: PDFDrawingTool?
+    @Published var drawingColor: HighlightColor = .vermilion
     @Published var showsOverview = false
     @Published var selectedOverviewPages: Set<ObjectIdentifier> = []
     @Published private(set) var pageRevision = UUID()
@@ -71,6 +74,8 @@ final class PDFSession: NSObject, ObservableObject {
     @Published private(set) var editingError: String?
     @Published private(set) var activeCitation: AssistantCitation?
     @Published private(set) var citationStatus: String?
+    @Published private(set) var pendingAnnotationRevision = UUID()
+    @Published private(set) var hasPendingAnnotations = false
     @Published private(set) var committedData: Data?
     weak var undoManager: UndoManager?
     private var draftPage: PDFPage?
@@ -81,6 +86,22 @@ final class PDFSession: NSObject, ObservableObject {
     private weak var view: PDFView?
     private var libraryDestination: (page: Int, terms: [String], excerpt: String?, note: Bool)?
     private var inputData: Data?
+    private var openedWithSignature = false
+    func allowDrawingGesture() -> Bool { isEditing && allowProtectedEdit() }
+    func requestEditingUnlock() {
+        guard let inputData else { return }
+        protection.requestUnlock(data: inputData)
+        objectWillChange.send()
+    }
+    @discardableResult private func allowProtectedEdit() -> Bool {
+        guard let inputData else { return false }
+        do { return try protection.allowEdit(data: inputData) }
+        catch { editingError = error.localizedDescription; return false }
+    }
+    func signatureSaveStatus(for bytes: Data) -> PDFSignatureSaveStatus {
+        guard openedWithSignature else { return .unsigned }
+        return commentGraph?.signaturePreservedData == bytes ? .preserved : .atRisk
+    }
     private var observers: [NSObjectProtocol] = []
     private var searchWork: DispatchWorkItem?
     private var commentTask: Task<Void, Never>?
@@ -96,6 +117,8 @@ final class PDFSession: NSObject, ObservableObject {
         inputData = data
         libraryDestination = nil
         document = PDFDocument(data: data)
+        openedWithSignature = document.map(PDFEditing.hasDigitalSignature) ?? false
+        protection.configure(document)
         pageRevision = UUID(); showsOverview = false
         selectedOverviewPages = Set(document?.page(at: 0).map { [ObjectIdentifier($0)] } ?? [])
         currentPage = (document?.pageCount ?? 0) > 0 ? 1 : 0
@@ -108,9 +131,9 @@ final class PDFSession: NSObject, ObservableObject {
         assistantPassword = ""
         passwordError = nil
         cancelComment()
-        committedData = nil
+        committedData = nil; hasPendingAnnotations = false
         commentGraph = nil
-        isEditing = false
+        isEditing = false; drawingTool = nil
     }
 
     func attach(_ view: PDFView) {
@@ -231,7 +254,7 @@ final class PDFSession: NSObject, ObservableObject {
         comments = []; highlights = []
         commentTask = Task { @MainActor [weak self, weak document] in
             guard let self, let document else { return }
-            if self.commentGraph == nil { self.commentGraph = PDFCommentGraph(document: document) }
+            if self.commentGraph == nil { self.commentGraph = PDFCommentGraph(document: document, sourceData: self.inputData, allowSignatureChanges: true) }
             defer {
                 if self.commentGeneration == token {
                     self.loadingComments = false
@@ -261,10 +284,11 @@ final class PDFSession: NSObject, ObservableObject {
     }
 
     func beginComment() {
+        guard allowProtectedEdit() else { return }
         // A second click must not discard an unfinished draft or move its anchor.
         guard draftPage == nil, let document, !document.isLocked, view?.document === document,
               let page = view?.currentSelection?.pages.first ?? view?.currentPage, page.document === document else { return }
-        do { try PDFEditing.validate(document) } catch { editingError = error.localizedDescription; return }
+        do { try PDFEditing.validate(document, annotationsOnly: true) } catch { editingError = error.localizedDescription; return }
         let crop = page.bounds(for: .cropBox)
         let selection = view?.currentSelection
         let anchor = selection?.bounds(for: page) ?? CGRect(x: crop.midX, y: crop.midY, width: 24, height: 24)
@@ -296,8 +320,9 @@ final class PDFSession: NSObject, ObservableObject {
     }
 
     func beginReply(_ comment: Comment) {
+        guard allowProtectedEdit() else { return }
         guard let document, comment.page.document === document, comment.annotation.page === comment.page else { return }
-        do { try PDFEditing.validate(document) } catch { editingError = error.localizedDescription; return }
+        do { try PDFEditing.validate(document, annotationsOnly: true) } catch { editingError = error.localizedDescription; return }
         guard draftPage == nil else {
             editingError = "Finish or cancel the current draft before starting another reply."
             sidebar = .comments
@@ -316,16 +341,13 @@ final class PDFSession: NSObject, ObservableObject {
 
     @discardableResult
     private func applyNote(_ note: PDFAnnotation, page: PDFPage, adding: Bool, parent: PDFAnnotation? = nil) -> Bool {
-        guard let document, page.document === document else { return false }
+        guard allowProtectedEdit(), let document, page.document === document else { return false }
         do {
-            try PDFEditing.validate(document)
-            let graph = commentGraph ?? PDFCommentGraph(document: document)
+            try PDFEditing.validate(document, annotationsOnly: true)
+            let graph = commentGraph ?? PDFCommentGraph(document: document, sourceData: inputData, allowSignatureChanges: true)
             commentGraph = graph
-            let bytes = try PDFNotes.apply(note, on: page, in: document, adding: adding, graph: graph, parent: parent)
-            // Accept our own writeback without reloading the PDF and losing reading state.
-            inputData = bytes
-            committedData = bytes
-            editingError = nil
+            try PDFNotes.change([(note, page, parent)], in: document, adding: adding, graph: graph)
+            acceptPendingAnnotation()
             undoManager?.registerUndo(withTarget: self) { target in
                 target.applyNote(note, page: page, adding: !adding, parent: parent)
             }
@@ -353,15 +375,21 @@ final class PDFSession: NSObject, ObservableObject {
         return !selection.pages.isEmpty && selection.pages.allSatisfy { $0.document === document } && selection.string?.isEmpty == false
     }
     func toggleEditing() {
-        if isEditing { isEditing = false; return }
+        if isEditing { isEditing = false; drawingTool = nil; return }
         guard let document else { return }
         do {
-            try PDFEditing.validate(document, assembly: !document.allowsCommenting)
+            try PDFEditing.validate(document, assembly: !document.allowsCommenting, annotationsOnly: document.allowsCommenting, allowSignatureChanges: true)
+            let graph = commentGraph ?? PDFCommentGraph(document: document, sourceData: inputData, allowSignatureChanges: true); commentGraph = graph
+            try graph.validateAnnotationSave()
             editingError = nil; isEditing = true
         } catch { editingError = error.localizedDescription }
     }
     func dismissEditingError() { editingError = nil }
 
+    func rotateVisiblePages(clockwise: Bool) {
+        if showsOverview { rotateOverviewPages(clockwise: clockwise) }
+        else { rotateCurrentPage(clockwise: clockwise) }
+    }
     func rotateCurrentPage(clockwise: Bool) {
         guard let document, view?.document === document, let page = view?.currentPage else { return }
         applyRotations([(page, page.rotation + (clockwise ? 90 : -90))])
@@ -372,13 +400,14 @@ final class PDFSession: NSObject, ObservableObject {
         applyRotations(pages.map { ($0, $0.rotation + (clockwise ? 90 : -90)) })
     }
     private func applyRotations(_ rotations: [(PDFPage, Int)]) {
+        guard allowProtectedEdit() else { return }
         guard let document, !rotations.isEmpty else { return }
         do {
             guard draftPage == nil else { throw PDFPageAssembly.Failure.draft }
-            try PDFEditing.validate(document, assembly: true)
-            let graph = commentGraph ?? PDFCommentGraph(document: document); commentGraph = graph
+            try PDFEditing.validate(document, assembly: true, allowSignatureChanges: true)
+            let graph = commentGraph ?? PDFCommentGraph(document: document, sourceData: inputData, allowSignatureChanges: true); commentGraph = graph
             let previous = rotations.map { ($0.0, $0.0.rotation) }
-            let bytes = try PDFPageAssembly.rotated(rotations, in: document, graph: graph, sourceData: inputData)
+            let bytes = try PDFPageAssembly.rotated(rotations, in: document, graph: graph, sourceData: hasPendingAnnotations ? nil : inputData)
             for (page, rotation) in rotations { page.rotation = (rotation % 360 + 360) % 360 }
             pageRevision = UUID(); acceptEdit(bytes)
             undoManager?.registerUndo(withTarget: self) { target in target.applyRotations(previous) }
@@ -393,18 +422,60 @@ final class PDFSession: NSObject, ObservableObject {
         view?.setCurrentSelection(selection, animate: false); return true
     }
     func highlightSelection(color: HighlightColor = .yellow) {
+        guard allowProtectedEdit() else { return }
         guard let document, view?.document === document, let selection = view?.currentSelection else { return }
         do { applyHighlights(try PDFEditing.highlights(for: selection, in: document, color: color), adding: true) }
         catch { editingError = error.localizedDescription }
     }
-    private func applyHighlights(_ highlights: [(PDFPage, PDFAnnotation)], adding: Bool) {
+    func deleteAnnotation(_ comment: Comment) {
+        guard allowProtectedEdit() else { return }
+        guard let document, comment.page.document === document, comment.annotation.page === comment.page,
+              comment.page.annotations.contains(where: { $0 === comment.annotation }),
+              Self.isReviewComment(comment.annotation) || ["Highlight", "Underline", "Squiggly", "StrikeOut", "Ink", "Square", "Circle"].contains(comment.annotation.type ?? "") else { return }
+        let graph = commentGraph ?? PDFCommentGraph(document: document, sourceData: inputData, allowSignatureChanges: true); commentGraph = graph
+        let annotations = comment.page.annotations
+        var ordered = [comment.annotation], index = 0, seen: Set<ObjectIdentifier> = [ObjectIdentifier(comment.annotation)]
+        while index < ordered.count {
+            let parent = ObjectIdentifier(ordered[index]); index += 1
+            for child in annotations where graph.parent(of: child) == parent && seen.insert(ObjectIdentifier(child)).inserted { ordered.append(child) }
+        }
+        let changes = ordered.map { note in (note: note, page: comment.page, parent: graph.parent(of: note).flatMap { id in annotations.first { ObjectIdentifier($0) == id } }) }
+        applyAnnotationChanges(changes, adding: false, name: ["Ink", "Square", "Circle"].contains(comment.annotation.type ?? "") ? "Delete Drawing" : ["Highlight", "Underline", "Squiggly", "StrikeOut"].contains(comment.annotation.type ?? "") ? "Delete Highlight" : ordered.count > 1 ? "Delete Comment Thread" : "Delete Comment")
+    }
+    func deleteHighlight(_ annotation: PDFAnnotation) {
+        guard let document, let page = annotation.page, page.document === document,
+              ["Highlight", "Underline", "Squiggly", "StrikeOut", "Ink", "Square", "Circle"].contains(annotation.type ?? "") else { return }
+        deleteAnnotation(Comment(id: ObjectIdentifier(annotation), annotation: annotation, page: page, pageNumber: document.index(for: page) + 1, author: annotation.userName ?? "", text: annotation.contents ?? "", parent: nil))
+    }
+    private func applyAnnotationChanges(_ changes: [(note: PDFAnnotation, page: PDFPage, parent: PDFAnnotation?)], adding: Bool, name: String) {
+        guard allowProtectedEdit() else { return }
         guard let document else { return }
         do {
-            let graph = commentGraph ?? PDFCommentGraph(document: document); commentGraph = graph
-            let bytes = try PDFEditing.apply(highlights, adding: adding, in: document, graph: graph)
-            acceptEdit(bytes)
-            undoManager?.registerUndo(withTarget: self) { target in target.applyHighlights(highlights, adding: !adding) }
-            undoManager?.setActionName("Highlight Text")
+            try PDFEditing.validate(document, annotationsOnly: true)
+            let graph = commentGraph ?? PDFCommentGraph(document: document, sourceData: inputData, allowSignatureChanges: true); commentGraph = graph
+            try PDFNotes.change(changes, in: document, adding: adding, graph: graph)
+            acceptPendingAnnotation()
+            undoManager?.registerUndo(withTarget: self) { target in target.applyAnnotationChanges(changes, adding: !adding, name: name) }
+            undoManager?.setActionName(name)
+            if let draftParent, changes.contains(where: { $0.note === draftParent }) { cancelComment() }
+            view?.needsDisplay = true
+        } catch { editingError = error.localizedDescription }
+    }
+    func addDrawing(_ annotation: PDFAnnotation, on page: PDFPage) {
+        guard allowProtectedEdit() else { return }
+        guard isEditing, let document, page.document === document, ["Ink", "Square", "Circle"].contains(annotation.type ?? "") else { return }
+        applyHighlights([(page, annotation)], adding: true, name: "Draw on PDF")
+    }
+    private func applyHighlights(_ highlights: [(PDFPage, PDFAnnotation)], adding: Bool, name: String = "Highlight Text") {
+        guard allowProtectedEdit() else { return }
+        guard let document else { return }
+        do {
+            let graph = commentGraph ?? PDFCommentGraph(document: document, sourceData: inputData, allowSignatureChanges: true); commentGraph = graph
+            try PDFEditing.validate(document, annotationsOnly: true)
+            try PDFNotes.change(highlights.map { ($0.1, $0.0, nil) }, in: document, adding: adding, graph: graph)
+            acceptPendingAnnotation()
+            undoManager?.registerUndo(withTarget: self) { target in target.applyHighlights(highlights, adding: !adding, name: name) }
+            undoManager?.setActionName(name)
             view?.clearSelection(); view?.needsDisplay = true
         } catch { editingError = error.localizedDescription }
     }
@@ -440,15 +511,20 @@ final class PDFSession: NSObject, ObservableObject {
         applyPageOrder(order, selected: selected.first, sources: [], action: selected.count == 1 ? "Move Page" : "Move Pages", selection: positions)
     }
     func insertPDFs(_ urls: [URL], before target: PDFPage? = nil) {
+        guard allowProtectedEdit() else { return }
         guard let document else { return }
         do {
             guard draftPage == nil else { throw PDFPageAssembly.Failure.draft }
-            try PDFEditing.validate(document, assembly: true)
+            try PDFEditing.validate(document, assembly: true, allowSignatureChanges: true)
             var pages = PDFPageAssembly.pages(document)
             guard target == nil || pages.contains(where: { $0 === target }) else { throw PDFPageAssembly.Failure.stale }
-            let (imported, graphs, sources) = try PDFPageAssembly.imported(urls)
+            let (imported, graphs, sources) = try PDFPageAssembly.imported(urls, allowSignatureChanges: true)
+            if sources.contains(where: PDFEditing.hasDigitalSignature), !protection.requiresConsent {
+                protection.requireConsent(); objectWillChange.send()
+                guard allowProtectedEdit() else { return }
+            }
             guard pages.count + imported.count <= 10000 else { throw PDFPageAssembly.Failure.size }
-            let graph = commentGraph ?? PDFCommentGraph(document: document); commentGraph = graph
+            let graph = commentGraph ?? PDFCommentGraph(document: document, sourceData: inputData, allowSignatureChanges: true); commentGraph = graph
             for other in graphs { try graph.merge(other) }
             let position = target.flatMap { target in pages.firstIndex(where: { $0 === target }) } ?? pages.count
             pages.insert(contentsOf: imported, at: position)
@@ -456,6 +532,7 @@ final class PDFSession: NSObject, ObservableObject {
         } catch { editingError = error.localizedDescription }
     }
     func choosePDFs(before target: PDFPage? = nil) {
+        guard allowProtectedEdit() else { return }
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.pdf]; panel.allowsMultipleSelection = true
         panel.message = target == nil ? "Append PDF pages to this document." : "Insert PDF pages before this page."
         let revision = pageRevision
@@ -468,6 +545,7 @@ final class PDFSession: NSObject, ObservableObject {
         else { panel.begin(completionHandler: completion) }
     }
     private func applyPageOrder(_ pages: [PDFPage], selected: PDFPage?, sources: [PDFDocument], action: String, selection: Set<ObjectIdentifier>? = nil) {
+        guard allowProtectedEdit() else { return }
         guard let document else { return }
         do {
             guard draftPage == nil else { throw PDFPageAssembly.Failure.draft }
@@ -475,11 +553,12 @@ final class PDFSession: NSObject, ObservableObject {
             if before.elementsEqual(pages, by: { $0 === $1 }) { return }
             let previousSelection = document.page(at: max(0, currentPage - 1))
             let previousGroup = selectedOverviewPages
-            let graph = commentGraph ?? PDFCommentGraph(document: document); commentGraph = graph
+            let graph = commentGraph ?? PDFCommentGraph(document: document, sourceData: inputData, allowSignatureChanges: true); commentGraph = graph
             stop()
-            let bytes = try PDFPageAssembly.apply(pages, in: document, graph: graph, sourceData: inputData)
+            let bytes = try PDFPageAssembly.apply(pages, in: document, graph: graph, sourceData: hasPendingAnnotations ? nil : inputData)
             pageRevision = UUID()
             matches = []; cancelComment(); activeCitation = nil; citationStatus = nil
+            if sources.contains(where: PDFEditing.hasDigitalSignature) { openedWithSignature = true }
             acceptEdit(bytes)
             currentPage = selected.map { document.index(for: $0) + 1 } ?? 1
             selectedOverviewPages = selection ?? Set(selected.map { [ObjectIdentifier($0)] } ?? [])
@@ -501,21 +580,22 @@ final class PDFSession: NSObject, ObservableObject {
         let selection: Set<ObjectIdentifier>
     }
     func fitPages(to paper: CGSize) {
+        guard allowProtectedEdit() else { return }
         guard let document else { return }
         do {
             guard draftPage == nil else { throw PDFPageAssembly.Failure.draft }
-            let graph = commentGraph ?? PDFCommentGraph(document: document); commentGraph = graph
+            let graph = commentGraph ?? PDFCommentGraph(document: document, sourceData: inputData, allowSignatureChanges: true); commentGraph = graph
             let bytes = try PDFPageSizing.apply(document, graph: graph, sourceData: inputData, paper: paper)
             guard let fitted = PDFDocument(data: bytes) else { throw PDFEditing.Failure.invalid }
             let indexes = PDFPageAssembly.pages(document).enumerated().filter { selectedOverviewPages.contains(ObjectIdentifier($0.element)) }.map(\.offset)
             let selection = Set(indexes.compactMap { fitted.page(at: $0).map(ObjectIdentifier.init) })
-            try restorePageState(PageState(document: fitted, graph: PDFCommentGraph(document: fitted), bytes: bytes, page: currentPage, selection: selection))
+            try restorePageState(PageState(document: fitted, graph: PDFCommentGraph(document: fitted, sourceData: bytes, allowSignatureChanges: true), bytes: bytes, page: currentPage, selection: selection))
         } catch { editingError = error.localizedDescription }
     }
     private func restorePageState(_ state: PageState) throws {
         guard let document else { return }
-        let graph = commentGraph ?? PDFCommentGraph(document: document)
-        let previous = PageState(document: document, graph: graph, bytes: try inputData ?? graph.serialize(document), page: currentPage, selection: selectedOverviewPages)
+        let graph = commentGraph ?? PDFCommentGraph(document: document, sourceData: inputData, allowSignatureChanges: true)
+        let previous = PageState(document: document, graph: graph, bytes: try hasPendingAnnotations ? graph.serialize(document) : (inputData ?? graph.serialize(document)), page: currentPage, selection: selectedOverviewPages)
         stop(); self.document = state.document; commentGraph = state.graph
         currentPage = state.page; selectedOverviewPages = state.selection
         pageRevision = UUID(); matches = []; activeCitation = nil; citationStatus = nil
@@ -529,7 +609,29 @@ final class PDFSession: NSObject, ObservableObject {
         if !query.isEmpty { search() }
     }
 
+    /// No full PDF byte buffers or temporary files are produced for individual reader strokes.
+    private func acceptPendingAnnotation() {
+        hasPendingAnnotations = true; pendingAnnotationRevision = UUID(); editingError = nil
+        commentGeneration = UUID(); commentTask?.cancel(); commentTask = nil
+        commentsLoaded = false
+        if showsSidebar && (sidebar == .comments || sidebar == .highlights) { loadComments() }
+    }
+    func prepareSave() throws -> Data {
+        guard let document else { throw PDFEditing.Failure.invalid }
+        guard hasPendingAnnotations else { return inputData ?? Data() }
+        let graph = commentGraph ?? PDFCommentGraph(document: document, sourceData: inputData, allowSignatureChanges: true)
+        commentGraph = graph
+        let bytes = try graph.serialize(document)
+        acceptEdit(bytes)
+        return bytes
+    }
+    func discardChanges(to data: Data) {
+        inputData = nil
+        load(data)
+    }
+
     private func acceptEdit(_ bytes: Data) {
+        hasPendingAnnotations = false
         inputData = bytes; committedData = bytes; editingError = nil
         commentGeneration = UUID(); commentTask?.cancel(); commentTask = nil
         commentsLoaded = false

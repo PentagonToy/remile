@@ -10,7 +10,7 @@ struct TeXLogPanel: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            if !project.outputCurrent && !project.compiling && !project.log.isEmpty { Text("Previous build · recompile changes").font(RemileType.caption).foregroundStyle(RemileStyle.warning).padding(.top, 8) }
+            if project.pdf != nil && !project.outputCurrent && !project.compiling && !project.log.isEmpty { Text("Previous build · recompile changes").font(RemileType.caption).foregroundStyle(RemileStyle.warning).padding(.top, 8) }
             if project.submissionCheck { Text("LaTeX only · 3 passes · no .bib/.bbl or BibTeX/Biber").font(RemileType.small).foregroundStyle(.secondary).padding(.top, 10) }
             Picker("Build output", selection: $state.tab) {
                 ForEach(Tab.allCases, id: \.self) { tab in Text(title(tab)).tag(tab) }
@@ -32,6 +32,8 @@ struct TeXLogPanel: View {
                 }
             }
         }.background(RemileStyle.sidebar)
+            .onAppear { if project.compileFailed { state.tab = .errors } }
+            .onChange(of: project.compileFailed) { if project.compileFailed { state.tab = .errors } }
     }
     private func title(_ tab: Tab) -> String {
         let count = tab == .errors ? project.diagnostics.filter { $0.severity == .error }.count : tab == .warnings ? project.diagnostics.filter { $0.severity == .warning }.count : project.diagnostics.count

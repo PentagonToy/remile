@@ -19,6 +19,7 @@ import Network
     var needsConnection: Bool { !ChatGPTConnection.shared.connected || ChatGPTConnection.shared.credentialUnavailable }
     var showsGPTMark: Bool { needsConnection || reason == nil }
     var reason: String? {
+        if NetworkAccess.offline { return "Offline mode" }
         if !online { return "Offline" }
         if !ChatGPTConnection.shared.connected { return "Connect ChatGPT" }
         if ChatGPTConnection.shared.credentialUnavailable { return "Unlock connection in Settings" }

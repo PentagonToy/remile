@@ -64,6 +64,8 @@ actor LibraryIndex {
         }
     }
     private var database: OpaquePointer?
+    private var sparseRanker: SparseSearchRanker?
+    private var sparseVersion: Int32 = -1
     private let location: URL
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -160,7 +162,7 @@ actor LibraryIndex {
     }
 
     func remove(_ folder: LibraryFolder) throws {
-        try connect(); try execute("BEGIN IMMEDIATE")
+        try connect(); sparseRanker = nil; try execute("BEGIN IMMEDIATE")
         do {
             try execute("DELETE FROM pages WHERE path IN (SELECT path FROM documents WHERE folder=?)", [folder.id])
             try execute("DELETE FROM folders WHERE id=?", [folder.id])
@@ -168,9 +170,9 @@ actor LibraryIndex {
         } catch { try? execute("ROLLBACK"); throw error }
     }
 
-    func refresh(progress: @Sendable (LibraryProgress) async -> Void) async throws {
+    func refresh(folderID: String? = nil, force: Bool = false, progress: @Sendable (LibraryProgress) async -> Void) async throws {
         try connect()
-        for folder in try summary().folders {
+        for folder in try summary().folders where folderID == nil || folder.id == folderID {
             try Task.checkCancellation()
             let url = try folder.url()
             let scope = url.startAccessingSecurityScopedResource(); defer { if scope { url.stopAccessingSecurityScopedResource() } }
@@ -192,7 +194,7 @@ actor LibraryIndex {
                 try Task.checkCancellation()
                 seen.insert(file.path)
                 await progress(LibraryProgress(completed: offset, total: files.count, name: file.lastPathComponent))
-                try index(file, folder: folder.id)
+                try index(file, folder: folder.id, force: force)
                 await progress(LibraryProgress(completed: offset + 1, total: files.count, name: file.lastPathComponent))
             }
             try Task.checkCancellation()
@@ -200,6 +202,7 @@ actor LibraryIndex {
             var removed: [String] = []
             while sqlite3_step(existing) == SQLITE_ROW { let path = text(existing, 0); if !seen.contains(path) { removed.append(path) } }
             sqlite3_finalize(existing)
+            if !removed.isEmpty { sparseRanker = nil }
             try execute("BEGIN IMMEDIATE")
             do {
                 for path in removed { try execute("DELETE FROM pages WHERE path=?", [path]); try execute("DELETE FROM documents WHERE path=?", [path]) }
@@ -212,13 +215,14 @@ actor LibraryIndex {
         let values = try url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .fileResourceIdentifierKey])
         return "search-v3:\(values.contentModificationDate?.timeIntervalSince1970 ?? 0):\(values.fileSize ?? 0):\(String(describing: values.fileResourceIdentifier))"
     }
-    private func index(_ url: URL, folder: String) throws {
+    private func index(_ url: URL, folder: String, force: Bool = false) throws {
         try Task.checkCancellation()
         let stamp = try revision(url)
         let previous = try statement("SELECT revision,error FROM documents WHERE path=?", [url.path])
         let unchanged = sqlite3_step(previous) == SQLITE_ROW && text(previous, 0) == stamp && sqlite3_column_type(previous, 1) == SQLITE_NULL
         sqlite3_finalize(previous)
-        if unchanged { return }
+        if unchanged && !force { return }
+        sparseRanker = nil
         try execute("BEGIN IMMEDIATE")
         do {
             try execute("DELETE FROM pages WHERE path=?", [url.path])
@@ -326,6 +330,27 @@ actor LibraryIndex {
         return terms
     }
 
+    /// Candidate page numbers from this exact, current file; the reader re-reads its live PDF text.
+    func assistantPages(path: String, terms: [String]) throws -> [Int]? {
+        guard !terms.isEmpty, FileManager.default.fileExists(atPath: location.path) else { return nil }
+        try connect()
+        let stamp = try revision(URL(fileURLWithPath: path))
+        let document = try statement("SELECT revision FROM documents WHERE path=? AND error IS NULL", [path])
+        defer { sqlite3_finalize(document) }
+        guard sqlite3_step(document) == SQLITE_ROW, text(document, 0) == stamp else { return nil }
+        let expression = terms.prefix(24).map { "\"" + $0.replacingOccurrences(of: "\"", with: "\"\"") + "\"" + ($0.count >= 4 ? "*" : "") }.joined(separator: " OR ")
+        let row = try statement("SELECT page FROM pages WHERE pages MATCH ? AND path=? ORDER BY bm25(pages,0,0,4,1),CAST(page AS INTEGER) LIMIT 12", [expression, path])
+        defer { sqlite3_finalize(row) }
+        var result: [Int] = []
+        var status = sqlite3_step(row)
+        while status == SQLITE_ROW {
+            try Task.checkCancellation()
+            result.append(Int(sqlite3_column_int(row, 0))); status = sqlite3_step(row)
+        }
+        guard status == SQLITE_DONE else { throw failure() }
+        return result.isEmpty ? nil : result
+    }
+
     /// Re-read complete indexed passages only for explicit cloud questions.
     func answerContext(_ hits: [LibraryHit]) throws -> [LibraryHit] {
         try connect()
@@ -335,6 +360,55 @@ actor LibraryIndex {
             guard sqlite3_step(row) == SQLITE_ROW else { return nil }
             return LibraryHit(path: hit.path, folderID: hit.folderID, page: hit.page, excerpt: String(text(row, 0).prefix(8000)), score: hit.score, sectionTitle: hit.sectionTitle)
         }
+    }
+
+    /// Native B0 over the complete current library; no FTS candidate truncation before ranking.
+    func rankedSearch(_ query: String, expansions: [String] = []) throws -> [LibraryHit] {
+        try Task.checkCancellation()
+        _ = try Self.queryTerms(query)
+        if SearchLexicon.terms(query).isEmpty { return try search(query, interpretQuestions: false) }
+        try connect()
+        let versionRow = try statement("PRAGMA data_version")
+        let version = sqlite3_step(versionRow) == SQLITE_ROW ? sqlite3_column_int(versionRow, 0) : -1
+        sqlite3_finalize(versionRow)
+        if sparseRanker == nil || sparseVersion != version {
+            let ranker = SparseSearchRanker()
+            let rows = try statement("SELECT pages.rowid,heading,body FROM pages JOIN documents ON documents.path=pages.path WHERE documents.error IS NULL ORDER BY pages.path,CAST(page AS INTEGER)")
+            defer { sqlite3_finalize(rows) }
+            var status = sqlite3_step(rows)
+            while status == SQLITE_ROW {
+                try Task.checkCancellation()
+                autoreleasepool { ranker.append(rowID: sqlite3_column_int64(rows, 0), heading: text(rows, 1), body: text(rows, 2)) }
+                status = sqlite3_step(rows)
+            }
+            guard status == SQLITE_DONE else { throw failure() }
+            try ranker.finish(); sparseRanker = ranker; sparseVersion = version
+        }
+        let regex = try NSRegularExpression(pattern: "\"([^\"]+)\"")
+        let source = query as NSString
+        let phrases = regex.matches(in: query, range: NSRange(location: 0, length: source.length)).map { source.substring(with: $0.range(at: 1)) }
+        var allowed: Set<Int64>?
+        if !phrases.isEmpty {
+            let expression = phrases.map { "\"" + $0 + "\"" }.joined(separator: " AND ")
+            let rows = try statement("SELECT rowid FROM pages WHERE pages MATCH ?", [expression]); defer { sqlite3_finalize(rows) }
+            allowed = []
+            while sqlite3_step(rows) == SQLITE_ROW { allowed!.insert(sqlite3_column_int64(rows, 0)) }
+        }
+        let ranked = try sparseRanker!.search(query, expansions: expansions, allowed: allowed)
+        var hits: [LibraryHit] = [], seen = Set<String>()
+        let rows = try statement("SELECT pages.path,page,body,folder,heading FROM pages JOIN documents ON documents.path=pages.path WHERE pages.rowid=? AND documents.error IS NULL")
+        defer { sqlite3_finalize(rows) }
+        for match in ranked {
+            try Task.checkCancellation()
+            sqlite3_reset(rows); sqlite3_clear_bindings(rows); sqlite3_bind_int64(rows, 1, match.rowID)
+            guard sqlite3_step(rows) == SQLITE_ROW else { continue }
+            let body = text(rows, 2), path = text(rows, 0)
+            guard seen.insert(body.precomposedStringWithCanonicalMapping.split(whereSeparator: \.isWhitespace).joined(separator: " ")).inserted else { continue }
+            let matched = SearchLexicon.matchedQuery(body, query: query + " " + expansions.joined(separator: " "))
+            let excerpt = SearchText.context(body, query: matched.isEmpty ? query : matched).excerpt
+            hits.append(LibraryHit(path: path, folderID: text(rows, 3), page: Int(sqlite3_column_int(rows, 1)), excerpt: excerpt, score: -match.score, sectionTitle: URL(fileURLWithPath: path).pathExtension.lowercased() == "pdf" ? nil : text(rows, 4), matchQuery: matched.isEmpty ? query : matched))
+        }
+        return hits
     }
 
     func search(_ query: String, interpretQuestions: Bool = true) throws -> [LibraryHit] {

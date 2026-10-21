@@ -1,7 +1,7 @@
 import Foundation
 
-// This edits only a complete, unencrypted, classic-xref PDFKit rewrite. It never
-// scans content streams or patches arbitrary input PDFs. Unsupported layouts fail closed.
+// Bounded classic-xref parsing for PDFKit output and unencrypted incremental revisions.
+// Cross-reference streams and hybrid files fail closed.
 enum PDFReplyWriter {
     struct Reference: Hashable { let object: Int; let generation: Int }
     struct Link { let child: Reference; let parent: Reference }
@@ -26,8 +26,10 @@ enum PDFReplyWriter {
     }
 
     struct Parser {
-        let bytes: [UInt8]
+        let bytes: Data
         var index: Int
+        init(bytes: Data, index: Int) { self.bytes = bytes; self.index = index }
+        init(bytes: [UInt8], index: Int) { self.bytes = Data(bytes); self.index = index }
         mutating func whitespace() {
             while index < bytes.count {
                 if [0,9,10,12,13,32].contains(bytes[index]) { index += 1 }
@@ -129,39 +131,57 @@ enum PDFReplyWriter {
 
     struct File {
         let data: Data
-        let bytes: [UInt8]
+        let bytes: Data
         let xref: Int
         let trailer: Value
         let offsets: [Reference: Int]
         init(_ data: Data) throws {
+            guard data.startIndex == 0 else { throw Failure.unsupported }
             self.data = data
-            bytes = Array(data)
+            // Data shares immutable storage, avoiding a full [UInt8] copy during every save.
+            bytes = data
             guard let marker = data.range(of: Data("startxref".utf8), options: .backwards) else { throw Failure.unsupported }
             var tail = Parser(bytes: bytes, index: marker.upperBound)
             guard let offset = Int(try tail.token()), offset >= 0, offset < bytes.count else { throw Failure.unsupported }
             xref = offset
-            var parser = Parser(bytes: bytes, index: offset)
-            guard try parser.token() == "xref" else { throw Failure.unsupported }
-            var result: [Reference: Int] = [:]
-            while true {
-                let token = try parser.token()
-                if token == "trailer" { break }
-                guard let start = Int(token), start >= 0, start <= bytes.count, let count = Int(try parser.token()), count >= 0, count <= bytes.count / 10 else { throw Failure.unsupported }
-                for number in start..<(start + count) {
-                    guard let position = Int(try parser.token()), let generation = Int(try parser.token()) else { throw Failure.unsupported }
-                    let status = try parser.token()
-                    guard status == "n" || status == "f" else { throw Failure.unsupported }
-                    if status == "n" {
-                        guard position >= 0, position < offset else { throw Failure.unsupported }
-                        let ref = Reference(object: number, generation: generation)
-                        guard result[ref] == nil else { throw Failure.unsupported }
-                        result[ref] = position
+            var result: [Reference: Int] = [:], seenObjects = Set<Int>(), revisions = Set<Int>()
+            var current: Int? = offset, latest: Value?
+            while let revision = current {
+                guard revisions.count < 128, revisions.insert(revision).inserted,
+                      revision >= 0, revision < bytes.count else { throw Failure.unsupported }
+                var parser = Parser(bytes: bytes, index: revision)
+                guard try parser.token() == "xref" else { throw Failure.unsupported }
+                var local = Set<Int>()
+                while true {
+                    let token = try parser.token()
+                    if token == "trailer" { break }
+                    guard let start = Int(token), start >= 0, start <= bytes.count,
+                          let count = Int(try parser.token()), count >= 0, count <= bytes.count / 10,
+                          start <= Int.max - count else { throw Failure.unsupported }
+                    for number in start..<(start + count) {
+                        guard local.insert(number).inserted, let position = Int(try parser.token()),
+                              let generation = Int(try parser.token()), generation >= 0, generation <= 65535 else { throw Failure.unsupported }
+                        let status = try parser.token()
+                        guard status == "n" || status == "f" else { throw Failure.unsupported }
+                        // A free entry in a newer revision also shadows an older live object.
+                        let newest = seenObjects.insert(number).inserted
+                        if status == "n" {
+                            guard number > 0, position > 0, position < revision else { throw Failure.unsupported }
+                            if newest { result[Reference(object: number, generation: generation)] = position }
+                        }
                     }
                 }
+                let entry = try parser.value()
+                guard case .dictionary = entry.kind, entry["Encrypt"] == nil, entry["XRefStm"] == nil else { throw Failure.unsupported }
+                if latest == nil { latest = entry }
+                if let prev = entry["Prev"] {
+                    guard let previous = prev.integer, previous >= 0, previous < revision else { throw Failure.unsupported }
+                    current = previous
+                } else { current = nil }
             }
-            trailer = try parser.value()
-            guard trailer["Encrypt"] == nil, trailer["Prev"] == nil, trailer["XRefStm"] == nil,
-                  trailer["Root"]?.reference != nil, trailer["Size"]?.integer != nil else { throw Failure.unsupported }
+            guard let latest, latest["Root"]?.reference != nil, let size = latest["Size"]?.integer,
+                  size > 0, size <= bytes.count, result.keys.allSatisfy({ $0.object < size }) else { throw Failure.unsupported }
+            trailer = latest
             offsets = result
         }
         func object(_ ref: Reference) throws -> Value {
@@ -216,11 +236,11 @@ enum PDFReplyWriter {
     }
 
     /// A complete classic cross-reference table makes the next structural edit independently readable.
-    static func replacingDictionaries(_ file: File, patches: [Reference: [String: String]], objects: [Reference: Data] = [:]) throws -> Data {
+    static func replacingDictionaries(_ file: File, patches: [Reference: [String: String]], objects: [Reference: Data] = [:], incremental: Bool = false) throws -> Data {
         if patches.isEmpty && objects.isEmpty { return file.data }
         var output = file.data
         output.append(Data("\n".utf8))
-        var offsets = file.offsets
+        var offsets: [Reference: Int] = incremental ? [:] : file.offsets
         for ref in patches.keys.sorted(by: { $0.object < $1.object }) {
             let value = try file.object(ref)
             guard case .dictionary = value.kind, let additions = patches[ref] else { throw Failure.unsupported }
@@ -247,15 +267,26 @@ enum PDFReplyWriter {
             indexed[ref.object] = (ref, offset)
         }
         let xref = output.count
-        output.append(Data("xref\n0 \(size)\n0000000000 65535 f \n".utf8))
-        for number in 1..<size {
-            if let (ref, offset) = indexed[number] { output.append(Data(String(format: "%010lld %05d n \n", offset, ref.generation).utf8)) }
-            else { output.append(Data("0000000000 00000 f \n".utf8)) }
+        output.append(Data("xref\n".utf8))
+        if incremental {
+            // Only changed/new objects are in this revision. The original xref remains authoritative.
+            for number in indexed.keys.sorted() {
+                let (ref, offset) = indexed[number]!
+                output.append(Data("\(number) 1\n".utf8))
+                output.append(Data(String(format: "%010lld %05d n \n", offset, ref.generation).utf8))
+            }
+        } else {
+            output.append(Data("0 \(size)\n0000000000 65535 f \n".utf8))
+            for number in 1..<size {
+                if let (ref, offset) = indexed[number] { output.append(Data(String(format: "%010lld %05d n \n", offset, ref.generation).utf8)) }
+                else { output.append(Data("0000000000 00000 f \n".utf8)) }
+            }
         }
         output.append(Data("trailer\n<< ".utf8))
         for entry in file.trailer.entries where entry.name != "Prev" && entry.name != "XRefStm" && entry.name != "Size" {
             output.append(contentsOf: file.bytes[entry.range]); output.append(32)
         }
+        if incremental { output.append(Data("/Prev \(file.xref) ".utf8)) }
         output.append(Data("/Size \(size) >>\nstartxref\n\(xref)\n%%EOF\n".utf8))
         return output
     }

@@ -29,6 +29,7 @@ enum PaperSize: String, CaseIterable, Identifiable {
 
 struct PDFPageSizeControl: View {
     @ObservedObject var session: PDFSession
+    var compact = false
     @StateObject private var state = Presentation()
     private final class Presentation: ObservableObject {
         @Published var shown = false
@@ -40,7 +41,7 @@ struct PDFPageSizeControl: View {
             state.paper = UserDefaults.standard.string(forKey: PaperSize.preference) ?? PaperSize.a4.rawValue
             state.landscape = UserDefaults.standard.bool(forKey: PaperSize.landscapePreference)
             state.shown.toggle()
-        } label: { Label("Page size", systemImage: "arrow.up.left.and.arrow.down.right").frame(height: 32) }
+        } label: { Group { if compact { Image(systemName: "arrow.up.left.and.arrow.down.right") } else { Label("Page size", systemImage: "arrow.up.left.and.arrow.down.right") } }.frame(height: 28) }
             .remileHelp("Fit all pages to a paper size").accessibilityLabel("Page size")
             .popover(isPresented: $state.shown, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 16) {

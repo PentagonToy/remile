@@ -9,6 +9,8 @@ case "$check_directory" in
 esac
 mkdir -p "$check_directory/module-cache"
 cat "$project_directory/Sources/Remile/PDF/PDFReplyWriter.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFFormPreservation.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFSignedAnnotations.swift" \
     "$project_directory/Sources/Remile/PDF/PDFCommentGraph.swift" \
     "$project_directory/Sources/Remile/PDF/PDFNotes.swift" \
     "$project_directory/Sources/Remile/Markdown/MarkdownBlocks.swift" \
