@@ -12,6 +12,8 @@ cat "$project_directory/Sources/Remile/App/NetworkAccess.swift" \
     "$project_directory/Sources/Remile/Markdown/MarkdownHTML.swift" \
     "$project_directory/Sources/Remile/Markdown/MarkdownPDF.swift" \
     "$project_directory/Sources/Remile/Search/SearchMarkdown.swift" \
+    "$project_directory/Sources/Remile/Markdown/MarkdownRemoteImages.swift" \
+    "$project_directory/Sources/Remile/Markdown/MarkdownImagePresentation.swift" \
     "$project_directory/Sources/Remile/Markdown/MarkdownPreview.swift" \
     "$project_directory/Tests/MarkdownImageChecks/main.swift" > "$check_directory/markdown-images.swift"
 swift -module-cache-path "$check_directory/module-cache" "$check_directory/markdown-images.swift" "$check_directory" "$project_directory"

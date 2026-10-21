@@ -22,7 +22,9 @@ Signed PDFs start with an editing lock. Click it and accept the warning to edit;
 
 Read, Edit and Split share one source buffer. Format supports styles, links, lists, maths, code and tables. Spreadsheet paste creates a table; Paste as Markdown preserves formatted text. Share exports PDF.
 
-Local raster images and passive SVGs appear in previews and PDF exports. HTML `<img>` and `<picture>` are supported; theme variants follow the reader appearance and PDF export uses the light fallback. Keep assets in the document folder or its subfolders. Remote images require a local copy; scripts and embedded content are excluded.
+Reading previews load remote images near the viewport, with up to three requests and a 12 MiB memory cache; no disk cache is kept. Offline or unavailable images show labelled placeholders. Unsupported formulae show their original TeX while the surrounding text remains readable.
+
+Local raster images and passive SVGs appear in previews and PDF exports. Keep assets in the document folder or its subfolders. HTML `<img>` and `<picture>` are supported; theme variants follow the reader appearance and PDF export uses the light fallback. PDF export requires local images and supported formulae. Scripts and embedded content are excluded.
 
 Editor settings control line numbers, source size, spelling and live preview. TeX completion offers commands and environment blocks. Tab accepts a candidate; Escape dismisses it. See [writing assistance](assistant.md) for proofreading and word alternatives.
 
@@ -42,7 +44,7 @@ Compile options includes a fresh rebuild and submission comparison. The comparis
 
 ## Overleaf
 
-Home → Overleaf opens the project library. Save a Git token in Keychain and use web sign-in to list projects, read comments and rename the online project. A project link can also add a local copy. Removing a library project moves its local copy to Trash and retains the online project.
+Home → Overleaf → Open library opens saved projects in a full workspace, with tag filters, name/account sorting and manual order by dragging or the project context menu. Add new project to library opens the separate account/import view. Save a Git token in Keychain and use web sign-in to list projects, read comments and rename the online project. A project link can also add a local copy. Removing a library project moves its local copy to Trash and retains the online project.
 
 Connected projects use the native LaTeX editor and local compiler. Online sends saved local edits after a two-second pause while the project is open. Remote checks run every 30 seconds. New remote revisions pause publishing for review in Check changes; resolve conflicts before updating or publishing. Offline and leaving the project stop remote work. Git access and a local TeX installation are required.
 

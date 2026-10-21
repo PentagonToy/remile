@@ -19,8 +19,19 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     private var serif = false
     private var generation = UUID()
     private var renderGeneration = UUID()
+    private let remoteImages = MarkdownRemoteImages()
+    private var networkObserver: NSObjectProtocol?
+    override init() {
+        super.init()
+        networkObserver = NotificationCenter.default.addObserver(forName: NetworkAccessGate.changed, object: NetworkAccess.gate, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateRemotePolicy() }
+        }
+    }
+    deinit { if let networkObserver { NotificationCenter.default.removeObserver(networkObserver) } }
     private(set) lazy var web: WKWebView = {
         let configuration = WKWebViewConfiguration(); configuration.websiteDataStore = .nonPersistent()
+        configuration.setURLSchemeHandler(remoteImages, forURLScheme: MarkdownRemoteImages.scheme)
+        configuration.userContentController.addUserScript(WKUserScript(source: MarkdownImagePresentation.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let bridge = MarkdownSourceBridge(); bridge.model = self
         configuration.userContentController.add(bridge, name: "sourceLocation")
         configuration.userContentController.addUserScript(WKUserScript(source: Self.navigationScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
@@ -33,7 +44,7 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
         do { try await Task.sleep(for: .milliseconds(180)); try Task.checkCancellation() } catch { return }
         let worker = Task.detached(priority: .userInitiated) { () throws -> (String, [SearchMarkdown.Section], Int) in
             let sections = SearchMarkdown.sections(source)
-            var renderer = MarkdownHTML(baseURL: url)
+            var renderer = MarkdownHTML(baseURL: url, preview: true)
             let anchors = Dictionary(uniqueKeysWithValues: sections.map { ($0.line, $0.number) })
             let html = source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "<!doctype html><html><head><meta charset=\"utf-8\"></head><body></body></html>" : try renderer.document(source, anchors: anchors)
             try Task.checkCancellation()
@@ -58,7 +69,7 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
             if loaded {
                 loadedHTML = html
                 let encoded = Self.json(html)
-                web.evaluateJavaScript("(()=>{const y=scrollY/Math.max(1,document.documentElement.scrollHeight-innerHeight);const next=new DOMParser().parseFromString(\(encoded),'text/html');document.body.replaceChildren(...next.body.childNodes);scrollTo(0,y*Math.max(0,document.documentElement.scrollHeight-innerHeight))})()") { [weak self] _, error in
+                web.evaluateJavaScript("(()=>{const y=scrollY/Math.max(1,document.documentElement.scrollHeight-innerHeight);const next=new DOMParser().parseFromString(\(encoded),'text/html');document.body.replaceChildren(...next.body.childNodes);window.remileSetOffline?.(window.remileOffline);scrollTo(0,y*Math.max(0,document.documentElement.scrollHeight-innerHeight))})()") { [weak self] _, error in
                     if error != nil { self?.loadedHTML = ""; self?.message = "Preview update failed. Render again." }
                 }
                 style()
@@ -96,8 +107,20 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
         guard loaded else { requestedLine = line; return }
         web.evaluateJavaScript("(()=>{const a=[...document.querySelectorAll('[data-source-line]')].filter(a=>Number(a.dataset.sourceLine)<=\(max(0,line))).pop();a?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth'})})()", completionHandler: nil)
     }
+    private func updateRemotePolicy() {
+        if NetworkAccess.offline { remoteImages.cancelAll(); remoteImages.clearCache() }
+        guard loaded else { return }
+        web.evaluateJavaScript("window.remileSetOffline?.(\(NetworkAccess.offline ? "true" : "false"))", completionHandler: nil)
+    }
+    func pauseRemoteImages() { remoteImages.cancelAll() }
+    func retryRemoteImages() {
+        guard loaded, !NetworkAccess.offline else { return }
+        remoteImages.clearFailures()
+        web.evaluateJavaScript("document.querySelectorAll('.remote-image:not([data-loaded]) img').forEach(i=>{const b=i.closest('.remote-image');delete b.dataset.failed;i.src=i.dataset.remoteSrc})", completionHandler: nil)
+    }
     private func style() {
         guard loaded else { return }
+        updateRemotePolicy()
         let encoded = Self.json(themeCSS)
         web.pageZoom = scale
         web.evaluateJavaScript("(()=>{let s=document.getElementById('reader-style');if(!s){s=document.createElement('style');s.id='reader-style';document.head.append(s)}s.textContent=\(encoded)})()", completionHandler: nil)
@@ -143,7 +166,8 @@ struct MarkdownPreview: View {
         VStack(spacing: 0) {
             MarkdownCanvas(model: rendering, dark: colorScheme == .dark, scale: scale, wide: wide, serif: serif)
             if let message = rendering.message { Text(message).font(.system(size: 13)).foregroundStyle(.secondary).padding(10) }
-        }.task(id: source) { if schedulesRender { await rendering.render(source, url: fileURL ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Untitled.md")) } }
+        }.onAppear { rendering.retryRemoteImages() }.onDisappear { rendering.pauseRemoteImages() }
+            .task(id: source) { if schedulesRender { await rendering.render(source, url: fileURL ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Untitled.md")) } }
     }
 }
 

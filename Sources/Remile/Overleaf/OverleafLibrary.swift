@@ -9,6 +9,8 @@ import Network
     @Published private(set) var projects: [OverleafConnection] = []
     @Published private(set) var tags: [UUID: [OverleafWebClient.Tag]] = [:]
     @Published var presented = false
+    @Published var browsing = false
+    @Published private(set) var tagSignInProfile: UUID?
     @Published var busy = false
     @Published var error: String?
     @Published var review: OverleafGit.Review?
@@ -84,7 +86,26 @@ import Network
     func connection(for root: URL) -> OverleafConnection? { projects.first { self.root($0).standardizedFileURL == root.standardizedFileURL } }
     func savedAccount(_ label: String) -> OverleafConnection? { projects.first { $0.account == label.trimmingCharacters(in: .whitespacesAndNewlines) } }
     func account(_ label: String) -> Account? { accounts.first { $0.name == label.trimmingCharacters(in: .whitespacesAndNewlines) } }
-    func openLibrary(add: Bool = false) { adding = add; presented = true; error = nil }
+    func openLibrary(add: Bool = false) { adding = add; if add { presented = true } else { presented = false; browsing = true }; error = nil }
+    @discardableResult func moveProject(_ id: UUID, before target: UUID?) -> Bool {
+        guard id != target, let project = projects.first(where: { $0.id == id }), target == nil || projects.contains(where: { $0.id == target }) else { return false }
+        var updated = projects.filter { $0.id != id }
+        let index = target.flatMap { target in updated.firstIndex { $0.id == target } } ?? updated.count
+        updated.insert(project, at: index)
+        do { try persist(updated); return true } catch { self.error = error.localizedDescription; return false }
+    }
+    func refreshProjectTags() async {
+        guard !offlineMode, !NetworkAccess.offline, hasNetwork else { return }
+        error = nil; tagSignInProfile = nil
+        for account in accounts where projects.contains(where: { $0.profileID == account.id }) {
+            if Task.isCancelled { return }
+            do { let catalog = try await OverleafWebClient.projects(account.id); rememberTags(catalog, profile: account.id) }
+            catch {
+                self.error = error.localizedDescription
+                if (error as? OverleafWebClient.Failure) == .signIn { tagSignInProfile = account.id }
+            }
+        }
+    }
     @discardableResult func saveAccount(name: String, token: String) -> Account? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines), token = token.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { error = "Name this account."; return nil }

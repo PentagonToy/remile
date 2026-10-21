@@ -148,7 +148,12 @@ struct ReadingShell: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         ZStack {
-            if let project = home.texProject {
+            if overleaf.browsing {
+                OverleafLibraryWorkspace(library: overleaf, open: home.openTeX, prepareRemoval: { root in
+                    if home.texProject?.root == root, !home.closeTeX() { return false }
+                    home.removeRecent(root); return true
+                })
+            } else if let project = home.texProject {
                 VStack(spacing: 0) {
                     if let connection = overleaf.connection(for: project.root) { OverleafBar(library: overleaf, project: project, connection: connection) }
                     TeXWorkspace(project: project, close: { home.closeTeX() }, title: overleaf.title(for: project.root), projectTags: overleaf.connection(for: project.root).flatMap { overleaf.tags[$0.id] } ?? []).id(project.identity)
@@ -215,6 +220,7 @@ private struct WindowCloseGuard: NSViewRepresentable {
         DispatchQueue.main.async {
             guard let window = view.window, window.delegate !== context.coordinator else { return }
             context.coordinator.previous = window.delegate
+            context.coordinator.titlebarDrag = TitlebarDrag(window: window)
             window.delegate = context.coordinator
             RemileWindows.shared.register(home, window: window)
         }
@@ -223,6 +229,7 @@ private struct WindowCloseGuard: NSViewRepresentable {
         let reader: ReadingSession
         let home: HomeModel
         weak var previous: NSWindowDelegate?
+        var titlebarDrag: TitlebarDrag?
         init(reader: ReadingSession, home: HomeModel) { self.reader = reader; self.home = home }
         func windowShouldClose(_ sender: NSWindow) -> Bool { (previous?.windowShouldClose?(sender) ?? true) && home.closeTeX() && reader.close() }
         func windowDidBecomeKey(_ notification: Notification) {
@@ -230,6 +237,7 @@ private struct WindowCloseGuard: NSViewRepresentable {
             previous?.windowDidBecomeKey?(notification)
         }
         func windowWillClose(_ notification: Notification) {
+            titlebarDrag = nil
             if let window = notification.object as? NSWindow { RemileWindows.shared.remove(window) }
             previous?.windowWillClose?(notification)
         }

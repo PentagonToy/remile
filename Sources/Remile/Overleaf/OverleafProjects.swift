@@ -27,7 +27,7 @@ struct OverleafProjects: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Overleaf library").font(RemileType.heading); Spacer()
+                Text("Add Overleaf projects").font(RemileType.heading); Spacer()
                 if library.busy || state.loading { ProgressView().controlSize(.small) }
                 Button("Done") { library.presented = false }.keyboardShortcut(.cancelAction).disabled(library.busy)
             }
@@ -79,7 +79,7 @@ struct OverleafProjects: View {
                             ForEach(library.projects) { project in
                                 HStack(spacing: 10) {
                                     OverleafTagMark(tags: library.tags[project.id] ?? [])
-                                    Button { library.presented = false; open(library.root(project)) } label: {
+                                    Button { library.presented = false; library.browsing = false; open(library.root(project)) } label: {
                                         VStack(alignment: .leading, spacing: 4) { Text(project.name).lineLimit(2); Text(project.account).font(RemileType.small).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading)
                                     }.buttonStyle(.plain)
                                     Button { state.removing = project } label: { Image(systemName: "minus.circle") }.remileHelp("Remove from local library").disabled(library.busy)
