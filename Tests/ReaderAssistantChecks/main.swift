@@ -96,6 +96,14 @@ Task { @MainActor in
         let definitionSources = AssistantQuestionRoute.definitionEvidence("PINN", from: [applied, defined])
         try check(definitionSources.count == 1 && definitionSources[0].number == 2 && !definitionSources[0].text.contains("unrelated result"), "A definition keeps its real source identifier and omits unrelated paper results")
         try check(AssistantQuestionRoute.definitionEvidence("pinn", from: [defined]).count == 1 && AssistantQuestionRoute.definitionEvidence("PINNs", from: [defined]).count == 1, "Lowercase questions and plural acronyms still match explicit expansions")
+        let linear = AssistantEvidence(number: 4, location: .init(path: path, unit: 18, label: "Page 18"), text: "Linear System of Equations\nAx = b.\nThe matrix A and vector b are known, and x is unknown.")
+        let linearEvidence = AssistantQuestionRoute.definitionEvidence("Linear Systems of Equations", from: [linear])
+        try check(linearEvidence.count == 1 && linearEvidence[0].number == 4 && linearEvidence[0].text.contains("Ax = b"), "A textbook heading and equation retain the actual page citation without an English copula")
+        let resultOnly = AssistantEvidence(number: 1, location: linear.location, text: "PINN\nPrediction error = 0.1 after training.")
+        try check(AssistantQuestionRoute.definitionEvidence("PINN", from: [resultOnly]).isEmpty, "A heading next to a prose numerical result is not a formula definition")
+        try check(AssistantQuestionRoute.definitionSubject(in: "what is the equation od linear systmes of equtions?") == nil, "A mistyped equation request stays on the document route")
+        let equationExcerpt = PDFAssistantContext.excerpt(String(repeating: "Unrelated material.\n", count: 100) + linear.text, terms: ["linear", "equations"])
+        try check(equationExcerpt.contains("Equations\nAx = b"), "Clipping preserves the heading/formula boundary")
         let massDefinition = AssistantEvidence(number: 3, location: passages[0].location, text: "Mass fraction is defined as a constituent mass divided by the total mixture mass.")
         try check(AssistantQuestionRoute.definitionEvidence("mass fraction", from: [massDefinition]).count == 1, "An explicit multiword definition keeps document support")
         let accidental = AssistantEvidence(number: 4, location: passages[0].location, text: "We evaluate our numerical solver (PINN) on a benchmark.")
@@ -143,7 +151,7 @@ Task { @MainActor in
         let longPassage = AssistantPassage(location: .init(path: path, unit: 1, label: "Page 1"), text: String(repeating: "The apparatus was calibrated. ", count: 40) + "The measured activation energy was 42 kJ/mol.")
         try check(!AssistantEvidence.make([longPassage])[0].text.contains("42 kJ/mol") && AssistantEvidence.make([longPassage], expanded: true)[0].text.contains("42 kJ/mol"), "Cloud evidence retains supporting facts beyond the device excerpt")
         let wide = try await context.passages(data: bytes, password: "", path: path, question: "concentration", currentPage: 1, selection: nil, expanded: true) { _ in }
-        try check(wide.count == 12 && wide.first?.location.unit == 9, "Cloud PDF retrieval covers more pages while keeping relevant evidence first")
+        try check(wide.count == 12 && wide.map(\.location.unit) == Array(1...12), "Short cloud PDF context preserves every extracted page in document order")
         routed.clear()
         var received = "", budget = 0
         routed.useEngine(AssistantEngine(status: { (true, "Cloud fixture") }, singlePass: true, expandedContext: true, respond: { input, _, tokens in received = input; budget = tokens; return "The activation energy was 42 kJ/mol [1]." }))

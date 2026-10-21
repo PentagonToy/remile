@@ -86,7 +86,7 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
             NSSpellChecker.shared.automaticallyIdentifiesLanguages = language == "Automatic"
             if language != "Automatic" { NSSpellChecker.shared.setLanguage(language) }
         }
-        if UserDefaults.standard.string(forKey: "assistant.provider") == "Off" || !UserDefaults.standard.bool(forKey: "editor.aiSuggestions") { assistance.cancel() }
+        if !AIConfiguration.writingEnabled || (AIConfiguration.mode == .gpt && !AIConfiguration.fallbackEnabled) || UserDefaults.standard.string(forKey: "assistant.provider") == "Off" || !UserDefaults.standard.bool(forKey: "editor.aiSuggestions") { assistance.cancel() }
     }
     func update(_ source: String, size: CGFloat, serif: Bool, document: String? = nil) {
         guard let view = textView else { return }

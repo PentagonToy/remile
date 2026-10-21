@@ -15,6 +15,7 @@ enum RemileStyle {
     }
     static let background = adaptive(light: paper, dark: slate)
     static let ink = adaptive(light: NSColor(srgbRed: 41/255, green: 57/255, blue: 68/255, alpha: 1), dark: ivory)
+    static let secondaryInk = adaptive(light: NSColor(srgbRed: 90/255, green: 100/255, blue: 107/255, alpha: 1), dark: NSColor(srgbRed: 188/255, green: 190/255, blue: 187/255, alpha: 1))
     static let accent = adaptive(light: gold, dark: amber)
     static let brand = accent
     static let sourceLinked = accent
@@ -41,9 +42,14 @@ enum ReaderAppearance: String, CaseIterable {
 
 struct ReaderAppearanceModifier: ViewModifier {
     @AppStorage(ReaderAppearance.preference) private var appearance = ReaderAppearance.system.rawValue
+    @AppStorage(AnimationPolicy.preference) private var animations = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func body(content: Content) -> some View {
         content.preferredColorScheme((ReaderAppearance(rawValue: appearance) ?? .system).scheme)
             .tint(RemileStyle.accent).foregroundStyle(RemileStyle.ink).font(RemileType.body)
+            .transaction { transaction in
+                if !animations || reduceMotion { transaction.animation = nil; transaction.disablesAnimations = true }
+            }
             .onAppear { ReaderAppearance.apply(appearance) }
             .onChange(of: appearance) { _, value in ReaderAppearance.apply(value) }
     }
@@ -56,7 +62,7 @@ enum RemileArtwork {
         if let image = cache[name] { return image }
         let sourceRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let urls = [Bundle.main.resourceURL?.appendingPathComponent("Brand/\(name).svg"),
-                    sourceRoot.appendingPathComponent("others/\(kind == "icon" ? "icons" : "banners")/\(name).svg")]
+                    sourceRoot.appendingPathComponent("others/\(kind == "icon" ? "icons" : kind == "airplane" ? "icons/animations" : "banners")/\(name).svg")]
         guard let image = urls.compactMap({ $0 }).compactMap({ NSImage(contentsOf: $0) }).first else { return nil }
         cache[name] = image
         return image
@@ -107,5 +113,28 @@ struct RemileToolStyle: ButtonStyle {
             .background(configuration.isPressed ? RemileStyle.ink.opacity(0.09) : Color.clear, in: RoundedRectangle(cornerRadius: RemileRadius.control))
             .opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// Compact editing controls share a 28-point hit area without shrinking their glyphs.
+struct RemileCompactToolStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.frame(minWidth: 28, minHeight: 28).contentShape(Rectangle())
+            .background(configuration.isPressed ? RemileStyle.ink.opacity(0.09) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+            .opacity(enabled ? 1 : 0.4)
+    }
+}
+
+/// Shared brand wording for the guide, tour and editor sidebar.
+enum RemileBrand { static let tagline = "Across time, a few words find you here." }
+
+/// One quiet line, constrained to its settings card.
+struct SettingsHint: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View {
+        Text(text).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

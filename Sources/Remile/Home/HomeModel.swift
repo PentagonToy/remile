@@ -6,11 +6,12 @@ import UniformTypeIdentifiers
 @MainActor
 final class HomeModel: ObservableObject {
     let reader = ReadingSession()
-    let overleaf = OverleafLibrary()
+    let overleaf: OverleafLibrary
     @Published var texProject: TeXProject?
     let assistant = DocumentAssistant(historyKey: "search")
     enum Page { case home, search }
     @Published var opening = false
+    let pdfSearchEditing = SearchPDFModel()
     @Published var page: Page = .home
     @Published var resultOrder = SearchResultOrder.relevance
     @Published var summary = LibrarySummary()
@@ -19,16 +20,22 @@ final class HomeModel: ObservableObject {
     @Published var selectedHit: LibraryHit?
     @Published var documentFilter = ""
     @Published var expandedDocuments = Set<String>()
-    var resultGroups: [SearchResultGroup] { SearchResultGroup.make(results, filter: documentFilter, order: resultOrder) }
-    var visibleHits: [LibraryHit] { resultGroups.flatMap(\.hits) }
+    var resultGroups: [SearchResultGroup] { SearchResultGroup.make(results, filter: documentFilter) }
+    var rankedHits: [RankedSearchHit] { RankedSearchHit.make(results, filter: documentFilter) }
+    var visibleHits: [LibraryHit] { resultOrder == .rank ? rankedHits.map(\.hit) : resultGroups.flatMap(\.hits) }
     @Published var libraryPresented = false
     @Published var guidePresented = false
     @Published var askPresented = false
+    @Published var boosting = false
+    @Published var boostApplied = false
+    private let searchBoost = SearchBoost()
     @Published var exploring = false
     @Published var exploredQueries: [String] = []
     @Published var spellingSuggestions: [String] = []
     @Published var libraryRevision = UUID()
     @Published var searching = false
+    @Published private(set) var searchStartedAt = Date()
+    @Published private(set) var searchDuration: TimeInterval?
     @Published var queryError: String?
     @Published var indexing = false
     @Published var processing = false
@@ -47,9 +54,41 @@ final class HomeModel: ObservableObject {
     private var indexTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var searchGeneration = UUID()
+    private struct SearchStamp: Equatable {
+        let query: String
+        let revision: UUID
+        let provider: String
+        let boosting: Bool
+        let offline: Bool
+        let corrections: Bool
+    }
+    private var previousSearch: SearchStamp?
+    private var currentSearch: SearchStamp {
+        SearchStamp(query: query.trimmingCharacters(in: .whitespacesAndNewlines), revision: libraryRevision,
+                    provider: UserDefaults.standard.string(forKey: "assistant.provider") ?? "Apple Intelligence",
+                    boosting: SearchBoostPolicy.enabled(), offline: NetworkAccess.offline,
+                    corrections: UserDefaults.standard.object(forKey: SearchQuestion.spellingPreference) as? Bool ?? true)
+    }
+
+    var hasSubmittedSearch: Bool { previousSearch == currentSearch && searchDuration != nil }
+
+    /// A draft never starts retrieval. Return is the explicit submission boundary.
+    func editSearch() {
+        if previousSearch?.query != query.trimmingCharacters(in: .whitespacesAndNewlines) { invalidateSearch() }
+    }
+    func invalidateSearch() {
+        guard !pdfSearchEditing.hasPendingEdits else { return }
+        cancelExploration(); previousSearch = nil
+        results = []; selectedHit = nil; searchDuration = nil; queryError = nil
+        spellingSuggestions = []; exploredQueries = []; boostApplied = false
+    }
+    /// Returning from a document reuses completed results, selection, order and timing.
+    func resumeSearch() {
+        if previousSearch != currentSearch { invalidateSearch() }
+    }
     private var access: [URL] = []
 
-    init(index: LibraryIndex = LibraryIndex()) { self.index = index }
+    init(index: LibraryIndex = LibraryIndex(), overleaf: OverleafLibrary? = nil) { self.index = index; self.overleaf = overleaf ?? OverleafLibrary() }
 
     func load() async {
         refreshRecent()
@@ -81,60 +120,91 @@ final class HomeModel: ObservableObject {
     func removeFolder(_ folder: LibraryFolder) {
         guard !indexing else { return }
         Task {
-            do { try await index.remove(folder); await load(); search() }
+            do { try await index.remove(folder); await load(); invalidateSearch() }
             catch { self.error = error.localizedDescription }
         }
     }
 
-    func refresh() {
+    func reindex(_ folder: LibraryFolder) { refresh(folderID: folder.id, force: true) }
+
+    func refresh(folderID: String? = nil, force: Bool = false) {
         guard !indexing, !summary.folders.isEmpty else { return }
         indexing = true; progress = nil; message = nil
         indexTask = Task {
             do {
-                try await index.refresh { [weak self] value in await self?.showProgress(value) }
+                try await index.refresh(folderID: folderID, force: force) { [weak self] value in await self?.showProgress(value) }
                 message = "Index up to date."
             } catch is CancellationError { message = "Indexing stopped." }
             catch { self.error = error.localizedDescription }
             indexing = false; progress = nil; indexTask = nil; libraryRevision = UUID()
-            await load(); search()
+            await load(); invalidateSearch()
         }
     }
     private func showProgress(_ value: LibraryProgress) { progress = value }
     func cancelIndexing() { indexTask?.cancel() }
 
-    func search() {
+    func search(immediate: Bool = false) {
+        guard pdfSearchEditing.confirmLeaving() else { return }
+        previousSearch = currentSearch
         searchTask?.cancel()
         let generation = UUID(); searchGeneration = generation
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let started = ProcessInfo.processInfo.systemUptime
+        searchStartedAt = Date(); searchDuration = nil
         results = []; selectedHit = nil; queryError = nil; searching = !text.isEmpty
-        exploring = false; exploredQueries = []; spellingSuggestions = []
+        exploring = false; exploredQueries = []; spellingSuggestions = []; boostApplied = false
+        boosting = !text.isEmpty && SearchBoostPolicy.canUse(query: text)
         guard !text.isEmpty else { return }
-        let interpretQuestions = UserDefaults.standard.object(forKey: SearchQuestion.preference) as? Bool ?? true
         let offerCorrections = UserDefaults.standard.object(forKey: SearchQuestion.spellingPreference) as? Bool ?? true
         searchTask = Task {
             do {
-                try await Task.sleep(for: .milliseconds(250))
-                let hits = try await index.search(text, interpretQuestions: interpretQuestions)
+                let response = try await librarySearch(text)
+                let hits = response.hits
                 let suggestions = offerCorrections && hits.isEmpty ? try await index.spellingSuggestions(text) : []
                 try Task.checkCancellation()
                 guard generation == searchGeneration else { return }
-                results = hits; spellingSuggestions = suggestions; searching = false; expandedDocuments = []
+                searchDuration = ProcessInfo.processInfo.systemUptime - started
+                results = hits; spellingSuggestions = suggestions; searching = false; boosting = false; boostApplied = !response.phrases.isEmpty; expandedDocuments = []
                 selectResult(visibleHits.first)
             } catch is CancellationError { }
             catch {
                 guard generation == searchGeneration else { return }
-                searching = false; queryError = error.localizedDescription
+                searchDuration = ProcessInfo.processInfo.systemUptime - started
+                searching = false; boosting = false; queryError = error.localizedDescription
             }
         }
     }
 
+    /// The CLI and UI share one engine and policy; a failed or paused boost returns B0.
+    func librarySearch(_ text: String, boost: Bool = true) async throws -> (hits: [LibraryHit], phrases: [String]) {
+        let original = try await index.rankedSearch(text)
+        guard boost, SearchBoostPolicy.canUse(query: text) else { return (original, []) }
+        do {
+            let phrases = try await searchBoost.phrases(for: text)
+            try Task.checkCancellation()
+            guard !phrases.isEmpty, SearchBoostPolicy.canUse(query: text) else { return (original, []) }
+            let hits = try await index.rankedSearch(text, expansions: phrases)
+            try Task.checkCancellation()
+            guard SearchBoostPolicy.canUse(query: text) else { return (original, []) }
+            return (hits, phrases)
+        } catch {
+            try Task.checkCancellation()
+            return (original, [])
+        }
+    }
+
     func explore() {
+        guard pdfSearchEditing.confirmLeaving() else { return }
+        guard !NetworkAccess.offline else { search(immediate: true); return }
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !exploring else { return }
         let engine = AssistantEngine.selected, state = engine.status()
         guard state.ready else { queryError = state.message; return }
+        previousSearch = currentSearch
         searchTask?.cancel(); let generation = UUID(); searchGeneration = generation
-        exploring = true; searching = false; queryError = nil; spellingSuggestions = []
+        let started = ProcessInfo.processInfo.systemUptime
+        searchStartedAt = Date(); searchDuration = nil
+        exploring = true; searching = false; boosting = false; boostApplied = false; queryError = nil; spellingSuggestions = []
         searchTask = Task {
             do {
                 let original = try await index.search(text)
@@ -155,21 +225,24 @@ final class HomeModel: ObservableObject {
                 }
                 try Task.checkCancellation(); guard generation == searchGeneration else { return }
                 results = SearchExpansion.merge(lists); exploredQueries = used; expandedDocuments = []
+                searchDuration = ProcessInfo.processInfo.systemUptime - started
                 exploring = false
                 if used.isEmpty { queryError = "No related matches." }
                 selectResult(visibleHits.first)
             } catch {
                 guard generation == searchGeneration else { return }
+                searchDuration = error is CancellationError ? nil : ProcessInfo.processInfo.systemUptime - started
                 exploring = false
                 queryError = error is CancellationError ? nil : "Unable to explore. Keyword search is still available."
             }
         }
     }
     func cancelExploration() {
-        searchTask?.cancel(); searchGeneration = UUID(); exploring = false; searching = false
+        searchTask?.cancel(); searchGeneration = UUID(); exploring = false; searching = false; boosting = false
     }
 
     func selectResult(_ hit: LibraryHit?) {
+        if selectedHit?.path != hit?.path, !pdfSearchEditing.confirmLeaving() { return }
         selectedHit = hit
         if let hit { expandedDocuments.insert(hit.path) }
     }
@@ -241,6 +314,7 @@ final class HomeModel: ObservableObject {
     }
 
     @discardableResult func closeTeX() -> Bool {
+        guard pdfSearchEditing.confirmLeaving() else { return false }
         guard texProject?.confirmLeaving() != false else { return false }
         texProject = nil; return true
     }

@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct AssistantPanel: View {
+    @ObservedObject private var network = NetworkAccessState.shared
+    @AppStorage(AIConfiguration.fallbackPreference) private var fallback = true
     @ObservedObject private var usage = AIUsage.shared
     @ObservedObject var assistant: DocumentAssistant
     let passages: [AssistantPassage]
@@ -78,6 +80,8 @@ struct AssistantPanel: View {
             .background(RemileStyle.surface).onAppear { assistant.useEngine(.selected) }
             .onChange(of: provider) { assistant.useEngine(.selected) }
             .onChange(of: usage.online) { assistant.checkAvailability() }
+            .onChange(of: network.offline) { assistant.useEngine(.selected) }
+            .onChange(of: fallback) { assistant.useEngine(.selected) }
             .onChange(of: usage.paused) { assistant.checkAvailability() }
             .onChange(of: phase) { if phase == .active { assistant.checkAvailability() } }
     }
@@ -118,6 +122,8 @@ struct AssistantPanel: View {
         withAnimation(reduceMotion ? nil : RemileMotion.panel) { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
     }
     private func ask() {
+        guard !assistant.working else { return }
+        assistant.useEngine(.selected)
         if let retrieve { assistant.ask(topic: topic, retrieve: retrieve) }
         else { assistant.ask(passages: passages, topic: topic) }
     }

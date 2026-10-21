@@ -11,9 +11,8 @@ struct RemileBanner: View {
                 if let image = RemileArtwork.image("wordmark", dark: scheme == .dark) {
                     Image(nsImage: image).resizable().scaledToFit().frame(width: min(300, geometry.size.width * 0.46))
                 }
-                if let image = RemileArtwork.image("lighthouse", dark: scheme == .dark) {
-                    Image(nsImage: image).resizable().scaledToFit().frame(width: min(190, geometry.size.width * 0.24)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing).padding(.trailing, 20).padding(.bottom, 12)
-                }
+                BannerBeacon()
+                BannerFlight()
             }
         }.accessibilityLabel("remile.")
     }

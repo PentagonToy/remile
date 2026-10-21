@@ -1,4 +1,5 @@
 import AppKit
+import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -12,6 +13,8 @@ final class ReadingSession: ObservableObject {
     }
     @Published private(set) var externalEdits: [NSRange] = []
     private var provenance = EditorProvenance.Tracker()
+    weak var pdfSession: PDFSession?
+    var pdfInspection: ((Int?, String?, String?) throws -> [String: Any])?
     var commentsExport: (() throws -> PDFCommentExport.Archive)?
     var editSource: ((String, String) async -> Bool)?
     func markExternalEdit(before: String, after: String) { provenance.mark(before: before, after: after); externalEdits = provenance.ranges }
@@ -24,7 +27,7 @@ final class ReadingSession: ObservableObject {
         case .markdown(let text): return Data(text.utf8)
         }
     }
-    var dirty: Bool { url != nil && (isUntitled || bytes != original) }
+    var dirty: Bool { url != nil && (isUntitled || bytes != original || (pdfSession?.hasPendingAnnotations ?? false)) }
     func open(_ destination: URL, data suppliedData: Data? = nil, recordRecent: Bool = true) throws {
         if destination.standardizedFileURL == url?.standardizedFileURL { return }
         let data = try suppliedData ?? Data(contentsOf: destination)
@@ -35,18 +38,54 @@ final class ReadingSession: ObservableObject {
             content = .markdown(text)
         }
         guard confirmLeaving() else { return }
-        externalEdits = []; provenance = EditorProvenance.Tracker(); editSource = nil; commentsExport = nil
+        pdfSession?.protection.finish()
+        externalEdits = []; provenance = EditorProvenance.Tracker(); editSource = nil; commentsExport = nil; pdfInspection = nil; pdfSession = nil
         document.content = content; original = data; url = destination; isUntitled = false
         if recordRecent { NSDocumentController.shared.noteNewRecentDocumentURL(destination) }
     }
     @discardableResult func newMarkdown() -> Bool {
         guard confirmLeaving() else { return false }
-        externalEdits = []; provenance = EditorProvenance.Tracker(); editSource = nil; commentsExport = nil
+        pdfSession?.protection.finish()
+        externalEdits = []; provenance = EditorProvenance.Tracker(); editSource = nil; commentsExport = nil; pdfInspection = nil; pdfSession = nil
         document.content = .markdown(""); original = Data(); isUntitled = true
         url = URL(fileURLWithPath: "/remile-untitled-" + UUID().uuidString + "/Untitled.md")
         return true
     }
+    func signatureSaveNeedsWarning(_ data: Data) -> Bool {
+        guard case .pdf = document.content, data != original else { return false }
+        let status = pdfSession?.signatureSaveStatus(for: data)
+        if status == .atRisk { return true }
+        if status == .preserved { return false }
+        guard let source = PDFDocument(data: original), PDFFormPreservation.hasDigitalSignature(source) else { return false }
+        return status != .preserved
+    }
+    func discardPDFChanges() {
+        guard case .pdf = document.content else { return }
+        pdfSession?.discardChanges(to: original)
+        document.content = .pdf(original); objectWillChange.send()
+    }
+    private enum SignatureSaveChoice { case save, discarded, cancel }
+    private func confirmSignatureSave(_ data: Data) -> SignatureSaveChoice {
+        guard signatureSaveNeedsWarning(data), pdfSession?.protection.authorised != true else { return .save }
+        let alert = NSAlert(); alert.alertStyle = .warning
+        alert.messageText = "Saving may invalidate the PDF’s signatures"
+        alert.informativeText = "These changes could not be verified as signature-preserving."
+        alert.addButton(withTitle: "Keep Editing")
+        alert.addButton(withTitle: "Save Anyway")
+        alert.addButton(withTitle: "Discard Changes")
+        switch alert.runModal() {
+        case .alertSecondButtonReturn: return .save
+        case .alertThirdButtonReturn:
+            discardPDFChanges(); return .discarded
+        default: return .cancel
+        }
+    }
+    private func preparePDFSave() throws {
+        if case .pdf = document.content, let pdfSession { document.content = .pdf(try pdfSession.prepareSave()) }
+    }
     func saveCopy() {
+        do { try preparePDFSave() } catch { NSAlert(error: error).runModal(); return }
+        guard confirmSignatureSave(bytes) == .save else { return }
         let panel = NSSavePanel(); panel.nameFieldStringValue = url?.lastPathComponent ?? "Untitled.md"
         switch document.content {
         case .pdf: panel.allowedContentTypes = [.pdf]
@@ -59,6 +98,12 @@ final class ReadingSession: ObservableObject {
     }
     @discardableResult func save() -> Bool {
         guard let url else { return true }
+        do { try preparePDFSave() } catch { NSAlert(error: error).runModal(); return false }
+        switch confirmSignatureSave(bytes) {
+        case .cancel: return false
+        case .discarded: return true
+        case .save: break
+        }
         if isUntitled {
             let panel = NSSavePanel(); panel.nameFieldStringValue = "Untitled.md"; panel.allowedContentTypes = [.remileMarkdown]
             guard panel.runModal() == .OK, let destination = panel.url else { return false }
@@ -71,6 +116,7 @@ final class ReadingSession: ObservableObject {
                 throw NSError(domain: "Remile", code: 1, userInfo: [NSLocalizedDescriptionKey: "This file changed in another app. Keep this window open and save a copy before replacing it."])
             }
             let data = bytes; try data.write(to: url, options: .atomic); original = data
+            pdfSession?.protection.committed()
             objectWillChange.send(); return true
         } catch { NSAlert(error: error).runModal(); return false }
     }
@@ -88,7 +134,8 @@ final class ReadingSession: ObservableObject {
     }
     @discardableResult func close() -> Bool {
         guard confirmLeaving() else { return false }
-        externalEdits = []; provenance = EditorProvenance.Tracker(); editSource = nil; commentsExport = nil
+        pdfSession?.protection.finish()
+        externalEdits = []; provenance = EditorProvenance.Tracker(); editSource = nil; commentsExport = nil; pdfInspection = nil; pdfSession = nil
         url = nil; original = Data(); document = ReadingDocument(); isUntitled = false; return true
     }
 }
@@ -104,7 +151,7 @@ struct ReadingShell: View {
             if let project = home.texProject {
                 VStack(spacing: 0) {
                     if let connection = overleaf.connection(for: project.root) { OverleafBar(library: overleaf, project: project, connection: connection) }
-                    TeXWorkspace(project: project, close: { home.closeTeX() }, title: overleaf.title(for: project.root)).id(project.identity)
+                    TeXWorkspace(project: project, close: { home.closeTeX() }, title: overleaf.title(for: project.root), projectTags: overleaf.connection(for: project.root).flatMap { overleaf.tags[$0.id] } ?? []).id(project.identity)
                 }
             } else if let url = reader.url {
                 DocumentWorkspace(document: $reader.document, fileURL: url, session: reader)
@@ -129,6 +176,9 @@ struct ReadingShell: View {
         .animation(reduceMotion ? nil : RemileMotion.navigation, value: reader.url)
         .frame(minWidth: 560, minHeight: 450)
         .overlay { if home.opening { ProgressView("Opening document…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
+        .toolbar { ToolbarItem(placement: .automatic) { OfflineModeButton() } }
+        .toolbarBackground(RemileStyle.background, for: .windowToolbar)
+        .toolbarBackground(.visible, for: .windowToolbar)
         .background(WindowCloseGuard(reader: reader, home: home))
         .onOpenURL { home.open($0) }
         .sheet(isPresented: $home.guidePresented) { UserGuide() }

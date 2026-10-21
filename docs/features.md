@@ -1,89 +1,63 @@
 # Features
 
-## Documents
+## Documents and windows
 
-Home opens PDF and Markdown documents or a local LaTeX project. Recent entries carry TeX, MD or PDF badges. Right-click a recent entry to reveal its file in Finder or remove it from the list. The version sits beside the sidebar wordmark. Settings opens General, AI and LaTeX preferences; General includes the installed version and an update check.
+Home opens PDFs, Markdown files and LaTeX projects. Recent documents show their format; a leaf badge identifies Overleaf projects. Right-click an entry to reveal its file or remove it from Recent. Convert images, Word or Markdown to PDF; compress PDFs; or combine files of the same format in the chosen order.
 
-Convert images, Word and Markdown to PDF. Compress PDFs with colour and quality controls, compare the result and save a separate PDF. Combine PDFs in the chosen page order. Combine Markdown files by appending their sources in the chosen order and save as `.md`. The combination window accepts one format at a time. Suggested output names use `converted_`, `compressed_` or `combined_` before the original filename.
+File → New Window (⇧⌘N) opens an independent workspace. Save follows the active window. Closing a document or quitting checks unsaved changes. Settings and appearance preferences are shared.
 
-The User guide is available from the Home sidebar and Help → remile. User Guide. It opens with AI, document privacy and library search. More features expands the complete reference. It is not shown automatically on first launch. Recent-document cards show names and dates without file-path hover labels.
+A skippable tour appears on first launch. Replay it with Tour in User guide, available from Home and Help. General settings controls appearance, animations, Work offline and update checks. Reduce Motion suppresses added motion. See [installation and updates](distribution.md).
 
 ## PDF
 
-Switch between one-page and two-page views with the layout button. Two-page view pairs pages from the beginning: 1–2, 3–4 and so on. Enter a page number to navigate directly.
+Use the page field, single/two-page layout or page overview to navigate. The sidebar contains pages, outline, search, highlights and comments. Scan & OCR recognises text with Apple Vision.
 
-The sidebar provides pages, outline, search, highlights and comments. Select text to copy, highlight, annotate or translate. Scan & OCR recognises text with Apple Vision. Edit PDF provides text, annotation and page controls. Undo reverses editing operations; Save writes the document. Export comments from the Comments sidebar as Markdown or JSON, retaining page, author, text and reply relationships.
+Edit PDF provides notes, highlights, freehand drawing, rectangles, ellipses and page controls. A text highlight uses one annotation per page, including selections across inline maths. In page overview, the contextual toolbar offers PDF addition, paper size and rotation of selected pages. Paper size fits all pages. Drag thumbnails to rearrange pages. Drawing and annotation tools appear in the reading view.
+
+Save writes edits to the open file. Undo restores edits and deleted highlights or comment threads. Export comments as Markdown or JSON from the Comments heading, including authors and replies. Search previews use the same Save/Discard flow for highlights.
+
+Signed PDFs start with an editing lock. Click it and accept the warning to edit; blocked actions shake the lock. Supported, permitted annotation saves preserve the original signed bytes through an incremental update. Page changes and unsupported formats can affect signatures. The save checks cover content integrity and supported PDF signature permissions, not certificate trust, expiry or revocation. One temporary original is retained during the editing transaction and removed after Save or Discard. Form data must survive an annotation rewrite.
 
 ## Markdown
 
-Read, Edit and Split share one source buffer. Outline folds above the brand footer. Editor settings control line numbers, source font size, spelling and live preview. Preview zoom adjusts the rendered document independently. Local Markdown images and HTML `<img>` and `<picture>` images appear in the preview and PDF export. Light and dark picture variants follow the reader appearance; PDF export uses the light fallback. Passive SVG artwork is supported alongside raster images. Keep images in the document folder or its subfolders; remote images require a local copy. Scripts, embedded content and SVG stylesheets are not supported.
+Read, Edit and Split share one source buffer. Format supports styles, links, lists, maths, code and tables. Spreadsheet paste creates a table; Paste as Markdown preserves formatted text. Share exports PDF.
 
-Maths completion provides TeX commands and environment blocks. Tab accepts a candidate; Escape dismisses it. Spelling and grammar suggestions exclude source syntax and formulae. Double-click an underlined word to show corrections below it. Select a correction to apply an undoable edit. A correct prose word offers on-device single-word synonyms. Suggestions appear on demand, preserve source syntax and apply through Undo. The toolbar also lists writing suggestions.
+Local raster images and passive SVGs appear in previews and PDF exports. HTML `<img>` and `<picture>` are supported; theme variants follow the reader appearance and PDF export uses the light fallback. Keep assets in the document folder or its subfolders. Remote images require a local copy; scripts and embedded content are excluded.
 
-Format provides inline styles, links, lists, maths, code and table editing. Spreadsheet paste creates a Markdown table. Paste as Markdown retains bold, italic and links from formatted clipboard text. Pasting a URL over selected text creates a link. Share exports the current source to PDF.
+Editor settings control line numbers, source size, spelling and live preview. TeX completion offers commands and environment blocks. Tab accepts a candidate; Escape dismisses it. See [writing assistance](assistant.md) for proofreading and word alternatives.
 
 ## LaTeX
 
-Open a project folder, select its main document and compile. Project settings control the engine, binary directory, editor theme, font size and history interval. Missing TeX tools open a compact installation guide. pdfLaTeX prepares EPS graphics in the build snapshot through restricted epstopdf conversion.
+Open a project folder, choose its main document and compile with a local TeX installation. Project settings selects the engine, binary directory, editor theme and history interval. Settings → LaTeX sets a shared compilation limit of 90, 180, 300 or 600 seconds; the default is 180 seconds.
 
-Files and Outline fold independently. Outline follows literal input, include and subfile links from the main document and jumps to the correct source file. Dynamic TeX paths are not evaluated. Sidebar artwork can be hidden in Settings. Virtual collections use a stacked icon and a collection label. Nest collections without changing source paths. Select files with Cmd or Shift, then drag the selection or use Move to collection. Add files also accepts multiple selections. Removing a collection preserves its files and nested collections. Rename files or the project inline. SyncTeX connects source lines and PDF locations. Cmd+/ toggles comments; Tab and Shift+Tab adjust source indentation.
+Files and Outline fold independently; drag their dividing line to resize them. Outline follows literal input, include and subfile links. Virtual collections group files without changing source paths. Cmd/Shift selects multiple files for dragging or collection moves. Removing a collection preserves its files.
 
-Compile offers a fresh rebuild and a submission comparison. The comparison checks the current source and a bibliography-embedded variant in separate snapshots, with progress and logs for each result. Embed bibliography presents the source change for review. Remove notes (%) removes author comments while preserving captions and TeX directives.
+Double-click a file or project title to rename it. Return or clicking elsewhere accepts a valid non-empty name; Escape or an empty name cancels. The + menu creates files, folders and collections. File context menus offer Rename, Copy relative path, Reveal in Finder, Duplicate and Move to Trash.
 
-History follows edits at the selected interval and coalesces small changes. Save, navigation and source tools preserve checkpoints. Tool changes carry Before/After markers. The recent-items menu can move local editing history to Trash.
+The bounded title box centres names that fit and keeps the beginning of long names visible. Selecting a PDF, EPS or image asset opens a preview beside the compiled document. EPS previews and pdfLaTeX conversion require `epstopdf` and supporting tools. SyncTeX links source and PDF locations. Cmd+/ toggles comments; Tab and Shift+Tab adjust indentation.
+
+A green check beside Compile means the PDF matches the current source. Errors opens diagnostics and dependency guidance. Settings → LaTeX → Check LaTeX Environment checks tools and declared packages without compiling or installing. Installation commands are provided for review. Successful compilation verifies the dependencies used by the project.
+
+Compile options includes a fresh rebuild and submission comparison. The comparison builds the current source and a bibliography-embedded variant in separate snapshots. Writing tools offers reviewed bibliography embedding and author-note removal. History keeps checkpoints at the selected interval; the Recent menu can move local editing history to Trash.
 
 ## Overleaf
 
-Home → Overleaf offers Add new project to library and Open library. Save the account’s Git token once in Keychain. Sign in to list available projects on the left, then select projects to add to the local library on the right. A project link provides a direct alternative. Removing a project moves its local copy to Trash and retains the saved account and online project.
+Home → Overleaf opens the project library. Save a Git token in Keychain and use web sign-in to list projects, read comments and rename the online project. A project link can also add a local copy. Removing a library project moves its local copy to Trash and retains the online project.
 
-Overleaf uses the same native source editor, compiler, PDF preview and virtual collections as local LaTeX. Local drafts save automatically. The active project checks its remote revision every 30 seconds. Check changes opens a comparison with highlighted lines and a combined preview. Green marks agreement, orange marks mergeable differences and red marks overlapping edits. Resolve conflicting files explicitly, then update the local copy or publish the reviewed result. Changes to either revision invalidate the comparison. Matching revisions do not create a review copy. Connected projects use Git revisions rather than a second local editing history.
+Connected projects use the native LaTeX editor and local compiler. Online sends saved local edits after a two-second pause while the project is open. Remote checks run every 30 seconds. New remote revisions pause publishing for review in Check changes; resolve conflicts before updating or publishing. Offline and leaving the project stop remote work. Git access and a local TeX installation are required.
 
-The title distinguishes online, offline and a locked saved connection. Work offline pauses remote requests. Git synchronisation does not join the web editor’s live cursor and presence channel; published edits remain in project history. Comments use a native bubble view and export as Markdown or JSON with replies, authors, timestamps and resolution state. The account’s saved web session supplies project-list and comment access. A short sign-in window handles authentication; documents stay in the native editor.
+Project tags appear as muted stripes; click to read their names. Sync ages use whole minutes. Double-clicking the title renames the online project after server confirmation. Comments opens a native view with Markdown and JSON export. Git sync does not join Overleaf’s live presence channel; published changes appear in project history.
 
-## ChatGPT
+## Library search
 
-Home → Settings connects an eligible ChatGPT plan through official sign-in, without an API key or a separate agent runtime. Credentials stay in Keychain. Luna is selected from the account’s available catalogue by default.
+Add PDF or Markdown folders to Library. Update Index scans changed files; the refresh beside a folder rereads that folder completely. Index coverage reports files without searchable text and indexing failures.
 
-The AI button opens a provider menu. Manual uses a pen symbol. An orange dot on Apple Intelligence means ChatGPT has fallen back automatically. The same provider serves PDF, search and Markdown questions. Apple Intelligence takes over when offline or when the local or server allowance is reached. ChatGPT receives the question and retrieved excerpts when you ask. Both providers use the same source attribution and conversation controls.
+Press Return to search. Keywords use local page/passage ranking with term coverage, proximity and headings. Quoted phrases are mandatory. Boost search with Apple Intelligence optionally expands natural-language questions on this Mac. Work offline, Manual mode or an unavailable model uses standard local ranking.
 
-Each compiler error or warning offers Suggest fix beside its source location. A small review shows the diagnostic and proposed change. Apply and compile uses the editor’s Undo path; the eye button colours changed text. Offline suggestions are dimmed with a short hover label. Edits require an exact match against the unchanged source and remain undoable. Source changes mark earlier compilation output as a previous build; recompile to refresh it. Settings enables ChatGPT word alternatives and grammar suggestions on demand. Live completions stay on-device. Settings also shows local daily request and returned token counts, an adjustable app request limit and a link to ChatGPT’s account usage. Repeated word requests and unchanged diagnostic suggestions reuse bounded session caches. Document questions use one ChatGPT inference request. Requests do not create ChatGPT conversation history.
+Relevance groups results by document; Rank shows the global order. Results retain page context and offer PDF preview, highlights and document questions. Narrow windows use Results and Preview tabs. Returning from a document preserves results until the query, settings or index changes. Results are limited to 200 matches. See [search evaluation](search-evaluation.md) for evidence and limits.
 
-## Windows
+## AI and local tools
 
-Choose New Window from File or the Dock menu, or press ⇧⌘N. Each window keeps its own document, search and unsaved changes. Save and document commands follow the active window. Closing a window checks its changes. Quitting checks every open window. Theme and search preferences remain shared.
+Apple Intelligence, ChatGPT and Manual share one provider selector. Ask works with PDFs, Markdown and search results. Proofreading, word alternatives and LaTeX suggestions present changes for review and support Undo. The eye control shows AI and CLI edits. See [AI and writing](assistant.md) for connections, context and privacy, and [CLI](cli.md) for local automation.
 
-Markdown and LaTeX share the same sidebar artwork and settings layout, above a 32-point bottom status row. Search uses the same settings icon and places its settings button at the bottom of the results sidebar.
-
-## Local search and agents
-
-Add folders to the local library and search their contents. Results retain document and page context. CLI agents can read buffers and compiler logs, apply fingerprint-checked edits and export results. The eye control colours session-only CLI edits. Source changes remain undoable. Local documents save explicitly; connected Overleaf projects also save local drafts automatically.
-
-Explicit English questions search their substantive keywords and common word endings locally, with every remaining term required. The Question keywords label explains this interpretation. Settings → Search, also available at the bottom of the search results sidebar, controls question interpretation and spelling correction suggestions. Both start enabled and apply immediately. Ordinary keywords and quoted phrases stay literal; spelling corrections remain a visible choice. This is lexical retrieval, not cross-language or semantic search, and requires no model, extra index fields or reindexing.
-
-Search adapts to narrow windows with Results and Preview tabs. Result counts stay on their own line and the top-200 limit has a hover explanation. Library lists each document’s indexing or OCR status, with failed documents first. Index progress reports completed files. These statuses describe the most recent index, so changed folders need Update Index. The [search evaluation](search-evaluation.md) records the current quality and resource checks, including their limits.
-
-## Appearance and updates
-
-The sun or moon button in the LaTeX, Markdown and PDF status bars switches directly between light and dark. Home keeps appearance in Settings → General, which offers System, Light and Dark. A change applies immediately throughout the app and is saved for the next launch. System follows macOS. PDF pages retain their document colours. General settings checks GitHub releases when requested and offers a matching stable DMG when a newer version is available. Downloads open in the browser.
-
-The LaTeX compile status sits beside Compile. A green check means the PDF matches the current source, including any source used from the editor. Its hover hint confirms that status. Errors open the compiler diagnostics. Open main document lives in the Files header and appears only while another source file is selected. The configured main document name uses the gold accent in the file list. Changing the main document in Project settings updates that colour immediately.
-
-New source files, folders and collections start as an inline name field in Files. Return or leaving a non-empty name creates the item. Escape or leaving an empty name cancels without writing a folder or collection. New .tex, .bib, .sty and .cls files open in the editor immediately. Existing files are never overwritten. Invalid names keep the field open with a short explanation.
-
-File context menus put Rename, Copy relative path and Reveal in Finder first, followed by Duplicate and Move to Trash. Rename opens a prefilled name field inside Files, with Escape or an empty name keeping the original name. Creation stays in the + menu, empty space and folder menus. Connected Overleaf files also offer Download, which saves a local copy of the current editor content.
-
-Inline AI suggestions clear when switching documents or replacing editor content. Suggestions appear only after existing text on a line, and internal source delimiters are rejected before display.
-
-Select up to 2,000 characters of prose in Markdown or LaTeX and choose Proofread with Apple Intelligence or Proofread with ChatGPT from the context menu. Review a proposed replacement before applying it. This explicit check follows the selected AI, respects Manual mode and excludes code, maths and TeX commands. Automatic underlines use macOS spelling and grammar checks. Optional inline completions appear in grey and insert only with Tab.
-
-AI settings offers separate Grammar suggestions, Word alternatives and local inline completion switches. Apple Intelligence, ChatGPT and Manual share one provider selector. Word alternatives also appear in the context menu for a selected word. An unavailable ChatGPT connection falls back to Apple Intelligence when available, and the suggestion identifies that fallback.
-
-## Project navigation and storage
-
-Project titles sit in the centre of the action toolbar. Short titles are centred inside a bounded box, and overflowing titles keep their beginning visible. Overleaf sync ages use whole minutes. Recent Overleaf projects carry a leaf badge on the document icon. Double-click an Overleaf title to rename the online project. This needs remile’s Overleaf web sign-in and project rename permission. The title changes only after confirmation from Overleaf.
-
-Drag the line between Files and Outline to resize them. Selecting a PDF, EPS or image asset shows a preview beside the compiled document. EPS previews need `epstopdf` and use temporary copies.
-
-Superseded compilation caches are removed after a replacement build succeeds. Failed temporary builds are discarded. Abandoned UUID build folders are pruned at launch after seven days or when their combined size exceeds 512 MB. Active builds are protected. This policy leaves project copies, editor drafts, local history and the search index intact. Local text history retains its existing limit of 50 revisions and 16 MB per project.
-
-See the [changelog](../CHANGELOG.md) for the release history and pending changes.
+Compilation uses temporary snapshots. Replaced and failed builds are removed; abandoned build folders are pruned after seven days or above a combined 512 MB, excluding active builds. Text history keeps up to 120 entries and 32 MB per project. Search indexes, project copies and editor drafts remain separate from these disposable caches.

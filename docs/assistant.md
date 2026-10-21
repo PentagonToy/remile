@@ -1,33 +1,35 @@
-# AI and writing assistance
+# AI and writing
 
-remile. shares its AI controls across PDF questions, library search, Markdown and LaTeX. Apple Intelligence handles local requests. ChatGPT uses the connected account’s eligible plan, with Luna as the initial model when available. Manual disables model assistance while system spelling remains available.
+Select Apple Intelligence, ChatGPT or Manual in AI settings or the toolbar provider menu. Apple Intelligence runs on this Mac. ChatGPT uses an eligible connected account; Luna is the initial model when available. Manual disables model assistance and retains system spelling.
 
-The provider symbol opens a menu for Apple Intelligence, ChatGPT and Manual. A pen represents Manual. A dot on ChatGPT means its connection needs sign-in or unlock. A dot on Apple Intelligence means automatic fallback while the preferred ChatGPT service is unavailable. The preferred ChatGPT choice is retained and becomes active again when the blocking condition clears. Related AI actions are grouped in toolbars and project settings. Native hover hints explain the current state. The User guide uses the same descriptions for edit colours and ChatGPT plan use.
+## Connections and usage
 
-## Plan usage
+Connect ChatGPT through its sign-in flow. Credentials stay in macOS Keychain. A connection dot indicates that sign-in or unlock needs attention. Unlock connection requests Keychain access; restarting clears the in-memory unlocked connection. App signing changes can require macOS approval again.
 
-remile. does not use an API key or bill a separate API account. Eligible requests use the ChatGPT plan or available credits according to the user’s ChatGPT settings. remile. never purchases credits. Plus users share their five-hour allowance across connected apps. OpenAI states that this five-hour limit does not apply to Pro. The daily app ceiling defaults to 100 requests. It is a personal stopping point rather than a guarantee that the ChatGPT allowance covers 100 requests. The local request bar measures only the user’s daily remile. limit, not the remaining account allowance. Official usage and limits remain available through ChatGPT Settings → Usage.
+Automatic fallback optionally uses Apple Intelligence when ChatGPT is unavailable. With fallback off, requests report the unavailable service. The preferred provider remains selected.
 
-Requests run on explicit user actions. Concurrent inference is serialised, repeated writing alternatives and identical diagnostic fixes are cached, and a returned allowance error pauses further cloud requests. Ordinary questions fall back to the local engine when offline or unavailable. LaTeX repair remains an explicit cloud action with review before applying.
+ChatGPT requests use the account’s available plan or credits under its settings. remile. uses no API key and does not purchase credits. The daily app limit defaults to 100 requests and measures remile. activity, not the account’s remaining allowance. Check ChatGPT Settings → Usage for account usage. See OpenAI’s [account guidance](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions) and [usage interface guidance](https://developers.openai.com/siwc/ui-ux-guidelines).
 
-## Context and prompts
+Inference requests are serialised. Repeated writing suggestions use bounded session caches. An allowance error pauses cloud requests. LaTeX repair requires an explicit request and review before applying.
 
-Instruction templates are collected under `Sources/Remile/Assistant/Prompts`. Document content is passed separately as untrusted input. Repair proposals still require exact, unique source matches. Source changes invalidate pending proposals, and applying a repair remains undoable and visible through the eye control.
+## Writing
 
-Cloud questions retain up to twelve relevant passages and 64,000 UTF-8 bytes of evidence, with up to eight earlier turns and 20,000 bytes of conversation context. PDF retrieval keeps broader page context, Markdown ranks later blocks against the question, and search reads complete indexed passages for cloud questions. Device requests keep their smaller context. Low, Mid and High retain distinct response budgets. These are resource bounds rather than a claim of equivalence with the ChatGPT application, whose tools and system configuration differ.
+Select up to 2,000 characters of prose and choose Proofread with the selected provider. Review the replacement, apply it or dismiss it. Code, maths and TeX commands are excluded. Double-click an underlined word for corrections; a selected word also offers alternatives. Undo restores the source.
 
-The application needs no login item or separate background service. Remote checks run while the project is open. Automatic ChatGPT and Git credential reads never display an authorisation prompt. Unlock connection is an explicit action and waits away from the interface thread. macOS may require authorisation again when an unsigned development build changes identity.
+Automatic spelling and grammar underlines use macOS. Optional grey inline completions use Apple Intelligence: Tab accepts and Escape dismisses them. Switching documents clears a pending completion. AI settings provides one Writing suggestions switch, with individual options under its disclosure.
 
-Sources: [OpenAI accounts and usage](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions), [plan usage interface guidance](https://developers.openai.com/siwc/ui-ux-guidelines).
+LaTeX diagnostics offer Suggest fix. The proposal must match the unchanged source before it can be applied. Compilation guidance can also send bounded error summaries and package lookup results to ChatGPT on request, without source buffers. It displays advice and optional commands for review.
 
-### Saved connections
+## Document questions
 
-Locked means remile. could not read its saved ChatGPT connection from macOS Keychain. There is no inactivity timer. The unlocked connection remains in memory for the current process. Restarting the app clears that memory; a development rebuild can also change the app’s signing identity and require macOS approval again. Unlock connection requests access through macOS without removing the saved account. Token renewal is separate from this local lock. Release builds should use a consistent Developer ID signing identity.
+Ask sends the question and selected document evidence to the chosen provider. Cloud evidence is limited to 64,000 UTF-8 bytes, with up to eight earlier turns and 20,000 bytes of conversation context. PDFs up to 96 pages include all extracted text when it fits; otherwise relevant excerpts are selected. Longer indexed PDFs can reuse matching file-scoped library passages and neighbouring pages. Missing or stale indexes use direct retrieval. Device requests use smaller context budgets.
 
-## Check a selected sentence
+Explicit selections and relevant visible pages take priority. Source links return to the passage. Evidence is extracted text; it does not cover every page image or establish that an answer or formula is correct. Low, Mid and High select response budgets.
 
-Select prose in the Markdown or LaTeX editor, then right-click and choose **Proofread with Apple Intelligence or Proofread with ChatGPT**. The check follows the AI selected in Settings and shows proposed replacements for review. Apple Intelligence stays on this Mac. ChatGPT sends the selected text when requested. Click a replacement to apply it, or dismiss the panel to keep your text. Undo restores the original. The check accepts up to 2,000 characters and excludes code, maths and TeX commands. Manual mode turns it off.
+Prompt templates live in `Sources/Remile/Assistant/Prompts`. Document content is passed separately as untrusted input. Source edits require exact matches and remain undoable. remile. requests do not create ChatGPT conversation history.
 
-Automatic spelling and grammar underlines come from macOS. Optional grey inline completions are separate. Tab accepts a completion and Escape dismisses it. Switching files clears the previous completion.
+## Work offline
 
-AI settings offers separate Grammar suggestions, Word alternatives and local inline completion switches. Apple Intelligence, ChatGPT and Manual share one provider selector. Word alternatives also appear in the context menu for a selected word. An unavailable ChatGPT connection falls back to Apple Intelligence when available, and the suggestion identifies that fallback.
+Work offline is an app-wide switch in General settings and the document toolbar. It pauses ChatGPT, Overleaf, update checks and TeX package lookups, cancelling registered network work. Local editing, compilation, keyword search and available Apple Intelligence remain usable. Turning it off retains provider and per-project Online preferences.
+
+This switch controls remile.’s network requests. macOS services, cloud storage providers and already transmitted data remain outside its scope.

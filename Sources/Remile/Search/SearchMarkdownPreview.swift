@@ -43,7 +43,7 @@ struct SearchMarkdownPreview: View {
             }.padding(16)
             Divider()
             if let html = model.html { SearchMarkdownCanvas(html: html, section: hit.page, query: query, dark: colorScheme == .dark, citation: citation, zoom: zoom) }
-            else if let error = model.error { ContentUnavailableView(error, systemImage: "doc.badge.exclamationmark") }
+            else if let error = model.error { ContentUnavailableView(error, systemImage: "exclamationmark.triangle") }
             else { ProgressView("Loading Markdown…").frame(maxWidth: .infinity, maxHeight: .infinity) }
         }.task(id: hit.path + revision.uuidString) { await model.load(path: hit.path) }
     }

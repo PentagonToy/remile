@@ -35,36 +35,25 @@ actor PDFHighlightStore {
         guard previous.count <= 256_000_000 else { throw Failure.tooLarge }
         guard Self.digest(previous) == expected else { throw Failure.changed }
         guard let document = PDFDocument(data: previous), !document.isEncrypted, document.allowsCommenting else { throw Failure.unsupported }
-        if let provider = CGDataProvider(data: previous as CFData), let cg = CGPDFDocument(provider), let catalog = cg.catalog {
-            var entry: CGPDFObjectRef?
-            guard !CGPDFDictionaryGetObject(catalog, "AcroForm", &entry), !CGPDFDictionaryGetObject(catalog, "Perms", &entry) else { throw Failure.unsupported }
+        try PDFEditing.validate(document, annotationsOnly: true)
+        let graph = PDFCommentGraph(document: document, sourceData: previous)
+        let pieces = try regions.map { region -> (PDFPage, CGRect, String) in
+            guard region.page >= 0, let page = document.page(at: region.page) else { throw Failure.selection }
+            return (page, region.bounds, region.text)
         }
-        // Form/signature rewrites need a separate preservation contract.
-        for index in 0..<document.pageCount {
-            guard let page = document.page(at: index), !page.annotations.contains(where: { $0.type == "Widget" }) else { throw Failure.unsupported }
-        }
-        let graph = PDFCommentGraph(document: document)
-        for region in regions {
-            guard region.bounds.origin.x.isFinite, region.bounds.origin.y.isFinite, region.bounds.width.isFinite, region.bounds.height.isFinite,
-                  region.bounds.width > 0, region.bounds.height > 0, region.page >= 0, let page = document.page(at: region.page),
-                  page.bounds(for: .mediaBox).insetBy(dx: -1, dy: -1).contains(region.bounds) else { throw Failure.selection }
-            let note = PDFAnnotation(bounds: region.bounds, forType: .highlight, withProperties: nil)
-            let w = region.bounds.width, h = region.bounds.height
-            note.quadrilateralPoints = [NSPoint(x: 0, y: h), NSPoint(x: w, y: h), NSPoint(x: 0, y: 0), NSPoint(x: w, y: 0)].map { NSValue(point: $0) }
-            note.color = color.color.withAlphaComponent(0.30)
-            note.contents = region.text; note.userName = "Me"; note.modificationDate = Date()
+        for (page, note) in try PDFEditing.highlights(regions: pieces, in: document, color: color) {
             page.addAnnotation(note); graph.add(note, parent: nil)
         }
         let data = try graph.serialize(document)
         try Task.checkCancellation()
-        try replace(url: url, expected: expected, data: data)
+        try Self.replace(url: url, expected: expected, data: data)
         return Saved(document: document, previous: previous, digest: Self.digest(data))
     }
     func restore(url: URL, expected: Data, data: Data) throws -> Data {
-        try replace(url: url, expected: expected, data: data)
+        try Self.replace(url: url, expected: expected, data: data)
         return Self.digest(data)
     }
-    private func replace(url: URL, expected: Data, data: Data) throws {
+    nonisolated static func replace(url: URL, expected: Data, data: Data) throws {
         var coordinationError: NSError?, writeError: Error?
         NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { coordinated in
             do {

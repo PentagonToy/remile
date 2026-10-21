@@ -49,6 +49,10 @@ import WebKit
         super.init(); web.navigationDelegate = self
     }
     private func perform() async throws {
+        try NetworkAccess.requireOnline()
+        let lease = try NetworkAccess.gate.watch { [weak self] in Task { @MainActor in
+            self?.web.stopLoading(); self?.web.navigationDelegate = nil; self?.web.loadHTMLString("", baseURL: nil); self?.finish(.failure(NetworkAccessGate.Offline()))
+        } }; defer { NetworkAccess.gate.release(lease) }
         defer { timer?.cancel(); web.stopLoading(); web.navigationDelegate = nil }
         try await withCheckedThrowingContinuation { result in
             self.result = result
@@ -62,7 +66,7 @@ import WebKit
         return url.scheme == "https" && ["overleaf.com", "www.overleaf.com"].contains(url.host) && ["/project", "/project/"].contains(url.path) && url.port == nil && url.user == nil && url.password == nil
     }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard action.targetFrame?.isMainFrame == true else { decisionHandler(.cancel); return }
+        guard !NetworkAccess.offline, action.targetFrame?.isMainFrame == true else { decisionHandler(.cancel); return }
         guard dashboard(action.request.url) else { decisionHandler(.cancel); finish(.failure(Failure.signIn)); return }
         decisionHandler(.allow)
     }
@@ -71,7 +75,7 @@ import WebKit
         decisionHandler(.allow)
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard result != nil, !started, dashboard(web.url) else { return }; started = true
+        guard !NetworkAccess.offline, result != nil, !started, dashboard(web.url) else { return }; started = true
         web.callAsyncJavaScript(Self.script, arguments: ["renamePath": path, "newProjectName": name], in: nil, in: .page) { [weak self] response in
             guard let self else { return }
             switch response {

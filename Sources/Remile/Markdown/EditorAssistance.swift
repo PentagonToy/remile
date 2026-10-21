@@ -9,7 +9,7 @@ import SwiftUI
     func cancel() { task?.cancel(); task = nil; ghost?.removeFromSuperview(); ghost = nil; proposal = nil }
     func schedule(_ view: NSTextView) {
         cancel()
-        guard UserDefaults.standard.string(forKey: "assistant.provider") != "Off", UserDefaults.standard.bool(forKey: "editor.aiSuggestions"), !view.hasMarkedText(), view.selectedRange().length == 0 else { return }
+        guard AIConfiguration.writingEnabled, AIConfiguration.mode != .gpt || AIConfiguration.fallbackEnabled, UserDefaults.standard.string(forKey: "assistant.provider") != "Off", UserDefaults.standard.bool(forKey: "editor.aiSuggestions"), !view.hasMarkedText(), view.selectedRange().length == 0 else { return }
         let source = view.string, offset = view.selectedRange().location
         let remaining = (source as NSString).substring(from: offset).components(separatedBy: .newlines).first ?? ""
         guard remaining.trimmingCharacters(in: .whitespaces).isEmpty else { return }
@@ -21,7 +21,7 @@ import SwiftUI
                 let language = UserDefaults.standard.string(forKey: "editor.language") ?? "Automatic"
                 let answer = try await AppleIntelligence.respond(to: "Writing language: \(language)\nBefore cursor:\n<source>\(before)</source>\nAfter cursor:\n<source>\(after)</source>", instructions: AssistantPrompts.completion, maximumTokens: 30)
                 try Task.checkCancellation()
-                guard view.string == source, view.selectedRange() == NSRange(location: offset, length: 0), !view.hasMarkedText() else { return }
+                guard AIConfiguration.writingEnabled, AIConfiguration.mode != .manual, AIConfiguration.mode != .gpt || AIConfiguration.fallbackEnabled, view.string == source, view.selectedRange() == NSRange(location: offset, length: 0), !view.hasMarkedText() else { return }
                 guard !answer.lowercased().contains("<source"), !answer.lowercased().contains("</source"), !answer.contains("Before cursor:"), !answer.contains("After cursor:") else { return }
                 let text = String(answer.components(separatedBy: .newlines).first?.prefix(48) ?? "")
                 guard !text.isEmpty, !text.contains("```"), !text.contains("\\"), !text.contains("$"), let layout = view.layoutManager, view.textContainer != nil else { return }
@@ -38,7 +38,7 @@ import SwiftUI
         }
     }
     func accept(_ view: NSTextView) -> Bool {
-        guard let proposal, !view.hasMarkedText(), proposal.source == view.string, view.selectedRange() == NSRange(location: proposal.offset, length: 0) else { cancel(); return false }
+        guard AIConfiguration.writingEnabled, AIConfiguration.mode != .manual, AIConfiguration.mode != .gpt || AIConfiguration.fallbackEnabled, let proposal, !view.hasMarkedText(), proposal.source == view.string, view.selectedRange() == NSRange(location: proposal.offset, length: 0) else { cancel(); return false }
         cancel(); view.breakUndoCoalescing(); view.insertText(proposal.text, replacementRange: NSRange(location: proposal.offset, length: 0)); view.undoManager?.setActionName("Accept Suggestion"); view.breakUndoCoalescing(); return true
     }
 }

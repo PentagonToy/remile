@@ -25,10 +25,10 @@ struct AssistantEvidence: Identifiable, Sendable, Codable {
     var id: Int { number }
     static func make(_ passages: [AssistantPassage], expanded: Bool = false) -> [AssistantEvidence] {
         var remaining = expanded ? 64_000 : 2600, seen = Set<String>(), result: [AssistantEvidence] = []
-        for passage in passages where result.count < (expanded ? 12 : 6) && remaining > 100 {
+        for passage in passages where result.count < (expanded ? 96 : 6) && remaining > 0 {
             guard !passage.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   seen.insert(passage.id).inserted else { continue }
-            let text = bounded(passage.text, bytes: min(expanded ? 8000 : 650, remaining))
+            let text = bounded(passage.text, bytes: min(expanded ? 64_000 : 650, remaining))
             remaining -= text.utf8.count
             result.append(AssistantEvidence(number: result.count + 1, location: passage.location, text: text))
         }
@@ -53,7 +53,7 @@ struct AssistantEvidence: Identifiable, Sendable, Codable {
             for item in body.split(separator: ",", omittingEmptySubsequences: false) {
                 let bounds = item.components(separatedBy: CharacterSet(charactersIn: "-–—")).map { $0.trimmingCharacters(in: .whitespaces) }
                 if bounds.count == 1, let number = Int(bounds[0]) { numbers.append(number) }
-                else if bounds.count == 2, let lower = Int(bounds[0]), let upper = Int(bounds[1]), lower > 0, upper >= lower, upper <= 12 {
+                else if bounds.count == 2, let lower = Int(bounds[0]), let upper = Int(bounds[1]), lower > 0, upper >= lower, upper <= 96 {
                     numbers.append(contentsOf: lower...upper)
                 } else { return nil }
             }
@@ -335,6 +335,8 @@ enum AssistantQuestionRoute {
             // Conjunctive/problem questions need the ordinary document route.
             guard !subject.isEmpty, subject.count <= 100, subject.split(whereSeparator: \.isWhitespace).count <= 10,
                   subject.range(of: "(?i)\\b(and|when|why|how|happens?|difference|between|best|better|most|in|for|with)\\b", options: .regularExpression) == nil else { return nil }
+            if subject.split(whereSeparator: \.isWhitespace).count > 1,
+               subject.range(of: "(?i)^(?:equations?|formula|expression)\\b", options: .regularExpression) != nil { return nil }
             return subject
         }
         return nil
@@ -352,6 +354,9 @@ enum AssistantQuestionRoute {
         // a paper mentioning an acronym. This does not verify semantic entailment.
         let patterns = ["(?:^|\\s)\(term)s?\\s+(?:(?:is|are)\\s+(?:(?:a|an|the)\\s+|defined\\s+as\\s+)|(?:means?|denotes?|refers? to|stands? for|can be defined as)\\s+)", "\\b(?:define|defined|definition of)\\s+(?:the\\s+)?\(term)s?\\b"]
         return sources.compactMap { source in
+            if let formula = equationDefinition(subject, in: source.text) {
+                return AssistantEvidence(number: source.number, location: source.location, text: formula)
+            }
             let sentences = source.text.components(separatedBy: CharacterSet(charactersIn: ".!?\n"))
             let definitions = sentences.filter { sentence in
                 let text = normalise(sentence)
@@ -364,6 +369,26 @@ enum AssistantQuestionRoute {
             guard !definitions.isEmpty else { return nil }
             return AssistantEvidence(number: source.number, location: source.location, text: AssistantEvidence.bounded(definitions.joined(separator: ". ").trimmingCharacters(in: .whitespaces), bytes: 650))
         }
+    }
+    /// Textbook definitions often use a standalone heading followed by a formula.
+    /// A term's incidental occurrence next to a numerical result is insufficient.
+    static func equationDefinition(_ subject: String, in text: String) -> String? {
+        func words(_ value: String) -> [String] {
+            value.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+                .map { $0.count > 3 && $0.hasSuffix("s") && !$0.hasSuffix("ss") ? String($0.dropLast()) : $0 }
+        }
+        let subjectWords = words(subject)
+        guard !subjectWords.isEmpty else { return nil }
+        let lines = text.components(separatedBy: .newlines)
+        for index in lines.indices where words(lines[index]) == subjectWords {
+            let following = lines[(index + 1)..<min(lines.count, index + 5)]
+            guard following.contains(where: { line in
+                let sides = line.components(separatedBy: "=")
+                return sides.count == 2 && words(sides[0]).allSatisfy({ $0.count <= 3 }) && !sides[0].trimmingCharacters(in: .whitespaces).isEmpty && sides[0].count <= 32 && !sides[1].trimmingCharacters(in: .whitespaces).isEmpty && line.count <= 100
+            }) else { continue }
+            return AssistantEvidence.bounded(lines[index..<min(lines.count, index + 5)].joined(separator: "\n"), bytes: 650)
+        }
+        return nil
     }
     static func definitionContext(_ subject: String, from sources: [AssistantEvidence]) -> String {
         let term = NSRegularExpression.escapedPattern(for: subject)

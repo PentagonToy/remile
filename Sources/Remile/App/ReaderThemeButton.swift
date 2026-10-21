@@ -17,7 +17,7 @@ struct ReaderThemeFooter: View {
     var body: some View {
         VStack(spacing: 0) {
             Divider()
-            HStack { Spacer(); ReaderThemeButton() }.padding(.horizontal, 12).frame(height: 32).background(.bar)
+            HStack { Spacer(); ReaderThemeButton() }.padding(.horizontal, 12).frame(height: 32).background(RemileStyle.editorBar)
         }
     }
 }

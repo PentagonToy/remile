@@ -77,7 +77,7 @@ struct TeXFileTree: NSViewRepresentable {
             let changedSource = lastOpened != project.selected
             let rows = IndexSet((0..<outline.numberOfRows).filter { (outline.item(atRow: $0) as? Node).map { changedSource ? $0.file == project.selected : selected.contains($0.key) } ?? false })
             outline.selectRowIndexes(rows, byExtendingSelection: false); lastOpened = project.selected; reloading = false
-            if animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            if animated && AnimationPolicy.enabled() {
                 outline.alphaValue = 0.76
                 NSAnimationContext.runAnimationGroup { context in context.duration = 0.32; context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut); outline.animator().alphaValue = 1 }
             }

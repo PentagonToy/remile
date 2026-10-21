@@ -62,9 +62,10 @@ struct OverleafProjects: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 5) {
                             ForEach(available) { item in
-                                Button { state.selected = item.id } label: {
-                                    Label(item.name, systemImage: "doc.text").lineLimit(2).frame(maxWidth: .infinity, alignment: .leading).padding(10).background(state.selected == item.id ? RemileStyle.accent.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 6))
-                                }.buttonStyle(.plain)
+                                HStack(spacing: 8) {
+                                    OverleafTagMark(tags: item.tags)
+                                    Button { state.selected = item.id } label: { Text(item.name).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }.buttonStyle(.plain)
+                                }.padding(10).background(state.selected == item.id ? RemileStyle.accent.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 6))
                             }
                             if available.isEmpty { Text(state.catalog.isEmpty ? "Sign in to choose from your projects, or add a project link below." : "All matching projects are in your library.").font(RemileType.caption).foregroundStyle(.secondary).padding(10) }
                         }
@@ -77,8 +78,9 @@ struct OverleafProjects: View {
                         LazyVStack(alignment: .leading, spacing: 8) {
                             ForEach(library.projects) { project in
                                 HStack(spacing: 10) {
+                                    OverleafTagMark(tags: library.tags[project.id] ?? [])
                                     Button { library.presented = false; open(library.root(project)) } label: {
-                                        VStack(alignment: .leading, spacing: 4) { Label(project.name, systemImage: "doc.text").lineLimit(2); Text(project.account).font(RemileType.small).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading)
+                                        VStack(alignment: .leading, spacing: 4) { Text(project.name).lineLimit(2); Text(project.account).font(RemileType.small).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading)
                                     }.buttonStyle(.plain)
                                     Button { state.removing = project } label: { Image(systemName: "minus.circle") }.remileHelp("Remove from local library").disabled(library.busy)
                                 }.padding(10).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 6))
@@ -105,12 +107,12 @@ struct OverleafProjects: View {
     }
     private func load() async {
         guard let account, !state.loading else { return }; state.loading = true; state.error = nil
-        do { let catalog = try await OverleafWebClient.projects(account.id); if state.accountID == account.id { state.catalog = catalog } }
+        do { let catalog = try await OverleafWebClient.projects(account.id); if state.accountID == account.id { state.catalog = catalog; library.rememberTags(catalog, profile: account.id) } }
         catch { state.error = error.localizedDescription }
         state.loading = false
     }
     private func add(id: String, name: String) {
         guard let account else { return }
-        Task { await library.connect(url: "https://www.overleaf.com/project/" + id, name: name, account: account.name, token: ""); if library.error == nil { state.url = ""; state.name = ""; state.selected = nil } }
+        Task { await library.connect(url: "https://www.overleaf.com/project/" + id, name: name, account: account.name, token: ""); if library.error == nil { library.rememberTags(state.catalog, profile: account.id); state.url = ""; state.name = ""; state.selected = nil } }
     }
 }

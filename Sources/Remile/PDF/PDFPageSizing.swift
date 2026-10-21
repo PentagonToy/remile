@@ -24,7 +24,7 @@ enum PDFPageSizing {
                    y: (size.height - crop.height * scale) / 2 - crop.minY * scale)
     }
     static func apply(_ document: PDFDocument, graph: PDFCommentGraph, sourceData: Data?, paper: CGSize) throws -> Data {
-        try PDFEditing.validate(document, assembly: true)
+        try PDFEditing.validate(document, assembly: true, allowSignatureChanges: graph.allowsSignatureChanges)
         let baseline: Data
         if let sourceData, (try? PDFReplyWriter.File(sourceData)) != nil { baseline = sourceData }
         else { baseline = try graph.serialize(document) }

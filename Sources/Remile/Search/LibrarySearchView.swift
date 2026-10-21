@@ -2,7 +2,8 @@ import SwiftUI
 
 struct LibrarySearchView: View {
     @AppStorage("assistant.provider") private var assistantProvider = "Apple Intelligence"
-    @AppStorage(SearchQuestion.preference) private var interpretQuestions = true
+    @AppStorage(SearchBoostPolicy.preference) private var boostingEnabled = true
+    @ObservedObject private var network = NetworkAccessState.shared
     @AppStorage(SearchQuestion.spellingPreference) private var offerCorrections = true
     @ObservedObject var model: HomeModel
     let open: (URL) -> Void
@@ -20,7 +21,9 @@ struct LibrarySearchView: View {
             header
             Divider()
             GeometryReader { geometry in
-                if geometry.size.width < 780 {
+                if model.searching || model.exploring {
+                    SearchWaitingView(startedAt: model.searchStartedAt).frame(width: geometry.size.width, height: geometry.size.height)
+                } else if geometry.size.width < 780 {
                     VStack(spacing: 0) {
                         Picker("Search pane", selection: $citationState.compactPreview) { Text("Results").tag(false); Text("Preview").tag(true) }.labelsHidden().pickerStyle(.segmented).padding(10)
                         if citationState.compactPreview { previewAndAsk } else { sidebar }
@@ -29,9 +32,12 @@ struct LibrarySearchView: View {
             }
         }.sheet(isPresented: $model.libraryPresented) { LibraryManager(model: model) }
             .sheet(isPresented: $citationState.settingsPresented) { searchSettings }
-            .onChange(of: interpretQuestions) { model.search() }
-            .onChange(of: offerCorrections) { model.search() }
-            .onAppear { model.search() }
+            .onChange(of: boostingEnabled) { model.invalidateSearch() }
+            .onChange(of: network.offline) { model.invalidateSearch() }
+            .onChange(of: assistantProvider) { model.invalidateSearch() }
+            .onChange(of: offerCorrections) { model.invalidateSearch() }
+            .onChange(of: model.resultOrder) { model.filterDocuments() }
+            .onAppear { model.resumeSearch() }
             .onDisappear { model.cancelExploration() }
             .onChange(of: model.exploring) { if model.exploring { assistant.cancel() } }
             .onChange(of: model.query) { assistant.cancel(); citationState.focus = nil; citationState.selectedPassages = []; citationState.compactPreview = false }
@@ -90,15 +96,15 @@ struct LibrarySearchView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Search your library", text: $model.query).textFieldStyle(.plain)
-                    .onChange(of: model.query) { model.search() }.onSubmit { model.search() }
+                    .onChange(of: model.query) { model.editSearch() }.onSubmit { model.search(immediate: true) }
                 if model.searching || model.exploring { ProgressView().controlSize(.small) }
-                if !model.query.isEmpty { Button { model.query = ""; model.search() } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).remileHelp("Clear search") }
+                if !model.query.isEmpty { Button { model.query = ""; model.invalidateSearch() } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).remileHelp("Clear search") }
             }.padding(11).frame(minWidth: 180).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 9))
     }
     private var aiActions: some View {
             AIToolGroup {
             if model.exploring { Button("Stop", action: model.cancelExploration) }
-            else { Button { model.explore() } label: { Label("Explore", systemImage: "sparkle.magnifyingglass") }.disabled(model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.summary.folders.isEmpty || assistantProvider == "Off").remileHelp("Find related concepts · " + assistantProvider) }
+            else { Button { model.explore() } label: { Label("Explore", systemImage: "sparkle.magnifyingglass") }.disabled(model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.summary.folders.isEmpty || assistantProvider == "Off" || network.offline).remileHelp("Find related concepts · " + assistantProvider) }
             AIProviderButton()
             Button { toggleAssistant() } label: { Label("Ask", systemImage: "text.bubble") }.remileHelp("Ask about search results · " + assistantProvider)
             }
@@ -120,28 +126,28 @@ struct LibrarySearchView: View {
                     Text("\(progress.completed) of \(progress.total) · \(progress.name)").font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal, 14)
                 } else { ProgressView("Preparing index…").controlSize(.small).padding(.horizontal, 14) }
             }
-            if model.summary.needsOCR > 0 || model.summary.failed > 0 {
+            if model.summary.needsOCR > 0 || model.summary.failed > 0 || model.searchDuration != nil {
                 Button { model.libraryPresented = true } label: {
-                    Label("Index coverage", systemImage: "info.circle").font(RemileType.caption).lineLimit(2)
+                    Label(coverageTitle, systemImage: "info.circle").font(RemileType.caption).lineLimit(1)
                 }.buttonStyle(.plain).foregroundStyle(model.summary.failed > 0 ? RemileStyle.warning : RemileStyle.ink.opacity(0.7)).padding(.horizontal, 14)
-                    .remileHelp("\(model.summary.needsOCR) pages have no indexed text. Some may be blank or need OCR. \(model.summary.failed) documents were not indexed. Open Library for details.")
+                    .remileHelp("\(model.summary.needsOCR) pages have no indexed text. Some may be blank or need OCR. \(model.summary.failed) documents were not indexed. Open Library for details. Time is the latest submitted search.")
             }
             if model.exploring { ProgressView("Exploring concepts…").controlSize(.small).padding(.horizontal, 14) }
             if !model.exploredQueries.isEmpty {
                 HStack {
                     Label("Related results", systemImage: "sparkles").remileHelp(model.exploredQueries.joined(separator: " · "))
-                    Spacer(); Button("Keywords") { model.search() }.buttonStyle(.plain)
+                    Spacer(); Button("Search again") { model.search(immediate: true) }.buttonStyle(.plain)
                 }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 14)
             }
-            if interpretQuestions && SearchQuestion(model.query) != nil && model.exploredQueries.isEmpty {
-                Label("Question keywords", systemImage: "text.magnifyingglass")
+            if model.boostApplied {
+                Label("Boosted with Apple Intelligence", systemImage: "sparkles")
                     .font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 14)
-                    .remileHelp("Searches the important words and their word endings in English questions. All remaining words are required. Use quotation marks for an exact phrase. This search stays on your Mac and does not use AI.")
+                    .remileHelp("Apple Intelligence suggested related retrieval phrases on this Mac. Your original question remains part of the ranking.")
             }
             if !model.spellingSuggestions.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Did you mean?").font(RemileType.caption).foregroundStyle(.secondary)
-                    ForEach(model.spellingSuggestions, id: \.self) { suggestion in Button(suggestion) { model.query = suggestion; model.search() }.buttonStyle(.bordered) }
+                    ForEach(model.spellingSuggestions, id: \.self) { suggestion in Button(suggestion) { model.query = suggestion; model.search(immediate: true) }.buttonStyle(.bordered) }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14)
             }
             if let error = model.queryError { Text(error).font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 14) }
@@ -153,6 +159,8 @@ struct LibrarySearchView: View {
                 ContentUnavailableView("Enter a search", systemImage: "text.magnifyingglass").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.searching {
                 ProgressView("Searching…").frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if !model.hasSubmittedSearch {
+                ContentUnavailableView("Press Return to search", systemImage: "return").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.results.isEmpty {
                 ContentUnavailableView { Label("No matches", systemImage: "magnifyingglass") } description: {
                     Text(model.indexing ? "Indexing is still in progress." : "Search covers indexed PDF and Markdown text.")
@@ -172,6 +180,21 @@ struct LibrarySearchView: View {
                 } else {
                     ScrollViewReader { proxy in
                         List(selection: selection) {
+                            if model.resultOrder == .rank {
+                                ForEach(model.rankedHits) { entry in
+                                    HStack(alignment: .top, spacing: 10) {
+                                        Text("#\(entry.rank)").monospacedDigit().foregroundStyle(RemileStyle.accent).frame(minWidth: 30, alignment: .trailing)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(entry.hit.name).font(RemileType.callout).lineLimit(2)
+                                            Text(entry.hit.location).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                                        .background(model.selectedHit?.id == entry.id ? RemileStyle.accent.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+                                        .contentShape(Rectangle()).onTapGesture { selectResult(entry.hit) }.tag(entry.id)
+                                        .remileHelp(entry.hit.excerpt).accessibilityElement(children: .ignore)
+                                        .accessibilityLabel("Rank \(entry.rank), \(entry.hit.name), \(entry.hit.location)")
+                                }
+                            } else {
                             ForEach(model.resultGroups) { group in
                                 DisclosureGroup(isExpanded: Binding(get: { model.expandedDocuments.contains(group.path) }, set: { expanded in
                                     if expanded { model.expandedDocuments.insert(group.path) } else { model.expandedDocuments.remove(group.path) }
@@ -204,6 +227,7 @@ struct LibrarySearchView: View {
                                     }.buttonStyle(.plain).remileHelp(group.path).accessibilityLabel("\(group.name), best relevance position \(group.bestRank), \(group.hits.count) matches")
                                 }
                             }
+                            }
                         }.listStyle(.plain).scrollContentBackground(.hidden)
                             .animation(reduceMotion ? nil : RemileMotion.panel, value: model.expandedDocuments)
                             .onChange(of: model.selectedHit?.id) { _, id in
@@ -224,6 +248,10 @@ struct LibrarySearchView: View {
             }.buttonStyle(RemileToolStyle()).padding(12).accessibilityLabel("Search settings").remileHelp("Search settings")
         }.frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
+    private var coverageTitle: String {
+        guard let duration = model.searchDuration else { return "Index coverage" }
+        return "Index coverage · " + String(format: "%.2f s", duration)
+    }
     private func selectResult(_ hit: LibraryHit?) { model.selectResult(hit); if hit != nil { citationState.compactPreview = true } }
     private var preview: some View {
         VStack(spacing: 0) {
@@ -243,7 +271,7 @@ struct LibrarySearchView: View {
                 assistant.cancel(); citationState.selectedPassages = context.passages(path: hit.path)
                 if assistant.question.isEmpty { assistant.question = "Explain the selected passage." }
                 withAnimation(reduceMotion ? nil : RemileMotion.panel) { model.askPresented = true }
-            }) }
+            }, editing: model.pdfSearchEditing) }
         }.frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
     }
 

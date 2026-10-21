@@ -37,4 +37,19 @@ enum AppleIntelligence {
         #endif
         throw Failure.unavailable(state.message)
     }
+    static func retrievalPhrases(for question: String, instructions: String) async throws -> [String] {
+        let state = status()
+        guard state.ready else { throw Failure.unavailable(state.message) }
+        try Task.checkCancellation()
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *) {
+            let session = LanguageModelSession(model: SystemLanguageModel.default, instructions: instructions)
+            let response = try await session.respond(to: question, generating: [String].self, options: GenerationOptions(temperature: 0, maximumResponseTokens: 180))
+            try Task.checkCancellation()
+            return response.content
+        }
+        #endif
+        throw Failure.unavailable(state.message)
+    }
+
 }

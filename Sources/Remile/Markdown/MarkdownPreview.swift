@@ -119,7 +119,7 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if action.navigationType == .other, action.request.url?.scheme == "about" { decisionHandler(.allow); return }
-        if action.navigationType == .linkActivated, let url = action.request.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") { NSWorkspace.shared.open(url) }
+        if action.navigationType == .linkActivated, let url = action.request.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") { if !NetworkAccess.offline { NSWorkspace.shared.open(url) } }
         decisionHandler(.cancel)
     }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { loadedHTML = ""; message = "Preview paused. Switch view to reload it." }

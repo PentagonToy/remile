@@ -10,7 +10,24 @@ import PDFKit
             switch command {
             case "version", "--version": return emit(["ok": true, "version": RemileRelease.current])
             case "help", "--help":
-                return emit(["ok": true, "usage": "remile --cli COMMAND", "commands": ["version", "comments [/absolute/document.pdf] [--format markdown|json] [--output /absolute/new.md|new.json]","combine /absolute/one /absolute/two --output /absolute/new.pdf|new.md", "compress /absolute/input.pdf --output /absolute/new.pdf [--quality small|balanced|high] [--grayscale]", "status", "logs [--tail characters]", "read [--file relative.tex]", "select --file relative.tex", "replace --file relative.tex --source-file /absolute/file --expected-sha256 HASH", "save", "compile [--scratch] [--submission-check]", "submission-compare [--status]", "history", "doctor", "transform --action strip-notes|embed-bibliography|toggle-comment|indent|outdent [--file relative.tex] [--start UTF16 --length UTF16] [--apply --expected-sha256 HASH]", "rename --file relative.tex --name NEW [--kind project]", "export --kind pdf|source --output /absolute/new-file", "open /absolute/path", "inspect /absolute/project", "build /absolute/project --output /absolute/new-directory [--main main.tex]"]])
+                return emit(["ok": true, "usage": "remile --cli COMMAND", "commands": ["version", "library-search \"question or keywords\" [--no-boost]", "pdf-read [/absolute/document.pdf] [--page N] [--find text] [--render /absolute/new.png]", "comments [/absolute/document.pdf] [--format markdown|json] [--output /absolute/new.md|new.json]","combine /absolute/one /absolute/two --output /absolute/new.pdf|new.md", "compress /absolute/input.pdf --output /absolute/new.pdf [--quality small|balanced|high] [--grayscale]", "status", "logs [--tail characters]", "read [--file relative.tex]", "select --file relative.tex", "replace --file relative.tex --source-file /absolute/file --expected-sha256 HASH", "save", "compile [--scratch] [--submission-check]", "submission-compare [--status]", "history", "doctor", "transform --action strip-notes|embed-bibliography|toggle-comment|indent|outdent [--file relative.tex] [--start UTF16 --length UTF16] [--apply --expected-sha256 HASH]", "rename --file relative.tex --name NEW [--kind project]", "export --kind pdf|source --output /absolute/new-file", "open /absolute/path", "inspect /absolute/project", "build /absolute/project --output /absolute/new-directory [--main main.tex]"]])
+            case "library-search":
+                let query = options.filter { $0 != "--no-boost" }.joined(separator: " ")
+                _ = try LibraryIndex.queryTerms(query)
+                var request = EditorBridge.Request(operation: "library-search")
+                request.source = query; request.apply = !options.contains("--no-boost")
+                return try send(request)
+            case "pdf-read":
+                let page: Int?
+                if let value = option("--page") { guard let number = Int(value), number > 0 else { throw Failure("Use a positive page number.") }; page = number } else { page = nil }
+                if let path = options.first, path.hasPrefix("/") {
+                    NSApplication.shared.setActivationPolicy(.prohibited)
+                    guard let document = PDFDocument(url: URL(fileURLWithPath: path)) else { throw Failure("Choose a readable PDF.") }
+                    var result = try PDFInspection.read(document, page: page ?? 1, find: option("--find"), render: option("--render")); result["path"] = path
+                    return emit(result)
+                }
+                var request = EditorBridge.Request(operation: "pdf-read"); request.start = page; request.source = option("--find"); request.output = option("--render")
+                return try send(request)
             case "comments":
                 let output = option("--output"), format = try PDFCommentExport.format(named: option("--format"), output: output)
                 if let path = options.first, path.hasPrefix("/") {
@@ -90,7 +107,7 @@ import PDFKit
     let input = folder.appendingPathComponent(request.id.uuidString + ".request.json"), output = folder.appendingPathComponent(request.id.uuidString + ".response.json")
     defer { try? FileManager.default.removeItem(at: input); try? FileManager.default.removeItem(at: output) }
     try JSONEncoder().encode(request).write(to: input, options: [.atomic]); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: input.path)
-    let deadline = Date().addingTimeInterval(10)
+    let deadline = Date().addingTimeInterval(request.operation == "library-search" ? 60 : 10)
     while Date() < deadline {
         if FileManager.default.fileExists(atPath: output.path) { let response = try JSONSerialization.jsonObject(with: Data(contentsOf: output)) as? [String: Any] ?? [:]; return emit(response) }
         Thread.sleep(forTimeInterval: 0.05)

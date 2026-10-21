@@ -4,6 +4,7 @@ project_directory="${0:A:h:h}"
 check_directory="${1:?Provide an external output directory}"
 mkdir -p "$check_directory/module-cache"
 {
+    cat "$project_directory/Sources/Remile/App/NetworkAccess.swift"
     cat "$project_directory/Sources/Remile/App/KeychainAccess.swift"
     for name in ChatGPTIdentity ChatGPTCallback ChatGPTEdit ChatGPTStream ChatGPTRequestFailure; do cat "$project_directory/Sources/Remile/Assistant/$name.swift"; done
     sed '/^extension TeXProject/,$d' "$project_directory/Sources/Remile/LaTeX/TeXCollections.swift"

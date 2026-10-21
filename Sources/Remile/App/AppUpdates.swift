@@ -18,6 +18,7 @@ import AppKit
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("remile-Update-Check", forHTTPHeaderField: "User-Agent")
         do {
+            let lease = try NetworkAccess.gate.watch(session); defer { NetworkAccess.gate.release(lease) }
             let (stream, response) = try await session.bytes(for: request)
             guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
             if http.statusCode == 404 { message = "No public release is available yet."; return }
@@ -44,7 +45,7 @@ struct RemileUpdateSettings: View {
             }
             if let message = updates.message { Text(message).foregroundStyle(.secondary) }
             Link("GitHub releases", destination: RemileRelease.page)
-            Text("Checks GitHub only when you ask. Downloads open in your browser.").font(RemileType.caption).foregroundStyle(.secondary)
+            SettingsHint("Check for updates manually on GitHub.")
         }
     }
 }

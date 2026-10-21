@@ -17,7 +17,7 @@ enum TeXAssetData {
         let process = Process(); process.executableURL = converter; process.currentDirectoryURL = temporary
         process.arguments = ["--restricted", "--outfile=image.pdf", "./image.eps"]
         var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = configuration.directory + ":/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        environment["PATH"] = configuration.executablePath
         process.environment = environment; process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
         try process.run()
         let deadline = Date().addingTimeInterval(15)

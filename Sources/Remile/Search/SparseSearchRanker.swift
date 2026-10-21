@@ -1,0 +1,144 @@
+import Foundation
+
+/// B0 page/passage BM25 and guided two-route fusion. Owned by the serial library actor.
+final class SparseSearchRanker {
+    struct Posting { let unit: Int; var value: Float }
+    struct Page { let rowID: Int64; let start: Int; let count: Int; let heading: Set<Int> }
+    struct Match { let rowID: Int64; let score: Double }
+    private var vocabulary: [String: Int] = [:]
+    private var rawVocabulary: [String: Int] = [:]
+    private var pages: [Page] = []
+    private var tokens: [Int32] = []
+    private var pagePostings: [[Posting]] = []
+    private var chunkPostings: [[Posting]] = []
+    private var chunkOwners: [Int] = []
+    private var chunkLengths: [Int] = []
+    private var idf: [Float] = []
+
+    func append(rowID: Int64, heading: String, body: String) {
+        let sequence = SearchLexicon.words(body).map { raw -> Int32 in
+            if let id = rawVocabulary[raw] { return Int32(id) }
+            let word = SearchLexicon.stem(raw)
+            let id: Int
+            if let known = vocabulary[word] { id = known }
+            else { id = vocabulary.count; vocabulary[word] = id; pagePostings.append([]); chunkPostings.append([]) }
+            rawVocabulary[raw] = id
+            return Int32(id)
+        }
+        let owner = pages.count
+        let headings = Set(SearchLexicon.words(heading).compactMap { vocabulary[SearchLexicon.stem($0)] })
+        pages.append(Page(rowID: rowID, start: tokens.count, count: sequence.count, heading: headings))
+        tokens.append(contentsOf: sequence)
+        appendCounts(sequence[...], unit: owner, chunks: false)
+        for start in stride(from: 0, to: max(1, sequence.count - 40), by: 120) {
+            let part = sequence[start..<min(sequence.count, start + 160)]
+            let unit = chunkOwners.count
+            chunkOwners.append(owner); chunkLengths.append(part.count)
+            appendCounts(part, unit: unit, chunks: true)
+        }
+    }
+    private func appendCounts(_ sequence: ArraySlice<Int32>, unit: Int, chunks: Bool) {
+        var counts: [Int: Int] = [:]
+        for token in sequence { counts[Int(token), default: 0] += 1 }
+        for (term, count) in counts {
+            let posting = Posting(unit: unit, value: Float(count))
+            if chunks { chunkPostings[term].append(posting) } else { pagePostings[term].append(posting) }
+        }
+    }
+    func finish() throws {
+        rawVocabulary.removeAll(keepingCapacity: false)
+        let pageMean = max(1, Double(pages.reduce(0) { $0 + $1.count }) / Double(max(1, pages.count)))
+        let chunkMean = max(1, Double(chunkLengths.reduce(0, +)) / Double(max(1, chunkLengths.count)))
+        idf = Array(repeating: 0, count: vocabulary.count)
+        for term in pagePostings.indices {
+            if term.isMultiple(of: 1000) { try Task.checkCancellation() }
+            idf[term] = Float(log1p((Double(pages.count - pagePostings[term].count) + 0.5) / (Double(pagePostings[term].count) + 0.5)))
+            let chunkIDF = Float(log1p((Double(chunkOwners.count - chunkPostings[term].count) + 0.5) / (Double(chunkPostings[term].count) + 0.5)))
+            for i in pagePostings[term].indices {
+                let p = pagePostings[term][i], norm = 1.2 * (0.25 + 0.75 * Double(pages[p.unit].count) / pageMean)
+                pagePostings[term][i].value = Float(Double(idf[term] * p.value * 2.2) / (Double(p.value) + norm))
+            }
+            for i in chunkPostings[term].indices {
+                let p = chunkPostings[term][i], norm = 1.2 * (0.25 + 0.75 * Double(chunkLengths[p.unit]) / chunkMean)
+                chunkPostings[term][i].value = Float(Double(chunkIDF * p.value * 2.2) / (Double(p.value) + norm))
+            }
+        }
+        chunkLengths.removeAll(keepingCapacity: false)
+    }
+    private func queryTerms(_ query: String) -> [(Int, Float)] {
+        var order: [Int] = [], counts: [Int: Int] = [:]
+        for word in SearchLexicon.terms(query) {
+            guard let id = vocabulary[word] else { continue }
+            if counts[id] == nil { order.append(id) }
+            counts[id, default: 0] += 1
+        }
+        return order.map { ($0, Float(1 + log(Double(counts[$0]!)))) }
+    }
+    private func bm25(_ query: String, passages: Bool = false) -> [Float] {
+        var result = Array(repeating: Float(0), count: passages ? chunkOwners.count : pages.count)
+        for (term, weight) in queryTerms(query) {
+            for posting in passages ? chunkPostings[term] : pagePostings[term] { result[posting.unit] += posting.value * weight }
+        }
+        guard passages else { return result }
+        var maxima = Array(repeating: Float(0), count: pages.count)
+        for i in result.indices { maxima[chunkOwners[i]] = max(maxima[chunkOwners[i]], result[i]) }
+        return maxima
+    }
+    private func b0(_ query: String) throws -> [Float] {
+        let terms = queryTerms(query).map(\.0), passage = bm25(query, passages: true)
+        var result = bm25(query)
+        let total = terms.reduce(Float(0)) { $0 + idf[$1] }
+        guard total > 0 else { return result }
+        let lookup = Dictionary(uniqueKeysWithValues: terms.enumerated().map { ($1, $0) })
+        let pairs = max(1, terms.count * (terms.count - 1) / 2)
+        for i in pages.indices {
+            if i.isMultiple(of: 128) { try Task.checkCancellation() }
+            result[i] += 0.5 * passage[i]
+            guard result[i] > 0 else { continue }
+            let page = pages[i]
+            var positions = Array(repeating: [Int](), count: terms.count)
+            for offset in 0..<page.count {
+                if let term = lookup[Int(tokens[page.start + offset])] { positions[term].append(offset) }
+            }
+            let coverage = terms.indices.reduce(Float(0)) { $0 + (positions[$1].isEmpty ? 0 : idf[terms[$1]]) } / total
+            var proximity: Float = 0
+            for a in terms.indices {
+                for b in terms.indices where b > a {
+                    guard !positions[a].isEmpty, !positions[b].isEmpty else { continue }
+                    let distance = closest(positions[a], positions[b])
+                    if distance <= 64 { proximity += min(idf[terms[a]], idf[terms[b]]) / (1 + Float(distance) / 8) }
+                }
+            }
+            let heading = terms.reduce(Float(0)) { $0 + (page.heading.contains($1) ? idf[$1] : 0) }
+            result[i] *= 0.5 + 0.5 * coverage
+            result[i] += 2 * proximity / Float(pairs) + 0.25 * heading
+        }
+        return result
+    }
+    private func closest(_ a: [Int], _ b: [Int]) -> Int {
+        var i = 0, j = 0, best = Int.max
+        while i < a.count && j < b.count {
+            best = min(best, abs(a[i] - b[j]))
+            if a[i] < b[j] { i += 1 } else { j += 1 }
+        }
+        return best
+    }
+    private func order(_ scores: [Float], allowed: Set<Int64>?) -> [Int] {
+        scores.indices.filter { scores[$0] > 0 && (allowed == nil || allowed!.contains(pages[$0].rowID)) }
+            .sorted { scores[$0] == scores[$1] ? $0 < $1 : scores[$0] > scores[$1] }.prefix(200).map { $0 }
+    }
+    func search(_ query: String, expansions: [String] = [], allowed: Set<Int64>? = nil) throws -> [Match] {
+        let original = try b0(query), base = order(original, allowed: allowed)
+        guard !expansions.isEmpty else { return base.map { Match(rowID: pages[$0].rowID, score: Double(original[$0])) } }
+        var expanded = Array(repeating: Float(0), count: pages.count)
+        for phrase in expansions {
+            try Task.checkCancellation()
+            let route = bm25(phrase)
+            for i in route.indices { expanded[i] += route[i] / Float(expansions.count) }
+        }
+        var fusion: [Int: Double] = [:]
+        for (rank, i) in base.enumerated() { fusion[i, default: 0] += 1 / Double(61 + rank) }
+        for (rank, i) in order(expanded, allowed: allowed).enumerated() { fusion[i, default: 0] += 0.7 / Double(61 + rank) }
+        return fusion.keys.sorted { fusion[$0] == fusion[$1] ? $0 < $1 : fusion[$0]! > fusion[$1]! }.prefix(200).map { Match(rowID: pages[$0].rowID, score: fusion[$0]!) }
+    }
+}

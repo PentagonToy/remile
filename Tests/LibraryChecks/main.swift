@@ -64,6 +64,15 @@ Task {
         _ = try await store.search("combustion OR x' ; DROP TABLE documents --")
         summary = try await store.summary()
         try expect(summary.documents == 3, "Query syntax cannot inject SQL/FTS operators")
+        let ranked = try await store.rankedSearch("How can hydrogen burn in flames?")
+        try expect(ranked.first?.path == first.path && ranked.first?.page == 1, "B0 searches natural questions without AI or all-token filtering")
+        let rankedPhrase = try await store.rankedSearch("\"turbulent combustion\"")
+        try expect(rankedPhrase.count == 1 && rankedPhrase[0].path == first.path, "B0 keeps exact quoted phrase constraints")
+        let partialRanked = try await store.rankedSearch("hydrogen nonexistent")
+        try expect(partialRanked.count == 1 && partialRanked[0].path == first.path, "B0 preserves partial lexical candidates")
+        let expandedRanked = try await store.rankedSearch("hydrogen", expansions: ["numerical transport"])
+        try expect(expandedRanked.contains { $0.page == 2 && $0.path == first.path }, "Guided fusion retains original and expanded candidates")
+        try expect(ranked[0].matchQuery?.contains("hydrogen") == true && ranked[0].excerpt.contains("Hydrogen"), "B0 highlights actual matched surface forms")
         let reopened = LibraryIndex(location: database)
         hits = try await reopened.search("hydrogen")
         try expect(hits.count == 1 && hits[0].page == 1, "Index survives connection reopen")
@@ -74,12 +83,16 @@ Task {
         try await store.refresh { _ in }
         hits = try await store.search("hydrogen")
         try expect(hits.isEmpty, "Changed document removes old terms")
+        let staleRanked = try await store.rankedSearch("hydrogen")
+        try expect(staleRanked.isEmpty, "Changed file invalidates resident sparse index")
         hits = try await store.search("zirconium")
         try expect(hits.count == 1, "Changed document becomes searchable")
         try FileManager.default.removeItem(at: second)
         try await store.refresh { _ in }
         hits = try await store.search("combustion")
         try expect(hits.isEmpty, "Deleted files leave no stale pages")
+        let deletedRanked = try await store.rankedSearch("combustion")
+        try expect(deletedRanked.isEmpty, "Removed file invalidates sparse postings")
         let broken = folder.appendingPathComponent("Broken.pdf")
         try Data("invalid PDF".utf8).write(to: broken)
         try await store.refresh { _ in }
@@ -189,6 +202,14 @@ Task {
         try expect(literalQuestion.isEmpty, "Disabling question interpretation restores literal search")
         let transport = try await questionIndex.search("Why is upwinding used for convection dominated flow?")
         try expect(transport.count == 1 && transport.first?.page == 2, "Question inflections find indexed word families")
+        let partialQuestion = try await questionIndex.rankedSearch("Why is upwinding used for convection dominated flow?")
+        try expect(partialQuestion.first?.page == 2, "Native B0 passage/coverage rank prefers the complete transport explanation")
+        _ = try await questionIndex.rankedSearch("pressure")
+        let externalIndex = LibraryIndex(location: output.appendingPathComponent("questions.sqlite"))
+        try fixture(questionFolder.appendingPathComponent("Methods.pdf"), pages: ["New document\nDistinctive xenon spectroscopy."])
+        try await externalIndex.refresh { _ in }
+        let afterExternal = try await questionIndex.rankedSearch("xenon")
+        try expect(afterExternal.count == 1, "Other SQLite connection changes invalidate cached sparse index")
         let strict = try await questionIndex.search("upwinding convection")
         try expect(strict.isEmpty, "Ordinary keywords remain literal")
         let quotedQuestion = try await questionIndex.search("\"How are pressure and velocity coupled\"")
@@ -196,6 +217,44 @@ Task {
         try expect(SearchQuestion("How is pressure not coupled to velocity?") == nil, "Do not silently remove negation")
         try expect(SearchQuestion("비압축성 유동에서 압력은 어떻게 연결하나요?") == nil, "No unsupported cross-language expansion")
         try expect(SearchQuestion("what is x?") == nil, "Very short questions keep literal semantics")
+        let forceRoot = output.appendingPathComponent("force-library")
+        let otherRoot = output.appendingPathComponent("other-library")
+        for root in [forceRoot, otherRoot] { try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true) }
+        let forceFile = forceRoot.appendingPathComponent("same.md"), otherFile = otherRoot.appendingPathComponent("other.md")
+        for file in [forceFile, otherFile] {
+            try "# alpha".write(to: file, atomically: false, encoding: .utf8)
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_700_000_000)], ofItemAtPath: file.path)
+        }
+        let forced = LibraryIndex(location: output.appendingPathComponent("force.sqlite"))
+        try await forced.add(forceRoot); try await forced.add(otherRoot); try await forced.refresh { _ in }
+        let folderID = try await forced.summary().folders.first { $0.path == forceRoot.path }!.id
+        for file in [forceFile, otherFile] {
+            let stamp = try FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate]!
+            let handle = try FileHandle(forWritingTo: file); try handle.write(contentsOf: Data("# omega".utf8)); try handle.close()
+            try FileManager.default.setAttributes([.modificationDate: stamp], ofItemAtPath: file.path)
+        }
+        try await forced.refresh { _ in }
+        let skippedHits = try await forced.search("omega")
+        try expect(skippedHits.isEmpty, "Incremental refresh skips unchanged metadata")
+        try await forced.refresh(folderID: folderID, force: true) { _ in }
+        let forcedHits = try await forced.search("omega")
+        try expect(forcedHits.count == 1 && forcedHits[0].path == forceFile.path, "Folder reindex rebuilds unchanged metadata without refreshing other folders")
+        try await forced.refresh(folderID: folderID, force: true) { _ in }
+        let repeatedHits = try await forced.search("omega")
+        try expect(repeatedHits.count == 1, "Repeated forced reindex does not duplicate pages")
+        let maths = output.appendingPathComponent("maths")
+        try FileManager.default.createDirectory(at: maths, withIntermediateDirectories: true)
+        for (name, symbol) in [("A", "α"), ("B", "β"), ("C", "α")] {
+            try ("# Momentum\nForce = " + symbol).write(to: maths.appendingPathComponent(name + ".md"), atomically: true, encoding: .utf8)
+        }
+        let mathsIndex = LibraryIndex(location: output.appendingPathComponent("maths.sqlite"))
+        try await mathsIndex.add(maths); try await mathsIndex.refresh { _ in }
+        let equations = try await mathsIndex.rankedSearch("momentum")
+        try expect(equations.count == 2, "Duplicate suppression keeps distinct mathematical symbols and removes identical content")
+        let mathsFolder = try await mathsIndex.summary().folders[0]
+        try await mathsIndex.remove(mathsFolder)
+        let removedFolder = try await mathsIndex.rankedSearch("momentum")
+        try expect(removedFolder.isEmpty, "Removing a folder clears loaded sparse ranking data")
         print("\(checks) library checks passed")
         exit(0)
     } catch {

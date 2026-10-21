@@ -50,7 +50,7 @@ struct MarkdownWorkspace: View {
                 }
                 AIToolGroup {
                 AIProviderButton()
-                Button { presentation.ask.toggle() } label: { Image(systemName: "text.bubble") }.remileHelp("Ask about document")
+                Button { presentation.ask.toggle() } label: { Image(systemName: "text.bubble") }.remileHelp("Ask about document").accessibilityLabel("Ask about document")
                 EditorWritingReviewButton(review: writing, editor: editor)
                 }
 
@@ -72,7 +72,7 @@ struct MarkdownWorkspace: View {
                 Text("\(preview.wordCount) words")
                 Text("UTF-8").monospaced()
                 ReaderThemeButton()
-            }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 12).frame(height: 32).background(.bar)
+            }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 12).frame(height: 32).background(RemileStyle.editorBar)
         }
         .sheet(isPresented: $presentation.settings) { VStack(alignment: .trailing, spacing: 0) { MarkdownSettings(); Button("Done") { presentation.settings = false }.keyboardShortcut(.defaultAction).padding([.horizontal, .bottom], 20) }.background(RemileStyle.background) }
         .sheet(isPresented: Binding(get: { presentation.table != nil }, set: { if !$0 { presentation.table = nil } })) {

@@ -22,6 +22,8 @@ struct GPTMark: View {
 }
 struct AIProviderButton: View {
     @AppStorage("assistant.provider") private var provider = "Apple Intelligence"
+    @ObservedObject private var network = NetworkAccessState.shared
+    @AppStorage(AIConfiguration.fallbackPreference) private var fallback = true
     @ObservedObject private var usage = AIUsage.shared
     @ObservedObject private var connection = ChatGPTConnection.shared
     @StateObject private var state = Presentation()
@@ -31,19 +33,20 @@ struct AIProviderButton: View {
             option("Apple Intelligence", value: "Apple Intelligence")
             option("ChatGPT", value: "ChatGPT")
             option("Manual · AI off", value: "Off")
-            if provider == "ChatGPT", let reason = usage.reason { Divider(); Text(reason); Text("Using Apple Intelligence on this Mac") }
+            if provider == "ChatGPT", let reason = usage.reason { Divider(); Text(reason); if fallback && AppleIntelligence.status().ready { Text("Using Apple Intelligence on this Mac") } }
             if usage.reconnecting { Button("Try ChatGPT again") { usage.retryConnection() } }
             Divider()
             Button("AI settings…") { state.settings = true }
         } label: { AIProviderSymbol().frame(width: 32, height: 32) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 32, height: 32, alignment: .center)
-            .remileHelp(hint).accessibilityLabel("AI provider").accessibilityValue(provider == "ChatGPT" && usage.reason != nil ? (usage.needsConnection ? "ChatGPT · connection needed" : "Apple Intelligence · automatic fallback") : provider == "Off" ? "Manual · AI off" : provider)
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).frame(width: 32, height: 32, alignment: .center)
+            .remileHelp(hint).accessibilityLabel("AI provider").accessibilityValue(provider == "ChatGPT" && fallback && AppleIntelligence.status().ready && usage.reason != nil ? (usage.needsConnection ? "ChatGPT · connection needed" : "Apple Intelligence · automatic fallback") : provider == "Off" ? "Manual · AI off" : provider)
             .sheet(isPresented: $state.settings) { ChatGPTSettings() }
     }
     private func option(_ title: String, value: String) -> some View {
-        Toggle(title, isOn: Binding(get: { provider == value }, set: { if $0 { provider = value } }))
+        Toggle(title, isOn: Binding(get: { provider == value }, set: { if $0 { provider = value } })).disabled(value == "Apple Intelligence" && !AppleIntelligence.status().ready)
     }
     private var hint: String {
+        if provider == "ChatGPT", (!fallback || !AppleIntelligence.status().ready), let reason = usage.reason { return "ChatGPT · " + reason + (fallback ? ". Apple Intelligence is unavailable on this Mac." : ". Automatic fallback is off.") }
         if provider == "ChatGPT", usage.needsConnection { return "ChatGPT · " + (usage.reason ?? "Connect in AI settings") + ". The dot means the connection needs attention. Using this Mac until ready." }
         if provider == "ChatGPT", let reason = usage.reason { return "Apple Intelligence · " + reason + ". The dot means automatic fallback. ChatGPT returns when available. Click to choose AI." }
         if provider == "ChatGPT" { return "ChatGPT · click to choose AI. " + RemileHints.chatGPTPlan }
@@ -52,11 +55,13 @@ struct AIProviderButton: View {
 }
 struct AIProviderSymbol: View {
     @AppStorage("assistant.provider") private var provider = "Apple Intelligence"
+    @ObservedObject private var network = NetworkAccessState.shared
+    @AppStorage(AIConfiguration.fallbackPreference) private var fallback = true
     @ObservedObject private var usage = AIUsage.shared
     @ObservedObject private var connection = ChatGPTConnection.shared
     var body: some View {
         Group {
-            if provider == "ChatGPT" && usage.showsGPTMark { GPTMark() }
+            if provider == "ChatGPT" && (!fallback || !AppleIntelligence.status().ready || usage.showsGPTMark) { GPTMark() }
             else { Image(systemName: provider == "Off" ? "pencil.tip" : "apple.intelligence").resizable().scaledToFit().frame(width: 20, height: 20) }
         }.frame(width: 22, height: 22, alignment: .center).foregroundStyle(RemileStyle.accent)
             .overlay(alignment: .topTrailing) { if provider == "ChatGPT" && usage.reason != nil { Circle().fill(RemileStyle.warning).frame(width: 5, height: 5).overlay(Circle().stroke(RemileStyle.background, lineWidth: 1)).offset(x: 3, y: -2).accessibilityHidden(true) } }

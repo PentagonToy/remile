@@ -9,7 +9,7 @@ check(OverleafConnection.projectID("https://git@git.overleaf.com/" + id) == id, 
 for url in ["http://www.overleaf.com/project/" + id, "https://overleaf.com.evil/project/" + id, "https://www.overleaf.com/project/" + id + "?token=x", "https://password:secret@www.overleaf.com/project/" + id] { check(OverleafConnection.projectID(url) == nil, "reject unsafe URL") }
 let serverScript = root.appendingPathComponent("server.py"), portFile = root.appendingPathComponent("port")
 try #"""
-import http.server,sys,os,subprocess,urllib.parse
+import http.server,sys,os,subprocess,urllib.parse,json,pathlib
 class Git(http.server.BaseHTTPRequestHandler):
  def serve(self):
   parts=urllib.parse.urlsplit(self.path)
@@ -17,6 +17,8 @@ class Git(http.server.BaseHTTPRequestHandler):
   env.update(GIT_PROJECT_ROOT=os.getcwd(),GIT_HTTP_EXPORT_ALL='1',PATH_INFO=urllib.parse.unquote(parts.path),QUERY_STRING=parts.query,REQUEST_METHOD=self.command,CONTENT_TYPE=self.headers.get('Content-Type',''),CONTENT_LENGTH=self.headers.get('Content-Length','0'),REMOTE_USER='fixture')
   data=self.rfile.read(int(env['CONTENT_LENGTH']))
   r=subprocess.run(['/usr/bin/git','http-backend'],input=data,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env)
+  if parts.path.endswith('/git-receive-pack') and pathlib.Path('race-edit.json').exists():
+   edit=json.loads(pathlib.Path('race-edit.json').read_text()); pathlib.Path(edit['path']).write_text(edit['source']); pathlib.Path('race-edit.json').unlink()
   head,body=r.stdout.split(b'\r\n\r\n',1)
   headers=[line.decode().split(':',1) for line in head.split(b'\r\n')]
   status=next((int(v.strip().split()[0]) for k,v in headers if k.lower()=='status'),200)
@@ -93,3 +95,34 @@ check(try git(["rev-parse", "HEAD"], at: cache).text == accepted, "reviewed publ
 let matched = try OverleafGit.prepare(project, root: cache, reviewRoot: reviews, transport: transport)
 check(matched.changes.isEmpty, "matched projects need no change review or duplicate revision")
 print("Passed reviewed publish and matched-head checks against synthetic smart HTTP Git")
+
+check(try !OverleafAutoPublisher.needsCheck(project, root: cache, transport: transport), "idle polling skips snapshot work")
+try "Automatic title\nBase\nEnd\n".write(to: cache.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+check(try OverleafAutoPublisher.needsCheck(project, root: cache, transport: transport), "local writing triggers snapshot")
+let automatic = try OverleafGit.prepare(project, root: cache, reviewRoot: reviews, transport: transport)
+check(try OverleafAutoPublisher.isLocalOnly(automatic), "unchanged remote permits automatic publish")
+try OverleafAutoPublisher.publish(automatic)
+check(try git(["rev-parse", "HEAD"], at: cache).text == git(["rev-parse", "main"], at: remote).text, "automatic base advances to remote")
+check(try String(contentsOf: cache.appendingPathComponent("main.tex"), encoding: .utf8) == "Automatic title\nBase\nEnd\n", "automatic publish preserves working file")
+let stale = try OverleafGit.prepare(project, root: cache, reviewRoot: reviews, transport: transport)
+try "Still typing\nBase\nEnd\n".write(to: cache.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+refused = false
+do { try OverleafAutoPublisher.publish(stale) } catch { refused = true }
+check(refused, "automatic publish rejects changed local snapshot")
+// Simulate an external edit racing a completed upload: a mixed base advance never replaces that file.
+let continued = try OverleafGit.prepare(project, root: cache, reviewRoot: reviews, transport: transport)
+try JSONSerialization.data(withJSONObject: ["path": cache.appendingPathComponent("main.tex").path, "source": "Typing during upload\nBase\nEnd\n"]).write(to: root.appendingPathComponent("race-edit.json"))
+try OverleafAutoPublisher.publish(continued)
+check(try String(contentsOf: cache.appendingPathComponent("main.tex"), encoding: .utf8) == "Typing during upload\nBase\nEnd\n", "edits during upload remain on disk")
+check(try !git(["status", "--porcelain"], at: cache).data.isEmpty, "edits during upload remain pending")
+_ = try git(["-c", "protocol.file.allow=always", "fetch", remote.path, "main"], at: seed)
+_ = try git(["reset", "--hard", "FETCH_HEAD"], at: seed)
+try "New remote reference\n".write(to: seed.appendingPathComponent("reference.tex"), atomically: true, encoding: .utf8)
+try publishFixture("External edit")
+try "More local writing\nBase\nEnd\n".write(to: cache.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+let remoteChanged = try OverleafGit.prepare(project, root: cache, reviewRoot: reviews, transport: transport)
+check(try !OverleafAutoPublisher.isLocalOnly(remoteChanged), "remote edits require manual review even without conflicts")
+refused = false
+do { try OverleafAutoPublisher.publish(remoteChanged) } catch { refused = true }
+check(refused, "automatic publish cannot accept remote edits")
+print("Passed local-only automatic publishing, stale snapshot refusal and remote review boundary")

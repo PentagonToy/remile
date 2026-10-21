@@ -6,14 +6,13 @@ final class RemileDelegate: NSObject, NSApplicationDelegate {
     private var automationTask: Task<Void, Never>?
     func bind() {
         guard automationTask == nil else { return }
-        UserDefaults.standard.set(false, forKey: "editor.aiSuggestions")
         Task.detached(priority: .utility) { TeXCache.prune() }
         automationTask = Task { @MainActor in await EditorBridge.serve { RemileWindows.shared.requestHome() } }
     }
     func applicationWillTerminate(_ notification: Notification) { automationTask?.cancel() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         for home in RemileWindows.shared.models {
-            if home.texProject?.confirmLeaving() == false || !home.reader.confirmLeaving() { return .terminateCancel }
+            if !home.pdfSearchEditing.confirmLeaving() || home.texProject?.confirmLeaving() == false || !home.reader.confirmLeaving() { return .terminateCancel }
         }
         return .terminateNow
     }
@@ -43,7 +42,7 @@ struct RemileApp: App {
         WindowGroup("remile.", id: "home") { RemileWindow(delegate: delegate) }
             .defaultSize(width: 1120, height: 800)
             .commands { RemileCommands() }
-        Settings { ReaderSettings().modifier(ReaderAppearanceModifier()) }
+        Settings { ReaderSettings().modifier(ReaderAppearanceModifier()).modifier(NetworkAccessScope()) }
     }
 }
 
@@ -52,7 +51,7 @@ private struct RemileWindow: View {
     @StateObject private var home = HomeModel()
     @Environment(\.openWindow) private var openWindow
     var body: some View {
-        ReadingShell(home: home, reader: home.reader).modifier(ReaderAppearanceModifier())
+        ReadingShell(home: home, reader: home.reader).modifier(ReaderAppearanceModifier()).modifier(NetworkAccessScope())
             .onAppear { RemileWindows.shared.createWindow = { openWindow(id: "home") }; delegate.bind() }
     }
 }

@@ -5,6 +5,7 @@ import AppKit
 struct ReaderSplit<Pane: View, Content: View>: View {
     enum Side { case leading, trailing }
     var side: Side = .leading
+    var isPresented = true
     var initial: CGFloat = 280
     var minimum: CGFloat = 240
     var maximum: CGFloat = 440
@@ -28,16 +29,17 @@ struct ReaderSplit<Pane: View, Content: View>: View {
         GeometryReader { geometry in
             let width = Self.constrained(state.width ?? initial, available: geometry.size.width, minimum: minimum, maximum: maximum, content: minimumContent)
             let narrow = geometry.size.width < minimum + minimumContent + Self.handleWidth
-            let effective = state.collapsed < 0 ? 0 : state.collapsed > 0 ? max(0, geometry.size.width - Self.handleWidth) : narrow ? (preferPaneWhenNarrow ? max(0, geometry.size.width - Self.handleWidth) : 0) : width
-            let remaining = max(0, geometry.size.width - Self.handleWidth - effective)
+            let gutter: CGFloat = isPresented ? Self.handleWidth : 0
+            let effective: CGFloat = !isPresented ? 0 : state.collapsed < 0 ? 0 : state.collapsed > 0 ? max(0, geometry.size.width - Self.handleWidth) : narrow ? (preferPaneWhenNarrow ? max(0, geometry.size.width - Self.handleWidth) : 0) : width
+            let remaining = max(0, geometry.size.width - gutter - effective)
             HStack(spacing: 0) {
                 if side == .leading {
                     pane().frame(width: effective, alignment: .leading).clipped().allowsHitTesting(effective > 0).accessibilityHidden(effective == 0)
-                    grip(width: width, available: geometry.size.width)
+                    grip(width: width, available: geometry.size.width).frame(width: gutter).clipped().allowsHitTesting(isPresented).accessibilityHidden(!isPresented)
                     content().frame(width: remaining, alignment: .leading).clipped().allowsHitTesting(remaining > 0).accessibilityHidden(remaining == 0)
                 } else {
                     content().frame(width: remaining, alignment: .leading).clipped().allowsHitTesting(remaining > 0).accessibilityHidden(remaining == 0)
-                    grip(width: width, available: geometry.size.width)
+                    grip(width: width, available: geometry.size.width).frame(width: gutter).clipped().allowsHitTesting(isPresented).accessibilityHidden(!isPresented)
                     pane().frame(width: effective, alignment: .leading).clipped().allowsHitTesting(effective > 0).accessibilityHidden(effective == 0)
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height)
@@ -50,17 +52,17 @@ struct ReaderSplit<Pane: View, Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private func grip(width: CGFloat, available: CGFloat) -> some View {
         ZStack {
-            Rectangle().fill(Color.primary.opacity(0.09)).frame(width: 1).allowsHitTesting(false)
+            Rectangle().fill(RemileStyle.accent.opacity(0.16)).frame(width: 1).allowsHitTesting(false)
             if state.collapsed != 0 || available < minimum + minimumContent + Self.handleWidth {
                 Button { state.collapsed = state.collapsed == 0 ? (preferPaneWhenNarrow ? -1 : 1) : 0 } label: {
                     Image(systemName: (state.collapsed < 0) == (side == .leading) ? "chevron.right" : "chevron.left").font(.system(size: 10, weight: .semibold)).frame(width: 14, height: 40).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
                 }.buttonStyle(.plain).remileHelp("Restore split view").accessibilityLabel("Restore " + label)
             } else {
             HStack(spacing: 2) {
-                ForEach(0..<3) { _ in Capsule().fill(RemileStyle.ink.opacity(0.45)).frame(width: 1, height: 11) }
+                ForEach(0..<3) { _ in Capsule().fill(RemileStyle.accent.opacity(0.85)).frame(width: 1, height: 11) }
             }.frame(width: 12, height: 40)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 3))
-                .overlay(RoundedRectangle(cornerRadius: 3).stroke(.primary.opacity(0.12)))
+                .background(RemileStyle.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(RemileStyle.accent.opacity(0.30)))
                 .frame(width: Self.handleWidth, height: 60).contentShape(Rectangle().inset(by: -5))
                 .background(ResizeCursorRegion().allowsHitTesting(false))
                 .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .named("reader.split." + label)).onChanged { event in

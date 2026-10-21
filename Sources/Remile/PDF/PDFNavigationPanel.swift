@@ -61,7 +61,7 @@ struct PDFOutlinePanel: View {
     }
     var body: some View {
         let entries = Self.entries(document)
-        if entries.isEmpty { ContentUnavailableView("No outline", systemImage: "list.bullet", description: Text("This PDF has no embedded table of contents. Use Pages or Search.")) }
+        if entries.isEmpty { ContentUnavailableView("No outline", systemImage: "list.bullet").frame(maxWidth: .infinity, maxHeight: .infinity) }
         else {
             List(entries) { entry in
                 Button {
@@ -72,7 +72,7 @@ struct PDFOutlinePanel: View {
                         Spacer(minLength: 0)
                         if let page = entry.outline.destination?.page, page.document === document, document.index(for: page) != NSNotFound { Text("\(document.index(for: page) + 1)").font(RemileType.caption).foregroundStyle(.secondary).monospacedDigit() }
                     }.padding(.leading, CGFloat(entry.depth) * 12).padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                }.buttonStyle(.plain)
+                }.buttonStyle(.plain).listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
             }.listStyle(.plain).scrollContentBackground(.hidden)
         }
     }

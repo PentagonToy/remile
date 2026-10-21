@@ -5,17 +5,27 @@ struct TeXConfiguration: Sendable {
     var directory: String
     var engine: Engine
     var bibliography = true
-    static var current: Self { Self(directory: UserDefaults.standard.string(forKey: "latex.binDirectory") ?? "/Library/TeX/texbin", engine: Engine(rawValue: UserDefaults.standard.string(forKey: "latex.engine") ?? "") ?? .automatic, bibliography: UserDefaults.standard.object(forKey: "latex.bibliography") as? Bool ?? true) }
+    var timeLimit = 180
+    static let timeLimitOptions = [90, 180, 300, 600]
+    static func validatedTimeLimit(_ value: Int?) -> Int { value.flatMap { (1...1800).contains($0) ? $0 : nil } ?? 180 }
+    var timeLimitSeconds: TimeInterval { TimeInterval(Self.validatedTimeLimit(timeLimit)) }
+    static var current: Self { Self(directory: UserDefaults.standard.string(forKey: "latex.binDirectory") ?? "/Library/TeX/texbin", engine: Engine(rawValue: UserDefaults.standard.string(forKey: "latex.engine") ?? "") ?? .automatic, bibliography: UserDefaults.standard.object(forKey: "latex.bibliography") as? Bool ?? true, timeLimit: validatedTimeLimit(UserDefaults.standard.object(forKey: "latex.compileTimeLimit") as? Int)) }
     func missingTools(buffers: [String: String], submissionCheck: Bool = false) -> [String] {
         let resolved = engine == .automatic ? (buffers.values.contains { $0.contains("fontspec") || $0.contains("\\setmainfont") } ? Engine.xe : Engine.pdf) : engine
         let names = (submissionCheck ? [] : ["latexmk"]) + [resolved == .xe ? "xelatex" : resolved == .lua ? "lualatex" : "pdflatex"]
         return names.filter { !FileManager.default.isExecutableFile(atPath: URL(fileURLWithPath: directory).appendingPathComponent($0).path) }
     }
+    // MacTeX installs Ghostscript in /usr/local/bin, including on Apple Silicon.
+    var executablePath: String { directory + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" }
     var available: Bool { FileManager.default.isExecutableFile(atPath: URL(fileURLWithPath: directory).appendingPathComponent("latexmk").path) }
 }
 
 /// Explicit compile jobs never run project rc files or save editor buffers to the original tree.
 final class TeXCompileJob: @unchecked Sendable {
+    enum Failure: LocalizedError {
+        case timeLimit
+        var errorDescription: String? { "Compilation time limit reached. Increase it in Settings → LaTeX → Compilation, then try again." }
+    }
     struct Result { let pdf: Data?; let log: String; let output: URL; let success: Bool }
     private let lock = NSLock()
     private var process: Process?
@@ -36,8 +46,9 @@ final class TeXCompileJob: @unchecked Sendable {
         let logURL = output.appendingPathComponent("compiler.log"); manager.createFile(atPath: logURL.path, contents: nil)
         let handle = try FileHandle(forWritingTo: logURL); defer { try? handle.close() }
         var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = configuration.directory + ":/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-        let deadline = Date().addingTimeInterval(90)
+        environment["PATH"] = configuration.executablePath
+        let deadline = Date().addingTimeInterval(configuration.timeLimitSeconds)
+        try handle.write(contentsOf: Data("Compilation time limit: \(Int(configuration.timeLimitSeconds)) seconds.\n".utf8))
         if engine == .pdf, let items = manager.enumerator(at: source, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) {
             let converter = URL(fileURLWithPath: configuration.directory).appendingPathComponent("epstopdf")
             for case let image as URL in items where image.pathExtension.lowercased() == "eps" {
@@ -111,6 +122,7 @@ final class TeXCompileJob: @unchecked Sendable {
         lock.lock(); if cancelled { lock.unlock(); throw CancellationError() }; process = child
         do { try child.run(); lock.unlock() } catch { lock.unlock(); throw error }
         var nextOutput = Date.distantPast
+        var timedOut = false
         while child.isRunning {
             if Date() >= nextOutput {
                 if let reader = try? FileHandle(forReadingFrom: logURL) {
@@ -119,10 +131,15 @@ final class TeXCompileJob: @unchecked Sendable {
                 }
                 nextOutput = Date().addingTimeInterval(0.3)
             }
-            if Date() > deadline { stop(); Thread.sleep(forTimeInterval: 0.3); if child.isRunning { child.terminate() }; break }
+            if Date() > deadline { timedOut = true; stop(); Thread.sleep(forTimeInterval: 0.3); if child.isRunning { child.terminate() }; break }
             Thread.sleep(forTimeInterval: 0.05)
         }
         child.waitUntilExit(); lock.lock(); let stopped = cancelled; process = nil; lock.unlock()
+        if timedOut {
+            let message = Failure.timeLimit.localizedDescription
+            try log.write(contentsOf: Data(("\n! " + message + "\n").utf8))
+            throw Failure.timeLimit
+        }
         if stopped { throw CancellationError() }
         return child.terminationStatus
     }

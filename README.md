@@ -7,7 +7,7 @@
 
 > Across time, a few words find you here.
 
-A quiet, local document workspace to organise your thoughts through writing and leave a record you can return to.
+A local workspace for PDF, Markdown and LaTeX documents.
 
 ## Read, write and find
 
@@ -39,7 +39,7 @@ Update with `brew upgrade --cask remile`. The cask installs the app and the `rem
 
 ### Download
 
-Download [remile. 0.1.1 for Apple Silicon](https://github.com/PentagonToy/remile/releases/download/v0.1.1/remile-0.1.1-arm64.dmg), open the DMG and drag **remile.app** into **Applications**. Checksums are included with the [release](https://github.com/PentagonToy/remile/releases/tag/v0.1.1).
+Download [remile. 0.1.2 for Apple Silicon](https://github.com/PentagonToy/remile/releases/download/v0.1.2/remile-0.1.2-arm64.dmg), open the DMG and drag **remile.app** into **Applications**. Checksums are included with the [release](https://github.com/PentagonToy/remile/releases/tag/v0.1.2).
 
 ### Requirements
 
@@ -52,14 +52,14 @@ Download [remile. 0.1.1 for Apple Silicon](https://github.com/PentagonToy/remile
 | Overleaf, optional | Internet, Git and Git access to your Overleaf project. |
 | Apple Intelligence, optional | macOS 26 or later on an eligible Mac, with Apple Intelligence enabled. |
 | ChatGPT, optional | Internet and an eligible connected ChatGPT account. Account limits apply. |
-| Package trust | Version 0.1.1 uses an ad hoc signature and is not Apple-notarised. macOS may block its first launch. |
+| Package trust | Version 0.1.2 uses an ad hoc signature and is not Apple-notarised. macOS may block its first launch. |
 | Licence | [MIT](LICENSE). Platform components, external tools and connected services retain their own terms. |
 
-If macOS blocks the first launch, read [Apple’s guidance for opening downloaded apps](https://support.apple.com/en-au/102445). The app never disables macOS security checks. See [installation and updates](docs/distribution.md) for package details and the optional CLI setup after a DMG install.
+If macOS blocks the first launch, read [Apple’s guidance for opening downloaded apps](https://support.apple.com/en-au/102445). See [installation and updates](docs/distribution.md) for package details and the optional CLI setup after a DMG install.
 
 ## Development
 
-remile. is a native Swift application for macOS 14 and later. The Swift package has no external package dependencies. AI features depend on supported system capabilities or a connected ChatGPT account. Local LaTeX compilation uses your installed TeX tools, and Overleaf synchronisation requires Git access to the project.
+remile. is a native Swift application with no external Swift package dependencies.
 
 Sources live in `Sources/Remile`. `tools/prepare_app.sh` builds and packages `remile.app`. Set `REMILE_BUILD_DIRECTORY` to an external output directory. Focused checks live in `Tests` and `tools/check_*.sh`.
 

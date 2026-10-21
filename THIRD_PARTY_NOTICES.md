@@ -6,6 +6,7 @@ The root [MIT licence](LICENSE) covers remile. source code. It does not replace 
 
 | Material | Origin | Licence and changes |
 | --- | --- | --- |
+| Fixed English stopword list, `SearchLexicon.swift` | scikit-learn 1.9.1 `ENGLISH_STOP_WORDS` | BSD-3-Clause, copyright © 2007–2026 the scikit-learn developers. Additional question scaffolding words are local. No Python or scikit-learn runtime is shipped. Full notice: [SEARCH-WORDS.txt](others/licences/SEARCH-WORDS.txt), also copied into the app. |
 | ChatGPT icon, `others/icons/chatgpt.svg` | [OpenCode provider icon](https://github.com/anomalyco/opencode/blob/dev/packages/ui/src/assets/icons/provider/openai.svg) | MIT, copyright © 2025 opencode. The SVG path matches the inspected upstream asset. The view box is fitted to the existing path, and the app renders it in its gold accent colour. |
 
 The complete upstream MIT notice is retained in [CHATGPT-LICENSE.txt](others/icons/CHATGPT-LICENSE.txt) and copied into the application bundle. OpenAI owns the ChatGPT name and mark. The asset’s software licence does not grant ownership of the mark. See [OpenAI’s brand guidelines](https://openai.com/brand/).
@@ -28,4 +29,4 @@ The inspected reference corpus informed interaction design and protocol compatib
 | `overleaf-textarea-master` | GPL-3.0 | Source-aware prose filtering and editor behaviour. |
 | [autoresearcherUI](https://github.com/Fchaubard/autoresearcherui) | MIT | Explicit review and observable progress. |
 
-The confirmed incorporated asset is listed above. The recorded references and the current native source were inspected for copied material. A bounded comparison against 2,525 reference source files found no matching eight-line blocks of at least 200 whitespace-normalised characters. This comparison cannot establish independent authorship or detect translated adaptations. It is not permission to copy GPL or AGPL source into the MIT app. Any future incorporation must be reviewed and attributed under its actual licence.
+The incorporated material is listed above. The recorded references and the current native source were inspected for copied material. A bounded comparison against 2,525 reference source files found no matching eight-line blocks of at least 200 whitespace-normalised characters. This comparison cannot establish independent authorship or detect translated adaptations. It is not permission to copy GPL or AGPL source into the MIT app. Any future incorporation must be reviewed and attributed under its actual licence.

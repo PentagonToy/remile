@@ -59,16 +59,36 @@ expect(session.document === document && session.isEditing, "Own writeback preser
 undo.undo(); expect(page.rotation == 0, "Rotation undo restores the angle")
 undo.redo(); expect(page.rotation == 90, "Rotation redo restores the change")
 undo.undo()
+session.showsOverview = true
+session.selectedOverviewPages = [ObjectIdentifier(document.page(at: 1)!)]
+undo.beginUndoGrouping(); session.rotateVisiblePages(clockwise: true); undo.endUndoGrouping()
+expect(page.rotation == 0 && document.page(at: 1)!.rotation == 90, "Overview toolbar rotates the selected page rather than the reader's current page")
+undo.undo(); expect(document.page(at: 1)!.rotation == 0, "Overview toolbar rotation is undoable")
+session.selectedOverviewPages = Set([page, document.page(at: 1)!].map(ObjectIdentifier.init))
+undo.beginUndoGrouping(); session.rotateVisiblePages(clockwise: false); undo.endUndoGrouping()
+expect(page.rotation == 270 && document.page(at: 1)!.rotation == 270, "Overview toolbar rotates the entire selection")
+undo.undo()
+session.showsOverview = false
+undo.beginUndoGrouping(); session.rotateVisiblePages(clockwise: true); undo.endUndoGrouping()
+expect(page.rotation == 90 && document.page(at: 1)!.rotation == 0, "Reading toolbar rotates only the current page even with an old overview selection")
+undo.undo()
 view.setCurrentSelection(page.selection(for: page.bounds(for: .mediaBox)), animate: false)
 expect(session.canHighlight, "Native owned selection can be highlighted")
 undo.beginUndoGrouping(); session.highlightSelection(); undo.endUndoGrouping()
 let marks = page.annotations.filter { $0.type == "Highlight" }
 expect(marks.count == 1 && marks[0].quadrilateralPoints?.count == 4, "Highlight persists standard quadrilateral geometry")
 expect(marks[0].color.alphaComponent == 0.30, "Highlight uses fixed transparent palette colour")
+expect(session.hasPendingAnnotations, "Highlight keeps object edits pending until Save")
+_ = try session.prepareSave()
 expect(PDFDocument(data: session.committedData!)!.page(at: 0)!.annotations.contains { $0.type == "Highlight" }, "Highlight is present after reopening pending bytes")
 undo.undo(); expect(!page.annotations.contains { $0.type == "Highlight" }, "Highlight undo removes markup")
 undo.redo(); expect(page.annotations.contains { $0.type == "Highlight" }, "Highlight redo restores markup")
 expect((try? Data(contentsOf: source)) == original, "Highlights leave source unchanged")
+undo.beginUndoGrouping(); session.deleteHighlight(marks[0]); undo.endUndoGrouping()
+expect(!page.annotations.contains { $0 === marks[0] }, "Delete removes an owned highlight")
+undo.undo(); expect(page.annotations.contains { $0 === marks[0] }, "Highlight deletion is undoable")
+undo.redo(); expect(!page.annotations.contains { $0 === marks[0] }, "Highlight deletion is redoable")
+undo.undo()
 let foreign = PDFDocument(data: original)!
 rejects("Foreign selection is rejected") { _ = try PDFEditing.highlights(for: foreign.selectionForEntireDocument!, in: document) }
 let graph = PDFCommentGraph(document: document)
@@ -99,6 +119,31 @@ for entry in ["/AcroForm << >>", "/Perms << >>", "/Collection << >>"] {
 let publisher = PDFDocument(data: catalogFixture("/AcroForm << /Fields [] /DA (/Helv 0 Tf 0 g) >>"))!
 try PDFEditing.validate(publisher, assembly: true)
 expect(publisher.pageCount == 1, "Explicitly empty publisher form metadata permits editing")
+let formA = PDFDocument(data: catalogFixture("/AcroForm << /Fields [<< /FT /Tx /T (Name) /V (Before) >>] >>"))!
+let formB = PDFDocument(data: catalogFixture("/AcroForm << /Fields [<< /FT /Tx /T (Name) /V (After) >>] >>"))!
+expect(try! PDFFormPreservation.snapshot(formA) != PDFFormPreservation.snapshot(formB), "Form value changes are detected")
+try PDFEditing.validate(formA, annotationsOnly: true)
+checks += 1
+let signed = PDFDocument(data: catalogFixture("/AcroForm << /Fields [<< /FT /Sig /Kids [<< /T (Signature) /V << /ByteRange [0 1 2 3] /Contents <0102> >> >>] >>] >>"))!
+expect(PDFEditing.hasDigitalSignature(signed), "Signature fields are recognised through inherited field types")
+try PDFEditing.validate(signed, annotationsOnly: true)
+checks += 1
+let commentsModel = PDFSession();commentsModel.load(original)
+let commentsDocument=commentsModel.document!,commentsPage=commentsDocument.page(at:0)!
+let commentsView=PDFView(frame:NSRect(x:0,y:0,width:700,height:800));commentsView.document=commentsDocument;commentsModel.attach(commentsView);commentsView.go(to:commentsPage)
+let commentUndo=UndoManager();commentUndo.groupsByEvent=false;commentsModel.undoManager=commentUndo
+commentsView.setCurrentSelection(commentsPage.selection(for:commentsPage.bounds(for:.mediaBox)),animate:false)
+commentsModel.beginComment();commentsModel.draft="Root"
+commentUndo.beginUndoGrouping();commentsModel.saveComment();commentUndo.endUndoGrouping()
+let rootNote=commentsPage.annotations.first{$0.type=="Text"}!
+let rootComment=PDFSession.Comment(id:ObjectIdentifier(rootNote),annotation:rootNote,page:commentsPage,pageNumber:1,author:"Me",text:"Root",parent:nil)
+commentsModel.beginReply(rootComment);commentsModel.draft="Reply"
+commentUndo.beginUndoGrouping();commentsModel.saveComment();commentUndo.endUndoGrouping()
+commentUndo.beginUndoGrouping();commentsModel.deleteAnnotation(rootComment);commentUndo.endUndoGrouping()
+expect(commentsModel.editingError == nil && commentsPage.annotations.isEmpty, "Thread deletion removes the root and its replies")
+commentUndo.undo(); _ = try commentsModel.prepareSave()
+expect(commentsPage.annotations.filter { $0.type == "Text" }.count==2 && PDFCommentGraph(document:PDFDocument(data:commentsModel.committedData!)!).parents.count==1, "Thread undo restores reply relationships")
+commentUndo.redo();expect(commentsPage.annotations.isEmpty, "Thread deletion supports redo")
 for entry in ["/AcroForm << /Fields [<< /FT /Tx >>] >>", "/AcroForm << /Fields [] /SigFlags 1 >>", "/AcroForm << /Fields [] /XFA (payload) >>"] {
     rejects("Actual forms, signatures and XFA remain rejected") { try PDFEditing.validate(PDFDocument(data: catalogFixture(entry))!, assembly: true) }
 }
@@ -123,4 +168,12 @@ expect((try? Data(contentsOf: source)) == original, "Print preparation leaves so
 session.toggleEditing(); expect(!session.isEditing, "Done returns to reading")
 session.stop(); lockedSession.stop()
 try rotated.write(to: directory.appendingPathComponent("rotated-with-reply.pdf"))
+let groupedDocument = PDFDocument(data: original)!, groupedPage = groupedDocument.page(at: 0)!
+let grouped = try PDFEditing.highlights(regions: [(groupedPage, CGRect(x: 40, y: 100, width: 80, height: 14), "First line"), (groupedPage, CGRect(x: 40, y: 80, width: 50, height: 14), "with math"), (groupedPage, CGRect(x: 95, y: 82, width: 5, height: 9), "x")], in: groupedDocument, color: .yellow)
+expect(grouped.count == 1 && grouped[0].1.quadrilateralPoints?.count == 12, "Math fragments share one highlight with separate line geometry")
+expect(grouped[0].1.contents == "First line with math x", "One coherent excerpt is retained for the sidebar")
+let groupedGraph = PDFCommentGraph(document: groupedDocument)
+let groupedBytes = try PDFEditing.apply(grouped, adding: true, in: groupedDocument, graph: groupedGraph)
+let groupedReload = PDFDocument(data: groupedBytes)!.page(at: 0)!.annotations.filter { $0.type == "Highlight" }
+expect(groupedReload.count == 1 && groupedReload[0].quadrilateralPoints?.count == 12, "Multiple highlight quads survive Save and reopen")
 print("\(checks) PDF editing checks passed. Synthetic PDFs only; print panel not opened or printed.")

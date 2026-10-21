@@ -1,6 +1,6 @@
 import PDFKit
 
-// Keep the mutation and serialisation boundary together: a failed save rolls back the note.
+// Share object mutations between deferred reader edits and immediate exports with rollback.
 enum PDFNotes {
     enum Failure: LocalizedError {
         case restricted, encrypted, invalidParent
@@ -24,17 +24,30 @@ enum PDFNotes {
 
     static func apply(_ note: PDFAnnotation, on page: PDFPage, in document: PDFDocument, adding: Bool,
                       graph: PDFCommentGraph, parent: PDFAnnotation? = nil) throws -> Data {
+        try apply([(note, page, parent)], in: document, adding: adding, graph: graph)
+    }
+
+    static func apply(_ changes: [(note: PDFAnnotation, page: PDFPage, parent: PDFAnnotation?)], in document: PDFDocument, adding: Bool, graph: PDFCommentGraph) throws -> Data {
+        try change(changes, in: document, adding: adding, graph: graph)
+        do { return try graph.serialize(document) }
+        catch { try? change(changes, in: document, adding: !adding, graph: graph); throw error }
+    }
+
+    /// Interactive reader edits keep annotation objects only. Serialisation is deferred until Save.
+    static func change(_ changes: [(note: PDFAnnotation, page: PDFPage, parent: PDFAnnotation?)], in document: PDFDocument, adding: Bool, graph: PDFCommentGraph) throws {
         guard !document.isLocked, document.allowsCommenting else { throw Failure.restricted }
         guard !document.isEncrypted else { throw Failure.encrypted }
-        guard page.document === document, parent == nil || parent?.page === page else { throw Failure.invalidParent }
-        if adding { page.addAnnotation(note) } else { page.removeAnnotation(note) }
-        if adding { graph.add(note, parent: parent) } else { graph.remove(note) }
-        do {
-            return try graph.serialize(document)
-        } catch {
-            if adding { page.removeAnnotation(note) } else { page.addAnnotation(note) }
-            if adding { graph.remove(note) } else { graph.add(note, parent: parent) }
-            throw error
+        guard !changes.isEmpty else { throw Failure.invalidParent }
+        for change in changes {
+            guard change.page.document === document else { throw Failure.invalidParent }
+            if let parent = change.parent {
+                guard parent.page === change.page || (adding && changes.contains { $0.note === parent && $0.page === change.page }) else { throw Failure.invalidParent }
+            }
+        }
+        let ordered = adding ? changes : Array(changes.reversed())
+        for (note, page, parent) in ordered {
+            if adding { page.addAnnotation(note); graph.add(note, parent: parent) }
+            else { page.removeAnnotation(note); graph.remove(note) }
         }
     }
 }

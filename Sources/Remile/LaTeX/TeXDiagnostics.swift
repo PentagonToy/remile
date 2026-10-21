@@ -10,6 +10,12 @@ struct TeXDiagnostic: Identifiable {
 }
 
 enum TeXDiagnostics {
+    static func primaryError(_ entries: [TeXDiagnostic]) -> TeXDiagnostic? {
+        let errors = entries.filter { $0.severity == .error }
+        return errors.first { entry in
+            !["Emergency stop", "Fatal error occurred", "Latexmk: Errors", "Latexmk: Could not"].contains(where: entry.message.contains)
+        } ?? errors.first
+    }
     /// Parses file-line diagnostics and LaTeX's wrapped warnings; raw output is retained separately.
     static func parse(_ log: String) -> [TeXDiagnostic] {
         let allLines = log.components(separatedBy: .newlines)

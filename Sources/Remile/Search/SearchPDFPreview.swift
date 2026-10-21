@@ -13,6 +13,10 @@ final class SearchPDFModel: ObservableObject {
     @Published private(set) var canUndoHighlight = false
     @Published var editMessage: String?
     @Published var citationMessage: String?
+    let protection = PDFEditProtection()
+    @Published private(set) var hasPendingEdits = false
+    private var stagedGraph: PDFCommentGraph?
+    private var stagedHighlights: [[(PDFPage, PDFAnnotation)]] = []
     private let highlightStore = PDFHighlightStore()
     private var digest: Data?
     private var undoData: Data?
@@ -25,9 +29,11 @@ final class SearchPDFModel: ObservableObject {
     private var generation = UUID()
     private struct Loaded: @unchecked Sendable { let document: PDFDocument; let digest: Data }
     func show(_ hit: LibraryHit?, revision: UUID? = nil) {
+        if hasPendingEdits, (path != hit?.path || self.revision != revision), !confirmLeaving() { return }
         task?.cancel(); generation = UUID(); error = nil; citationMessage = nil
         guard let hit else { undoData = nil; canUndoHighlight = false; digest = nil; editMessage = nil; document = nil; path = nil; self.revision = nil; loading = false; return }
         if path == hit.path, self.revision == revision, document != nil { return }
+        protection.finish(); stagedGraph = nil; stagedHighlights = []; hasPendingEdits = false
         document = nil; path = nil; loading = true; restoredPage = nil; digest = nil; undoData = nil; canUndoHighlight = false; editMessage = nil; selectionAvailable = false
         let token = generation
         task = Task {
@@ -41,7 +47,7 @@ final class SearchPDFModel: ObservableObject {
             do {
                 let result = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
                 guard !Task.isCancelled, generation == token else { return }
-                document = result.document; digest = result.digest; path = hit.path; self.revision = revision; loading = false
+                document = result.document; protection.configure(result.document); digest = result.digest; path = hit.path; self.revision = revision; loading = false
             } catch {
                 guard generation == token else { return }
                 loading = false; self.error = "Document unavailable. Update the Library index."
@@ -61,10 +67,68 @@ final class SearchPDFModel: ObservableObject {
         guard NSDocumentController.shared.document(for: url) == nil else { editMessage = "Close this PDF in the reader before editing here."; return nil }
         return url
     }
+    func requestEditingUnlock() {
+        guard !saving, let url = editableURL(), let digest else { return }
+        do {
+            let data = try Data(contentsOf: url, options: .mappedIfSafe)
+            guard PDFHighlightStore.digest(data) == digest else { throw PDFHighlightStore.Failure.changed }
+            protection.requestUnlock(data: data)
+            objectWillChange.send()
+        } catch { editMessage = error.localizedDescription }
+    }
+    @discardableResult func saveChanges() -> Bool {
+        guard hasPendingEdits, !saving, let document, let graph = stagedGraph, let digest, let url = editableURL() else { return !hasPendingEdits }
+        do {
+            saving = true; defer { saving = false }
+            let data = try graph.serialize(document)
+            try PDFHighlightStore.replace(url: url, expected: digest, data: data)
+            rememberPage(in: document)
+            self.document = PDFDocument(data: data); self.digest = PDFHighlightStore.digest(data)
+            stagedGraph = nil; stagedHighlights = []; hasPendingEdits = false; canUndoHighlight = false
+            protection.committed(); editMessage = nil; selectionAvailable = false
+            return true
+        } catch { editMessage = error.localizedDescription; return false }
+    }
+    func discardChanges() {
+        guard let path else { return }
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe)
+            if let document { rememberPage(in: document) }
+            document = PDFDocument(data: data); digest = PDFHighlightStore.digest(data)
+            stagedGraph = nil; stagedHighlights = []; hasPendingEdits = false; canUndoHighlight = false
+            protection.configure(document); editMessage = nil; selectionAvailable = false
+        } catch { editMessage = error.localizedDescription }
+    }
+    @discardableResult func confirmLeaving() -> Bool {
+        guard hasPendingEdits else { return true }
+        let alert = NSAlert(); alert.messageText = "Save PDF highlights?"
+        alert.informativeText = "The original PDF has not been changed."
+        alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Discard")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: return saveChanges()
+        case .alertThirdButtonReturn: discardChanges(); return !hasPendingEdits
+        default: return false
+        }
+    }
     func highlight(selection captured: PDFSelection? = nil, color chosenColor: HighlightColor? = nil) {
         guard !saving, let document, let selection = captured ?? view?.currentSelection, let digest, let url = editableURL() else { return }
         let regions = HighlightRegion.make(selection: selection, document: document), chosen = chosenColor ?? color
         guard !regions.isEmpty else { editMessage = "Select text to highlight."; return }
+        if protection.requiresConsent {
+            if protection.isLocked { protection.refuse(); return }
+            do {
+                let source = try Data(contentsOf: url, options: .mappedIfSafe)
+                guard PDFHighlightStore.digest(source) == digest, try protection.allowEdit(data: source) else { throw PDFHighlightStore.Failure.changed }
+                try PDFEditing.validate(document, annotationsOnly: true)
+                let graph = stagedGraph ?? PDFCommentGraph(document: document, sourceData: source, allowSignatureChanges: true)
+                stagedGraph = graph
+                let marks = try PDFEditing.highlights(for: selection, in: document, color: chosen)
+                for (page, note) in marks { page.addAnnotation(note); graph.add(note, parent: nil) }
+                stagedHighlights.append(marks); hasPendingEdits = true; canUndoHighlight = true
+                view?.clearSelection(); view?.needsDisplay = true; editMessage = nil
+            } catch { editMessage = error.localizedDescription }
+            return
+        }
         saving = true; editMessage = nil
         Task {
             do {
@@ -78,6 +142,12 @@ final class SearchPDFModel: ObservableObject {
         }
     }
     func undoHighlight() {
+        if let last = stagedHighlights.popLast() {
+            for (page, note) in last { page.removeAnnotation(note); stagedGraph?.remove(note) }
+            hasPendingEdits = !stagedHighlights.isEmpty; canUndoHighlight = hasPendingEdits
+            if !hasPendingEdits { stagedGraph = nil; protection.committed() }
+            view?.needsDisplay = true; return
+        }
         guard !saving, let document, let data = undoData, let digest, let url = editableURL() else { return }
         saving = true; editMessage = nil
         Task {
@@ -99,6 +169,8 @@ final class SearchPDFModel: ObservableObject {
     }
     func takeRestoredPage() -> Int? { defer { restoredPage = nil }; return restoredPage }
     func close() {
+        guard !hasPendingEdits else { return }
+        protection.finish(); stagedGraph = nil; stagedHighlights = []
         task?.cancel(); generation = UUID(); document = nil; path = nil; revision = nil; loading = false; restoredPage = nil; selectionAvailable = false; undoData = nil; digest = nil; canUndoHighlight = false; editMessage = nil
         citationMessage = nil
         if let selectionObserver { NotificationCenter.default.removeObserver(selectionObserver) }; selectionObserver = nil; view = nil
@@ -116,6 +188,11 @@ struct SearchPDFPreview: View {
     private final class Presentation: ObservableObject { @Published var translation: SelectionTranslation? }
     @StateObject private var model = SearchPDFModel()
     @StateObject private var zoom = ReaderZoom()
+    init(hit: LibraryHit?, query: String, revision: UUID, open: @escaping (URL) -> Void, citation: AssistantCitation? = nil,
+         askSelection: ((PDFSelectionContext) -> Void)? = nil, editing: SearchPDFModel? = nil) {
+        self.hit = hit; self.query = query; self.revision = revision; self.open = open; self.citation = citation; self.askSelection = askSelection
+        _model = StateObject(wrappedValue: editing ?? SearchPDFModel())
+    }
     var body: some View {
         VStack(spacing: 0) {
             if let hit {
@@ -130,6 +207,11 @@ struct SearchPDFPreview: View {
                     HStack(spacing: 12) {
                         ReaderZoomControls(zoom: zoom)
                         Spacer(minLength: 0)
+                        if model.protection.requiresConsent { PDFProtectionButton(protection: model.protection, unlock: model.requestEditingUnlock) }
+                        if model.hasPendingEdits {
+                            Button("Save") { _ = model.saveChanges() }.disabled(model.saving)
+                            Button("Discard") { model.discardChanges() }.disabled(model.saving)
+                        }
                         if model.saving { ProgressView().controlSize(.small) }
                         Button { model.highlight() } label: { Image(systemName: "highlighter") }.remileHelp("Highlight selected text and save to PDF").accessibilityLabel("Highlight selected text").disabled(!model.selectionAvailable || model.saving)
                         Menu {
@@ -144,7 +226,7 @@ struct SearchPDFPreview: View {
                 if let message = model.citationMessage { Text(message).font(RemileType.caption).foregroundStyle(.secondary).padding([.horizontal, .bottom], 12) }
                 Divider()
                 if model.loading { ProgressView("Loading PDF…").frame(maxWidth: .infinity, maxHeight: .infinity) }
-                else if let error = model.error { ContentUnavailableView(error, systemImage: "doc.badge.exclamationmark") }
+                else if let error = model.error { ContentUnavailableView(error, systemImage: "exclamationmark.triangle") }
                 else if let document = model.document {
                     if hit.page > 0 && hit.page <= document.pageCount { SearchPDFCanvas(document: document, page: hit.page, query: query, editing: model, citation: citation, zoom: zoom, selectionActions: selectionActions(hit)) }
                     else { ContentUnavailableView("Page changed. Update the Library index.", systemImage: "arrow.clockwise") }
@@ -157,6 +239,7 @@ struct SearchPDFPreview: View {
         PDFSelectionActions(highlight: { context, color in
             guard context.document === model.document else { return }; model.highlight(selection: context.selection, color: color)
         }, addNote: { context in
+            if model.protection.isLocked { model.protection.refuse(); return }
             guard context.document === model.document, let passage = context.passages(path: hit.path).first else { return }
             let destination = LibraryHit(path: hit.path, folderID: hit.folderID, page: passage.location.unit, excerpt: passage.text, score: 0)
             ReaderNavigation.shared.reveal(destination, query: "", noteExcerpt: passage.text); open(URL(fileURLWithPath: hit.path))

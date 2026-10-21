@@ -1,8 +1,6 @@
 import SwiftUI
 
 private final class SettingsPresentation: ObservableObject {
-    @Published var historyMessage: String?
-    @Published var confirmClear = false
     @Published var section = "General"
 }
 
@@ -10,15 +8,15 @@ struct ReaderSettings: View {
     @AppStorage("markdown.autoPair") private var autoPair = true
     @AppStorage("markdown.livePreview") private var livePreview = true
     @AppStorage("editor.sidebarArtwork") private var sidebarArtwork = true
+    @AppStorage(AnimationPolicy.preference) private var animations = true
     @AppStorage(ReaderScrolling.preference) private var elasticScrolling = true
     @AppStorage(PaperSize.preference) private var paper = PaperSize.a4.rawValue
     @AppStorage(PaperSize.landscapePreference) private var landscape = false
     @AppStorage("reader.markdownSerif") private var serif = false
     @AppStorage(ReaderAppearance.preference) private var appearance = ReaderAppearance.system.rawValue
     @AppStorage(ReaderZoom.preference) private var markdownZoom = 100
-    @AppStorage(AssistantResponseDetail.preference) private var responseDetail = AssistantResponseDetail.mid.rawValue
-    @AppStorage(AssistantHistoryRetention.preference) private var retention = AssistantHistoryRetention.days30.rawValue
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var windows = RemileWindows.shared
     @StateObject private var presentation = SettingsPresentation()
 
     var body: some View {
@@ -40,10 +38,12 @@ struct ReaderSettings: View {
                         Section("Version & updates") { RemileUpdateSettings() }
                         Section("Appearance") {
                             Toggle("Sidebar artwork", isOn: $sidebarArtwork)
+                            Toggle("Animations", isOn: $animations)
                             Picker("Theme", selection: $appearance) {
                                 ForEach(ReaderAppearance.allCases, id: \.rawValue) { Text($0.rawValue).tag($0.rawValue) }
                             }.pickerStyle(.segmented)
                         }
+                        Section("Network") { OfflineModeControl(); SettingsHint("Pause online services; keep working locally.") }
                         Section("Reading") {
                             Toggle("Serif text in Markdown", isOn: $serif)
                             Toggle("Elastic scrolling", isOn: $elasticScrolling)
@@ -68,38 +68,13 @@ struct ReaderSettings: View {
                         }
                     }.formStyle(.grouped).scrollContentBackground(.hidden) }
                     else if presentation.section == "Search" { LibrarySearchSettings() }
-                    else if presentation.section == "LaTeX" { TeXSettings() }
+                    else if presentation.section == "LaTeX" { TeXSettings(project: windows.active?.texProject) }
                     else { Form {
-                        Section("Connection & usage") { ChatGPTSettings(showsHeading: false) }
-                        Section("Responses") {
-                            Picker("Detail", selection: $responseDetail) {
-                                ForEach(AssistantResponseDetail.allCases, id: \.rawValue) { Text($0.rawValue).tag($0.rawValue) }
-                            }.pickerStyle(.segmented)
-                        }
-                        Section("Conversation history") {
-                            Picker("Keep conversations", selection: $retention) {
-                                ForEach(AssistantHistoryRetention.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
-                            }.onChange(of: retention) {
-                                do { try AssistantHistory.applyRetention(); presentation.historyMessage = nil }
-                                catch { presentation.historyMessage = "Unable to update Ask history." }
-                            }
-                            HStack {
-                                Text("Saved locally on this Mac").foregroundStyle(.secondary)
-                                Spacer()
-                                Button("Clear History…", role: .destructive) { presentation.confirmClear = true }
-                            }
-                            if let message = presentation.historyMessage { Text(message).font(.caption).foregroundStyle(.secondary) }
-                        }
+                        Section("AI assistance") { ChatGPTSettings(showsHeading: false) }
                     }.formStyle(.grouped).scrollContentBackground(.hidden) }
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).background(RemileStyle.background).smoothScrolling()
             }
-        }.frame(width: 720, height: 560).background(RemileStyle.background)
-            .confirmationDialog("Clear all Ask conversations?", isPresented: $presentation.confirmClear) {
-                Button("Clear History", role: .destructive) {
-                    do { try AssistantHistory.clearAll(); presentation.historyMessage = "History cleared." }
-                    catch { presentation.historyMessage = "Unable to clear Ask history." }
-                }
-            } message: { Text("This removes saved conversations from this Mac.") }
+        }.frame(width: 720, height: 560).background(RemileStyle.background).presentationBackground(RemileStyle.background)
     }
     private func category(_ name: String, symbol: String) -> some View {
         Button { presentation.section = name } label: {
@@ -111,25 +86,22 @@ struct ReaderSettings: View {
 }
 
 struct LibrarySearchSettings: View {
-    @AppStorage(SearchQuestion.preference) private var interpretQuestions = true
+    @AppStorage(SearchBoostPolicy.preference) private var boostingEnabled = true
     @AppStorage(SearchQuestion.spellingPreference) private var spellingSuggestions = true
     var body: some View {
         Form {
-            Section("Matching") {
-                Toggle("Interpret English questions", isOn: $interpretQuestions)
-                Text("Find key words and common word endings in questions. Each key word must appear.\nKeywords stay literal. Put an exact phrase in quotes.")
-                    .font(RemileType.caption).foregroundStyle(.secondary).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+            Section("Search boosting") {
+                Toggle("Boost search with Apple Intelligence", isOn: $boostingEnabled)
+                SettingsHint("Apple Intelligence expands questions on this Mac.")
+                SettingsHint("Offline and Manual use standard search.")
             }
             Section("Suggestions") {
                 Toggle("Suggest spelling corrections", isOn: $spellingSuggestions)
-                Text("Shown when a search finds no matches.\nChoose a suggestion to search again.")
-                    .font(RemileType.caption).foregroundStyle(.secondary).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+                SettingsHint("Choose a correction when no matches are found.")
             }
             Section("Your library") {
-                Text("Manage folders and indexing in Library.\nUse Update Index after changing files.")
-                    .font(RemileType.callout).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
-                Text("Search stays on this Mac. No AI is used.\nChanges apply immediately.")
-                    .font(RemileType.caption).foregroundStyle(.secondary).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+                SettingsHint("Manage folders and refresh files in Library.")
+                SettingsHint("Search stays on this Mac.")
             }
         }.formStyle(.grouped).scrollContentBackground(.hidden)
     }
