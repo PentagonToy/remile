@@ -89,3 +89,23 @@ if CommandLine.arguments.count > 2 {
     try result.write(to: directory.appendingPathComponent("readme.html"), atomically: true, encoding: .utf8)
 }
 print("\(checks) Markdown/MathML checks passed")
+
+// A failed figure or unsupported formula must not hide the surrounding reading text.
+let mixed = "Before ![remote figure](https://example.invalid/figure.png)\n\n$\\unsupported{x}$ and $x^2$\n\nAfter <img src=\"missing.png\" alt=\"local figure\">"
+var reading = MarkdownHTML(baseURL: directory.appendingPathComponent("fixture.md"), preview: true)
+let readable = try reading.document(mixed)
+try verify(readable.contains("Before") && readable.contains("After"), "Preview retains text around unavailable assets")
+try verify(reading.unavailableImages == 1 && readable.contains("image unavailable") && readable.contains("remile-image:"), "Preview routes remote images through the loader and substitutes missing local images")
+try verify(reading.literalFormulas == 1 && readable.contains("unsupported") && readable.contains("<math"), "Preview preserves unsupported TeX and renders supported maths")
+try verify(!readable.contains("src=\"https://"), "Preview does not bypass the remote image loader")
+var strict = MarkdownHTML(baseURL: directory.appendingPathComponent("fixture.md"))
+var strictFailed = false
+do { _ = try strict.document(mixed) } catch { strictFailed = true }
+try verify(strictFailed, "Strict export still rejects unavailable content")
+print("Preview fallback checks passed")
+
+for formula in [#"x^{\prime} \circ \arccos(y) \ll z \mid t \|u\|"#, #"\begin{equation*}x=1\tag{1}\end{equation*}"#, #"\begin{gather*}x=1\\y=2\end{gather*}"#, #"\begin{align*}x&=1\\y&=2\end{align*}"#] {
+    let renderedFormula = try MathMarkup.render(formula, display: true)
+    precondition(renderedFormula.contains("<math"))
+}
+print("Paper notation checks passed")

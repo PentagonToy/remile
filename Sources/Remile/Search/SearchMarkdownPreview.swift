@@ -11,7 +11,7 @@ final class SearchMarkdownModel: ObservableObject {
             let url = URL(fileURLWithPath: path), source = try SearchMarkdown.read(url)
             try Task.checkCancellation()
             let anchors = Dictionary(uniqueKeysWithValues: SearchMarkdown.sections(source).map { ($0.line, $0.number) })
-            var renderer = MarkdownHTML(baseURL: url)
+            var renderer = MarkdownHTML(baseURL: url, preview: true)
             return try renderer.document(source, anchors: anchors)
         }
         do {
@@ -60,12 +60,28 @@ struct SearchMarkdownCanvas: NSViewRepresentable {
         var html = "", section = 0, query = "", dark = false, loaded = false
         var generation = UUID()
         var citation: AssistantCitation?
+        let remoteImages = MarkdownRemoteImages()
+        weak var web: WKWebView?
+        private var networkObserver: NSObjectProtocol?
+        override init() {
+            super.init()
+            networkObserver = NotificationCenter.default.addObserver(forName: NetworkAccessGate.changed, object: NetworkAccess.gate, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.applyRemotePolicy() }
+            }
+        }
+        deinit { if let networkObserver { NotificationCenter.default.removeObserver(networkObserver) } }
+        func applyRemotePolicy() {
+            if NetworkAccess.offline { remoteImages.cancelAll(); remoteImages.clearCache() }
+            guard loaded, let web else { return }
+            web.evaluateJavaScript("window.remileSetOffline?.(\(NetworkAccess.offline ? "true" : "false"))", completionHandler: nil)
+        }
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             decisionHandler(action.navigationType == .other && action.request.url?.scheme == "about" ? .allow : .cancel)
         }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { loaded = true; refresh(webView) }
         func refresh(_ web: WKWebView) {
             guard loaded else { return }
+            applyRemotePolicy()
             generation = UUID(); let token = generation, query = query, section = section, citation = citation
             let scopeScript = """
             const anchor=document.getElementById('section-\(section)');
@@ -119,7 +135,9 @@ struct SearchMarkdownCanvas: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration(); config.websiteDataStore = .nonPersistent()
-        let web = WKWebView(frame: .zero, configuration: config); web.navigationDelegate = context.coordinator
+        config.setURLSchemeHandler(context.coordinator.remoteImages, forURLScheme: MarkdownRemoteImages.scheme)
+        config.userContentController.addUserScript(WKUserScript(source: MarkdownImagePresentation.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        let web = WKWebView(frame: .zero, configuration: config); web.navigationDelegate = context.coordinator; context.coordinator.web = web
         return web
     }
     func updateNSView(_ web: WKWebView, context: Context) {
@@ -130,5 +148,5 @@ struct SearchMarkdownCanvas: NSViewRepresentable {
         if newDocument { state.html = html; state.loaded = false; state.generation = UUID(); web.loadHTMLString(html, baseURL: nil) }
         else if changed { state.refresh(web) }
     }
-    static func dismantleNSView(_ web: WKWebView, coordinator: Coordinator) { coordinator.generation = UUID(); web.stopLoading(); web.navigationDelegate = nil }
+    static func dismantleNSView(_ web: WKWebView, coordinator: Coordinator) { coordinator.generation = UUID(); coordinator.remoteImages.cancelAll(); web.stopLoading(); web.navigationDelegate = nil }
 }

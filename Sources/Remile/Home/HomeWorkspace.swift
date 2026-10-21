@@ -110,7 +110,7 @@ struct HomeWorkspace: View {
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Editors").font(RemileType.heading)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 10)], spacing: 10) {
+                        HomeCardLayout(minimumWidth: 160) {
                             Button { model.newMarkdown() } label: { Label("Markdown", systemImage: "square.and.pencil").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("New Markdown document").tourTarget("markdown")
                             Button { model.chooseTeX() } label: { Label("LaTeX", systemImage: "doc.text").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("Open a LaTeX project").tourTarget("latex").modifier(ToolFileDrop(model: model, target: .latex))
                             Menu {
@@ -121,7 +121,7 @@ struct HomeWorkspace: View {
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Document tools").font(RemileType.heading)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 10)], spacing: 10) {
+                        HomeCardLayout(minimumWidth: 200) {
                             tool("Convert", symbol: "doc.badge.arrow.up", detail: "Images, Word & Markdown", compact: compact) { model.presentConversion() }.modifier(ToolFileDrop(model: model, target: .convert))
                             tool("Compress", symbol: "arrow.down.right.and.arrow.up.left", detail: "Smaller PDFs", compact: compact) { model.presentCompression() }.modifier(ToolFileDrop(model: model, target: .compress))
                             tool("Combine", symbol: "square.stack", detail: "PDF or Markdown", compact: compact) { model.create(.combine, open: open) }.modifier(ToolFileDrop(model: model, target: .combine))

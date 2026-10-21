@@ -16,6 +16,8 @@ cat "$project_directory/Sources/Remile/App/NetworkAccess.swift" \
     "$project_directory/Sources/Remile/Markdown/MarkdownEditing.swift" \
     "$project_directory/Sources/Remile/Markdown/MathCompletion.swift" \
     "$project_directory/Sources/Remile/Markdown/MarkdownEditor.swift" \
+    "$project_directory/Sources/Remile/Markdown/MarkdownRemoteImages.swift" \
+    "$project_directory/Sources/Remile/Markdown/MarkdownImagePresentation.swift" \
     "$project_directory/Sources/Remile/Markdown/MarkdownPreview.swift" \
     "$project_directory/Tests/MarkdownExperienceChecks/main.swift" > "$check_directory/markdown-experience.swift"
 swift -module-cache-path "$check_directory/module-cache" "$check_directory/markdown-experience.swift" "$check_directory"

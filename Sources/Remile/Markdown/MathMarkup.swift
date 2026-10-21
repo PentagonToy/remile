@@ -102,6 +102,7 @@ enum MathMarkup {
                     return Node(xml: "<mroot>\(try atom().xml)<mrow>\(degree)</mrow></mroot>")
                 }
                 return Node(xml: "<msqrt>\(try atom().xml)</msqrt>")
+            case "tag": return Node(xml: "<mspace width=\"1em\"/><mtext>(\(escape(try rawGroup())))</mtext>")
             case "text", "textrm", "operatorname": return Node(xml: "<mtext>\(escape(try rawGroup()))</mtext>")
             case "mathrm", "mathbf", "mathit", "mathbb", "mathcal", "mathscr", "mathsf", "mathtt", "boldsymbol":
                 let variant = ["mathrm": "normal", "mathbf": "bold", "mathit": "italic", "mathbb": "double-struck", "mathcal": "script", "mathscr": "script", "mathsf": "sans-serif", "mathtt": "monospace", "boldsymbol": "bold-italic"][name]!
@@ -120,7 +121,7 @@ enum MathMarkup {
             }
         }
         mutating func matrix(name: String) throws -> Node {
-            let names = ["matrix", "pmatrix", "bmatrix", "Bmatrix", "vmatrix", "Vmatrix", "aligned", "align", "cases", "gathered", "smallmatrix"]
+            let names = ["matrix", "pmatrix", "bmatrix", "Bmatrix", "vmatrix", "Vmatrix", "aligned", "align", "align*", "equation", "equation*", "gather", "gather*", "cases", "gathered", "smallmatrix"]
             guard names.contains(name) else { throw Failure.command("begin{\(name)}") }
             let closing = Array("\\end{\(name)}")
             let start = position
@@ -135,7 +136,7 @@ enum MathMarkup {
             guard position < characters.count else { throw Failure.syntax }
             let source = String(characters[start..<position]); position += closing.count
             let rows = split(source, separator: "\\\\")
-            let aligned = ["align", "aligned"].contains(name)
+            let aligned = ["align", "align*", "aligned"].contains(name)
             var table = aligned ? "<mtable columnalign=\"right left\" columnspacing=\"0em\" rowspacing=\"0.3em\">" : "<mtable>"
             for row in rows where !row.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 table += "<mtr>"
@@ -166,9 +167,9 @@ enum MathMarkup {
             var map: [String: (String, String)] = [:]
             let greek = ["alpha":"α","beta":"β","gamma":"γ","delta":"δ","epsilon":"ϵ","varepsilon":"ε","zeta":"ζ","eta":"η","theta":"θ","vartheta":"ϑ","iota":"ι","kappa":"κ","lambda":"λ","mu":"μ","nu":"ν","xi":"ξ","pi":"π","varpi":"ϖ","rho":"ρ","varrho":"ϱ","sigma":"σ","varsigma":"ς","tau":"τ","upsilon":"υ","phi":"ϕ","varphi":"φ","chi":"χ","psi":"ψ","omega":"ω","Gamma":"Γ","Delta":"Δ","Theta":"Θ","Lambda":"Λ","Xi":"Ξ","Pi":"Π","Sigma":"Σ","Upsilon":"Υ","Phi":"Φ","Psi":"Ψ","Omega":"Ω"]
             for (key, value) in greek { map[key] = (value, "mi") }
-            let operators = ["sum":"∑","prod":"∏","int":"∫","iint":"∬","iiint":"∭","oint":"∮","partial":"∂","nabla":"∇","infty":"∞","cdot":"⋅","times":"×","div":"÷","pm":"±","mp":"∓","le":"≤","leq":"≤","ge":"≥","geq":"≥","ne":"≠","neq":"≠","approx":"≈","equiv":"≡","sim":"∼","simeq":"≃","propto":"∝","to":"→","rightarrow":"→","leftarrow":"←","leftrightarrow":"↔","Rightarrow":"⇒","Leftarrow":"⇐","Leftrightarrow":"⇔","in":"∈","notin":"∉","subset":"⊂","subseteq":"⊆","supset":"⊃","supseteq":"⊇","cup":"∪","cap":"∩","bigcup":"⋃","bigcap":"⋂","forall":"∀","exists":"∃","neg":"¬","land":"∧","lor":"∨","ldots":"…","cdots":"⋯","vdots":"⋮","ddots":"⋱","langle":"⟨","rangle":"⟩","lvert":"|","rvert":"|","lVert":"‖","rVert":"‖","{":"{","}":"}","%":"%","$":"$","_":"_","#":"#","&":"&","backslash":"\\","emptyset":"∅","perp":"⊥","parallel":"∥","otimes":"⊗","oplus":"⊕"]
+            let operators = ["sum":"∑","prod":"∏","int":"∫","iint":"∬","iiint":"∭","oint":"∮","partial":"∂","nabla":"∇","infty":"∞","cdot":"⋅","times":"×","div":"÷","pm":"±","mp":"∓","le":"≤","leq":"≤","ge":"≥","geq":"≥","ne":"≠","neq":"≠","approx":"≈","equiv":"≡","sim":"∼","simeq":"≃","propto":"∝","to":"→","rightarrow":"→","leftarrow":"←","leftrightarrow":"↔","Rightarrow":"⇒","Leftarrow":"⇐","Leftrightarrow":"⇔","in":"∈","notin":"∉","subset":"⊂","subseteq":"⊆","supset":"⊃","supseteq":"⊇","cup":"∪","cap":"∩","bigcup":"⋃","bigcap":"⋂","forall":"∀","exists":"∃","neg":"¬","land":"∧","lor":"∨","ldots":"…","cdots":"⋯","vdots":"⋮","ddots":"⋱","langle":"⟨","rangle":"⟩","lvert":"|","rvert":"|","lVert":"‖","rVert":"‖","{":"{","}":"}","%":"%","$":"$","_":"_","#":"#","&":"&","backslash":"\\","emptyset":"∅","perp":"⊥","parallel":"∥","otimes":"⊗","oplus":"⊕","prime":"′","circ":"∘","ll":"≪","mid":"∣","|":"‖"]
             for (key, value) in operators { map[key] = (value, "mo") }
-            for name in ["sin", "cos", "tan", "cot", "sec", "csc", "sinh", "cosh", "tanh", "log", "ln", "exp", "lim", "max", "min", "sup", "inf", "det", "gcd"] { map[name] = (name, "mi") }
+            for name in ["sin", "cos", "tan", "arccos", "arcsin", "arctan", "cot", "sec", "csc", "sinh", "cosh", "tanh", "log", "ln", "exp", "lim", "max", "min", "sup", "inf", "det", "gcd"] { map[name] = (name, "mi") }
             return map
         }()
     }

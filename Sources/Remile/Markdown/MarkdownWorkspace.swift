@@ -183,7 +183,7 @@ struct MarkdownWorkspace: View {
         }
     }
     private var previewURL: URL { fileURL ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Untitled.md") }
-    private func render() { Task { @MainActor in await preview.render(source, url: previewURL) } }
+    private func render() { preview.retryRemoteImages(); Task { @MainActor in await preview.render(source, url: previewURL) } }
     private func exportPDF() {
         guard !presentation.printing else { return }
         let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = (fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled") + ".pdf"

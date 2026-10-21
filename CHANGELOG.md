@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Separate saved Overleaf project management from import. Add tag filters, coloured tag marks, sorting and persistent manual ordering.
+- Load remote Markdown images online through bounded, cancellable requests. Keep reading previews available offline or when images or TeX notation are unsupported, using labelled placeholders or source text.
+- Make blank title-bar space draggable while preserving toolbar controls. Fill Home card rows to the banner width at wide and narrow window sizes.
+- Give the disk image a drag-to-Applications layout with a paper background and installation arrow.
+
 ## 0.1.2 — 2026-10-21
 
 - Add PDF drawing, rectangles and ellipses, with colour selection and Undo. Defer annotation serialisation until Save and preview strokes as vector overlays.

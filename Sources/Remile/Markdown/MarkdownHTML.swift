@@ -20,7 +20,10 @@ struct MarkdownHTML {
     let baseURL: URL
     private var references: [String: String] = [:]
     private var imageBytes = 0
-    init(baseURL: URL) { self.baseURL = baseURL }
+    private let preview: Bool
+    private(set) var unavailableImages = 0
+    private(set) var literalFormulas = 0
+    init(baseURL: URL, preview: Bool = false) { self.baseURL = baseURL; self.preview = preview }
 
     mutating func document(_ source: String, anchors: [Int: Int] = [:]) throws -> String {
         guard source.utf8.count <= 8_000_000 else { throw Failure.tooLarge }
@@ -46,7 +49,7 @@ struct MarkdownHTML {
                 index += 1; var code: [String] = []
                 while index < lines.count && !lines[index].trimmingCharacters(in: .whitespaces).hasPrefix(fence) { code.append(lines[index]); index += 1 }
                 guard index < lines.count else { throw Failure.markup }; index += 1
-                if ["math", "latex", "tex"].contains(language.lowercased()) { html += try MathMarkup.render(code.joined(separator: "\n"), display: true) }
+                if ["math", "latex", "tex"].contains(language.lowercased()) { html += try formula(code.joined(separator: "\n"), display: true) }
                 else { html += "<pre><code>\(MathMarkup.escape(code.joined(separator: "\n")))</code></pre>" }
                 continue
             }
@@ -64,7 +67,7 @@ struct MarkdownHTML {
                     }
                     guard found else { throw Failure.markup }
                 }
-                html += try MathMarkup.render(formula, display: true); continue
+                html += try self.formula(formula, display: true); continue
             }
             if index + 1 < lines.count, let alignments = Self.tableRule(lines[index + 1]), line.contains("|") {
                 let headers = Self.cells(line)
@@ -103,8 +106,8 @@ struct MarkdownHTML {
         }
         guard !html.isEmpty else { throw Failure.empty }
         return """
-        <!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src 'none'; script-src 'none'; connect-src 'none'; frame-src 'none'; base-uri 'none'"><style>
-        @page { size:letter; margin:36pt; } *{box-sizing:border-box}html,body{margin:0;padding:0;background:white;color:#171c20}body{font:11pt -apple-system,BlinkMacSystemFont,sans-serif;line-height:1.5;overflow-wrap:anywhere}h1,h2,h3,h4,h5,h6{line-height:1.2;break-after:avoid;margin:1em 0 .5em}h1{font-size:24pt}h2{font-size:19pt}h3{font-size:15pt}p{margin:.65em 0}pre{background:#f2f3f4;padding:10pt;white-space:pre-wrap;overflow-wrap:anywhere}code{font:10pt ui-monospace,monospace}blockquote{border-left:3pt solid #c9c9c9;margin:10pt 0;padding-left:12pt}table{width:100%;border-collapse:collapse;margin:12pt 0;table-layout:fixed}thead{display:table-header-group}tr{break-inside:avoid}th,td{border:0.5pt solid #b8b8b8;padding:6pt;vertical-align:top}th{background:#eee}img{display:inline-block;max-width:100%;max-height:650pt;object-fit:contain;vertical-align:middle;break-inside:avoid}.picture-dark{display:none}@media print{.picture-dark{display:none!important}.picture-light{display:inline!important}}math[display=block]{margin:12pt 0;break-inside:avoid;font-size:13pt}math{font-family:"STIX Two Math","STIXGeneral","Times New Roman",serif}hr{border:0;border-top:1pt solid #bbb}a{color:inherit;text-decoration:underline}
+        <!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: remile-image:; style-src 'unsafe-inline'; font-src 'none'; script-src 'none'; connect-src 'none'; frame-src 'none'; base-uri 'none'"><style>
+        @page { size:letter; margin:36pt; } *{box-sizing:border-box}html,body{margin:0;padding:0;background:white;color:#171c20}body{font:11pt -apple-system,BlinkMacSystemFont,sans-serif;line-height:1.5;overflow-wrap:anywhere}h1,h2,h3,h4,h5,h6{line-height:1.2;break-after:avoid;margin:1em 0 .5em}h1{font-size:24pt}h2{font-size:19pt}h3{font-size:15pt}p{margin:.65em 0}pre{background:#f2f3f4;padding:10pt;white-space:pre-wrap;overflow-wrap:anywhere}code{font:10pt ui-monospace,monospace}blockquote{border-left:3pt solid #c9c9c9;margin:10pt 0;padding-left:12pt}table{width:100%;border-collapse:collapse;margin:12pt 0;table-layout:fixed}thead{display:table-header-group}tr{break-inside:avoid}th,td{border:0.5pt solid #b8b8b8;padding:6pt;vertical-align:top}th{background:#eee}.remote-image,.unavailable-image{display:block;position:relative;min-height:120px;border:1px dashed #a7a7a7;border-radius:6px;margin:12px 0;text-align:center}.unavailable-image{padding:40px 16px}.remote-image img{display:block;margin:auto;max-width:100%}.remote-image:not([data-loaded]) img{opacity:0;min-height:120px}.image-placeholder{position:absolute;inset:0;display:grid;place-items:center;padding:16px;font:14px -apple-system,sans-serif}.remote-image[data-loaded]{border:0;min-height:0}.remote-image[data-loaded] .image-placeholder{display:none}img{display:inline-block;max-width:100%;max-height:650pt;object-fit:contain;vertical-align:middle;break-inside:avoid}.picture-dark{display:none}@media print{.picture-dark{display:none!important}.picture-light{display:inline!important}}math[display=block]{margin:12pt 0;break-inside:avoid;font-size:13pt}math{font-family:"STIX Two Math","STIXGeneral","Times New Roman",serif}hr{border:0;border-top:1pt solid #bbb}a{color:inherit;text-decoration:underline}
         </style></head><body>\(html)</body></html>
         """
     }
@@ -160,6 +163,7 @@ struct MarkdownHTML {
             return html
         }
         while position < chars.count {
+            if position.isMultiple(of: 256) { try Task.checkCancellation() }
             if chars[position] == "\\", position + 1 < chars.count, ["<", "!", "`"].contains(chars[position + 1]) {
                 plain += String(chars[position...position + 1]); position += 2; continue
             }
@@ -201,7 +205,7 @@ struct MarkdownHTML {
                 }
                 if end < chars.count {
                     result += styled(plain); plain = ""
-                    result += try MathMarkup.render(String(chars[(start + width)..<end]), display: false)
+                    result += try formula(String(chars[(start + width)..<end]), display: false)
                     position = end + width; continue
                 }
             }
@@ -218,7 +222,7 @@ struct MarkdownHTML {
                 } else { path = references[alt.lowercased()] }
                 if let path {
                     result += styled(plain); plain = ""
-                    result += "<img alt=\"\(MathMarkup.escape(alt))\" src=\"\(try embeddedImage(path))\">"
+                    result += try imageTag(["alt": alt, "src": path])
                     position = next; continue
                 }
                 throw Failure.image(alt)
@@ -234,13 +238,46 @@ struct MarkdownHTML {
         for key in ["width", "height"] {
             if let raw = attributes[key], let value = Int(raw), value > 0 && value <= 10_000 { size += " \(key)=\"\(value)\"" }
         }
-        return "<img alt=\"\(MathMarkup.escape(attributes["alt"] ?? ""))\" src=\"\(try embeddedImage(path))\"\(size)>"
+        let reference = Self.imageReference(path)
+        if preview, let remote = URL(string: reference.hasPrefix("//") ? "https:" + reference : reference),
+           ["http", "https"].contains(remote.scheme?.lowercased() ?? ""), remote.host != nil, remote.user == nil, remote.password == nil {
+            var address = URLComponents(); address.scheme = "remile-image"; address.host = "load"
+            address.queryItems = [URLQueryItem(name: "url", value: remote.absoluteString)]
+            if let url = address.url {
+                let src = MathMarkup.escape(url.absoluteString), alt = MathMarkup.escape(attributes["alt"] ?? "Image")
+                return "<span class=\"remote-image\"><img loading=\"lazy\" alt=\"\(alt)\" src=\"\(src)\" data-remote-src=\"\(src)\"\(size)><span class=\"image-placeholder\">Loading image…</span></span>"
+            }
+        }
+        do { return "<img alt=\"\(MathMarkup.escape(attributes["alt"] ?? ""))\" src=\"\(try embeddedImage(path))\"\(size)>" }
+        catch {
+            try Task.checkCancellation()
+            guard preview else { throw error }
+            unavailableImages += 1
+            let alt = attributes["alt"].flatMap { $0.isEmpty ? nil : $0 } ?? "Image"
+            return "<span class=\"unavailable-image\" role=\"img\" aria-label=\"\(MathMarkup.escape(alt))\">\(MathMarkup.escape(alt)) · image unavailable</span>"
+        }
     }
 
-    private mutating func embeddedImage(_ reference: String) throws -> String {
+    private mutating func formula(_ source: String, display: Bool) throws -> String {
+        try Task.checkCancellation()
+        do { return try MathMarkup.render(source, display: display) }
+        catch {
+            guard preview, error is MathMarkup.Failure else { throw error }
+            literalFormulas += 1
+            let code = "<code class=\"math-source\">\(MathMarkup.escape(source))</code>"
+            return display ? "<pre>\(code)</pre>" : code
+        }
+    }
+
+    private static func imageReference(_ reference: String) -> String {
         var path = reference.trimmingCharacters(in: .whitespaces)
         if path.hasPrefix("<"), let end = path.firstIndex(of: ">") { path = String(path[path.index(after: path.startIndex)..<end]) }
         else if let title = path.range(of: " \"") { path = String(path[..<title.lowerBound]) }
+        return path
+    }
+
+    private mutating func embeddedImage(_ reference: String) throws -> String {
+        let path = Self.imageReference(reference)
         let data: Data
         if path.hasPrefix("data:image/"), let comma = path.firstIndex(of: ","), path[..<comma].hasSuffix(";base64"), let decoded = Data(base64Encoded: String(path[path.index(after: comma)...])) { data = decoded }
         else {
@@ -311,7 +348,7 @@ private final class MarkdownImageFragment: NSObject, XMLParserDelegate {
 }
 
 /// Rebuilds a passive SVG subset; source scripts, CSS, entities and external references never enter WebKit.
-private final class MarkdownSVG: NSObject, XMLParserDelegate {
+final class MarkdownSVG: NSObject, XMLParserDelegate {
     private var output = "", depth = 0, nodes = 0, valid = true
     private static let elements: Set<String> = ["svg", "g", "defs", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "linearGradient", "radialGradient", "stop", "clipPath", "title", "desc", "text", "tspan"]
     private static let attributes: Set<String> = ["xmlns", "viewBox", "width", "height", "x", "y", "x1", "x2", "y1", "y2", "cx", "cy", "r", "rx", "ry", "fx", "fy", "d", "points", "id", "fill", "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-opacity", "stroke-linecap", "stroke-linejoin", "stroke-dasharray", "stroke-dashoffset", "stroke-miterlimit", "opacity", "transform", "offset", "stop-color", "stop-opacity", "gradientUnits", "gradientTransform", "spreadMethod", "clip-path", "clip-rule", "clipPathUnits", "preserveAspectRatio", "font-family", "font-size", "font-weight", "text-anchor", "dominant-baseline", "dx", "dy"]

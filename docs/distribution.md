@@ -21,4 +21,4 @@ Quit remile. before replacing the app. Use Homebrew for Homebrew installations. 
 
 `VERSION` supplies the package version. Set `REMILE_BUILD_DIRECTORY` to an external output directory and run `tools/prepare_app.sh` to build the app with its artwork, licences and CLI. The default signature is ad hoc. `REMILE_SIGN_IDENTITY` selects a Developer ID identity with hardened runtime and timestamp; notarisation and stapling are separate operations.
 
-Run `tools/prepare_dmg.sh /absolute/remile.app /absolute/output` to create `remile-VERSION-ARCH.dmg`, `SHA256SUMS` and a draft Homebrew cask. Keep the tested source commit, app version and `vVERSION` release tag aligned. Publish the matching DMG and checksum, then update the tap with that checksum.
+Run `tools/prepare_dmg.sh /absolute/remile.app /absolute/output` to create `remile-VERSION-ARCH.dmg`, `SHA256SUMS` and a draft Homebrew cask. The installer opens with remile.app and an Applications shortcut on a paper background. Keep the tested source commit, app version and `vVERSION` release tag aligned. Publish the matching DMG and checksum, then update the tap with that checksum.
