@@ -27,20 +27,21 @@ struct OverleafAutoSync: ViewModifier {
             }
     }
     private func sync() async {
-        guard Date().timeIntervalSince(clock.lastEdit) >= 1.9, !Task.isCancelled, !library.offlineMode, !NetworkAccess.offline, library.hasNetwork, !library.busy, library.review == nil, !project.compiling else { return }
-        guard project.save() else { return }
-        await library.syncLocalChanges(connection)
+        guard !library.liveOwned.contains(connection.id), Date().timeIntervalSince(clock.lastEdit) >= 1.9, !Task.isCancelled, !library.offlineMode, !NetworkAccess.offline, library.hasNetwork, !library.busy, library.review == nil, !project.compiling else { return }
+        await library.syncLocalChanges(connection, save: project.save)
     }
 }
 
 extension OverleafLibrary {
     /// New remote revisions always go through the existing manual comparison.
-    func syncLocalChanges(_ project: OverleafConnection) async {
-        guard !busy, !offlineMode, !NetworkAccess.offline, hasNetwork, review == nil, !automaticPaused.contains(project.id), !Task.isCancelled else { return }
+    func syncLocalChanges(_ project: OverleafConnection, save: () -> Bool = { true }) async {
+        guard !busy, !OverleafCredential.locked(project.profileID), !liveOwned.contains(project.id), !offlineMode, !NetworkAccess.offline, hasNetwork, review == nil, !automaticPaused.contains(project.id), !Task.isCancelled else { return }
         busy = true; syncRevision += 1
         defer { busy = false }
         let root = root(project), reviews = directory.appendingPathComponent("Reviews")
         do {
+            let writer = try writerLease(project); defer { withExtendedLifetime(writer) {} }
+            guard save() else { return }
             let changed = try await Task.detached(priority: .utility) { try OverleafAutoPublisher.needsCheck(project, root: root) }.value
             guard !Task.isCancelled, !offlineMode, !NetworkAccess.offline else { return }
             if !changed { if syncedAt[project.id] == nil || statuses[project.id] != .online || pendingFiles.contains(project.id) { markSynced(project.id) }; error = nil; return }
@@ -59,7 +60,8 @@ extension OverleafLibrary {
             markSynced(project.id); error = nil
         } catch {
             statuses[project.id] = .changes
-            self.error = error.localizedDescription
+            // Passive sync reports a locked account in the toolbar, not a repeating modal.
+            if !OverleafCredential.locked(project.profileID) { self.error = error.localizedDescription }
         }
     }
 }

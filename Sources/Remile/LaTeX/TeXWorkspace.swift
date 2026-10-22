@@ -12,7 +12,7 @@ struct TeXWorkspace: View {
     @StateObject private var preview = TeXPDFController()
     @StateObject private var presentation = Presentation()
     private final class Presentation: ObservableObject {
-        @Published var compactTools = false; @Published var notice = false; @Published var renameProject = false; @Published var renameSource = false; @Published var files = false; @Published var pane = "Source" }
+        @Published var review = false; @Published var compactTools = false; @Published var notice = false; @Published var renameProject = false; @Published var renameSource = false; @Published var files = false; @Published var pane = "Source" }
     @AppStorage("latex.fontSize") private var fontSize = 17
     @AppStorage("editor.language") private var language = "Automatic"
     @AppStorage("editor.spellcheck") private var spellcheck = true
@@ -23,19 +23,23 @@ struct TeXWorkspace: View {
             toolbar
             Divider()
             GeometryReader { geometry in
+                let dividerWidth = ReaderSplit<EmptyView, EmptyView>.handleWidth
                 if geometry.size.width < 820 {
                     VStack(spacing: 0) {
                         HStack {
                             Button { presentation.files.toggle() } label: { Label("Files", systemImage: "sidebar.left") }.remileHelp("Files and outline")
-                                .popover(isPresented: $presentation.files) { TeXProjectSidebar(project: project).frame(width: 250, height: 460) }
+                                .popover(isPresented: $presentation.files) { projectSidebar.frame(width: 300, height: 520) }
                             Spacer()
                             Picker("Pane", selection: $presentation.pane) { Text("Source").tag("Source"); Text("Preview").tag("Preview") }.labelsHidden().pickerStyle(.segmented).frame(width: 190)
                         }.padding(8)
                         if presentation.pane == "Source" { sourcePane } else { previewPane }
                     }
                 } else {
-                    ReaderSplit(initial: 220, minimum: 160, maximum: 340, minimumContent: 580, label: "project files", revealToken: navigationToken, pane: { TeXProjectSidebar(project: project) }, content: {
-                        ReaderSplit(initial: 440, minimum: 260, maximum: 1400, minimumContent: 280, label: "LaTeX source", revealToken: navigationToken, pane: { sourcePane }, content: { previewPane })
+                    ReaderSplit(initial: min(ReaderSidebar.preferredWidth(in: geometry.size.width), max(160, geometry.size.width / 2 - 260 - dividerWidth * 1.5)), minimum: 160, maximum: ReaderSidebar.maximum, minimumContent: 580, label: "project files", revealToken: navigationToken, pane: { projectSidebar }, content: {
+                        GeometryReader { editorGeometry in
+                            // Include the file sidebar so the divider meets the window title's centre.
+                            ReaderSplit(initial: editorGeometry.size.width - geometry.size.width / 2 - dividerWidth / 2, minimum: 260, maximum: max(1400, geometry.size.width), minimumContent: 280, label: "LaTeX source", revealToken: navigationToken, pane: { sourcePane }, content: { previewPane })
+                        }
                     })
                 }
             }
@@ -44,9 +48,7 @@ struct TeXWorkspace: View {
         .task(id: project.selected + project.source.wrappedValue + language + String(spellcheck)) { await writing.check(project.source.wrappedValue, enabled: spellcheck, language: language, editor: editor) }
         .onAppear {
             editor.syncToPreview = { project.syncToPDF(line: $0) }; preview.reverse = { project.syncToSource($0) }
-            editor.synonymsRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return }; _ = writing?.showSuggestion(at: range, in: view, editor: editor, synonymsOnly: true) }
             editor.proofreadRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return }; writing?.proofread(range, in: view, editor: editor) }
-            editor.writingIssueRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return false }; return writing?.showSuggestion(at: range, in: view, editor: editor) ?? false }
             editor.dismissWriting = { [weak writing = writing] in writing?.dismissSuggestion() }
             project.editSource = { [weak editor = editor, weak project = project] file, before, after, name in
                 guard let editor, let project, let view = editor.textView, !view.hasMarkedText() else { return false }
@@ -55,8 +57,10 @@ struct TeXWorkspace: View {
                 editor.apply(.init(range: NSRange(location: 0, length: (before as NSString).length), text: after, selection: NSRange(location: 0, length: 0)), name: name)
                 return true
             }
-            if !TeXConfiguration.current.missingTools(buffers: project.buffers).isEmpty { project.setupNeeded = true }
+            if !TeXConfiguration.current.missingTools(buffers: project.buffers).isEmpty { project.message = "TeX tools are missing." }
         }
+        .onChange(of: project.compiling) { if !project.compiling { presentation.pane = "Preview" } }
+        .onChange(of: project.compileFailed) { if project.compileFailed { presentation.pane = "Preview" } }
         .onChange(of: project.selected) { presentation.renameProject = false; presentation.renameSource = false; if project.buffers[project.selected] == nil { presentation.pane = "Source" } }
         .onDisappear { project.editSource = nil; writing.dismissSuggestion() }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.toggleComment"))) { event in if event.object as? TeXProject === project { editor.toggleComment() } }
@@ -96,7 +100,21 @@ struct TeXWorkspace: View {
             else if project.showsLog { TeXLogPanel(project: project) }
         }
     }
-    private var navigationToken: String { project.selected + (project.sourceJump?.id.uuidString ?? "") + (project.pdfJump?.id.uuidString ?? "") + String(project.showsLog) + String(project.showsHistory) }
+    private var projectSidebar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Button("Files") { presentation.review = false }.font(RemileType.caption.weight(presentation.review ? .regular : .semibold))
+                Button("Review") { presentation.review = true }.font(RemileType.caption.weight(presentation.review ? .semibold : .regular))
+                Spacer(minLength: 0)
+            }.buttonStyle(.plain).padding(.horizontal, 12).padding(.vertical, 10)
+            Divider()
+            ZStack {
+                TeXProjectSidebar(project: project).opacity(presentation.review ? 0 : 1).allowsHitTesting(!presentation.review).accessibilityHidden(presentation.review)
+                if presentation.review { ManuscriptReviewPanel(project: project) }
+            }
+        }
+    }
+    private var navigationToken: String { String(presentation.review) +  project.selected + (project.sourceJump?.id.uuidString ?? "") + (project.pdfJump?.id.uuidString ?? "") + String(project.showsLog) + String(project.showsHistory) }
     private func noticeTitle(_ message: String) -> String {
         switch message {
         case "Check TeX references after moving or renaming a file.": return "Check TeX references"
@@ -116,7 +134,7 @@ struct TeXWorkspace: View {
                         Button(action: close) { Image(systemName: "chevron.left") }.remileHelp("Home")
                         Text(title).font(RemileType.callout.weight(.semibold)).lineLimit(1).fixedSize()
                         Spacer(minLength: 0)
-                        if let message = project.message {
+                        if let message = project.message, message != "Compilation failed", message != "Edited · recompile" {
                             Button { presentation.notice.toggle() } label: { Text(noticeTitle(message)).font(RemileType.caption).fixedSize(horizontal: true, vertical: false) }
                                 .buttonStyle(.plain).remileHelp(message)
                                 .popover(isPresented: $presentation.notice) { Text(message).font(RemileType.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true).padding(16).frame(width: 300, alignment: .leading).background(RemileStyle.background) }
@@ -130,27 +148,33 @@ struct TeXWorkspace: View {
             HStack(alignment: .center, spacing: 8) {
                 Button { project.goBack() } label: { Image(systemName: "arrow.backward") }.disabled(project.backFiles.isEmpty).remileHelp("Return to the previous source location")
                 Button { project.goForward() } label: { Image(systemName: "arrow.forward") }.disabled(project.forwardFiles.isEmpty).remileHelp("Go to the next source location")
-                AIProviderButton()
+                Button {
+                    presentation.review.toggle()
+                    if geometry.size.width < 820 { presentation.files = true }
+                } label: { Label("Review", systemImage: "doc.text.magnifyingglass") }
+                    .accessibilityLabel("Manuscript review").bubbleHelp("Questions to consider before submission").frame(height: 32)
                 if geometry.size.width >= 900 {
                 EditorToolsMenu(project: project, editor: editor)
                 Button { showExternalEdits.toggle() } label: { Image(systemName: showExternalEdits ? "eye" : "eye.slash") }.remileHelp(RemileHints.edits(showExternalEdits)).accessibilityLabel("Show AI and CLI edits")
                 Button { project.captureHistory(file: project.selected); project.showsHistory.toggle(); project.showsLog = false; presentation.pane = "Preview" } label: { Image(systemName: "clock.arrow.circlepath") }.remileHelp(RemileHints.history(project.showsHistory))
-                Button { project.showsHistory = false; project.showsLog.toggle(); presentation.pane = "Preview" } label: { Image(systemName: project.showsLog ? "doc.richtext" : "terminal") }.remileHelp(RemileHints.logs(project.showsLog))
+                Button { project.showsHistory = false; project.showsLog = true; presentation.pane = "Preview" } label: { Image(systemName: "terminal") }.remileHelp("Build logs").accessibilityLabel("Build logs")
                 } else {
                     Menu {
                         Button("Editor tools…") { presentation.compactTools = true }
                         Button(showExternalEdits ? "Hide AI and CLI edits" : "Show AI and CLI edits") { showExternalEdits.toggle() }
                         Button("History") { project.captureHistory(file: project.selected); project.showsHistory.toggle(); project.showsLog = false; presentation.pane = "Preview" }
-                        Button("Build logs") { project.showsHistory = false; project.showsLog.toggle(); presentation.pane = "Preview" }
+                        Button("Build logs") { project.showsHistory = false; project.showsLog = true; presentation.pane = "Preview" }
                     } label: { Image(systemName: "ellipsis").frame(width: 32, height: 32) }
                     .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).accessibilityLabel("Editor options")
                     .popover(isPresented: $presentation.compactTools) { EditorToolsMenu(project: project, editor: editor).padding(12) }
                 }
+                Button { project.showsLog = false; project.showsHistory = false; presentation.pane = "Preview" } label: { Image(systemName: "doc.richtext") }
+                    .remileHelp(project.pdf == nil ? "Compile to create a PDF" : "Show the last successful PDF").accessibilityLabel("Show PDF")
                 Spacer(minLength: 0)
                 TeXExportButton(project: project).frame(width: 32, height: 32).remileHelp("Export")
                 if !project.compiling, project.compileFailed || project.setupNeeded || project.setupIssue != nil || project.diagnostics.contains(where: { $0.severity == .error }) {
-                    Button { project.setupNeeded.toggle() } label: { Image(systemName: "exclamationmark.circle.fill").accessibilityLabel("Errors").font(RemileType.caption).foregroundStyle(RemileStyle.warning) }
-                        .remileHelp(compileErrorHint)
+                    Button { project.setupNeeded = false; project.showsHistory = false; project.showsLog = true; presentation.pane = "Preview" } label: { Image(systemName: "exclamationmark.circle.fill").accessibilityLabel("Errors").font(RemileType.caption).foregroundStyle(RemileStyle.warning) }
+                        .remileHelp("Show errors")
                         .popover(isPresented: $project.setupNeeded, arrowEdge: .bottom) {
                             TeXCompileGuidance(project: project) {
                                 project.setupNeeded = false; project.showsLog = true; presentation.pane = "Preview"
@@ -160,6 +184,9 @@ struct TeXWorkspace: View {
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 14)).foregroundStyle(RemileStyle.success).frame(width: 24, height: 32)
                         .remileHelp("PDF matches the current source.")
                         .accessibilityLabel("PDF matches the current source")
+                } else if !project.compiling, project.pdf != nil, !project.outputCurrent {
+                    Image(systemName: "circle.dashed").font(.system(size: 14)).foregroundStyle(RemileStyle.warning).frame(width: 24, height: 32)
+                        .remileHelp("Source changed. Compile to update the PDF.").accessibilityLabel("PDF needs compiling")
                 }
                 if project.compiling { ProgressView().controlSize(.small).frame(width: 24, height: 32); Button("Stop") { project.stop() } }
                 else { Button { project.compile(); presentation.pane = "Preview" } label: { HStack(alignment: .center, spacing: 6) { Image(systemName: "play.fill").font(.system(size: 13)).frame(width: 18, height: 20); if geometry.size.width >= 900 { Text("Compile").font(RemileType.callout.weight(.semibold)) } }.frame(height: 32).foregroundStyle(RemileStyle.accent) }.keyboardShortcut(.return, modifiers: [.command]).remileHelp("Compile PDF · ⌘Return") }
@@ -188,7 +215,7 @@ struct TeXWorkspace: View {
         let missing = TeXConfiguration.current.missingTools(buffers: project.buffers)
         if !missing.isEmpty { return "Missing tools: " + missing.joined(separator: ", ") + ". Click for setup help." }
         let error = TeXDiagnostics.primaryError(project.diagnostics)?.message ?? "Compilation failed."
-        return String(error.prefix(220)) + " Click for details."
+        return error + " Click for details."
     }
 }
 
@@ -259,7 +286,7 @@ struct TeXSettings: View {
             }
             Section("Compilation") {
                 Picker("Time limit", selection: $compileTimeLimit) { ForEach(TeXConfiguration.timeLimitOptions, id: \.self) { Text("\($0) seconds").tag($0) } }
-                SettingsHint("Increase for large projects; stop at any time.")
+                SettingsHint("Allow more time for large projects.")
                 Toggle("Build bibliography", isOn: $bibliography); SettingsHint("Automatic uses XeLaTeX for fontspec.") }
         }.formStyle(.grouped).scrollContentBackground(.hidden)
             .onDisappear { environment.cancel() }

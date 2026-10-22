@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 @MainActor final class TeXProject: ObservableObject {
     let identity = UUID()
+    lazy var review = ManuscriptReviewStore.shared(for: root)
     @Published private(set) var root: URL
     @Published private var connectedName: String?
     @Published private(set) var renamingProject = false
@@ -51,6 +52,7 @@ import UniformTypeIdentifiers
             if !compiling && (!log.isEmpty || pdf != nil) { message = "Edited · recompile" }
             if submissionCheck, message != "Source changed · recheck" { message = "Source changed · recheck" }
             for file in changed {
+                bufferHashes.removeValue(forKey: file)
                 pendingHistory.insert(file)
                 if var tracker = provenance[file], let before = oldValue[file], let after = buffers[file] { tracker.transition(before: before, after: after); provenance[file] = tracker; externalEdits[file] = tracker.ranges }
             }
@@ -86,6 +88,7 @@ import UniformTypeIdentifiers
     @Published var diagnostics: [TeXDiagnostic] = []
     @Published var pdfJump: PDFJump?
     @Published var sourceJump: SourceJump?
+    private var diagnosticSource: URL?
     @Published var syncing = false
     struct PDFJump { let id = UUID(); let location: TeXSync.PDFLocation }
     struct SourceJump { let id = UUID(); let location: TeXSync.SourceLocation }
@@ -93,6 +96,13 @@ import UniformTypeIdentifiers
     private var compileID = UUID()
     private var syncTask: Task<Void, Never>?
     private var original: [String: String]
+    private var bufferHashes: [String: String] = [:]
+    var cachedSourceHashCount: Int { bufferHashes.count }
+    /// Shared by review and CLI readers. Edits invalidate only the files that changed.
+    var sourceHashes: [String: String] {
+        for (file, source) in buffers where bufferHashes[file] == nil { bufferHashes[file] = SourceDigest.sha256(source) }
+        return bufferHashes
+    }
     private var cachedBuild: URL?
     private var job: TeXCompileJob?
     private var task: Task<Void, Never>?
@@ -123,8 +133,22 @@ import UniformTypeIdentifiers
         collections = TeXCollections.read(self.root)
         revisions = historyEnabled ? TeXHistory.read(self.root) : []; outline = TeXOutlineItem.project(sources, main: initial); captureHistory(file: initial)
     }
-    deinit { TeXCache.discard(cachedBuild) }
+    deinit { task?.cancel(); job?.stop(); outlineTask?.cancel(); historyTask?.cancel(); syncTask?.cancel(); TeXCache.discard(cachedBuild) }
     var dirty: Bool { buffers != original }
+    /// Live updates touch one known source, with buffer and disk compare-and-swap checks.
+    func installLiveSource(_ file: String, expected: String, text: String, expectedDisk: String) throws {
+        guard buffers[file] == expected, files.contains(file), treeFiles.contains(file) else { throw OverleafLive.Failure.staleDraft }
+        let url = root.appendingPathComponent(file)
+        guard url.resolvingSymlinksInPath() == url.standardizedFileURL,
+              url.path.hasPrefix(root.path + "/"),
+              try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw OverleafLive.Failure.staleDraft }
+        let disk = try String(contentsOf: url, encoding: .utf8)
+        guard disk == expectedDisk || disk == expected else { throw OverleafLive.Failure.staleDraft }
+        try OverleafLive.validate(text)
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        if expected != text { buffers[file] = text }
+        original[file] = text
+    }
     var source: Binding<String> { Binding(get: { self.buffers[self.selected] ?? "" }, set: { if self.buffers[self.selected] != nil { self.buffers[self.selected] = $0 } }) }
     @discardableResult func save() -> Bool {
         do {
@@ -146,7 +170,12 @@ import UniformTypeIdentifiers
     }
     func compile(output: URL? = nil, scratch: Bool = false, submissionCheck: Bool = false) {
         guard !compiling else { return }
-        if TeXConfiguration.current.missingTools(buffers: buffers, submissionCheck: submissionCheck).isEmpty == false { setupIssue = nil; setupNeeded = true; compileFailed = true; message = "TeX tools are missing."; return }
+        if !TeXConfiguration.current.missingTools(buffers: buffers, submissionCheck: submissionCheck).isEmpty {
+            setupIssue = nil; setupNeeded = false; compileFailed = true; showsLog = true; showsHistory = false
+            message = "TeX tools are missing."
+            diagnostics = [TeXDiagnostic(id: 0, severity: .error, message: message!, file: nil, line: nil)]
+            return
+        }
         setupIssue = nil; setupNeeded = false; compileFailed = false
         self.submissionCheck = submissionCheck
         compileID = UUID(); let id = compileID
@@ -157,6 +186,7 @@ import UniformTypeIdentifiers
         let root = root, main = main, buffers = buffers, configuration = TeXConfiguration.current
         let destination = output ?? TeXCache.allocate("LaTeX")
         let managed = output == nil
+        diagnosticSource = destination.appendingPathComponent("Source", isDirectory: true)
         task = Task { @MainActor [weak self] in
             var retained = false
             defer { if managed && !retained { TeXCache.discard(destination) } }
@@ -166,13 +196,15 @@ import UniformTypeIdentifiers
                 if let data = result.pdf, let document = PDFDocument(data: data) {
                     self.outputCurrent = self.buffers == buffers && self.main == main
                     self.pdf = document; self.message = self.outputCurrent ? nil : "Edited · recompile"
+                    self.compileFailed = !result.success || self.diagnostics.contains { $0.severity == .error }
+                    self.showsLog = submissionCheck || self.compileFailed; self.showsHistory = false
                     if submissionCheck { self.message = self.buffers == buffers && self.main == main ? "Submission check passed" : "Source changed · recheck"; self.showsLog = true }
                     TeXCache.discard(self.cachedBuild); self.cachedBuild = managed ? destination : nil; retained = managed
                     self.build = TeXBuild(pdf: result.output, source: destination.appendingPathComponent("Source"), executable: URL(fileURLWithPath: configuration.directory).appendingPathComponent("synctex"), buffers: buffers, main: main)
                 }
                 else {
                     self.message = submissionCheck ? "Submission check failed" : "Compilation failed"; self.showsLog = true
-                    self.setupIssue = TeXSetupIssue.detect(result.log); self.setupNeeded = true; self.compileFailed = true
+                    self.setupIssue = TeXSetupIssue.detect(result.log); self.setupNeeded = false; self.showsHistory = false; self.compileFailed = true
                 }
             } catch {
                 if let self, self.compileID == id {
@@ -180,7 +212,7 @@ import UniformTypeIdentifiers
                     let captured = (try? String(contentsOf: destination.appendingPathComponent("compiler.log"), encoding: .utf8)) ?? ""
                     self.log = String((captured + "\n" + (self.message ?? "Compilation failed")).suffix(150000))
                     self.diagnostics = TeXDiagnostics.parse(self.log)
-                    if !(error is CancellationError) { self.showsLog = true; self.setupIssue = TeXSetupIssue.detect(self.log); self.setupNeeded = true; self.compileFailed = true }
+                    if !(error is CancellationError) { self.showsLog = true; self.setupIssue = TeXSetupIssue.detect(self.log); self.setupNeeded = false; self.showsHistory = false; self.compileFailed = true }
                 }
             }
             self?.compiling = false; self?.job = nil
@@ -349,8 +381,17 @@ import UniformTypeIdentifiers
             } catch { message = error.localizedDescription }
         }
     }
+    func chooseFiles() {
+        guard !compiling else { return }
+        let panel = NSOpenPanel(); panel.title = "Add files"; panel.prompt = "Add Files"
+        panel.allowsMultipleSelection = true; panel.canChooseDirectories = false
+        guard panel.runModal() == .OK else { return }
+        let folder = treeFolders.contains(selected) ? selected : (selected as NSString).deletingLastPathComponent
+        drop(panel.urls, into: folder)
+    }
     func drop(_ urls: [URL], into folder: String) {
-        guard !compiling, !urls.isEmpty, urls.count <= 20 else { return }
+        guard !compiling, !urls.isEmpty else { return }
+        guard urls.count <= 20 else { message = "Add up to 20 files at a time."; return }
         for url in urls {
             let prefix = root.standardizedFileURL.path + "/", local = url.standardizedFileURL.path
             if local.hasPrefix(prefix) {
@@ -391,6 +432,7 @@ import UniformTypeIdentifiers
             captureHistory(file: selected); try FileManager.default.moveItem(at: root, to: target)
             let history = TeXHistory.directory(old), destination = TeXHistory.directory(target)
             if FileManager.default.fileExists(atPath: history.path), !FileManager.default.fileExists(atPath: destination.path) { try? FileManager.default.copyItem(at: history, to: destination) }
+            do { try review.relocate(to: target) } catch { try? FileManager.default.moveItem(at: target, to: old); throw error }
             root = target; main = String(main); renamedRoot?(old, target); return true
         } catch { message = error.localizedDescription; return false }
     }
@@ -428,7 +470,7 @@ import UniformTypeIdentifiers
                 let location = try await Task.detached { try TeXSync.forward(build, file: file, line: line) }.value
                 guard let self, !Task.isCancelled, !self.compiling, self.build?.pdf == build.pdf else { return }
                 guard self.buffers == build.buffers, self.main == build.main else { self.message = "Recompile to match source and PDF."; return }
-                self.showsLog = false; self.pdfJump = PDFJump(location: location)
+                self.message = nil; self.showsLog = false; self.showsHistory = false; self.pdfJump = PDFJump(location: location)
             } catch { self?.message = error.localizedDescription }
         }
     }
@@ -441,19 +483,29 @@ import UniformTypeIdentifiers
                 let target = try await Task.detached { try TeXSync.reverse(build, location: location) }.value
                 guard let self, !Task.isCancelled, !self.compiling, self.build?.pdf == build.pdf else { return }
                 guard self.buffers == build.buffers, self.main == build.main else { self.message = "Recompile to match source and PDF."; return }
-                self.selected = target.file; self.sourceJump = SourceJump(location: target)
+                self.message = nil; self.selected = target.file; self.sourceJump = SourceJump(location: target)
             } catch { self?.message = error.localizedDescription }
         }
     }
-    func reveal(_ diagnostic: TeXDiagnostic) {
-        guard let path = diagnostic.file, let line = diagnostic.line else { return }
-        let source = build?.source ?? root
-        let url = URL(fileURLWithPath: path, relativeTo: source).standardizedFileURL
-        let prefix = source.standardizedFileURL.path + "/"
-        guard url.path.hasPrefix(prefix) else { return }
-        let file = String(url.path.dropFirst(prefix.count)); guard buffers[file] != nil else { return }
-        selected = file; sourceJump = SourceJump(location: .init(file: file, line: max(0, line - 1)))
+    func diagnosticLocation(_ diagnostic: TeXDiagnostic) -> TeXSync.SourceLocation? {
+        guard let path = diagnostic.file, let line = diagnostic.line, line > 0 else { return nil }
+        let roots = [diagnosticSource, build?.source, root].compactMap { $0 }
+        for source in roots {
+            let base = URL(fileURLWithPath: source.path, isDirectory: true).standardizedFileURL
+            let url = path.hasPrefix("/") ? URL(fileURLWithPath: path).standardizedFileURL : base.appendingPathComponent(path).standardizedFileURL
+            let prefix = base.path + "/"
+            guard url.path.hasPrefix(prefix) else { continue }
+            let file = String(url.path.dropFirst(prefix.count))
+            if buffers[file] != nil { return .init(file: file, line: line - 1) }
+        }
+        return nil
     }
+    func reveal(_ diagnostic: TeXDiagnostic) {
+        guard let location = diagnosticLocation(diagnostic) else { return }
+        showsHistory = false
+        selected = location.file; sourceJump = SourceJump(location: location)
+    }
+
     func export() {
         guard let bytes = pdf?.dataRepresentation() else { return }
         let panel = NSSavePanel(); panel.allowedContentTypes = [.pdf]; panel.nameFieldStringValue = (main as NSString).deletingPathExtension + ".pdf"

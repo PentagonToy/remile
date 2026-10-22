@@ -2,12 +2,12 @@ import SwiftUI
 import AppKit
 
 @MainActor final class EditorWritingReview: ObservableObject {
-    struct Issue: Identifiable { let range: NSRange; let message: String; let replacement: String?; var alternatives: [String] = []; var id: Int { range.location } }
+    struct Issue: Identifiable { let range: NSRange; let message: String; var replacement: String?; var alternatives: [String] = []; var id: Int { range.location } }
     @Published var issues: [Issue] = []
     @Published var checking = false
     @Published var presented = false
     private var suggestion: NSPopover?
-    private var synonymTask: Task<Void, Never>?
+    private var proofreadingTask: Task<Void, Never>?
     private var generation = UUID()
     private(set) var source = ""
     func check(_ source: String, enabled: Bool, language: String, editor: MarkdownEditorController) async {
@@ -29,8 +29,7 @@ import AppKit
                 var issues: [Issue] = []
                 for result in results where EditorSpellcheck.accepts(result.range, excluded: excluded) {
                     if result.resultType == .spelling {
-                        let replacements = NSSpellChecker.shared.guesses(forWordRange: result.range, in: source, language: language == "Automatic" ? nil : language, inSpellDocumentWithTag: tag) ?? []
-                        issues.append(.init(range: result.range, message: "Spelling", replacement: replacements.first, alternatives: Array(replacements.prefix(3))))
+                        issues.append(.init(range: result.range, message: "Spelling", replacement: nil))
                     } else if result.resultType == .grammar {
                         for detail in result.grammarDetails ?? [] {
                             guard let relative = detail[NSGrammarRange] as? NSValue else { continue }
@@ -50,13 +49,13 @@ import AppKit
             }
         }
     }
-    func dismissSuggestion() { synonymTask?.cancel(); synonymTask = nil; suggestion?.close(); suggestion = nil }
+    func dismissSuggestion() { proofreadingTask?.cancel(); proofreadingTask = nil; suggestion?.close(); suggestion = nil }
     func proofread(_ range: NSRange, in view: NSTextView, editor: MarkdownEditorController) {
-        guard range.location != NSNotFound, range.length > 0, range.length <= 2000, NSMaxRange(range) <= (view.string as NSString).length, WritingAlternatives.enabled(correction: true) else { return }
+        guard range.location != NSNotFound, range.length > 0, range.length <= 2000, NSMaxRange(range) <= (view.string as NSString).length, WritingProofreading.enabled else { return }
         dismissSuggestion()
         let expected = view.string, selected = (view.string as NSString).substring(with: range)
         guard !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let state = WritingWordState(); state.title = "Grammar · " + WritingAlternatives.provider; state.width = 360
+        let state = WritingWordState(); state.title = "Grammar · " + WritingProofreading.provider; state.width = 360
         let popover = NSPopover(); popover.behavior = .transient
         popover.contentViewController = NSHostingController(rootView: WritingWordSuggestion(state: state) { [weak self, weak editor] replacement in
             editor?.replaceWritingIssue(range, with: replacement, source: expected); self?.dismissSuggestion()
@@ -69,9 +68,9 @@ import AppKit
         suggestion = popover; popover.show(relativeTo: anchor, of: view, preferredEdge: .maxY)
         guard EditorSpellcheck.accepts(range, excluded: EditorSpellcheck.excluded(expected)) else { state.detail = "Select prose without code, maths or TeX commands."; return }
         state.loading = true
-        synonymTask = Task { @MainActor [weak self, weak popover, weak view] in
+        proofreadingTask = Task { @MainActor [weak self, weak popover, weak view] in
             do {
-                let result = try await WritingAlternatives.suggest(text: selected, context: selected, correction: true)
+                let result = try await WritingProofreading.suggest(text: selected)
                 let choices = result.choices
                 guard !Task.isCancelled, self?.suggestion === popover, view?.string == expected else { return }
                 state.title = "Grammar · " + result.provider
@@ -83,49 +82,6 @@ import AppKit
                 state.loading = false; state.detail = error.localizedDescription
             }
         }
-    }
-    func showSuggestion(at range: NSRange, in view: NSTextView, editor: MarkdownEditorController, synonymsOnly: Bool = false) -> Bool {
-        guard view.string == source, (!checking || synonymsOnly), view.window != nil else { return false }
-        let issue = synonymsOnly ? nil : issues.first(where: { NSLocationInRange(range.location, $0.range) || NSIntersectionRange($0.range, range).length > 0 })
-        let word = issue == nil ? EditorSynonyms.word(at: range.location, in: source) : nil
-        guard issue != nil || (word != nil && WritingAlternatives.enabled(correction: false)) else { return false }
-        if !synonymsOnly, let word, issues.contains(where: { NSIntersectionRange(word.range, $0.range).length > 0 }) { return false }
-        dismissSuggestion()
-        let popover = NSPopover(); popover.behavior = .transient; popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let state = WritingWordState()
-        state.title = issue?.message ?? "Synonyms"
-        state.choices = issue.map { $0.alternatives.isEmpty ? $0.replacement.map { [$0] } ?? [] : $0.alternatives } ?? []
-        let target = issue?.range ?? word!.range, expected = source
-        popover.contentViewController = NSHostingController(rootView: WritingWordSuggestion(state: state) { [weak self, weak editor] replacement in
-            guard let self else { return }
-            editor?.replaceWritingIssue(target, with: replacement, source: expected); self.dismissSuggestion()
-        })
-        guard let layout = view.layoutManager, let container = view.textContainer else { return false }
-        let glyphs = layout.glyphRange(forCharacterRange: target, actualCharacterRange: nil)
-        var anchor = layout.boundingRect(forGlyphRange: glyphs, in: container)
-        anchor.origin.x += view.textContainerOrigin.x; anchor.origin.y += view.textContainerOrigin.y
-        let visible = view.visibleRect
-        let centre = max(visible.minX + 118, min(visible.maxX - 118, anchor.midX))
-        anchor.origin.x = centre - anchor.width / 2
-        suggestion = popover; popover.show(relativeTo: anchor, of: view, preferredEdge: .maxY)
-        if WritingAlternatives.enabled(correction: issue != nil) {
-            state.loading = true
-            synonymTask = Task { @MainActor [weak self, weak popover, weak view] in
-                do {
-                    let raw = expected as NSString, start = max(0, target.location - 240), end = min(raw.length, NSMaxRange(target) + 240)
-                    let context = raw.substring(with: NSRange(location: start, length: end - start))
-                    let result = try await WritingAlternatives.suggest(text: raw.substring(with: target), context: context, correction: issue != nil)
-                    guard !Task.isCancelled, self?.suggestion === popover, view?.string == expected else { return }
-                    state.title = (issue?.message ?? "Synonyms") + " · " + result.provider
-                    if !result.choices.isEmpty { state.choices = result.choices }; state.loading = false
-                } catch {
-                    guard !Task.isCancelled, self?.suggestion === popover else { return }
-                    state.loading = false; state.detail = state.choices.isEmpty ? error.localizedDescription : nil
-                }
-            }
-        }
-
-        return true
     }
 
 }

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "source": "brand/banners/remile_banner_dark.svg",
+      "bundle": "Brand/remile_banner_dark.svg"
+    },
+    {
+      "source": "brand/banners/remile_banner_light.svg",
+      "bundle": "Brand/remile_banner_light.svg"
+    },
+    {
+      "source": "brand/icons/remile_icon_dark_fullbleed.svg",
+      "bundle": "Brand/remile_icon_dark_fullbleed.svg"
+    },
+    {
+      "source": "brand/icons/remile_icon_dark_rounded.svg",
+      "bundle": "Brand/remile_icon_dark_rounded.svg"
+    },
+    {
+      "source": "brand/icons/remile_icon_light_fullbleed.svg",
+      "bundle": "Brand/remile_icon_light_fullbleed.svg"
+    },
+    {
+      "source": "brand/icons/remile_icon_light_rounded.svg",
+      "bundle": "Brand/remile_icon_light_rounded.svg"
+    },
+    {
+      "source": "brand/wordmarks/remile_wordmark_dark.svg",
+      "bundle": "Brand/remile_wordmark_dark.svg"
+    },
+    {
+      "source": "brand/wordmarks/remile_wordmark_light.svg",
+      "bundle": "Brand/remile_wordmark_light.svg"
+    },
+    {
+      "source": "motion/airplane/remile_airplane_dark.svg",
+      "bundle": "Brand/remile_airplane_dark.svg"
+    },
+    {
+      "source": "motion/airplane/remile_airplane_light.svg",
+      "bundle": "Brand/remile_airplane_light.svg"
+    },
+    {
+      "source": "motion/lighthouse/remile_lighthouse_dark.svg",
+      "bundle": "Brand/remile_lighthouse_dark.svg"
+    },
+    {
+      "source": "motion/lighthouse/remile_lighthouse_light.svg",
+      "bundle": "Brand/remile_lighthouse_light.svg"
+    },
+    {
+      "source": "symbols/integrations/overleaf-mark.svg",
+      "bundle": "Brand/overleaf-mark.svg"
+    },
+    {
+      "source": "symbols/providers/chatgpt.svg",
+      "bundle": "Brand/chatgpt.svg"
+    }
+  ],
+  "templates": [
+    "templates/help/bubble.json"
+  ],
+  "licences": [
+    "licences/CHATGPT-LICENSE.txt",
+    "licences/SEARCH-WORDS.txt"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "width": 320,
+  "padding": 13,
+  "fontSize": 14,
+  "hoverDelayMilliseconds": 180,
+  "animationSeconds": 0.15
+}

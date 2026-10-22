@@ -21,15 +21,45 @@ import WebKit
         var tags: [Tag] = []
     }
     enum Failure: LocalizedError {
-        case signIn, response
-        var errorDescription: String? { self == .signIn ? "Sign in once to list projects and read comments." : "Overleaf could not return this information. Try again shortly." }
+        case signIn, response, verification, permission, rateLimited, unavailable, sessionLocked
+        var needsConnection: Bool { self == .signIn || self == .verification || self == .sessionLocked }
+        var errorDescription: String? {
+            switch self {
+            case .signIn: return "Connect your Overleaf account to list projects and read comments."
+            case .response: return "Overleaf could not return this information. Try again shortly."
+            case .verification: return "Overleaf needs browser verification. Open the connection screen to continue."
+            case .permission: return "This Overleaf account does not have access to this information."
+            case .rateLimited: return "Overleaf is receiving too many requests. Wait a moment, then retry."
+            case .unavailable: return "Overleaf is temporarily unavailable. Try again shortly."
+            case .sessionLocked: return "Allow access to the saved session in Connection, or sign in again."
+            }
+        }
+    }
+    nonisolated static func isLoginURL(_ url: URL) -> Bool {
+        ["overleaf.com", "www.overleaf.com"].contains(url.host?.lowercased() ?? "") && ["/login", "/user/login"].contains(url.path)
+    }
+    nonisolated static func responseFailure(_ http: HTTPURLResponse) -> Failure? {
+        if http.statusCode == 401 { return .signIn }
+        if [301, 302, 303, 307, 308].contains(http.statusCode),
+           let location = http.value(forHTTPHeaderField: "Location"),
+           let url = URL(string: location, relativeTo: http.url)?.absoluteURL, isLoginURL(url) { return .signIn }
+        if http.statusCode == 403 { return http.mimeType?.lowercased() == "application/json" ? .permission : .verification }
+        if http.statusCode == 429 { return .rateLimited }
+        if (500...599).contains(http.statusCode) { return .unavailable }
+        guard http.statusCode == 200, http.mimeType?.lowercased() == "application/json" else { return .response }
+        return nil
     }
     private final class RedirectPolicy: NSObject, URLSessionTaskDelegate {
         func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
     }
     static func request(_ path: String, profile: UUID) async throws -> Data {
         try NetworkAccess.requireOnline()
-        await OverleafWebIdentity.restore(profile)
+        do { try await OverleafWebIdentity.restore(profile) }
+        catch Failure.sessionLocked {
+            // WebKit may still hold a valid session even when the saved backup needs approval.
+            do { return try await webRequest(URL(string: "https://www.overleaf.com" + path)!, profile: profile) }
+            catch Failure.signIn { throw Failure.sessionLocked }
+        }
         let store = WKWebsiteDataStore(forIdentifier: profile).httpCookieStore
         let cookies = await store.allCookies()
         let url = URL(string: "https://www.overleaf.com" + path)!
@@ -48,11 +78,15 @@ import WebKit
         let session = URLSession(configuration: config, delegate: RedirectPolicy(), delegateQueue: nil)
         let lease = try NetworkAccess.gate.watch(session); defer { NetworkAccess.gate.release(lease) }
         defer { session.invalidateAndCancel() }
-        let (bytes, response) = try await session.data(for: request)
+        let bytes: Data, response: URLResponse
+        do { (bytes, response) = try await session.data(for: request) }
+        catch let error as URLError where error.code == .badServerResponse {
+            webTransport.insert(profile); return try await webRequest(url, profile: profile)
+        }
         guard let http = response as? HTTPURLResponse else { throw Failure.response }
-        if http.statusCode == 403 { webTransport.insert(profile); return try await webRequest(url, profile: profile) }
-        if [301, 302, 303, 307, 308, 401].contains(http.statusCode) { throw Failure.signIn }
-        guard http.statusCode == 200, bytes.count <= 8_000_000, http.value(forHTTPHeaderField: "Content-Type")?.contains("json") == true else { throw Failure.response }
+        if http.statusCode == 403 || responseFailure(http) == .signIn { webTransport.insert(profile); return try await webRequest(url, profile: profile) }
+        if let failure = responseFailure(http) { throw failure }
+        guard bytes.count <= 8_000_000 else { throw Failure.response }
         let headers = http.allHeaderFields.reduce(into: [String: String]()) { result, field in if let key = field.key as? String, let value = field.value as? String { result[key] = value } }
         for cookie in HTTPCookie.cookies(withResponseHeaderFields: headers, for: url) { await store.setCookie(cookie) }
         await OverleafWebIdentity.remember(profile)

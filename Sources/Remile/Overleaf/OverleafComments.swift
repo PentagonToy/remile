@@ -18,7 +18,7 @@ struct OverleafComments: View {
                 Button("Done", action: close).keyboardShortcut(.cancelAction)
             }
             if let error = state.error {
-                HStack { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning); Spacer(); if state.needsSignIn { Button("Sign in") { state.signIn = true } } }
+                HStack { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning); Spacer(); if state.needsSignIn { Button("Connect Overleaf") { state.signIn = true } } }
             }
             if let archive, archive.threads.isEmpty {
                 ContentUnavailableView("No comments", systemImage: "text.bubble").frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -41,7 +41,7 @@ struct OverleafComments: View {
     private func refresh() async {
         guard !state.busy else { return }; state.busy = true; state.error = nil; state.needsSignIn = false
         do { library.comments[connection.id] = try await OverleafWebClient.comments(connection) }
-        catch { state.error = error.localizedDescription; state.needsSignIn = (error as? OverleafWebClient.Failure) == .signIn }
+        catch { state.error = error.localizedDescription; state.needsSignIn = (error as? OverleafWebClient.Failure)?.needsConnection == true }
         state.busy = false
     }
     private func export(json: Bool) {
@@ -49,6 +49,6 @@ struct OverleafComments: View {
         let panel = NSSavePanel(); panel.allowedContentTypes = json ? [.json] : [.remileMarkdown]
         panel.nameFieldStringValue = connection.name.replacingOccurrences(of: "/", with: "-") + " comments." + (json ? "json" : "md")
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try archive.data(json: json).write(to: url, options: .atomic) } catch { state.error = error.localizedDescription; state.needsSignIn = (error as? OverleafWebClient.Failure) == .signIn }
+        do { try archive.data(json: json).write(to: url, options: .atomic) } catch { state.error = error.localizedDescription; state.needsSignIn = (error as? OverleafWebClient.Failure)?.needsConnection == true }
     }
 }

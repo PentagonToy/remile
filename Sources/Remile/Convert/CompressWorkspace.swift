@@ -45,7 +45,7 @@ final class CompressionModel: ObservableObject {
                 }
                 guard !Task.isCancelled, token == generation else { DocumentConverter.discard(value.batch); throw CancellationError() }
                 result = value
-                message = value.reduced ? "\(Int((1 - Double(value.outputBytes) / Double(value.originalBytes)) * 100))% smaller" : settings.grayscale ? "Grayscale ready" : "Already optimized"
+                message = value.reduced ? "\(Int((1 - Double(value.outputBytes) / Double(value.originalBytes)) * 100))% smaller" : settings.grayscale ? "Greyscale ready" : "Already optimised"
             } catch is CancellationError { if token == generation { message = "Cancelled" } }
             catch { if token == generation { message = error.localizedDescription } }
             if token == generation { busy = false; stopping = false; task = nil }
@@ -75,13 +75,36 @@ struct CompressWorkspace: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack { Text("Compress").font(.title2.weight(.semibold)); Spacer(); Button("Choose PDF…", action: model.choose).disabled(model.busy || model.saving) }
+        VStack(spacing: 0) {
+            HStack {
+                DocumentToolHeader(title: "Compress PDF", subtitle: "Reduce size and review the result", symbol: "arrow.down.right.and.arrow.up.left")
+                if model.input != nil { Button("Change PDF…", action: model.choose).disabled(model.busy || model.saving) }
+            }.padding(.horizontal, 24).padding(.vertical, 18)
+            Divider()
+            Group {
+                if model.input == nil {
+                    DocumentToolEmptyState(symbols: ["doc.richtext", "arrow.down.right.and.arrow.up.left", "doc"], title: "Give your PDF a lighter footprint", detail: "Drop a PDF here, or choose one below.\nCompare the result before saving.", button: "Choose PDF…", formats: "PDF", choose: model.choose)
+                } else { content.padding(24) }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            Divider()
+            footer
+        }.frame(width: 940, height: 600).background(RemileStyle.background).modifier(ReaderAppearanceModifier())
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: model.busy)
+            .onChange(of: model.settings) { _, _ in model.invalidate() }
+            .dropDestination(for: URL.self) { urls, _ in
+                guard !model.busy && !model.saving, urls.count == 1, let url = urls.first, url.pathExtension.lowercased() == "pdf" else { return false }
+                model.add(url); return true
+            }
+            .interactiveDismissDisabled(model.busy || model.saving).onDisappear { model.close() }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let input = model.input { Text(input.lastPathComponent).font(RemileType.heading).lineLimit(1).truncationMode(.middle).help(input.lastPathComponent) }
             HStack(spacing: 18) {
-                Picker("Color", selection: $model.settings.grayscale) { Text("Color").tag(false); Text("Grayscale").tag(true) }.pickerStyle(.segmented).frame(width: 240)
+                Picker("Colour", selection: $model.settings.grayscale) { Text("Colour").tag(false); Text("Greyscale").tag(true) }.pickerStyle(.segmented).frame(width: 240)
                 Picker("Quality", selection: $model.settings.quality) { ForEach(CompressionSettings.Quality.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
             }.disabled(model.busy || model.saving)
-            if let input = model.input { Text(input.lastPathComponent).font(RemileType.heading).lineLimit(1) }
             if let result = model.result, let output = result.batch.outputs.first, let input = model.input {
                 HStack {
                     Text(ByteCountFormatter.string(fromByteCount: Int64(result.originalBytes), countStyle: .file) + " → " + ByteCountFormatter.string(fromByteCount: Int64(result.outputBytes), countStyle: .file)).monospacedDigit()
@@ -89,28 +112,36 @@ struct CompressWorkspace: View {
                     Picker("Preview", selection: $model.original) { Text("Original").tag(true); Text("Compressed").tag(false) }.pickerStyle(.segmented).frame(width: 240)
                 }
                 ConversionPreview(url: model.original ? input : output, initialPage: model.previewPage, pageChanged: { model.previewPage = $0 }).id(model.original ? input : output).frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else { ContentUnavailableView(model.busy ? "Compressing…" : "Choose a PDF", systemImage: "arrow.down.right.and.arrow.up.left").frame(maxWidth: .infinity, maxHeight: .infinity) }
-            VStack(alignment: .leading, spacing: 6) {
-                if model.busy { ProgressView().controlSize(.small); ProgressView(model.stopping ? "Stopping…" : "Compressing · \(model.completed) / \(model.total)", value: Double(model.completed), total: Double(max(1, model.total))) }
+            } else if model.busy {
+                VStack(spacing: 14) {
+                    ProgressView()
+                    Text("Preparing a lighter PDF…").font(RemileType.heading)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let input = model.input {
+                ConversionPreview(url: input, initialPage: model.previewPage, pageChanged: { model.previewPage = $0 }).id(input).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if model.busy { ProgressView(model.stopping ? "Stopping…" : "Compressing · \(model.completed) / \(model.total)", value: Double(model.completed), total: Double(max(1, model.total))) }
+            if let message = model.message { Text(message).font(RemileType.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
+            HStack(spacing: 12) {
+                Button("Close") { dismiss() }.disabled(model.busy || model.saving).keyboardShortcut(.cancelAction)
                 if model.saving { ProgressView("Saving…").controlSize(.small) }
-                if let message = model.message { Text(message).font(RemileType.callout).foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled) }
-            }.frame(minHeight: 36, alignment: .topLeading)
-            HStack {
-                Button("Close") { dismiss() }.disabled(model.saving)
+                else { Text("Original files stay unchanged").font(RemileType.caption).foregroundStyle(.secondary) }
                 Spacer()
                 if model.busy { Button("Stop", action: model.stop).disabled(model.stopping) }
-                else {
-                    Button("Compress", action: model.compress).disabled(model.input == nil || model.saving)
-                    Button("Save PDF…", action: model.save).buttonStyle(.borderedProminent).disabled(model.result == nil || model.saving)
+                else if model.input != nil {
+                    if model.result == nil {
+                        Button("Compress", action: model.compress).buttonStyle(.borderedProminent).disabled(model.saving).keyboardShortcut(.defaultAction)
+                    } else {
+                        Button("Compress Again", action: model.compress).disabled(model.saving)
+                        Button("Save PDF…", action: model.save).buttonStyle(.borderedProminent).disabled(model.saving).keyboardShortcut(.defaultAction)
+                    }
                 }
             }
-        }.padding(24).frame(width: 900, height: 700).background(RemileStyle.background).modifier(ReaderAppearanceModifier())
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: model.busy)
-            .onChange(of: model.settings) { _, _ in model.invalidate() }
-            .dropDestination(for: URL.self) { urls, _ in
-                guard !model.busy && !model.saving, urls.count == 1, let url = urls.first, url.pathExtension.lowercased() == "pdf" else { return false }
-                model.add(url); return true
-            }
-            .interactiveDismissDisabled(model.saving).onDisappear { model.close() }
+        }.padding(.horizontal, 24).padding(.vertical, 16).background(RemileStyle.surface)
     }
 }

@@ -8,8 +8,14 @@ final class PDFEditProtection: ObservableObject {
     @Published private(set) var requiresConsent = false
     @Published private(set) var authorised = false
     @Published private(set) var attempts = 0
+    @Published private(set) var restricted = false
     private(set) var snapshotURL: URL?
-    var isLocked: Bool { requiresConsent && !authorised }
+    var isLocked: Bool { restricted || (requiresConsent && !authorised) }
+    var explanation: String {
+        if restricted { return "This PDF has encryption or editing restrictions. Editing is unavailable." }
+        if !requiresConsent { return "No PDF editing protection detected." }
+        return authorised ? "You allowed editing for this document. Saving may affect its signatures or certification." : "This PDF has signature or certification protection. Allow editing with the lock before making changes."
+    }
     private static let directory = FileManager.default.temporaryDirectory.appendingPathComponent("remile-pdf-edits", isDirectory: true)
     private static let reapOrphans: Void = {
         let manager = FileManager.default
@@ -24,6 +30,7 @@ final class PDFEditProtection: ObservableObject {
     func configure(_ document: PDFDocument?) {
         finish()
         requiresConsent = document.map(PDFFormPreservation.hasDigitalSignature) ?? false
+        restricted = document.map { $0.isLocked || $0.isEncrypted || (!$0.allowsCommenting && !$0.allowsDocumentAssembly) } ?? false
         attempts = 0
     }
     func requireConsent() { requiresConsent = true }
@@ -31,16 +38,19 @@ final class PDFEditProtection: ObservableObject {
     /// Invoked only by the visible lock control, never automatically by a blocked edit.
     func requestUnlock(data: Data) {
         guard isLocked else { return }
+        if restricted {
+            let alert = NSAlert(); alert.messageText = "PDF editing is restricted"; alert.informativeText = explanation; alert.runModal(); return
+        }
         let alert = NSAlert(); alert.alertStyle = .warning
         alert.messageText = "Unlock PDF editing?"
-        alert.informativeText = "Changes may alter or invalidate digital signatures. A temporary original is kept until you save or discard."
+        alert.informativeText = "Changes may affect signatures or certification. The original is kept until you save or discard."
         alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Unlock Editing")
         guard alert.runModal() == .alertSecondButtonReturn else { return }
         do { try authorise(data: data) } catch { NSAlert(error: error).runModal() }
     }
     /// Call only after explicit consent. Separated from the dialog for controlled transaction tests.
     func authorise(data: Data) throws {
-        guard requiresConsent else { return }
+        guard requiresConsent, !restricted else { return }
         try keepOriginal(data)
         authorised = true
     }
@@ -79,14 +89,15 @@ struct PDFProtectionButton: View {
     @AppStorage("appearance.animations") private var animations = true
     var body: some View {
         Button(action: unlock) {
-            Image(systemName: protection.isLocked ? "lock.fill" : "lock.open.fill")
+            Image(systemName: protection.authorised ? "lock.open.fill" : "lock.fill")
+                .foregroundStyle(protection.isLocked ? Color.accentColor : protection.authorised ? Color.primary : Color.secondary.opacity(0.45))
                 .font(.system(size: 15, weight: .semibold)).frame(width: 32, height: 28).contentShape(Rectangle())
                 .modifier(LockShake(progress: (reduceMotion || !animations) ? 0 : Double(protection.attempts)))
                 .animation((reduceMotion || !animations) ? nil : .easeInOut(duration: 0.35), value: protection.attempts)
         }
         .buttonStyle(.borderless)
-        .accessibilityLabel(protection.isLocked ? "Unlock signed PDF editing" : "Signed PDF editing unlocked")
-        .help(protection.isLocked ? "Unlock editing. Changes may affect digital signatures." : "Editing unlocked for this document. The original is kept until Save or Discard.")
+        .accessibilityLabel(protection.isLocked ? "PDF editing protected" : protection.authorised ? "PDF editing allowed" : "PDF has no editing protection")
+        .help(protection.explanation)
     }
     private struct LockShake: GeometryEffect {
         var progress: Double

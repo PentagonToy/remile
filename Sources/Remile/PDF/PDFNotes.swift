@@ -14,11 +14,12 @@ enum PDFNotes {
     }
 
     static func make(text: String, author: String, bounds: CGRect) -> PDFAnnotation {
-        let note = PDFAnnotation(bounds: bounds, forType: .text, withProperties: nil)
+        let note = RemileNoteAnnotation(bounds: bounds, forType: .text, withProperties: nil)
         note.contents = text
         note.userName = author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Me" : author
         note.modificationDate = Date()
-        note.color = .systemYellow
+        note.iconType = .comment
+        note.color = NSColor(calibratedRed: 0.76, green: 0.60, blue: 0.33, alpha: 1)
         return note
     }
 
@@ -49,5 +50,37 @@ enum PDFNotes {
             if adding { page.addAnnotation(note); graph.add(note, parent: parent) }
             else { page.removeAnnotation(note); graph.remove(note) }
         }
+    }
+}
+
+/// Keep standard Text annotation metadata and hit targets, with a quiet reader appearance.
+final class RemileNoteAnnotation: PDFAnnotation {
+    override func draw(with box: PDFDisplayBox, in context: CGContext) {
+        let rect = bounds.insetBy(dx: 3, dy: 3)
+        guard rect.width > 0, rect.height > 0 else { return }
+        context.saveGState()
+        context.translateBy(x: rect.minX, y: rect.minY)
+        context.scaleBy(x: rect.width / 24, y: rect.height / 24)
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 5, y: 5))
+        path.addLine(to: CGPoint(x: 5, y: 1))
+        path.addLine(to: CGPoint(x: 10, y: 5))
+        path.addLine(to: CGPoint(x: 19, y: 5))
+        path.addQuadCurve(to: CGPoint(x: 22, y: 8), control: CGPoint(x: 22, y: 5))
+        path.addLine(to: CGPoint(x: 22, y: 19))
+        path.addQuadCurve(to: CGPoint(x: 19, y: 22), control: CGPoint(x: 22, y: 22))
+        path.addLine(to: CGPoint(x: 5, y: 22))
+        path.addQuadCurve(to: CGPoint(x: 2, y: 19), control: CGPoint(x: 2, y: 22))
+        path.addLine(to: CGPoint(x: 2, y: 8))
+        path.addQuadCurve(to: CGPoint(x: 5, y: 5), control: CGPoint(x: 2, y: 5))
+        path.closeSubpath()
+        context.setFillColor(NSColor(calibratedRed: 0.13, green: 0.18, blue: 0.21, alpha: 0.96).cgColor)
+        context.setStrokeColor(NSColor(calibratedRed: 0.76, green: 0.60, blue: 0.33, alpha: 1).cgColor)
+        context.setLineWidth(1.3); context.setLineJoin(.round); context.setLineCap(.round)
+        context.addPath(path); context.drawPath(using: .fillStroke)
+        context.move(to: CGPoint(x: 7, y: 16)); context.addLine(to: CGPoint(x: 17, y: 16))
+        context.move(to: CGPoint(x: 7, y: 11)); context.addLine(to: CGPoint(x: 14, y: 11))
+        context.strokePath()
+        context.restoreGState()
     }
 }

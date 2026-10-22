@@ -12,8 +12,8 @@ enum AssistantResponseDetail: String, CaseIterable {
     var instruction: String {
         switch self {
         case .low: "Give a brief direct answer, usually one to three sentences."
-        case .mid: "Explain the main points and supporting reasoning in a few paragraphs, Use only the length the question needs; a simple factual question needs one sentence."
-        case .high: "Give a thorough explanation with evidence, reasoning and relevant limitations, Use detail only where it adds understanding; simple questions still need short answers. Use short sections or lists if they help."
+        case .mid: "Explain the main points and supporting reasoning in a few paragraphs. Use only the length the question needs. A simple factual question needs one sentence."
+        case .high: "Give a thorough explanation with evidence, reasoning and relevant limitations. Use detail only where it adds understanding. Simple questions still need short answers. Use short sections or lists if they help."
         }
     }
 }
@@ -159,7 +159,7 @@ final class DocumentAssistant: ObservableObject {
         guard working, !Task.isCancelled else { return }
         progress = min(1, max(0, fraction))
     }
-    // Prior replies help resolve follow-ups; they never become evidence for the next answer.
+    // Prior replies help resolve follow-ups. They never become evidence for the next answer.
     var recentConversation: String {
         let history = turns.suffix(engine.expandedContext ? 8 : 2).map { turn in
             let reply = turn.answer.replacingOccurrences(of: "\\[[0-9][^\\]\\n]*\\]", with: "", options: .regularExpression)
@@ -263,7 +263,7 @@ enum AssistantHistoryRetention: Int, CaseIterable {
     }
 }
 
-/// User conversation history only; unrelated to the document search index or model caches.
+/// User conversation history only. Unrelated to the document search index or model caches.
 enum AssistantHistory {
     static let changed = Notification.Name("Remile.AskHistoryChanged")
     static var url: URL {

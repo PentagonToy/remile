@@ -27,14 +27,14 @@ struct TeXChatGPTReview: View {
                 HStack(alignment: .top) { preview("Current", edit.before, colour: RemileStyle.warning); preview("Suggested", edit.after, colour: RemileStyle.success) }.frame(height: 150)
                 HStack { Text("Review before applying.").font(RemileType.caption).foregroundStyle(.secondary); Spacer(); Button("Apply and compile") { apply(edit) }.disabled(project.compiling || project.buffers[state.file] != state.before) }
             } else {
-                Text(diagnostic.message).font(RemileType.callout).fixedSize(horizontal: false, vertical: true)
+                Text(diagnostic.displayMessage).font(RemileType.callout).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     if !connection.connected { Button("Connect ChatGPT") { state.settings = true } }
                     else { Button("Suggest fix") { request() }.disabled(project.compiling || AIUsage.shared.reason != nil) }
                     Spacer()
                 }
             }
-            if let error = state.error { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).textSelection(.enabled) }
+            if let error = state.error { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
         }.padding(18).frame(width: 460).background(RemileStyle.background)
             .task { if connection.connected { request() } }
             .sheet(isPresented: $state.settings) { ChatGPTSettings() }

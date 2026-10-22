@@ -1,10 +1,13 @@
 import Foundation
 import WebKit
 import Security
+import CryptoKit
 
 /// Session cookies belong to remile.'s account, never another browser's store.
 @MainActor enum OverleafWebIdentity {
-    private static var restored = Set<UUID>()
+    private static let access = OverleafSessionAccess()
+    private static var savedDigests: [UUID: SHA256.Digest] = [:]
+    private static var saveRetryAfter: [UUID: Date] = [:]
     private struct Cookie: Codable {
         let name: String, value: String, domain: String, path: String
         let secure: Bool, httpOnly: Bool
@@ -17,29 +20,50 @@ import Security
             return HTTPCookie(properties: properties)
         }
     }
-    private static func query(_ id: UUID) -> [String: Any] { [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "local.remile.overleaf.web", kSecAttrAccount as String: id.uuidString] }
-    static func remember(_ id: UUID) async {
-        let cookies = await WKWebsiteDataStore(forIdentifier: id).httpCookieStore.allCookies().filter { $0.domain == ".overleaf.com" || $0.domain == "overleaf.com" || $0.domain == "www.overleaf.com" || $0.domain == ".www.overleaf.com" }
-        guard !cookies.isEmpty, let bytes = try? JSONEncoder().encode(cookies.map(Cookie.init)) else { return }
-        let attributes: [String: Any] = [kSecValueData as String: bytes, kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
-        let result = SecItemAdd(query(id).merging(attributes) { _, new in new } as CFDictionary, nil)
-        if result == errSecDuplicateItem { SecItemUpdate(query(id) as CFDictionary, attributes as CFDictionary) }
+    nonisolated private static func query(_ id: UUID) -> [String: Any] { [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "local.remile.overleaf.web", kSecAttrAccount as String: id.uuidString] }
+    nonisolated static func isUsable(_ cookie: HTTPCookie, now: Date = Date()) -> Bool {
+        let domain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
+        return ["overleaf.com", "www.overleaf.com"].contains(domain.lowercased()) && (cookie.expiresDate.map { $0 > now } ?? true)
     }
-    static func restore(_ id: UUID) async {
-        guard restored.insert(id).inserted else { return }
+    @discardableResult static func remember(_ id: UUID) async -> Bool {
+        let cookies = await WKWebsiteDataStore(forIdentifier: id).httpCookieStore.allCookies().filter { isUsable($0) }.sorted { ($0.domain, $0.path, $0.name) < ($1.domain, $1.path, $1.name) }
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        guard !cookies.isEmpty, let bytes = try? encoder.encode(cookies.map(Cookie.init)) else { return false }
+        let digest = SHA256.hash(data: bytes)
+        if savedDigests[id].map({ Array($0) == Array(digest) }) == true { return true }
+        if let retry = saveRetryAfter[id], Date() < retry { return false }
+        let result = KeychainAccess.store(bytes, matching: query(id), attributes: [kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly])
+        if result == errSecSuccess { savedDigests[id] = digest; saveRetryAfter[id] = nil; return true }
+        saveRetryAfter[id] = Date().addingTimeInterval(30)
+        return false
+    }
+    static func restore(_ id: UUID, interactive: Bool = false) async throws {
         let store = WKWebsiteDataStore(forIdentifier: id).httpCookieStore
         let existing = await store.allCookies()
         // A current signed-in session takes precedence over an older saved session.
-        if existing.contains(where: { ["overleaf_session2", "overleaf.sid", "sharelatex.sid"].contains($0.name) }) { return }
-        var item: CFTypeRef?
-        let request = query(id).merging([kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]) { _, new in new }
-        guard SecItemCopyMatching(request as CFDictionary, &item) == errSecSuccess, let bytes = item as? Data, let saved = try? JSONDecoder().decode([Cookie].self, from: bytes) else { return }
-        for cookie in saved.compactMap(\.cookie) { await store.setCookie(cookie) }
+        if !interactive, existing.contains(where: { isUsable($0) && ["overleaf_session2", "overleaf.sid", "sharelatex.sid"].contains($0.name) }) { return }
+        try await access.restore(id, interactive: interactive) { try await restoreSaved(id, interactive: interactive) }
+    }
+    private static func restoreSaved(_ id: UUID, interactive: Bool) async throws {
+        let store = WKWebsiteDataStore(forIdentifier: id).httpCookieStore
+        let result = await Task.detached {
+            let request = query(id).merging([kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]) { _, new in new }
+            return KeychainAccess.read(matching: request, interactive: interactive)
+        }.value
+        guard result.status == errSecSuccess else {
+            if result.status == errSecItemNotFound { return }
+            if [errSecInteractionNotAllowed, errSecAuthFailed, errSecNotAvailable, errSecUserCanceled].contains(result.status) { throw OverleafWebClient.Failure.sessionLocked }
+            throw OverleafWebClient.Failure.response
+        }
+        guard let bytes = result.data, let saved = try? JSONDecoder().decode([Cookie].self, from: bytes) else { return }
+        try Task.checkCancellation()
+        for cookie in saved.compactMap(\.cookie) where isUsable(cookie) { await store.setCookie(cookie) }
+        if interactive { saveRetryAfter[id] = nil }
     }
 }
 
 /// Some account endpoints require WebKit's existing verified session context.
-/// This loads JSON only; it never mounts a project editor or presence socket.
+/// This loads JSON only. It never mounts a project editor or presence socket.
 @MainActor final class OverleafJSONRequest: NSObject, WKNavigationDelegate {
     private let web: WKWebView
     private let url: URL
@@ -57,19 +81,28 @@ import Security
             self?.web.stopLoading(); self?.web.navigationDelegate = nil; self?.web.loadHTMLString("", baseURL: nil); self?.finish(.failure(NetworkAccessGate.Offline()))
         } }; defer { NetworkAccess.gate.release(lease) }
         defer { timer?.cancel(); web.stopLoading(); web.navigationDelegate = nil }
-        return try await withCheckedThrowingContinuation { result in
-            self.result = result
-            timer = Task { [weak self] in do { try await Task.sleep(for: .seconds(30)); self?.finish(.failure(OverleafWebClient.Failure.response)) } catch { } }
-            web.load(URLRequest(url: url))
-        }
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { result in
+                self.result = result
+                timer = Task { [weak self] in do { try await Task.sleep(for: .seconds(30)); self?.finish(.failure(OverleafWebClient.Failure.response)) } catch { } }
+                web.load(URLRequest(url: url))
+            }
+        } onCancel: { Task { @MainActor [weak self] in self?.finish(.failure(CancellationError())) } }
     }
     private func finish(_ value: Result<Data, Error>) { guard let result else { return }; self.result = nil; result.resume(with: value) }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard !NetworkAccess.offline, action.request.url == url else { decisionHandler(.cancel); finish(.failure(OverleafWebClient.Failure.signIn)); return }
+        guard !NetworkAccess.offline else { decisionHandler(.cancel); finish(.failure(NetworkAccessGate.Offline())); return }
+        guard action.request.url == url else {
+            decisionHandler(.cancel)
+            let failure: OverleafWebClient.Failure = action.request.url.map(OverleafWebClient.isLoginURL) == true ? .signIn : .response
+            finish(.failure(failure)); return
+        }
         decisionHandler(.allow)
     }
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        guard let http = response.response as? HTTPURLResponse, http.statusCode == 200, http.value(forHTTPHeaderField: "Content-Type")?.contains("json") == true else { decisionHandler(.cancel); finish(.failure(OverleafWebClient.Failure.signIn)); return }
+        guard let http = response.response as? HTTPURLResponse else { decisionHandler(.cancel); finish(.failure(OverleafWebClient.Failure.response)); return }
+        if let failure = OverleafWebClient.responseFailure(http) { decisionHandler(.cancel); finish(.failure(failure)); return }
         decisionHandler(.allow)
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

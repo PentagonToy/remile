@@ -114,6 +114,20 @@ let wordEvent = NSEvent.mouseEvent(with: .rightMouseDown, location: location, mo
 let wordMenu = view.menu(for: wordEvent)!
 expect(view.currentSelection?.string == "Physics", "Clicking a word with no current selection captures only that word")
 expect(wordMenu.items[0].isEnabled, "Fallback word receives the same permission-checked menu")
+let note = PDFAnnotation(bounds: CGRect(x: 250, y: 450, width: 24, height: 24), forType: .text, withProperties: nil)
+note.contents = "A quiet note"; page.addAnnotation(note)
+var deletedNotes = 0
+view.selectionActions.removeNote = { ownDocument, ownNote in
+    expect(ownDocument === document && ownNote === note, "Note removal retains the exact clicked document and annotation")
+    deletedNotes += 1
+}
+let noteLocation = view.convert(view.convert(NSPoint(x: 262, y: 462), from: page), to: nil)
+let noteEvent = NSEvent.mouseEvent(with: .rightMouseDown, location: noteLocation, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+let noteMenu = view.menu(for: noteEvent)!
+expect(noteMenu.items[0].title == "Delete Note" && noteMenu.items[0].isEnabled, "Right-clicking a note exposes Delete Note")
+invoke(noteMenu.items[0]); expect(deletedNotes == 1, "The note menu invokes its note handler")
+view.document = nil; invoke(noteMenu.items[0]); expect(deletedNotes == 1, "A retained note menu cannot mutate a different or closed document")
+view.document = document; page.removeAnnotation(note)
 let retainedMenu = view.selectionMenu(for: first)
 expect(retainedMenu.items[0].target != nil, "Menu items retain their own targets")
 view.document = nil

@@ -10,7 +10,27 @@ import PDFKit
             switch command {
             case "version", "--version": return emit(["ok": true, "version": RemileRelease.current])
             case "help", "--help":
-                return emit(["ok": true, "usage": "remile --cli COMMAND", "commands": ["version", "library-search \"question or keywords\" [--no-boost]", "pdf-read [/absolute/document.pdf] [--page N] [--find text] [--render /absolute/new.png]", "comments [/absolute/document.pdf] [--format markdown|json] [--output /absolute/new.md|new.json]","combine /absolute/one /absolute/two --output /absolute/new.pdf|new.md", "compress /absolute/input.pdf --output /absolute/new.pdf [--quality small|balanced|high] [--grayscale]", "status", "logs [--tail characters]", "read [--file relative.tex]", "select --file relative.tex", "replace --file relative.tex --source-file /absolute/file --expected-sha256 HASH", "save", "compile [--scratch] [--submission-check]", "submission-compare [--status]", "history", "doctor", "transform --action strip-notes|embed-bibliography|toggle-comment|indent|outdent [--file relative.tex] [--start UTF16 --length UTF16] [--apply --expected-sha256 HASH]", "rename --file relative.tex --name NEW [--kind project]", "export --kind pdf|source --output /absolute/new-file", "open /absolute/path", "inspect /absolute/project", "build /absolute/project --output /absolute/new-directory [--main main.tex]"]])
+                return emit(["ok": true, "usage": "remile --cli COMMAND", "commands": ["review [/absolute/project] [--run|--stop|--clear|--criteria] [--file relative.tex] [--format markdown|json] [--output /absolute/new-file] (run/clear/stop use the running app)", "version", "diagnostics", "library-search \"question or keywords\" [--no-boost]", "pdf-read [/absolute/document.pdf] [--page N] [--find text] [--render /absolute/new.png]", "comments [/absolute/document.pdf] [--format markdown|json] [--output /absolute/new.md|new.json]","combine /absolute/one /absolute/two --output /absolute/new.pdf|new.md", "compress /absolute/input.pdf --output /absolute/new.pdf [--quality small|balanced|high] [--grayscale]", "status", "logs [--tail characters]", "read [--file relative.tex]", "select --file relative.tex", "replace --file relative.tex --source-file /absolute/file --expected-sha256 HASH", "save", "compile [--scratch] [--submission-check]", "submission-compare [--status]", "history", "doctor", "transform --action strip-notes|embed-bibliography|toggle-comment|indent|outdent [--file relative.tex] [--start UTF16 --length UTF16] [--apply --expected-sha256 HASH]", "rename --file relative.tex --name NEW [--kind project]", "export --kind pdf|source --output /absolute/new-file", "open /absolute/path", "inspect /absolute/project", "build /absolute/project --output /absolute/new-directory [--main main.tex]"]])
+            case "review":
+                let actions = ["--run", "--stop", "--clear", "--criteria"].filter { options.contains($0) }
+                guard actions.count <= 1 else { throw Failure("Choose one review action at a time.") }
+                let path = options.first.flatMap { $0.hasPrefix("/") ? $0 : nil }
+                var index = path == nil ? 0 : 1
+                while index < options.count {
+                    let value = options[index]
+                    if ["--run", "--stop", "--clear", "--criteria"].contains(value) { index += 1 }
+                    else if ["--file", "--format", "--output"].contains(value), index + 1 < options.count { index += 2 }
+                    else { throw Failure("Unknown or incomplete review option.") }
+                }
+                if options.contains("--criteria") { return emit(try ManuscriptReviewCommands.criteria()) }
+                let format = try PDFCommentExport.format(named: option("--format"), output: option("--output"))
+                if let path, actions.isEmpty {
+                    return emit(try ManuscriptReviewStore.read(root: URL(fileURLWithPath: path)).response(format: format, output: option("--output")))
+                }
+                guard actions.isEmpty || option("--output") == nil else { throw Failure("Read or export the results after completing the review action.") }
+                var request = EditorBridge.Request(operation: "review", file: option("--file"))
+                request.source = path; request.action = actions.first.map { String($0.dropFirst(2)) } ?? "read"; request.kind = format.rawValue; request.output = option("--output")
+                return try send(request)
             case "library-search":
                 let query = options.filter { $0 != "--no-boost" }.joined(separator: " ")
                 _ = try LibraryIndex.queryTerms(query)
@@ -83,7 +103,7 @@ import PDFKit
                 guard buffers[main] != nil else { throw Failure("Select a valid main document.") }
                 let result = try TeXCompileJob().run(root: root, main: main, buffers: buffers, configuration: .current, output: URL(fileURLWithPath: output), scratch: options.contains("--scratch"), submissionCheck: options.contains("--submission-check"))
                 let code = emit(["ok": result.success, "pdf": result.output.path, "log": URL(fileURLWithPath: output).appendingPathComponent("compiler.log").path, "diagnostics": TeXDiagnostics.parse(result.log).map { ["severity": String(describing: $0.severity), "message": $0.message, "file": $0.file ?? "", "line": $0.line ?? 0] as [String: Any] }]); return result.success ? code : 1
-            case "submission-compare", "open", "status", "read", "select", "replace", "save", "compile", "history", "transform", "rename", "export", "logs":
+            case "submission-compare", "open", "status", "diagnostics", "read", "select", "replace", "save", "compile", "history", "transform", "rename", "export", "logs":
                 let operation = command == "compile" && options.contains("--submission-check") ? "submission-check" : command
                 var request = EditorBridge.Request(operation: operation, file: command == "open" ? options.first : option("--file"))
                 request.action = option("--action"); request.name = option("--name"); request.kind = option("--kind"); request.output = option("--output")

@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 
 /// A per-user file mailbox. Operations are fixed; no arbitrary commands are evaluated.
 enum EditorBridge {
@@ -20,31 +19,51 @@ enum EditorBridge {
         var length: Int?
     }
     static var directory: URL { FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app/Automation") }
-    static func digest(_ source: String) -> String { SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined() }
+    static func digest(_ source: String) -> String { SourceDigest.sha256(source) }
     @MainActor static func serve(_ home: HomeModel) async { await serve { home } }
-    @MainActor static func serve(_ currentHome: @escaping @MainActor () -> HomeModel?) async {
-        let manager = FileManager.default, folder = directory
+    @MainActor static func serve(_ currentHome: @escaping @MainActor () -> HomeModel?, directory folder: URL = directory) async {
+        let manager = FileManager.default
         do { try manager.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]); try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) } catch { return }
         while !Task.isCancelled {
-            let requests = ((try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isSymbolicLinkKey])) ?? []).filter { $0.lastPathComponent.hasSuffix(".request.json") }.prefix(20)
-            for file in requests {
-                do {
-                    let attributes = try manager.attributesOfItem(atPath: file.path)
-                    guard attributes[.type] as? FileAttributeType == .typeRegular, (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(), (attributes[.size] as? Int ?? Int.max) < 5_000_000 else { continue }
-                    let request = try JSONDecoder().decode(Request.self, from: Data(contentsOf: file))
-                    guard file.lastPathComponent == request.id.uuidString + ".request.json" else { continue }
-                    guard let home = currentHome() else { continue }
-                    let response = await handle(request, home: home)
-                    let output = folder.appendingPathComponent(request.id.uuidString + ".response.json")
-                    guard !manager.fileExists(atPath: output.path) else { continue }
-                    let bytes = try JSONSerialization.data(withJSONObject: response, options: [.sortedKeys])
-                    try bytes.write(to: output, options: [.atomic]); try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: output.path); try manager.removeItem(at: file)
-                } catch { try? manager.removeItem(at: file) }
-            }
-            do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+            do {
+                try manager.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+                let changes = try DirectoryChanges(folder)
+                defer { changes.cancel() }
+                for await _ in changes.events {
+                    guard !Task.isCancelled else { return }
+                    let requests = ((try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []).filter {
+                        $0.lastPathComponent.hasSuffix(".request.json") && UUID(uuidString: String($0.lastPathComponent.dropLast(".request.json".count))) != nil
+                    }
+                    for file in requests {
+                        guard !Task.isCancelled else { return }
+                        do {
+                            let attributes = try manager.attributesOfItem(atPath: file.path)
+                            guard attributes[.type] as? FileAttributeType == .typeRegular, (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(), (attributes[.size] as? Int ?? Int.max) < 5_000_000 else { continue }
+                            let request = try JSONDecoder().decode(Request.self, from: Data(contentsOf: file))
+                            guard file.lastPathComponent == request.id.uuidString + ".request.json" else { try manager.removeItem(at: file); continue }
+                            let output = folder.appendingPathComponent(request.id.uuidString + ".response.json")
+                            if manager.fileExists(atPath: output.path) { try manager.removeItem(at: file); continue }
+                            // A pending CLI command may need the first window to finish registering.
+                            var home = currentHome()
+                            for _ in 0..<100 where home == nil {
+                                try await Task.sleep(for: .milliseconds(50)); home = currentHome()
+                            }
+                            let response: [String: Any]
+                            if let home { response = await handle(request, home: home) }
+                            else { response = ["ok": false, "error": "The document window is not ready. Try again."] }
+                            let bytes = try JSONSerialization.data(withJSONObject: response, options: [.sortedKeys])
+                            try bytes.write(to: output, options: [.atomic]); try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: output.path); try manager.removeItem(at: file)
+                        } catch is CancellationError { return }
+                        catch { try? manager.removeItem(at: file) }
+                        await Task.yield()
+                    }
+                }
+            } catch { return }
         }
     }
     @MainActor private static func handle(_ request: Request, home: HomeModel) async -> [String: Any] {
+        if request.operation == "diagnostics" { return RuntimeDiagnostics.snapshot(home) }
+        if request.operation == "review" { return ManuscriptReviewCommands.handle(request, project: home.texProject) }
         if request.operation == "open" {
             guard let path = request.file, path.hasPrefix("/"), FileManager.default.fileExists(atPath: path) else { return ["ok": false, "error": "Provide an existing absolute path."] }
             home.open(URL(fileURLWithPath: path)); return ["ok": home.error == nil, "message": home.error ?? "", "opening": home.opening]
@@ -93,7 +112,7 @@ enum EditorBridge {
             }
             return ["ok": true, "running": project.submission.running, "sourceChanged": project.buffers != project.submission.buffers || project.main != project.submission.main, "sourceHashes": project.submission.buffers.mapValues(digest), "results": project.submission.json]
         case "logs":
-            return ["ok": true, "compiling": project.compiling, "log": String(project.log.suffix(min(150000, max(1, request.length ?? 150000)))), "diagnostics": project.diagnostics.map { ["id": $0.id, "severity": String(describing: $0.severity), "message": $0.message, "file": $0.file ?? "", "line": $0.line ?? 0] as [String: Any] }, "sourceHashes": project.buffers.mapValues(digest)]
+            return ["ok": true, "compiling": project.compiling, "log": String(project.log.suffix(min(150000, max(1, request.length ?? 150000)))), "diagnostics": project.diagnostics.map { ["id": $0.id, "severity": String(describing: $0.severity), "message": $0.message, "file": $0.file ?? "", "line": $0.line ?? 0] as [String: Any] }, "sourceHashes": project.sourceHashes]
         case "read":
             guard let source = project.buffers[file] else { return ["ok": false, "error": "No editable file at this project-relative path."] }
             return ["ok": true, "file": file, "source": source, "sha256": digest(source), "dirty": project.dirty, "externalEdits": (project.externalEdits[file] ?? []).map { ["start": $0.location, "length": $0.length] }, "externalEditsSessionOnly": true]

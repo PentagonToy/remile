@@ -43,7 +43,7 @@ struct ReaderSettings: View {
                                 ForEach(ReaderAppearance.allCases, id: \.rawValue) { Text($0.rawValue).tag($0.rawValue) }
                             }.pickerStyle(.segmented)
                         }
-                        Section("Network") { OfflineModeControl(); SettingsHint("Pause online services; keep working locally.") }
+                        Section("Network") { OfflineModeControl(); SettingsHint("Pause online services. Keep working locally.") }
                         Section("Reading") {
                             Toggle("Serif text in Markdown", isOn: $serif)
                             Toggle("Elastic scrolling", isOn: $elasticScrolling)

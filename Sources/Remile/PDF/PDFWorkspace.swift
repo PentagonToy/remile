@@ -60,7 +60,7 @@ struct PDFWorkspace: View {
 
     // Keep the PDFReader at a stable structural position when either pane opens.
     private var readingColumns: some View {
-        ReaderSplit(isPresented: session.showsSidebar, initial: 280, minimum: 260, maximum: 340, minimumContent: presentation.ask ? 720 : 380, label: "document sidebar", pane: { sidebar }, content: { readingAndAsk })
+        ReaderSplit(sizing: .sidebar, isPresented: session.showsSidebar, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: presentation.ask ? 720 : 380, label: "document sidebar", pane: { sidebar }, content: { readingAndAsk })
     }
     private var readingAndAsk: some View {
         ReaderSplit(side: .trailing, isPresented: presentation.ask, initial: 360, minimum: 320, maximum: 440, minimumContent: 380, preferPaneWhenNarrow: true, label: "Ask panel", pane: { assistantPanel }, content: { readingCanvas })
@@ -151,9 +151,9 @@ struct PDFWorkspace: View {
             if !compact { Button { session.firstPageAlone = false; session.twoPage.toggle() } label: { Image(systemName: session.twoPage ? "book" : "doc") }
                 .remileHelp(session.twoPage ? "Switch to single page" : "Switch to two pages").accessibilityLabel("Page layout").accessibilityValue(session.twoPage ? "Two pages" : "Single page") }
             Spacer(minLength: 12)
-            if !session.isEditing && !session.showsOverview && session.protection.requiresConsent { PDFProtectionButton(protection: session.protection, unlock: session.requestEditingUnlock) }
+            PDFProtectionButton(protection: session.protection, unlock: session.requestEditingUnlock)
             Button { presentation.ocr = true } label: { controlLabel("Scan & OCR", symbol: "text.viewfinder", compact: compact) }.remileHelp("Recognise text throughout this PDF with Apple Vision").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
-            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.toggleEditing() } } label: { controlLabel(session.isEditing ? "Done" : "Edit PDF", symbol: session.isEditing ? "checkmark" : "pencil", compact: compact) }.remileHelp(session.isEditing ? "Finish editing PDF" : "Edit PDF text, annotations and pages").disabled(!session.canEdit)
+            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.toggleEditing() } } label: { controlLabel(session.isEditing ? "Done" : "Edit PDF", symbol: session.isEditing ? "checkmark" : "pencil", compact: compact) }.remileHelp(session.isEditing ? "Finish editing PDF" : "Edit PDF text, annotations and pages").disabled(session.document == nil)
             AIToolGroup {
             AIProviderButton()
             Button { toggleAssistant() } label: { Image(systemName: "text.bubble") }.remileHelp(assistantProvider == "ChatGPT" ? "Ask ChatGPT" : "Ask (on-device)").accessibilityLabel(assistantProvider == "ChatGPT" ? "Ask ChatGPT" : "Ask (on-device)").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
@@ -194,6 +194,8 @@ struct PDFWorkspace: View {
             guard context.document === session.document else { return }; presentation.translation = SelectionTranslation(text: context.text)
         }, removeHighlight: { document, annotation in
             guard document === session.document else { return }; session.deleteHighlight(annotation)
+        }, removeNote: { document, annotation in
+            guard document === session.document else { return }; session.deleteNote(annotation)
         })
     }
 
@@ -245,7 +247,6 @@ struct PDFWorkspace: View {
                 .buttonStyle(.plain)
                 .disabled(!session.canArrangePages).remileHelp(session.showsOverview ? "Rotate selected pages right" : "Rotate current page right")
             Spacer(minLength: 12)
-            if session.protection.requiresConsent { PDFProtectionButton(protection: session.protection, unlock: session.requestEditingUnlock) }
         }
         .buttonStyle(RemileCompactToolStyle())
     }
@@ -352,15 +353,15 @@ struct PDFWorkspace: View {
             if let context = session.draftContext {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(session.isReplyDraft ? "Reply" : "New note").font(RemileType.heading)
+                    Text(session.isEditingNote ? "Edit note" : session.isReplyDraft ? "Reply" : "New note").font(RemileType.heading)
                     Text(context).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(3)
                     TextField("Author (optional)", text: $session.author).textFieldStyle(.roundedBorder)
                     TextEditor(text: $session.draft).frame(height: 90).border(.secondary.opacity(0.2))
-                        .accessibilityLabel("New comment")
+                        .accessibilityLabel(session.isEditingNote ? "Edit note" : "New note")
                     HStack {
                         Button("Cancel") { session.cancelComment() }
                         Spacer()
-                        Button(session.isReplyDraft ? "Add reply" : "Add note") { session.saveComment() }.buttonStyle(.borderedProminent)
+                        Button(session.isEditingNote ? "Save note" : session.isReplyDraft ? "Add reply" : "Add note") { session.saveComment() }.buttonStyle(.borderedProminent)
                             .disabled(session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }.padding(12)
@@ -371,20 +372,25 @@ struct PDFWorkspace: View {
     private var commentList: some View {
         Group {
             if session.loadingComments && session.comments.isEmpty {
-                ProgressView("Loading comments…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView("Loading notes…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if session.comments.isEmpty {
-                ContentUnavailableView("No comments", systemImage: "text.bubble").frame(maxWidth: .infinity, maxHeight: .infinity)
+                ContentUnavailableView("No notes", systemImage: "text.bubble").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 12) {
                             ForEach(session.threads) { thread in
-                                VStack(alignment: .leading, spacing: 10) {
+                                VStack(alignment: .leading, spacing: 0) {
                                     commentCard(thread.root)
-                                    ForEach(thread.replies) { reply in
-                                        commentCard(reply).padding(.leading, 16)
+                                    ForEach(Array(thread.replies.enumerated()), id: \.element.id) { index, reply in
+                                        commentCard(reply).padding(.leading, 24).padding(.bottom, 10)
+                                            .background(alignment: .leading) {
+                                                NoteReplyBranch(last: index == thread.replies.count - 1)
+                                                    .stroke(RemileStyle.accent.opacity(0.35), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+                                                    .frame(width: 24).accessibilityHidden(true)
+                                            }.padding(.leading, 12)
                                     }
-                                }
+                                }.background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
                             }
                         }.padding(12)
                     }
@@ -402,20 +408,43 @@ struct PDFWorkspace: View {
                     .buttonStyle(.plain).font(RemileType.caption).foregroundStyle(.secondary)
                     .remileHelp("Show comment on the page")
             }
+            if let parent = comment.parent, let original = session.comments.first(where: { $0.id == parent }) {
+                Label("Reply to \(original.author)", systemImage: "arrow.turn.up.left").font(RemileType.small).foregroundStyle(RemileStyle.accent)
+                Text(original.text).font(RemileType.small).foregroundStyle(.secondary).lineLimit(1).help(original.text)
+            }
             Text(comment.text).textSelection(.enabled).multilineTextAlignment(.leading)
             HStack {
                 if let date = comment.annotation.modificationDate {
                     Text(date, style: .date).font(RemileType.small).foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button("Edit") { session.beginEditingNote(comment.annotation) }.buttonStyle(.borderless).font(RemileType.caption)
+                    .disabled(session.document?.allowsCommenting != true || session.document?.isEncrypted == true)
                 Button("Reply") { session.beginReply(comment) }.buttonStyle(.borderless).font(RemileType.caption)
                     .disabled(session.document?.allowsCommenting != true || session.document?.isEncrypted == true)
             }
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-        .background(session.selectedComment == comment.id ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
-        .contextMenu { Button(comment.parent == nil && session.threads.contains(where: { $0.root.id == comment.id && !$0.replies.isEmpty }) ? "Delete Thread" : "Delete Comment", role: .destructive) { session.deleteAnnotation(comment) } }
+        .background(session.selectedComment == comment.id ? RemileStyle.accent.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
+        .contextMenu { Button(comment.parent == nil && session.threads.contains(where: { $0.root.id == comment.id && !$0.replies.isEmpty }) ? "Delete Thread" : "Delete Note", role: .destructive) { session.deleteAnnotation(comment) } }
         .id(comment.id)
     }
 
+}
+
+private struct NoteReplyBranch: Shape {
+    let last: Bool
+    func path(in rect: CGRect) -> Path {
+        let joint = min(20, rect.height)
+        var path = Path()
+        path.move(to: CGPoint(x: 6, y: 0))
+        path.addLine(to: CGPoint(x: 6, y: max(0, joint - 8)))
+        path.addQuadCurve(to: CGPoint(x: 14, y: joint), control: CGPoint(x: 6, y: joint))
+        path.addLine(to: CGPoint(x: rect.maxX, y: joint))
+        if !last {
+            path.move(to: CGPoint(x: 6, y: max(0, joint - 8)))
+            path.addLine(to: CGPoint(x: 6, y: rect.maxY))
+        }
+        return path
+    }
 }

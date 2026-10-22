@@ -1,5 +1,6 @@
 import SwiftUI
 import PDFKit
+import ImageIO
 
 /// File previews never replace the compiled document or write to the project.
 enum TeXAssetData {
@@ -20,13 +21,28 @@ enum TeXAssetData {
         environment["PATH"] = configuration.executablePath
         process.environment = environment; process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
         try process.run()
+        defer { if process.isRunning { process.terminate() } }
         let deadline = Date().addingTimeInterval(15)
-        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
+        while process.isRunning && Date() < deadline { try Task.checkCancellation(); Thread.sleep(forTimeInterval: 0.05) }
         if process.isRunning { process.terminate(); throw TeXFileSystem.Failure(errorDescription: "EPS preview timed out.") }
         guard process.terminationStatus == 0 else { throw TeXFileSystem.Failure(errorDescription: "Could not preview this EPS graphic.") }
         let output = temporary.appendingPathComponent("image.pdf")
         guard (try output.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 64 * 1024 * 1024 else { throw CocoaError(.fileReadTooLarge) }
         return try Data(contentsOf: output)
+    }
+    static let imagePixelLimit = 4096
+    static func document(_ bytes: Data, extension kind: String) -> PDFDocument? {
+        if ["pdf", "eps"].contains(kind.lowercased()) { return PDFDocument(data: bytes) }
+        if kind.lowercased() == "svg", let image = NSImage(data: bytes), image.size.width > 0, image.size.height > 0 {
+            let scale = min(1, CGFloat(imagePixelLimit) / max(image.size.width, image.size.height))
+            image.size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+            guard let page = PDFPage(image: image) else { return nil }
+            let document = PDFDocument(); document.insert(page, at: 0); return document
+        }
+        guard let source = CGImageSourceCreateWithData(bytes as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: imagePixelLimit, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceShouldCacheImmediately: true] as CFDictionary),
+              let page = PDFPage(image: NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))) else { return nil }
+        let document = PDFDocument(); document.insert(page, at: 0); return document
     }
 }
 
@@ -57,12 +73,13 @@ struct TeXAssetPreview: View {
         state.loading = true; state.document = nil; state.error = nil
         let root = project.root, path = project.selected, configuration = TeXConfiguration.current
         do {
-            let bytes = try await Task.detached(priority: .userInitiated) { try TeXAssetData.load(root: root, path: path, configuration: configuration) }.value
+            let worker = Task.detached(priority: .userInitiated) {
+                let bytes = try TeXAssetData.load(root: root, path: path, configuration: configuration)
+                try Task.checkCancellation()
+                return TeXAssetData.document(bytes, extension: (path as NSString).pathExtension)
+            }
+            let document = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
             try Task.checkCancellation()
-            let document: PDFDocument?
-            if ["pdf", "eps"].contains((path as NSString).pathExtension.lowercased()) { document = PDFDocument(data: bytes) }
-            else if let image = NSImage(data: bytes), let page = PDFPage(image: image) { let pdf = PDFDocument(); pdf.insert(page, at: 0); document = pdf }
-            else { document = nil }
             guard let document, document.pageCount > 0 else { throw TeXFileSystem.Failure(errorDescription: "This file has no built-in preview.") }
             state.document = document
         } catch is CancellationError { return }

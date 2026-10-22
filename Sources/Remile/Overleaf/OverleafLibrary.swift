@@ -11,6 +11,7 @@ import Network
     @Published var presented = false
     @Published var browsing = false
     @Published private(set) var tagSignInProfile: UUID?
+    @Published private(set) var tagError: String?
     @Published var busy = false
     @Published var error: String?
     @Published var review: OverleafGit.Review?
@@ -19,6 +20,7 @@ import Network
     @Published var comments: [UUID: OverleafThreadArchive] = [:]
     var automaticPaused = Set<UUID>()
     @Published var pendingFiles = Set<UUID>()
+    @Published var liveOwned = Set<UUID>()
     @Published var syncedAt: [UUID: Date] = [:]
     @Published var statuses: [UUID: Status] = [:]
     @Published var adding = false
@@ -36,7 +38,7 @@ import Network
         for project in projects { if let date = UserDefaults.standard.object(forKey: "overleaf.synced." + project.id.uuidString) as? Date { syncedAt[project.id] = date } }
         for project in projects where !accounts.contains(where: { $0.id == project.profileID }) { accounts.append(Account(id: project.profileID, name: project.account)) }
         policyObserver = NotificationCenter.default.addObserver(forName: NetworkAccessGate.changed, object: NetworkAccess.gate, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.objectWillChange.send() } }
-        // Review copies contain no unique edits; the active local project owns every draft.
+        // Review copies contain no unique edits. The active local project owns every draft.
         try? FileManager.default.removeItem(at: self.directory.appendingPathComponent("Reviews"))
         network.pathUpdateHandler = { [weak self] path in Task { @MainActor in self?.hasNetwork = path.status == .satisfied } }
         network.start(queue: DispatchQueue(label: "local.remile.overleaf.reachability"))
@@ -47,7 +49,7 @@ import Network
         return minutes == 0 ? "Synced just now" : "Synced \(minutes) min ago"
     }
     func renameProject(_ id: UUID, to name: String) async throws {
-        guard !busy, !offlineMode, !NetworkAccess.offline, hasNetwork, let project = projects.first(where: { $0.id == id }) else { throw OverleafProjectRename.Failure.unavailable }
+        guard !busy, !liveOwned.contains(id), !offlineMode, !NetworkAccess.offline, hasNetwork, let project = projects.first(where: { $0.id == id }) else { throw OverleafProjectRename.Failure.unavailable }
         busy = true; error = nil; defer { busy = false }
         try await OverleafProjectRename.rename(project, to: name)
         var updated = projects
@@ -56,9 +58,7 @@ import Network
         catch { projects = updated; self.error = "Renamed on Overleaf. The local project name could not be saved." }
     }
     func title(for root: URL) -> String {
-        guard let project = connection(for: root) else { return "LaTeX" }
-        if !offlineMode, !NetworkAccess.offline, hasNetwork, OverleafCredential.locked(project.profileID) { return "Overleaf · Locked" }
-        return offlineMode || NetworkAccess.offline || !hasNetwork || statuses[project.id] == .offline ? "Overleaf (Offline)" : "Overleaf (Online)"
+        connection(for: root) == nil ? "LaTeX" : "Overleaf"
     }
     func probe(_ project: OverleafConnection) async {
         guard !busy, !probing, !offlineMode, !NetworkAccess.offline, hasNetwork else { return }; probing = true; defer { probing = false }
@@ -96,13 +96,13 @@ import Network
     }
     func refreshProjectTags() async {
         guard !offlineMode, !NetworkAccess.offline, hasNetwork else { return }
-        error = nil; tagSignInProfile = nil
+        tagError = nil; tagSignInProfile = nil
         for account in accounts where projects.contains(where: { $0.profileID == account.id }) {
             if Task.isCancelled { return }
             do { let catalog = try await OverleafWebClient.projects(account.id); rememberTags(catalog, profile: account.id) }
             catch {
-                self.error = error.localizedDescription
-                if (error as? OverleafWebClient.Failure) == .signIn { tagSignInProfile = account.id }
+                self.tagError = error.localizedDescription
+                if (error as? OverleafWebClient.Failure)?.needsConnection == true { tagSignInProfile = account.id }
             }
         }
     }
@@ -112,7 +112,6 @@ import Network
         let account = account(name) ?? Account(id: UUID(), name: name)
         do {
             if !token.isEmpty { try OverleafCredential.store(token, id: account.id) }
-            else if !accounts.contains(account) { error = "Enter a Git authentication token."; return nil }
             var updated = accounts.filter { $0.id != account.id }; updated.append(account)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             try JSONEncoder().encode(updated).write(to: directory.appendingPathComponent("accounts.json"), options: .atomic)
@@ -138,6 +137,11 @@ import Network
                 guard let saved = saveAccount(name: account, token: token) else { busy = false; return }
                 project.profileID = saved.id
             }
+            switch OverleafCredential.availability(project.profileID) {
+            case .missing: throw OverleafGit.Failure("Add a Git token to bring this project into your library.")
+            case .locked: throw OverleafGit.Failure("Unlock this account’s Git token in Keychain, then retry.")
+            case .available: break
+            }
             let connection = project
             project.branch = try await Task.detached { try OverleafGit.clone(connection, root: root) }.value
             try persist(projects + [project])
@@ -155,20 +159,24 @@ import Network
         if let data = try? JSONEncoder().encode(tags) { try? data.write(to: directory.appendingPathComponent("project-tags.json"), options: .atomic) }
     }
     func remove(_ project: OverleafConnection) {
-        guard !busy else { return }
+        guard !busy, !liveOwned.contains(project.id) else { return }
         do {
+            let writer = try writerLease(project); defer { withExtendedLifetime(writer) {} }
             let path = root(project)
+            try ManuscriptReviewStore.remove(root: path)
             if FileManager.default.fileExists(atPath: path.path) { try FileManager.default.trashItem(at: path, resultingItemURL: nil) }
             try persist(projects.filter { $0.id != project.id })
             comments.removeValue(forKey: project.id)
             statuses.removeValue(forKey: project.id)
         } catch { self.error = error.localizedDescription }
     }
-    func check(_ project: OverleafConnection) async {
-        guard !busy, !offlineMode, !NetworkAccess.offline, hasNetwork else { return }
+    func check(_ project: OverleafConnection, save: () -> Bool = { true }) async {
+        guard !busy, !liveOwned.contains(project.id), !offlineMode, !NetworkAccess.offline, hasNetwork else { return }
         busy = true; syncRevision += 1; error = nil
         let root = root(project), reviews = directory.appendingPathComponent("Reviews")
         do {
+            let writer = try writerLease(project); defer { withExtendedLifetime(writer) {} }
+            guard save() else { busy = false; return }
             let prepared = try await Task.detached { try OverleafGit.prepare(project, root: root, reviewRoot: reviews) }.value
             pendingFiles.remove(project.id)
             if prepared.changes.isEmpty {
@@ -184,9 +192,10 @@ import Network
         review = nil
     }
     func finish(choices: [String: Bool], publish: Bool, reload: @escaping (URL) -> Void) async {
-        guard let review, !busy, !offlineMode else { return }
+        guard let review, !busy, !liveOwned.contains(review.connection.id), !offlineMode else { return }
         busy = true; syncRevision += 1; error = nil
         do {
+            let writer = try writerLease(review.connection); defer { withExtendedLifetime(writer) {} }
             try await Task.detached { try OverleafGit.finish(review, choices: choices, publish: publish) }.value
             let root = review.root; dismissReview(); reload(root)
             if publish || !review.localChanges { markSynced(review.connection.id) }
@@ -198,6 +207,11 @@ import Network
         automaticPaused.remove(id)
         statuses[id] = .online; syncedAt[id] = Date(); pendingFiles.remove(id)
         UserDefaults.standard.set(syncedAt[id], forKey: "overleaf.synced." + id.uuidString)
+    }
+    func writerLease(_ project: OverleafConnection) throws -> OverleafLiveWriterLease {
+        let key = OverleafLive.Key(profile: project.profileID, project: project.projectID, document: project.projectID)
+        try key.validate()
+        return try OverleafLiveWriterLease(file: OverleafLiveJournal.lock(for: key, under: directory.appendingPathComponent("Live")))
     }
 
 }

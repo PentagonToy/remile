@@ -117,7 +117,7 @@ struct TeXFileTree: NSViewRepresentable {
                 var groups = project.collections; groups[index].expanded = value; project.updateCollections(groups)
             }
         }
-        private struct Payload: Codable { let project: UUID; let groups: [UUID]; let files: [String] }
+        private typealias Payload = TeXFileDragPayload
         func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
             guard let node = item as? Node else { return nil }
             let selected = outlineView.selectedRowIndexes.compactMap { outlineView.item(atRow: $0) as? Node }
@@ -130,6 +130,7 @@ struct TeXFileTree: NSViewRepresentable {
             guard let bytes = info.draggingPasteboard.data(forType: Self.type), bytes.count < 256_000, let payload = try? JSONDecoder().decode(Payload.self, from: bytes), payload.project == project.identity else { return nil }; return payload
         }
         func outlineView(_ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo, proposedItem item: Any?, proposedChildIndex index: Int) -> NSDragOperation {
+            guard !project.compiling else { return [] }
             let node = item as? Node
             if let payload = payload(info) {
                 guard node == nil || node?.group != nil || node?.folder == true else { return [] }
@@ -142,6 +143,7 @@ struct TeXFileTree: NSViewRepresentable {
             return .copy
         }
         func outlineView(_ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
+            guard !project.compiling else { return false }
             let node = item as? Node
             if let payload = payload(info) {
                 if node?.folder == true || !showCollections {
@@ -235,5 +237,60 @@ struct TeXFileTree: NSViewRepresentable {
         }
         @objc private func revealFile() { if let path = context?.file { NSWorkspace.shared.activateFileViewerSelecting([project.root.appendingPathComponent(path)]) } }
         @objc private func trashFile() { project.trash(selectedPaths) }
+    }
+}
+
+private struct TeXFileDragPayload: Codable {
+    let project: UUID
+    let groups: [UUID]
+    let files: [String]
+}
+
+struct TeXFileTrashTarget: NSViewRepresentable {
+    @ObservedObject var project: TeXProject
+    func makeNSView(context: Context) -> TeXTrashDropView { TeXTrashDropView(project: project) }
+    func updateNSView(_ view: TeXTrashDropView, context: Context) { view.project = project; view.needsDisplay = true }
+}
+
+final class TeXTrashDropView: NSView {
+    var project: TeXProject
+    private var targeted = false { didSet { needsDisplay = true } }
+    init(project: TeXProject) {
+        self.project = project; super.init(frame: .zero)
+        registerForDraggedTypes([TeXFileTree.Coordinator.type])
+        toolTip = "Drop project files here to move them to Trash"
+        setAccessibilityElement(true); setAccessibilityLabel("Drop files to Trash")
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    private func paths(_ info: NSDraggingInfo) -> [String]? {
+        guard !project.compiling, let data = info.draggingPasteboard.data(forType: TeXFileTree.Coordinator.type), data.count < 256_000,
+              let payload = try? JSONDecoder().decode(TeXFileDragPayload.self, from: data), payload.project == project.identity,
+              payload.groups.isEmpty, !payload.files.isEmpty,
+              payload.files.allSatisfy({ project.treeFiles.contains($0) || project.treeFolders.contains($0) }),
+              !payload.files.contains(where: { project.main == $0 || project.main.hasPrefix($0 + "/") }) else { return nil }
+        return TeXFileSystem.topLevel(payload.files)
+    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { targeted = paths(sender) != nil; return targeted ? .move : [] }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { draggingEntered(sender) }
+    override func draggingExited(_ sender: NSDraggingInfo?) { targeted = false }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { paths(sender) != nil }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let paths = paths(sender) else { targeted = false; return false }
+        targeted = false
+        // Finish AppKit's drag session before opening the existing confirmation sheet.
+        let targetProject = project
+        DispatchQueue.main.async { targetProject.trash(paths) }
+        return true
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        let colour = targeted ? NSColor(RemileStyle.accent) : NSColor.secondaryLabelColor
+        if targeted { colour.withAlphaComponent(0.1).setFill(); NSBezierPath(roundedRect: bounds.insetBy(dx: 8, dy: 3), xRadius: 6, yRadius: 6).fill() }
+        let text = "Drop to Trash" as NSString
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: colour]
+        let size = text.size(withAttributes: attributes), width = size.width + 22
+        let x = (bounds.width - width) / 2
+        let icon = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)?.withSymbolConfiguration(.init(paletteColors: [colour]))
+        icon?.draw(in: NSRect(x: x, y: (bounds.height - 14) / 2, width: 14, height: 14))
+        text.draw(at: NSPoint(x: x + 22, y: (bounds.height - size.height) / 2), withAttributes: attributes)
     }
 }

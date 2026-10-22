@@ -25,6 +25,15 @@ enum OverleafCredential {
     private static let lock = NSLock()
     private static var tokens: [UUID: String] = [:]
     private static var denied = Set<UUID>()
+    enum Availability { case available, missing, locked }
+    static func availability(_ id: UUID) -> Availability {
+        lock.lock(); let cached = tokens[id] != nil; lock.unlock()
+        if cached { return .available }
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: id.uuidString, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+        let result = KeychainAccess.read(matching: query, interactive: false)
+        if result.status == errSecItemNotFound { return .missing }
+        return result.status == errSecSuccess && result.data != nil ? .available : .locked
+    }
     static func locked(_ id: UUID) -> Bool { lock.lock(); defer { lock.unlock() }; return denied.contains(id) }
     static func read(_ id: UUID, interactive: Bool = false) throws -> String {
         lock.lock()
@@ -91,7 +100,7 @@ enum OverleafGit {
             let script = "#!/bin/sh\ncase \"$1\" in *Username*) printf '%s\\n' git ;; *) printf '%s\\n' \"$REMILE_GIT_TOKEN\" ;; esac\n"
             try script.write(to: askpass, atomically: true, encoding: .utf8); try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: askpass.path)
             environment["GIT_ASKPASS"] = askpass.path
-            // Only the child process receives the secret; no token in arguments, scripts or Git configuration.
+            // Only the child process receives the secret. No token in arguments, scripts or Git configuration.
             environment["REMILE_GIT_TOKEN"] = try OverleafCredential.read(credential)
         }
         process.environment = environment; process.standardOutput = stdout; process.standardError = stderr
@@ -192,7 +201,7 @@ enum OverleafGit {
         for change in review.changes where change.conflict {
             guard let local = choices[change.path] else { throw Failure("Choose a version for every conflicting file.") }
             let side = local ? "--ours" : "--theirs"
-            // A deleted side has no stage entry; selecting it means deleting this file.
+            // A deleted side has no stage entry. Selecting it means deleting this file.
             let result = try run(["checkout", side, "--", change.path], at: review.stage, allowFailure: true)
             if result.status != 0 {
                 let stage = local ? ":2:" : ":3:"
@@ -206,7 +215,7 @@ enum OverleafGit {
         if mergePending { _ = try run(["-c", "commit.gpgsign=false", "commit", "-m", "Merge reviewed Overleaf changes"], at: review.stage) }
         _ = try run(["fetch", "--no-tags", review.transport, "refs/heads/" + review.connection.branch], at: review.root, credential: review.connection.profileID)
         let current = try run(["rev-parse", "FETCH_HEAD"], at: review.root).text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard current == review.remoteHead, try fingerprint(review.root) == review.fingerprint else { throw Failure("The project changed since this review. Check again; your local work is safe.") }
+        guard current == review.remoteHead, try fingerprint(review.root) == review.fingerprint else { throw Failure("The project changed. Check again. Your local edits are safe.") }
         if publish { _ = try run(["push", review.transport, "HEAD:refs/heads/" + review.connection.branch], at: review.stage, credential: review.connection.profileID) }
         // Fetch the accepted tree before dropping the private review copy.
         _ = try run(["-c", "protocol.file.allow=always", "fetch", review.stage.path, "HEAD"], at: review.root)

@@ -4,19 +4,22 @@ import Foundation
 enum TeXCache {
     static var root: URL { FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app") }
     private static let lock = NSLock()
+    private static let cleanup = DispatchQueue(label: "local.remile.cache-cleanup", qos: .utility)
+    static let budgetBytes = 512 * 1024 * 1024
+    static var activeCount: Int { lock.lock(); defer { lock.unlock() }; return active.count }
     nonisolated(unsafe) private static var active = Set<URL>()
-    static func allocate(_ category: String) -> URL {
+    static func allocate(_ category: String, under root: URL = root) -> URL {
         let url = root.appendingPathComponent(category + "/" + UUID().uuidString)
         lock.lock(); active.insert(url); lock.unlock()
         return url
     }
     static func discard(_ url: URL?) {
         guard let url else { return }
-        lock.lock(); defer { lock.unlock() }
-        guard active.remove(url) != nil else { return }
-        try? FileManager.default.removeItem(at: url)
+        lock.lock(); let owned = active.remove(url) != nil; lock.unlock()
+        guard owned else { return }
+        cleanup.async { try? FileManager.default.removeItem(at: url) }
     }
-    static func prune(at root: URL = root, now: Date = Date(), budget: Int = 512 * 1024 * 1024) {
+    static func prune(at root: URL = root, now: Date = Date(), budget: Int = budgetBytes) {
         let manager = FileManager.default
         var entries: [(url: URL, date: Date, bytes: Int)] = []
         for category in ["LaTeX", "Submission", "Exports"] {
@@ -36,9 +39,8 @@ enum TeXCache {
         }
         var total = entries.reduce(0) { $0 + $1.bytes }
         for item in entries.sorted(by: { $0.date < $1.date }) where total > budget || now.timeIntervalSince(item.date) > 7 * 86400 {
-            lock.lock()
-            if !active.contains(item.url) { do { try manager.removeItem(at: item.url); total -= item.bytes } catch { } }
-            lock.unlock()
+            lock.lock(); let inUse = active.contains(item.url); lock.unlock()
+            if !inUse { do { try manager.removeItem(at: item.url); total -= item.bytes } catch { } }
         }
     }
 }

@@ -7,6 +7,8 @@ struct TeXDiagnostic: Identifiable {
     let message: String
     let file: String?
     let line: Int?
+    var isBuildSummary: Bool { message.hasPrefix("Latexmk: Errors") || message.hasPrefix("Latexmk: Could not") }
+    var displayMessage: String { isBuildSummary ? "Build stopped. See Terminal for details." : message }
 }
 
 enum TeXDiagnostics {
@@ -41,6 +43,13 @@ enum TeXDiagnostics {
                 let value = following as NSString
                 if let match = inputLine.firstMatch(in: following, range: NSRange(location: 0, length: value.length)) { number = Int(value.substring(with: match.range(at: 1))) }
                 text = following
+            }
+            if text == "Undefined control sequence." {
+                let context = lines[(index + 1)..<min(lines.count, index + 4)].joined(separator: " ")
+                if let range = context.range(of: #"->\s*(\\[A-Za-z@]+)"#, options: .regularExpression) {
+                    let command = context[range].dropFirst(2).trimmingCharacters(in: .whitespaces)
+                    text = "Undefined command: \(command)."
+                }
             }
             let key = "\(severity)|\(file ?? "")|\(number ?? 0)|\(text)"
             guard seen.insert(key).inserted else { continue }

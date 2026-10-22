@@ -9,7 +9,7 @@ struct UserGuide: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .center, spacing: 12) {
-                Text(RemileBrand.tagline).font(.title2.weight(.semibold)).lineLimit(1)
+                Text(RemileBrand.tagline).font(.title2.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Button("Tour") { dismiss(); NotificationCenter.default.post(name: .remileReplayTour, object: nil) }.fixedSize()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction).fixedSize()
@@ -17,30 +17,30 @@ struct UserGuide: View {
             GeometryReader { viewport in
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    card("AI", "apple.intelligence", "Choose Manual, Apple Intelligence or ChatGPT. Enable local fallback when ChatGPT is unavailable.")
-                    card("Your documents", "lock.shield", "Search and Apple Intelligence stay on this Mac. ChatGPT receives context only when you ask. Work offline pauses online services.")
-                    card("Library search", "books.vertical", "Add PDF or Markdown folders in Search → Library. Find up to 200 matches, or boost questions with Apple Intelligence. Standard search works offline.")
+                    card("AI", "apple.intelligence", "Choose AI in Settings. Apple Intelligence runs on this Mac.")
+                    card("Your documents", "lock.shield", "Search stays on this Mac. ChatGPT receives context when you ask.")
+                    card("Library search", "books.vertical", "Add folders in Search → Library, then search by keyword or question.")
                     DisclosureGroup("More features", isExpanded: $state.more) {
                     Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 12) {
                     GridRow {
-                    card("ChatGPT plan", "person.crop.circle", "Use your ChatGPT plan with no separate API bill from remile. Usage follows your ChatGPT settings and limits.")
-                    card("Ask", "text.bubble", "Ask about your PDF, Markdown or search results. Source links take you back to the passage.")
+                    card("ChatGPT plan", "person.crop.circle", "No separate API bill from remile. Your ChatGPT plan and credit settings apply.")
+                    card("Ask", "text.bubble", "Ask about a document. Follow source links back to the passage.")
                     }
                     GridRow {
-                    card("Suggestions", "text.badge.checkmark", "Double-click a word for alternatives. Review a spelling or grammar suggestion before accepting it.")
+                    card("Writing", "text.badge.checkmark", "Right-click a word for spelling corrections. Select prose to request proofreading.")
                     card("Review edits", "eye", "Show or hide edits made by AI or an agent. Undo restores your text.")
                     }
                     GridRow {
-                    card("Collections", "square.stack.3d.up", "Group files without moving them. Drag to organise; use the collection button beside Files to show groups.")
-                    card("Sync", "arrow.triangle.2.circlepath", "Green: in sync. Orange: mergeable changes. Red: choose a resolution. Local edits sync online; remote changes wait for review.")
+                    card("Collections", "square.stack.3d.up", "Group files without moving them. Drag to organise.")
+                    card("Sync", "arrow.triangle.2.circlepath", "Private sync reviews remote changes. Live sync shares text edits as you write.")
                     }
                     GridRow {
                     card("History", "clock.arrow.circlepath", "Compare earlier local versions. Connected projects use Overleaf history.")
-                    card("Build logs", "terminal", "Inspect compiler errors, warnings and terminal output. Compile again after editing.")
+                    card("Build logs", "terminal", "Read compiler output, then edit and compile again.")
                     }
                     GridRow {
                     card("Compile", "play.fill", "Press ⌘Return to build the PDF. Use Suggest fix to review a proposed correction.")
-                    card("Export", "square.and.arrow.up", "Save the PDF or download project sources as a ZIP. Removing a library project keeps its remote copy.")
+                    card("Export", "square.and.arrow.up", "Save your PDF, project sources, comments or review questions.")
                     }
                     }.padding(.top, 12)
                     }.font(RemileType.callout).padding(.top, 4)

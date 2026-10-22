@@ -32,7 +32,7 @@ import WebKit
     """
     static func rename(_ connection: OverleafConnection, to name: String) async throws {
         let path = try path(projectID: connection.projectID, name: name)
-        await OverleafWebIdentity.restore(connection.profileID)
+        try await OverleafWebIdentity.restore(connection.profileID)
         let request = OverleafProjectRename(profile: connection.profileID, path: path, name: name)
         try await request.perform()
         await OverleafWebIdentity.remember(connection.profileID)

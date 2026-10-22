@@ -11,7 +11,7 @@ brew install --cask PentagonToy/tap/remile
 brew upgrade --cask remile
 ```
 
-The 0.1.2 package is ad hoc signed and is not Apple-notarised. If macOS blocks its first launch, verify the download source and follow [Apple’s downloaded-app guidance](https://support.apple.com/en-au/102445). Homebrew verifies the DMG checksum and installs the app and CLI; it does not bypass macOS security checks.
+The 0.1.2 package is ad hoc signed and is not Apple-notarised. If macOS blocks its first launch, verify the download source and follow [Apple’s downloaded-app guidance](https://support.apple.com/en-au/102445). Homebrew verifies the DMG checksum and installs the app and CLI. It does not bypass macOS security checks.
 
 ## Updates
 
@@ -19,6 +19,8 @@ Quit remile. before replacing the app. Use Homebrew for Homebrew installations. 
 
 ## Build and package
 
-`VERSION` supplies the package version. Set `REMILE_BUILD_DIRECTORY` to an external output directory and run `tools/prepare_app.sh` to build the app with its artwork, licences and CLI. The default signature is ad hoc. `REMILE_SIGN_IDENTITY` selects a Developer ID identity with hardened runtime and timestamp; notarisation and stapling are separate operations.
+`VERSION` supplies the package version. Set `REMILE_BUILD_DIRECTORY` to an external output directory and run `tools/prepare_app.sh` to build the app with its artwork, licences and CLI. The default signature is ad hoc when no local certificate is configured. `REMILE_SIGN_IDENTITY` selects a Developer ID identity with hardened runtime and timestamp. Notarisation and stapling are separate operations.
 
 Run `tools/prepare_dmg.sh /absolute/remile.app /absolute/output` to create `remile-VERSION-ARCH.dmg`, `SHA256SUMS` and a draft Homebrew cask. The installer opens with remile.app and an Applications shortcut on a paper background. Keep the tested source commit, app version and `vVERSION` release tag aligned. Publish the matching DMG and checksum, then update the tap with that checksum.
+
+For local development, the builder can read a shared certificate fingerprint from `~/Library/Application Support/PentagonToy/Development/signing-identity`. Baker can use the same certificate. Local signing does not request a distribution timestamp. An explicit `REMILE_SIGN_IDENTITY` takes precedence, and `-` selects ad-hoc signing. Keep the certificate’s private key in Keychain.

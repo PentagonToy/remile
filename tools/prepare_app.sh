@@ -14,13 +14,19 @@ binary_directory="$(swift build --build-system native --scratch-path "$output_di
 application="$output_directory/remile.app"
 mkdir -p "$application/Contents/MacOS" "$application/Contents/Resources"
 mkdir -p "$application/Contents/Resources/Brand"
-cp others/banners/*.svg others/icons/*.svg others/icons/animations/*.svg others/icons/*LICENSE.txt "$application/Contents/Resources/Brand/"
+artwork=(others/brand/{icons,banners,wordmarks}/*.svg others/motion/{airplane,lighthouse}/*.svg others/symbols/{providers,integrations}/*.svg)
+cp "${artwork[@]}" "$application/Contents/Resources/Brand/"
+mkdir -p "$application/Contents/Resources/Templates/Help"
+cp others/templates/help/bubble.json "$application/Contents/Resources/Templates/Help/"
+mkdir -p "$application/Contents/Resources/Templates/Review"
+cp others/templates/review/criteria.json others/templates/review/question-style.md "$application/Contents/Resources/Templates/Review/"
+cp others/licences/CHATGPT-LICENSE.txt "$application/Contents/Resources/Brand/"
 mkdir -p "$application/Contents/Resources/Licences"
 cp LICENSE "$application/Contents/Resources/Licences/Remile-MIT.txt"
 cp THIRD_PARTY_NOTICES.md "$application/Contents/Resources/Licences/"
 cp others/licences/SEARCH-WORDS.txt "$application/Contents/Resources/Licences/"
 cp "$binary_directory/Remile" "$application/Contents/MacOS/Remile"
-swift tools/render_icons.swift others/icons/remile_icon_light_rounded.svg "$output_directory/Remile.iconset"
+swift tools/render_icons.swift others/brand/icons/remile_icon_light_rounded.svg "$output_directory/Remile.iconset"
 iconutil -c icns "$output_directory/Remile.iconset" -o "$application/Contents/Resources/Remile.icns"
 cat > "$application/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -57,9 +63,18 @@ PLIST
 mkdir -p "$application/Contents/Resources/CLI"
 cp tools/bundled_cli "$application/Contents/Resources/CLI/remile"
 chmod +x "$application/Contents/Resources/CLI/remile"
-if [[ "${REMILE_SIGN_IDENTITY:--}" == "-" ]]; then
+signing_identity="${REMILE_SIGN_IDENTITY:-}"
+local_signing=false
+local_identity="$HOME/Library/Application Support/PentagonToy/Development/signing-identity"
+if [[ -z "$signing_identity" && -f "$local_identity" ]]; then
+    signing_identity="$(<"$local_identity")"
+    local_signing=true
+fi
+if [[ -z "$signing_identity" || "$signing_identity" == "-" ]]; then
     codesign --force --sign - "$application"
+elif $local_signing; then
+    codesign --force --sign "$signing_identity" "$application"
 else
-    codesign --force --options runtime --timestamp --sign "$REMILE_SIGN_IDENTITY" "$application"
+    codesign --force --options runtime --timestamp --sign "$signing_identity" "$application"
 fi
 print "$application"

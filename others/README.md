@@ -1,10 +1,22 @@
-# remile. artwork
+# Reusable artwork and interface templates
 
-Reusable vector artwork lives in `icons/` and `banners/`. The application copies these assets into its bundle, so it does not depend on this checkout at runtime.
+This directory contains maintained artwork and the help template used by remile. Runtime artwork is copied into the application bundle. It never depends on this checkout after installation.
 
-- `icons/chatgpt.svg` is the OpenAI mark with a tightly fitted view box. Its path is unchanged. Attribution and licence are in `icons/CHATGPT-LICENSE.txt`.
-- Apple Intelligence uses the native `apple.intelligence` system symbol. `icons/references/apple-intelligence-user-reference.png` preserves the supplied visual reference.
-- `icons/ai-off.svg` records the manual-writing symbol used for the disabled AI state. All provider controls share a 32 pt target. ChatGPT uses 17 pt artwork to balance the 20 pt system symbols optically.
-- `banners/remile_banner_*.svg` preserves the original complete banner. `remile_wordmark_*.svg` and `remile_lighthouse_*.svg` let the app arrange the same artwork in a flexible frame without stretching the lettering.
+| Directory | Contents |
+| --- | --- |
+| `brand/icons` | Rounded macOS icons and full-bleed variants for hosts that apply a mask |
+| `brand/banners` | Original complete Light/Dark banners |
+| `brand/wordmarks` | Lettering preserved from the original banner |
+| `symbols/providers` | ChatGPT mark used by provider controls |
+| `symbols/integrations` | Overleaf leaf used by project controls |
+| `symbols/system-symbols.json` | Actual literal SF Symbols names and source locations. Native system artwork is not redistributed |
+| `motion/lighthouse` | Light/Dark lighthouse vectors for Home and search |
+| `motion/airplane` | Light/Dark flight artwork for Work offline transitions |
+| `templates/help` | Shared JSON tokens, editable Light/Dark examples and usage instructions for the native help bubble |
+| `licences` | Notices for third-party artwork and fixed search words |
 
-Baker can reuse the artwork and the provider distinction. A local engine requires its own availability and model-download handling. ChatGPT access uses the official authorised plan connection.
+`catalogue.json` maps each shipped SVG to its bundle location. Run `tools/catalog_artwork.py` with the host's Python to regenerate the asset and system-symbol catalogues, or pass `--check` to verify them. Variable and composed system-symbol expressions remain defined in source. Bundle names are stable across directory reorganisation.
+
+Apple Intelligence uses native `apple.intelligence`. Manual uses `pencil.tip`. The former reference image and unused `ai-off.svg` have been archived outside the asset library, with their original hashes in the 22 October 2026 task evidence. Do not replace actual system symbols with screenshot copies.
+
+Preserve the wordmark lettering. Use the application’s adaptive slate, paper and gold colours. Templates and original remile. artwork may be reused under the repository MIT licence. The OpenAI mark retains its third-party licence and trademark terms. See `licences/CHATGPT-LICENSE.txt` and `../THIRD_PARTY_NOTICES.md`. Native SF Symbols must be resolved through the target operating system’s APIs.

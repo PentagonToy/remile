@@ -2,6 +2,10 @@
 
 Write the display name as **remile.** in lowercase, including the full stop. Paths and executable names omit the dot.
 
+## Voice
+
+Lead with the action or result. Keep guidance short and direct. Save poetic language for quiet moments such as the banner and waiting states. Follow the [writing guide](../agent/WRITING.md).
+
 ## Colour
 
 | Role | Colour |
@@ -19,9 +23,9 @@ Write the display name as **remile.** in lowercase, including the full stop. Pat
 
 ## Artwork and type
 
-Canonical SVG assets reside in `others/banners` and `others/icons`. Preserve the supplied wordmark; its lettering defines the logo. Rounded icons suit macOS, while full-bleed variants suit hosts that apply their own mask. The lighthouse comes from the banner artwork.
+Canonical artwork is categorised in `others/brand`, `others/symbols` and `others/motion`. `others/templates/help` contains the shared help-bubble tokens and vector examples. `others/catalogue.json` lists the runtime assets. Preserve the supplied wordmark. Its lettering defines the logo. Rounded icons suit macOS, while full-bleed variants suit hosts that apply their own mask. The lighthouse comes from the banner artwork.
 
-Use native system type for controls, monospaced type for source and a native serif for the authored line. Set the line at 18 pt with 4 pt line spacing; set the signature at 14 pt.
+Use native system type for controls, monospaced type for source and a native serif for the authored line. Set the line at 18 pt with 4 pt line spacing. Set the signature at 14 pt.
 
 > Across time, a few words find you here.
 >
