@@ -16,12 +16,20 @@ final class HomeModel: ObservableObject {
     @Published var resultOrder = SearchResultOrder.relevance
     @Published var summary = LibrarySummary()
     @Published var query = ""
-    @Published var results: [LibraryHit] = []
+    @Published var results: [LibraryHit] = [] { didSet { groupedResults = nil; rankedResults = nil } }
     @Published var selectedHit: LibraryHit?
-    @Published var documentFilter = ""
+    @Published var documentFilter = "" { didSet { groupedResults = nil; rankedResults = nil } }
     @Published var expandedDocuments = Set<String>()
-    var resultGroups: [SearchResultGroup] { SearchResultGroup.make(results, filter: documentFilter) }
-    var rankedHits: [RankedSearchHit] { RankedSearchHit.make(results, filter: documentFilter) }
+    private var groupedResults: [SearchResultGroup]?
+    private var rankedResults: [RankedSearchHit]?
+    var resultGroups: [SearchResultGroup] {
+        if let groupedResults { return groupedResults }
+        let value = SearchResultGroup.make(results, filter: documentFilter); groupedResults = value; return value
+    }
+    var rankedHits: [RankedSearchHit] {
+        if let rankedResults { return rankedResults }
+        let value = RankedSearchHit.make(results, filter: documentFilter); rankedResults = value; return value
+    }
     var visibleHits: [LibraryHit] { resultOrder == .rank ? rankedHits.map(\.hit) : resultGroups.flatMap(\.hits) }
     @Published var libraryPresented = false
     @Published var guidePresented = false
@@ -120,7 +128,7 @@ final class HomeModel: ObservableObject {
     func removeFolder(_ folder: LibraryFolder) {
         guard !indexing else { return }
         Task {
-            do { try await index.remove(folder); await load(); invalidateSearch() }
+            do { let root = try folder.url(); try ManuscriptReviewStore.removeLibraryFolder(root); try await index.remove(folder); await load(); invalidateSearch() }
             catch { self.error = error.localizedDescription }
         }
     }

@@ -61,7 +61,7 @@ struct MarkdownWorkspace: View {
             Divider()
             Group {
                 if presentation.outline {
-                    ReaderSplit(initial: 220, minimum: 180, maximum: 300, minimumContent: 580, label: "outline", pane: { outlinePanel }, content: { documentContent })
+                    ReaderSplit(sizing: .sidebar, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: 580, label: "outline", pane: { outlinePanel }, content: { documentContent })
                 } else { documentContent }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
@@ -84,12 +84,10 @@ struct MarkdownWorkspace: View {
         .task(id: source + String(spellcheck) + language) { await writing.check(source, enabled: spellcheck, language: language, editor: editor) }
         .task(id: source) { if livePreview || preview.html == nil { await preview.render(source, url: previewURL) } }
         .onChange(of: livePreview) { if livePreview { render() } }
-        .onDisappear { session?.editSource = nil; writing.dismissSuggestion(); editor.synonymsRequested = nil; editor.proofreadRequested = nil; editor.writingIssueRequested = nil; editor.dismissWriting = nil }
+        .onDisappear { session?.editSource = nil; writing.dismissSuggestion(); editor.proofreadRequested = nil; editor.dismissWriting = nil }
         .onAppear {
             assistant.useHistory(fileURL?.path)
-            editor.synonymsRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return }; _ = writing?.showSuggestion(at: range, in: view, editor: editor, synonymsOnly: true) }
             editor.proofreadRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return }; writing?.proofread(range, in: view, editor: editor) }
-            editor.writingIssueRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return false }; return writing?.showSuggestion(at: range, in: view, editor: editor) ?? false }
             editor.dismissWriting = { [weak writing = writing] in writing?.dismissSuggestion() }
             session?.editSource = { [weak editor = editor, weak state = presentation, weak session = session] before, after in
                 guard let session, case .markdown(let current) = session.document.content, current == before else { return false }
@@ -139,6 +137,7 @@ struct MarkdownWorkspace: View {
                     ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
                 }.pickerStyle(.segmented).frame(width: 225)
             }
+            ToolbarItem(placement: .primaryAction) { OfflineModeButton() }
         }
     }
     private var outlinePanel: some View {
@@ -179,7 +178,7 @@ struct MarkdownWorkspace: View {
         case .read: previewView
         case .edit: editorView
         case .split:
-            ReaderSplit(initial: 430, minimum: 280, maximum: 1200, minimumContent: 280, preferPaneWhenNarrow: true, label: "Markdown editor", pane: { editorView }, content: { previewView })
+            ReaderSplit(sizing: .equal, minimum: 280, maximum: .greatestFiniteMagnitude, minimumContent: 280, preferPaneWhenNarrow: true, label: "Markdown editor", pane: { editorView }, content: { previewView })
         }
     }
     private var previewURL: URL { fileURL ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Untitled.md") }

@@ -41,7 +41,7 @@ struct LibraryManager: View {
                         HStack {
                             Text(URL(fileURLWithPath: document.path).lastPathComponent).lineLimit(1).truncationMode(.middle)
                             Spacer()
-                            Text(document.status).foregroundStyle(document.failed || document.emptyPages > 0 ? RemileStyle.warning : RemileStyle.success).lineLimit(1)
+                            Text(document.status).foregroundStyle(document.failed || document.emptyPages > 0 ? RemileStyle.warning : RemileStyle.success).fixedSize(horizontal: false, vertical: true)
                         }.font(RemileType.caption).padding(.vertical, 4).remileHelp(document.path)
                     }
                     if model.summary.documents > 2000 { Text("Showing the first 2,000 documents").font(RemileType.caption).foregroundStyle(.secondary) }

@@ -59,7 +59,7 @@ struct TeXProjectSidebar: View {
                         .coordinateSpace(name: "tex.sidebar.split").transaction { if state.dragOrigin != nil { $0.animation = nil } }
                 }
             Divider()
-            EditorSidebarFooter(compact: true, title: "Project settings") { state.settings.toggle() }
+            EditorSidebarFooter(compact: state.files || state.outline, title: "Project settings") { state.settings.toggle() }
                 .popover(isPresented: $state.settings, arrowEdge: .trailing) { TeXProjectSettings(project: project).frame(width: 440, height: 540) }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(RemileStyle.sidebar)
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.files)
@@ -69,20 +69,42 @@ struct TeXProjectSidebar: View {
     }
     private var filesPane: some View {
         VStack(spacing: 0) {
-            HStack {
-                DisclosureGroup("Files", isExpanded: $state.files) { EmptyView() }.font(RemileType.callout.weight(.semibold))
-                if project.selected != project.main {
-                    Button { project.visit(file: project.main) } label: { Image(systemName: "doc.text").frame(width: 22, height: 22) }
-                        .buttonStyle(.plain).remileHelp("Open main document · " + project.main).accessibilityLabel("Open main document")
-                }
-                Toggle(isOn: $showCollections) { Image(systemName: "square.stack.3d.up").frame(width: 22, height: 22) }.toggleStyle(.button).buttonStyle(.plain).remileHelp(showCollections ? "Collections on · click for plain folders" : "Plain folders · click to restore collections").accessibilityLabel("Show collections")
-                Menu { Button("New file") { state.files = true; project.newFile() }; Button("New folder") { state.files = true; project.newFolder() }; Button("New collection") { state.files = true; showCollections = true; project.addCollection() } } label: { Image(systemName: "plus").frame(width: 20, height: 22) }.menuStyle(.borderlessButton).fixedSize().remileHelp("New file, folder or virtual collection")
+            ViewThatFits(in: .horizontal) {
+                filesHeader(compact: false)
+                filesHeader(compact: true)
             }.padding(.horizontal, 12).frame(height: 44)
             Divider()
             if state.files {
                 if let draft = project.newItemDraft { TeXSidebarCreation(project: project, draft: draft).id(draft.id) }
                 TeXFileTree(project: project, showCollections: showCollections)
+                TeXFileTrashTarget(project: project).frame(height: 32)
             }
+        }
+    }
+    private func filesHeader(compact: Bool) -> some View {
+        HStack(spacing: 4) {
+            DisclosureGroup("Files", isExpanded: $state.files) { EmptyView() }.font(RemileType.callout.weight(.semibold))
+            if !compact {
+                if project.selected != project.main {
+                    Button { project.visit(file: project.main) } label: { Image(systemName: "doc.text").frame(width: 22, height: 22) }
+                        .buttonStyle(.plain).remileHelp("Open main document").accessibilityLabel("Open main document")
+                }
+                Toggle(isOn: $showCollections) { Image(systemName: "square.stack.3d.up").frame(width: 22, height: 22) }
+                    .toggleStyle(.button).buttonStyle(.plain).remileHelp("Show collections").accessibilityLabel("Show collections")
+            }
+            Button { state.files = true; project.chooseFiles() } label: { Image(systemName: "tray.and.arrow.up").frame(width: 22, height: 22) }
+                .buttonStyle(.plain).disabled(project.compiling).remileHelp("Add files to this folder").accessibilityLabel("Add files")
+            Menu {
+                Button("New file") { state.files = true; project.newFile() }
+                Button("New folder") { state.files = true; project.newFolder() }
+                Button("New collection") { state.files = true; showCollections = true; project.addCollection() }
+                if compact {
+                    Divider()
+                    Toggle("Show collections", isOn: $showCollections)
+                    Button("Open main document") { project.visit(file: project.main) }
+                }
+            } label: { Image(systemName: "plus").frame(width: 20, height: 22) }
+                .menuStyle(.borderlessButton).fixedSize().remileHelp("New file, folder or collection")
         }
     }
     private var outlinePane: some View {
@@ -95,7 +117,8 @@ struct TeXProjectSidebar: View {
             if state.outline {
                 if project.outline.isEmpty {
                     Text("No project headings").font(RemileType.small).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 12)
                 } else { ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
                         ForEach(project.outline) { item in

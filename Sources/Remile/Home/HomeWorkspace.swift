@@ -48,7 +48,7 @@ struct HomeWorkspace: View {
         }
     }
     private var homeLayout: some View {
-        ReaderSplit(initial: 196, minimum: 180, maximum: 260, minimumContent: 320, label: "home sidebar", pane: {
+        ReaderSplit(sizing: .sidebar, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: 320, label: "home sidebar", pane: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 7) {
                     Image(nsImage: RemileArtwork.image("icon", dark: colorScheme == .dark) ?? NSImage(named: NSImage.applicationIconName) ?? NSImage()).resizable().scaledToFit().frame(width: 32, height: 32)
@@ -113,10 +113,7 @@ struct HomeWorkspace: View {
                         HomeCardLayout(minimumWidth: 160) {
                             Button { model.newMarkdown() } label: { Label("Markdown", systemImage: "square.and.pencil").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("New Markdown document").tourTarget("markdown")
                             Button { model.chooseTeX() } label: { Label("LaTeX", systemImage: "doc.text").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("Open a LaTeX project").tourTarget("latex").modifier(ToolFileDrop(model: model, target: .latex))
-                            Menu {
-                                Button("Add new project to library") { model.overleaf.openLibrary(add: true) }
-                                Button("Open library") { model.overleaf.openLibrary() }
-                            } label: { Label { Text("Overleaf") } icon: { OverleafMark() }.frame(maxWidth: .infinity).padding(.vertical, 8) }.tourTarget("overleaf")
+                            Button { model.overleaf.openLibrary() } label: { Label { Text("Overleaf") } icon: { OverleafMark() }.frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("Open Overleaf library").tourTarget("overleaf")
                         }.font(RemileType.body).buttonStyle(RemileEditorButtonStyle()).tourTarget("editors")
                     }
                     VStack(alignment: .leading, spacing: 10) {
@@ -142,7 +139,7 @@ struct HomeWorkspace: View {
             VStack(alignment: .leading, spacing: compact ? 7 : 12) {
                 Image(systemName: symbol).font(.system(size: 20, weight: .medium)).foregroundStyle(RemileStyle.accent).frame(height: 24)
                 Text(title).font(.system(size: 16, weight: .semibold))
-                Text(detail).font(RemileType.small).foregroundStyle(.secondary).lineLimit(2)
+                Text(detail).font(RemileType.small).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(compact ? 14 : 20)
                 .background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.primary.opacity(0.06)))

@@ -57,12 +57,21 @@ struct ReaderAppearanceModifier: ViewModifier {
 
 enum RemileArtwork {
     private static var cache: [String: NSImage] = [:]
+    private static func directory(_ kind: String) -> String {
+        switch kind {
+        case "icon": return "brand/icons"
+        case "wordmark": return "brand/wordmarks"
+        case "lighthouse": return "motion/lighthouse"
+        case "airplane": return "motion/airplane"
+        default: return "brand/banners"
+        }
+    }
     static func image(_ kind: String, dark: Bool) -> NSImage? {
         let name = "remile_\(kind)_\(dark ? "dark" : "light")" + (kind == "icon" ? "_rounded" : "")
         if let image = cache[name] { return image }
         let sourceRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let urls = [Bundle.main.resourceURL?.appendingPathComponent("Brand/\(name).svg"),
-                    sourceRoot.appendingPathComponent("others/\(kind == "icon" ? "icons" : kind == "airplane" ? "icons/animations" : "banners")/\(name).svg")]
+                    sourceRoot.appendingPathComponent("others/\(directory(kind))/\(name).svg")]
         guard let image = urls.compactMap({ $0 }).compactMap({ NSImage(contentsOf: $0) }).first else { return nil }
         cache[name] = image
         return image
@@ -129,12 +138,12 @@ struct RemileCompactToolStyle: ButtonStyle {
 /// Shared brand wording for the guide, tour and editor sidebar.
 enum RemileBrand { static let tagline = "Across time, a few words find you here." }
 
-/// One quiet line, constrained to its settings card.
+/// A quiet hint that wraps within its settings card.
 struct SettingsHint: View {
     let text: String
     init(_ text: String) { self.text = text }
     var body: some View {
-        Text(text).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1)
+        Text(text).font(RemileType.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

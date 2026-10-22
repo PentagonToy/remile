@@ -17,6 +17,8 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     private var scale: CGFloat = 1
     private var wide = false
     private var serif = false
+    private var appliedCSS: String?
+    private var appliedOffline: Bool?
     private var generation = UUID()
     private var renderGeneration = UUID()
     private let remoteImages = MarkdownRemoteImages()
@@ -64,7 +66,7 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     func display(dark: Bool, scale: CGFloat, wide: Bool, serif: Bool) {
         self.dark = dark; self.scale = scale; self.wide = wide; self.serif = serif
         guard let html else { return }
-        web.pageZoom = scale
+        if web.pageZoom != scale { web.pageZoom = scale }
         if loadedHTML != html {
             if loaded {
                 loadedHTML = html
@@ -110,6 +112,8 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     private func updateRemotePolicy() {
         if NetworkAccess.offline { remoteImages.cancelAll(); remoteImages.clearCache() }
         guard loaded else { return }
+        guard appliedOffline != NetworkAccess.offline else { return }
+        appliedOffline = NetworkAccess.offline
         web.evaluateJavaScript("window.remileSetOffline?.(\(NetworkAccess.offline ? "true" : "false"))", completionHandler: nil)
     }
     func pauseRemoteImages() { remoteImages.cancelAll() }
@@ -121,8 +125,11 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     private func style() {
         guard loaded else { return }
         updateRemotePolicy()
-        let encoded = Self.json(themeCSS)
-        web.pageZoom = scale
+        if web.pageZoom != scale { web.pageZoom = scale }
+        let css = themeCSS
+        guard appliedCSS != css else { return }
+        appliedCSS = css
+        let encoded = Self.json(css)
         web.evaluateJavaScript("(()=>{let s=document.getElementById('reader-style');if(!s){s=document.createElement('style');s.id='reader-style';document.head.append(s)}s.textContent=\(encoded)})()", completionHandler: nil)
     }
     func reveal(section: Int) {
@@ -145,7 +152,7 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
         if action.navigationType == .linkActivated, let url = action.request.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") { if !NetworkAccess.offline { NSWorkspace.shared.open(url) } }
         decisionHandler(.cancel)
     }
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { loadedHTML = ""; message = "Preview paused. Switch view to reload it." }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { loadedHTML = ""; loaded = false; appliedCSS = nil; appliedOffline = nil; message = "Preview paused. Switch view to reload it." }
 }
 
 struct MarkdownPreview: View {

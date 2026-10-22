@@ -5,9 +5,7 @@ import SwiftUI
 final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDelegate {
     private(set) var scroll: NSScrollView?
     private(set) var textView: NSTextView?
-    var synonymsRequested: ((NSRange, NSTextView) -> Void)?
     var proofreadRequested: ((NSRange, NSTextView) -> Void)?
-    var writingIssueRequested: ((NSRange, NSTextView) -> Bool)?
     var dismissWriting: (() -> Void)?
     var writingRanges: [NSRange] = [] { didSet { scheduleStyle() } }
     var texTheme: TeXEditorTheme?
@@ -48,9 +46,7 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         view.delegate = self; view.setAccessibilityLabel("Markdown source")
         view.backgroundColor = NSColor(RemileStyle.surface); view.textColor = NSColor(RemileStyle.ink)
         view.sourceInteraction = { [weak self] in self?.fadeFlash(); self?.dismissWriting?() }
-        view.synonymsSelection = { [weak self, weak view] range in guard let view else { return }; self?.synonymsRequested?(range, view) }
         view.proofreadSelection = { [weak self, weak view] range in guard let view else { return }; self?.proofreadRequested?(range, view) }
-        view.writingSelection = { [weak self, weak view] range in guard let self, let view else { return false }; return self.writingIssueRequested?(range, view) ?? false }
         view.completionKey = { [weak self] event in
             guard let self else { return false }
             if self.completion.key(event) { return true }
@@ -301,9 +297,7 @@ final class MarkdownSourceTextView: NSTextView {
     var syncSelection: () -> Void = {}
     var sourceInteraction: () -> Void = {}
     var completionKey: (NSEvent) -> Bool = { _ in false }
-    var synonymsSelection: (NSRange) -> Void = { _ in }
     var proofreadSelection: (NSRange) -> Void = { _ in }
-    var writingSelection: (NSRange) -> Bool = { _ in false }
     var markdownMode = true
     var resigned: () -> Void = {}
     override func paste(_ sender: Any?) {
@@ -333,9 +327,8 @@ final class MarkdownSourceTextView: NSTextView {
     }
     override func keyDown(with event: NSEvent) { sourceInteraction(); if !completionKey(event) { super.keyDown(with: event) } }
     override func mouseDown(with event: NSEvent) {
-        let index = characterIndexForInsertion(at: convert(event.locationInWindow, from: nil))
         sourceInteraction(); resigned(); super.mouseDown(with: event)
-        if event.clickCount == 2, !writingSelection(NSRange(location: index, length: 0)) { syncSelection() }
+        if event.clickCount == 2 { syncSelection() }
     }
     override func resignFirstResponder() -> Bool { resigned(); return super.resignFirstResponder() }
     override var rangeForUserCompletion: NSRange {
@@ -358,11 +351,9 @@ final class MarkdownSourceTextView: NSTextView {
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let menu = super.menu(for: event) else { return nil }
         if selectedRange().length > 0 {
-            let proofread = NSMenuItem(title: WritingAlternatives.provider == "ChatGPT" ? "Proofread with ChatGPT" : "Proofread with Apple Intelligence", action: #selector(proofreadSelectedText(_:)), keyEquivalent: "")
+            let proofread = NSMenuItem(title: WritingProofreading.provider == "ChatGPT" ? "Proofread with ChatGPT" : "Proofread with Apple Intelligence", action: #selector(proofreadSelectedText(_:)), keyEquivalent: "")
             proofread.target = self; proofread.toolTip = "Review a grammar suggestion before applying it."
-            menu.insertItem(proofread, at: 0)
-            let synonyms = NSMenuItem(title: "Find word alternatives", action: #selector(findWordAlternatives(_:)), keyEquivalent: ""); synonyms.target = self
-            menu.insertItem(synonyms, at: 1); menu.insertItem(.separator(), at: 2)
+            menu.insertItem(proofread, at: 0); menu.insertItem(.separator(), at: 1)
         }
         menu.addItem(.separator())
         let item = NSMenuItem(title: "Complete Math Command", action: #selector(completeMathCommand(_:)), keyEquivalent: "")
@@ -370,17 +361,11 @@ final class MarkdownSourceTextView: NSTextView {
         menu.addItem(item)
         return menu
     }
-    @objc private func findWordAlternatives(_ sender: Any?) { synonymsSelection(selectedRange()) }
     @objc private func proofreadSelectedText(_ sender: Any?) { proofreadSelection(selectedRange()) }
     @objc private func completeMathCommand(_ sender: Any?) { complete(sender) }
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(proofreadSelectedText(_:)) {
-            return !hasMarkedText() && selectedRange().length > 0 && selectedRange().length <= 2000 && WritingAlternatives.enabled(correction: true)
-        }
-        if menuItem.action == #selector(findWordAlternatives(_:)) {
-            let range = selectedRange()
-            guard !hasMarkedText(), range.length > 0, let word = EditorSynonyms.word(at: range.location, in: string), word.range == range else { return false }
-            return WritingAlternatives.enabled(correction: false)
+            return !hasMarkedText() && selectedRange().length > 0 && selectedRange().length <= 2000 && WritingProofreading.enabled
         }
         if menuItem.action == #selector(completeMathCommand(_:)) {
             guard !hasMarkedText(), let context = MathCompletion.context(string, selection: selectedRange()) else { return false }

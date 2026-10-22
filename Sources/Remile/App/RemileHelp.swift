@@ -2,7 +2,8 @@ import SwiftUI
 import AppKit
 
 enum RemileHints {
-    static let chatGPTPlan = "Uses your ChatGPT plan. No separate API bill from remile. Credit use follows your ChatGPT settings."
+    static let overleafToken = "Create a Git authentication token."
+    static let chatGPTPlan = "No separate API bill from remile. Your ChatGPT plan and credit settings apply."
     static func edits(_ shown: Bool) -> String { shown ? "Edit colours on · click to hide changes made by AI or an agent" : "Edit colours off · click to show changes made by AI or an agent" }
     static func history(_ shown: Bool) -> String { shown ? "Close local edit history" : "Compare with an earlier local version" }
     static func logs(_ shown: Bool) -> String { shown ? "Return to PDF preview" : "Show compiler errors, warnings and terminal output" }

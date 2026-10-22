@@ -23,7 +23,7 @@ These commands run independently of the application window. Output paths identif
 | --- | --- |
 | `combine /path/one.pdf /path/two.pdf --output /path/new.pdf` | Combine PDFs in argument order |
 | `combine /path/one.md /path/two.md --output /path/new.md` | Append Markdown sources in argument order |
-| `compress /path/input.pdf --output /path/new.pdf` | Compress a PDF; report original and output bytes |
+| `compress /path/input.pdf --output /path/new.pdf` | Compress a PDF. Report original and output bytes |
 | `compress /path/input.pdf --output /path/new.pdf --quality small --grayscale` | Select small, balanced or high quality and optional grayscale |
 | `inspect /path/project` | List project files and main-document candidates |
 | `build /path/project --output /path/new-directory --main main.tex` | Compile captured project sources |
@@ -42,8 +42,9 @@ Live commands target the active remile. document window. Switching windows chang
 | --- | --- |
 | `open /path/document` | Open a document or project |
 | `status` | Read document state and compile counts |
-| `library-search "question or keywords" [--no-boost]` | Search the current local library with the same engine and boosting policy as the app; return ranked paths, pages, excerpts and matched terms |
-| `pdf-read [/path/document.pdf] [--page N] [--find text] [--render /path/new.png]` | Read PDF page text, annotation data and search bounds; optionally render a page image |
+| `diagnostics` | Read main-process memory, source size, cached hashes, build-cache ownership and automation transport |
+| `library-search "question or keywords" [--no-boost]` | Search the current local library with the same engine and boosting policy as the app. Return ranked paths, pages, excerpts and matched terms |
+| `pdf-read [/path/document.pdf] [--page N] [--find text] [--render /path/new.png]` | Read PDF page text, annotation data and search bounds. Optionally render a page image |
 | `read [--file relative.tex]` | Read the buffer, SHA-256 and CLI edit ranges |
 | `replace --source-file /path/source --expected-sha256 HASH [--file relative.tex]` | Apply an undoable buffer edit |
 | `save` | Save the current document or project |
@@ -55,12 +56,17 @@ Live commands target the active remile. document window. Switching windows chang
 | `submission-compare` | Start current/embedded submission checks |
 | `submission-compare --status` | Read both results, progress, logs and captured source hashes |
 | `comments [--format markdown\|json] [--output /path/comments.json]` | Read or export current PDF comments, including unsaved notes |
+| `review [--run\|--stop\|--clear] [--file relative.tex]` | Start a manuscript review, read saved questions, stop pending work or clear results |
+| `review --criteria` | Read the bundled review criteria and question instructions |
+| `review [/path/project] [--format markdown\|json] [--output /path/new-questions.md]` | Read or export saved manuscript questions and source evidence |
 | `history` | Read project checkpoints and tool markers |
 | `select --file relative.tex` | Select a source file |
 | `rename --file relative.tex --name NEW` | Rename a project file |
 | `rename --kind project --name NEW` | Rename the project |
 
 Markdown supports read, replace, save and export. Source replacement switches to Split and retains native Undo. Save is explicit. The eye control shows session-only CLI edit ranges in the source.
+
+[Manuscript review](manuscript-review.md) returns questions linked to captured source versions. Starting, stopping and clearing require the running app. Starting also requires the target LaTeX project to be open. `--run` returns immediately, so read `review` again for progress and results. An explicit project directory supports offline reading and export of saved results.
 
 ## Source tools
 
@@ -70,7 +76,9 @@ Bibliography embedding prepares classic BibTeX output. Submission comparison che
 
 ## Transport
 
-The application processes fixed requests through `~/Library/Application Support/local.remile.app/Automation`. Owner-only request and response files use UUID names. The CLI writes a request, reads its response and removes both files. Edits require the current source fingerprint; exports require a new output path.
+The application processes fixed requests through `~/Library/Application Support/local.remile.app/Automation`. Directory events wake the server when files change. It does not poll while idle. Owner-only request and response files use UUID names. The CLI writes a request, reads its response and removes both files. Edits require the current source fingerprint. Exports require a new output path.
+
+`diagnostics` reads the active workspace without editing it or generating AI requests. Memory values describe the main process and exclude WebKit helper processes and system model services. Active build folders are ownership counts, not an on-disk size measurement. Use matched documents and window states when comparing runs.
 
 Comment exports contain the document filename rather than its local path. JSON includes a schema version, stable annotation identifiers, page, author, text, optional highlight quote, modification time and reply parent. File exports require a new `.md` or `.json` path.
 
@@ -80,6 +88,6 @@ For a connected Overleaf project, `comments` exports the latest snapshot from it
 
 `pdf-read /absolute/document.pdf --page 18 --find "Linear" --render /absolute/new.png` works without opening an editor. Page numbers start at one. The JSON response includes page count, label, bounded text, annotation types/text/rectangles and search rectangles in PDF page points with a bottom-left origin. The optional image uses a new PNG path and a maximum thumbnail dimension of 1600 points. Locked PDFs and copying restrictions are honoured.
 
-Without a document path, `pdf-read` reads the current reader page, including unsaved annotation edits, and reports whether the document has unsaved changes. Text is capped at 64,000 characters, annotations at 500 and matches at 100 per page; the response flags truncated text. This command reads context without editing the PDF or changing its visible page.
+Without a document path, `pdf-read` reads the current reader page, including unsaved annotation edits, and reports whether the document has unsaved changes. Text is capped at 64,000 characters, annotations at 500 and matches at 100 per page. The response flags truncated text. This command reads context without editing the PDF or changing its visible page.
 
-Library search uses B0 for keywords and optionally B-guided for questions. `--no-boost`, Work offline and Manual mode keep the request on B0. The response identifies the engine and accepted expansion phrases. It does not change the search field or document selection. Start the app before issuing this live command; allow up to 60 seconds for the initial resident index and model preparation.
+Library search uses B0 for keywords and optionally B-guided for questions. `--no-boost`, Work offline and Manual mode keep the request on B0. The response identifies the engine and accepted expansion phrases. It does not change the search field or document selection. Start the app before issuing this live command. Allow up to 60 seconds for the initial resident index and model preparation.

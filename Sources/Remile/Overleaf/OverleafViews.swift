@@ -4,13 +4,94 @@ struct OverleafBar: View {
     @ObservedObject var library: OverleafLibrary
     @ObservedObject var project: TeXProject
     let connection: OverleafConnection
+    @StateObject private var live = OverleafLiveWorkspace()
+    @StateObject private var presentation = LivePresentation()
+    private final class LivePresentation: ObservableObject { @Published var connection = false; @Published var review = false; @Published var issue = false; @Published var settings = false; @Published var switching = false }
     private var offline: Bool { library.offlineMode || NetworkAccess.offline || !library.hasNetwork || library.statuses[connection.id] == .offline }
+    private var liveOffline: Bool { library.offlineMode || NetworkAccess.offline || !library.hasNetwork }
     var body: some View {
+        GeometryReader { geometry in
         HStack(spacing: 12) {
-            Label("Private sync", systemImage: "eye.slash").lineLimit(1).font(RemileType.caption).foregroundStyle(offline ? RemileStyle.warning : RemileStyle.success).bubbleHelp("Git sync does not join Overleaf’s live presence channel. Published edits still appear in project history.")
-            Spacer()
-            if library.busy { ProgressView().controlSize(.small).bubbleHelp("Checking project changes") }
-            else if !library.offlineMode, library.hasNetwork, OverleafCredential.locked(connection.profileID) { Label("Connection locked", systemImage: "lock").foregroundStyle(RemileStyle.warning).bubbleHelp("Your work is saved on this Mac. Unlock the saved connection to check Overleaf changes.") }
+            OverleafSyncModePicker(isLive: live.enabled, canStart: !library.busy && !project.compiling && !liveOffline, switching: presentation.switching || live.connecting, choose: changeMode)
+            Spacer(minLength: 8)
+            syncStatus(compact: geometry.size.width < 760)
+                .lineLimit(1).truncationMode(.tail).layoutPriority(-1)
+            if !live.enabled {
+                Button { Task { await library.check(connection, save: project.save) } } label: {
+                    if geometry.size.width < 760 { Image(systemName: "arrow.triangle.2.circlepath") }
+                    else { Text("Check changes").padding(.horizontal, 6) }
+                }.buttonStyle(RemileToolStyle()).accessibilityLabel("Check changes").bubbleHelp("Review local and Overleaf changes")
+                    .disabled(liveOffline || library.busy || project.compiling)
+            }
+            Divider().frame(height: 18).padding(.horizontal, 2)
+            HStack(spacing: 4) {
+                Button { library.commentsProject = connection } label: { Image(systemName: "text.bubble") }
+                    .accessibilityLabel("Comments").bubbleHelp("Overleaf comments").disabled(liveOffline || library.busy)
+                Button { library.openLibrary() } label: { Image(systemName: "books.vertical") }
+                    .accessibilityLabel("Overleaf library").bubbleHelp("Overleaf library").disabled(library.busy)
+                Button { presentation.settings.toggle() } label: {
+                    if !live.enabled && OverleafCredential.locked(connection.profileID) {
+                        if geometry.size.width < 760 { Image(systemName: "lock") }
+                        else { Label("Unlock", systemImage: "lock").padding(.horizontal, 6) }
+                    } else { Image(systemName: "person.crop.circle") }
+                }.accessibilityLabel(!live.enabled && OverleafCredential.locked(connection.profileID) ? "Unlock connection" : "Connection settings")
+                    .bubbleHelp("Connection settings").popover(isPresented: $presentation.settings) { connectionSettings }
+            }.buttonStyle(RemileToolStyle()).font(.system(size: 15))
+        }.font(RemileType.caption).foregroundStyle(RemileStyle.ink).padding(.horizontal, 16).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }.frame(height: 48).background(RemileStyle.editorBar)
+            .modifier(OverleafAutoSync(library: library, project: project, connection: connection))
+            .sheet(isPresented: $presentation.connection, onDismiss: { if live.enabled { Task { await live.retry() } } }) { OverleafSignIn(profile: connection.profileID) { presentation.connection = false } }
+            .sheet(isPresented: $presentation.review) {
+                if let conflict = live.conflict { OverleafLiveReview(conflict: conflict, choose: { text in presentation.review = false; Task { await live.choose(text: text) } }, close: { presentation.review = false }) }
+            }
+            .onChange(of: liveOffline) { if liveOffline { Task { await live.suspend() } } }
+            .onDisappear { Task { await live.stop() } }
+    }
+    private func changeMode(_ isLive: Bool) {
+        guard isLive != live.enabled, !presentation.switching, !live.connecting else { return }
+        guard !isLive || (!library.busy && !project.compiling && !liveOffline) else { return }
+        presentation.switching = true
+        Task {
+            defer { presentation.switching = false }
+            if isLive { await live.start(project: project, library: library, connection: connection) }
+            else { await live.stop() }
+        }
+    }
+    private var connectionSettings: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Connection").font(RemileType.callout.weight(.semibold))
+            Text(connection.account).font(RemileType.caption).foregroundStyle(RemileStyle.secondaryInk)
+            Toggle("Work offline", isOn: Binding(get: { library.offlineMode }, set: { offline in
+                if offline && live.enabled { Task { await live.suspend(); library.offlineMode = true } }
+                else { library.offlineMode = offline }
+            })).toggleStyle(.switch).controlSize(.small).disabled(library.busy || presentation.switching)
+            Divider()
+            if !live.enabled && OverleafCredential.locked(connection.profileID) {
+                Button("Unlock Git connection") { Task { await library.unlock(connection) } }.disabled(library.busy)
+            }
+            Button("Manage account…") { presentation.settings = false; presentation.connection = true }.disabled(liveOffline)
+        }.padding(18).frame(width: 260, alignment: .leading).background(RemileStyle.background)
+    }
+    @ViewBuilder private func syncStatus(compact: Bool) -> some View {
+            if live.enabled {
+                if live.connecting { ProgressView().controlSize(.small); Text("Connecting…") }
+                else if let issue = live.issue {
+                    Button { presentation.issue = true } label: { Label(compact ? "Paused" : "Paused · " + live.pauseReason, systemImage: "exclamationmark.circle") }
+                        .foregroundStyle(RemileStyle.warning).bubbleHelp(issue)
+                        .popover(isPresented: $presentation.issue) { HelpBubbleContent(text: issue) }
+                    if live.conflict != nil { Button("Review edits") { presentation.review = true } }
+                    else if live.requiresGitReview { Button(compact ? "Review Git" : "Stop live and review Git") { Task { await live.reviewGit() } }.disabled(liveOffline || project.compiling).bubbleHelp("Stop live sync and review project file changes through Git") }
+                    else { Button("Reconnect") { Task { await live.retry() } }.disabled(liveOffline) }
+                } else if live.connected {
+                    if live.pendingDocumentCount > 0 {
+                        Label("Confirming · \(live.pendingDocumentCount) \(live.pendingDocumentCount == 1 ? "file" : "files")", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(RemileStyle.accent)
+                    } else if let date = live.lastConfirmedAt {
+                        Label(compact ? "Confirmed" : "Confirmed " + date.formatted(date: .omitted, time: .standard), systemImage: "checkmark.circle.fill").foregroundStyle(RemileStyle.success)
+                            .bubbleHelp("All connected text files match the confirmed Overleaf state.")
+                    } else { Text("Checking changes…").foregroundStyle(RemileStyle.secondaryInk) }
+                } else { Text("Live sync paused").foregroundStyle(RemileStyle.warning) }
+            } else if library.busy { ProgressView().controlSize(.small).bubbleHelp("Checking project changes") }
+            else if !library.offlineMode, library.hasNetwork, OverleafCredential.locked(connection.profileID) { Label(compact ? "Locked" : "Connection locked", systemImage: "lock").foregroundStyle(RemileStyle.warning).bubbleHelp("Your work is saved on this Mac. Unlock the saved connection to check Overleaf changes.") }
             else if offline { Label(library.pendingFiles.contains(connection.id) ? "Changes saved locally" : "Offline", systemImage: "icloud.slash").foregroundStyle(RemileStyle.warning).bubbleHelp("Your work stays on this Mac. Check changes when you reconnect.") }
             else if library.statuses[connection.id] == .conflict { Label("Conflicting edits", systemImage: "exclamationmark.circle.fill").foregroundStyle(.red).bubbleHelp("Overlapping edits need your choice before syncing.") }
             else if library.statuses[connection.id] == .changes { Label("Changes to review", systemImage: "circle.fill").foregroundStyle(RemileStyle.warning).bubbleHelp("Review local and Overleaf changes before applying or publishing.") }
@@ -20,17 +101,113 @@ struct OverleafBar: View {
                     Label(OverleafLibrary.syncAge(date, now: tick.date), systemImage: "checkmark.circle.fill").foregroundStyle(RemileStyle.success).bubbleHelp("Last matched: " + date.formatted(date: .abbreviated, time: .shortened))
                 }
             }
-            Button { library.offlineMode.toggle() } label: {
-                Label(library.offlineMode ? "Offline" : "Online", systemImage: library.offlineMode ? "icloud.slash" : "cloud")
-            }.foregroundStyle(library.offlineMode ? RemileStyle.ink : RemileStyle.accent)
-                .bubbleHelp(library.offlineMode ? "Offline: edits stay on this Mac. Switch online to send your changes automatically." : "Online: your edits sync after a short pause. Changes on Overleaf wait for your review. Sync stops when you leave this project.")
-                .accessibilityValue(library.offlineMode ? "Offline" : "Online").disabled(library.busy)
-            if OverleafCredential.locked(connection.profileID) { Button("Unlock") { Task { await library.unlock(connection) } }.disabled(library.busy).bubbleHelp("Allow this app to use the saved Git connection in Keychain") }
-            Button("Check changes") { guard project.save() else { return }; Task { await library.check(connection) } }.disabled(NetworkAccess.offline || library.offlineMode || library.busy || project.compiling)
-            Button { library.commentsProject = connection } label: { Image(systemName: "text.bubble") }.bubbleHelp("Comments and export").disabled(library.offlineMode || library.busy)
-            Button { library.openLibrary() } label: { Image(systemName: "books.vertical") }.bubbleHelp("Overleaf library").disabled(library.busy)
-        }.font(RemileType.caption).padding(.horizontal, 16).padding(.vertical, 8).background(RemileStyle.editorBar)
-            .modifier(OverleafAutoSync(library: library, project: project, connection: connection))
+    }
+}
+
+/// Two explicit modes with equal hit areas and independently available actions.
+struct OverleafSyncModePicker: View {
+    let isLive: Bool
+    let canStart: Bool
+    let switching: Bool
+    let choose: (Bool) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        HStack(spacing: 2) {
+            mode("Private", live: false, help: "Local edits sync through Git. Remote changes wait for review.")
+            mode("Live", live: true, help: "Text edits sync live. Git publishing is paused.")
+        }.padding(3).background(RemileStyle.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(RemileStyle.ink.opacity(0.08), lineWidth: 1))
+            .fixedSize().accessibilityElement(children: .contain).accessibilityLabel("Sync mode")
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isLive)
+            .onMoveCommand { direction in
+                guard !switching else { return }
+                if direction == .left { choose(false) }
+                else if direction == .right && canStart { choose(true) }
+            }
+    }
+    private func mode(_ title: String, live: Bool, help: String) -> some View {
+        Button { if live != isLive { choose(live) } } label: {
+            Text(title).font(RemileType.caption.weight(isLive == live ? .semibold : .regular))
+                .foregroundStyle(isLive == live ? RemileStyle.ink : RemileStyle.secondaryInk)
+                .frame(width: 76, height: 28).contentShape(Rectangle())
+                .background(isLive == live ? RemileStyle.ink.opacity(0.11) : .clear, in: RoundedRectangle(cornerRadius: 6))
+        }.buttonStyle(.plain).disabled(switching || (live && !isLive && !canStart))
+            .accessibilityLabel(title + " sync").accessibilityAddTraits(isLive == live ? .isSelected : [])
+            .bubbleHelp(help)
+    }
+}
+
+struct OverleafLiveReview: View {
+    let conflict: OverleafLiveWorkspace.Conflict
+    let choose: (String) -> Void
+    let close: () -> Void
+    private let changes: [OverleafLive.Edit]
+    private let lineNumbers: [Int]
+    @StateObject private var selection = Selection()
+    private final class Selection: ObservableObject { @Published var remote: [Int: Bool] = [:] }
+    init(conflict: OverleafLiveWorkspace.Conflict, choose: @escaping (String) -> Void, close: @escaping () -> Void) {
+        self.conflict = conflict; self.choose = choose; self.close = close
+        let edits = (try? OverleafLiveText.edits(from: conflict.local, to: conflict.remote.text)) ?? []
+        self.changes = edits
+        let units = conflict.local.utf16
+        var cursor = units.startIndex, offset = 0, line = 1, numbers: [Int] = []
+        for edit in edits {
+            while offset < edit.offset, cursor < units.endIndex {
+                if units[cursor] == 10 { line += 1 }
+                units.formIndex(after: &cursor); offset += 1
+            }
+            numbers.append(line)
+        }
+        self.lineNumbers = numbers
+    }
+    private var resolved: Bool { !changes.isEmpty && changes.indices.allSatisfy { selection.remote[$0] != nil } }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack { Text("Review live edits").font(RemileType.heading); Spacer(); Text(conflict.path).lineLimit(1) }
+            Text("Choose each changed section. Newer edits are checked again before applying.").font(RemileType.caption)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    ForEach(changes.indices, id: \.self) { index in
+                        let edit = changes[index]
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Section \(index + 1) · local line \(lineNumbers[index])").font(RemileType.caption).foregroundStyle(.secondary)
+                            HStack(alignment: .top, spacing: 12) {
+                                section("Local draft", text: edit.deleted, index: index, remote: false)
+                                section("Overleaf", text: edit.inserted, index: index, remote: true)
+                            }
+                        }
+                    }
+                }.padding(.trailing, 8)
+            }
+            HStack {
+                Button("Later", action: close); Spacer()
+                Button("Use all Overleaf") { choose(conflict.remote.text) }
+                Button("Keep all local") { choose(conflict.local) }
+                Button("Apply sections") {
+                    if let result = try? OverleafLiveText.replacing(conflict.local, edits: changes.enumerated().compactMap { selection.remote[$0.offset] == true ? $0.element : nil }) { choose(result) }
+                }.disabled(!resolved).keyboardShortcut(.defaultAction)
+            }
+        }.padding(24).frame(width: 900, height: 580).background(RemileStyle.background)
+    }
+    private func context(_ index: Int, before: Bool) -> String {
+        let edit = changes[index], local = conflict.local
+        let offset = edit.offset + (before ? 0 : edit.deleted.utf16.count)
+        let boundary = String.Index(utf16Offset: offset, in: local)
+        if before { return String(local[..<boundary].suffix(80)).components(separatedBy: "\n").last ?? "" }
+        return String(local[boundary...].prefix(80)).components(separatedBy: "\n").first ?? ""
+    }
+    private func section(_ title: String, text: String, index: Int, remote: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { selection.remote[index] = remote } label: {
+                Label(title, systemImage: selection.remote[index] == remote ? "checkmark.circle.fill" : "circle")
+            }.buttonStyle(.plain).font(RemileType.callout.weight(.semibold))
+            Text("\(Text(context(index, before: true)).foregroundColor(RemileStyle.secondaryInk))\(Text(text.isEmpty ? "(No text)" : text).foregroundColor(RemileStyle.ink))\(Text(context(index, before: false)).foregroundColor(RemileStyle.secondaryInk))")
+                .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                .background((remote ? RemileStyle.success : RemileStyle.warning).opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
+        }.padding(10).frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(selection.remote[index] == remote ? RemileStyle.accent : .clear, lineWidth: 1))
     }
 }
 

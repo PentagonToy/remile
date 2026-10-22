@@ -31,7 +31,7 @@ struct PDFSelectionContext {
     }
 }
 
-/// Callers own persistence and presentation; these actions never write a PDF themselves.
+/// Callers own persistence and presentation. These actions never write a PDF themselves.
 @MainActor
 struct PDFSelectionActions {
     var highlight: ((PDFSelectionContext, HighlightColor) -> Void)?
@@ -40,6 +40,7 @@ struct PDFSelectionActions {
     var translate: ((PDFSelectionContext) -> Void)?
     var canAnnotate: ((PDFSelectionContext) -> Bool)?
     var removeHighlight: ((PDFDocument, PDFAnnotation) -> Void)?
+    var removeNote: ((PDFDocument, PDFAnnotation) -> Void)?
 }
 
 /// Reader and Search use the same explicit native menu, without swizzling PDFKit.
@@ -48,6 +49,7 @@ final class PDFSelectionView: PDFView {
     var selectionActions = PDFSelectionActions()
     var drawingTool: PDFDrawingTool? { didSet { if oldValue != drawingTool { cancelDrawing(); window?.invalidateCursorRects(for: self) } } }
     var drawingColor: NSColor = .systemRed
+    var editNote: ((PDFAnnotation) -> Void)?
     var beginDrawing: (() -> Bool)?
     var commitDrawing: ((PDFPage, PDFAnnotation) -> Void)?
     var finishDrawing: (() -> Void)?
@@ -58,13 +60,28 @@ final class PDFSelectionView: PDFView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let target = super.hitTest(point)
-        return drawingTool != nil && target != nil && !(target is NSScroller) ? self : target
+        guard target != nil, !(target is NSScroller) else { return target }
+        if drawingTool != nil { return self }
+        if editNote != nil {
+            let location = convert(point, from: superview)
+            if let page = page(for: location, nearest: false),
+               page.annotations.contains(where: { $0.type == "Text" && $0.bounds.contains(convert(location, to: page)) }) { return self }
+        }
+        return target
     }
     override func resetCursorRects() {
         super.resetCursorRects()
         if drawingTool != nil { addCursorRect(bounds, cursor: .crosshair) }
     }
     override func mouseDown(with event: NSEvent) {
+        if drawingTool == nil, let editNote {
+            let location = convert(event.locationInWindow, from: nil)
+            if let page = page(for: location, nearest: false),
+               let note = page.annotations.last(where: { $0.type == "Text" && $0.bounds.contains(convert(location, to: page)) }) {
+                editNote(note)
+                return
+            }
+        }
         guard drawingTool != nil else { super.mouseDown(with: event); return }
         cancelDrawing()
         guard beginDrawing?() ?? true else { return }
@@ -84,7 +101,7 @@ final class PDFSelectionView: PDFView {
         guard crop.contains(point) else { return }
         if let previous = drawingPoints.last, hypot(previous.x - point.x, previous.y - point.y) < 0.5 { return }
         drawingPoints.append(point)
-        // Preview a vector path; never rebuild PDF annotation appearances on pointer movement.
+        // Preview a vector path. Never rebuild PDF annotation appearances on pointer movement.
         if previewLayer == nil {
             wantsLayer = true
             let preview = CAShapeLayer(); preview.zPosition = 1000; preview.frame = bounds
@@ -128,7 +145,7 @@ final class PDFSelectionView: PDFView {
         cancelDrawing()
         let location = convert(event.locationInWindow, from: nil)
         let targetPage = page(for: location, nearest: false)
-        let target = targetPage.flatMap { page in page.annotations.last { ["Highlight", "Underline", "Squiggly", "StrikeOut", "Ink", "Square", "Circle"].contains($0.type ?? "") && $0.bounds.contains(convert(location, to: page)) } }
+        let target = targetPage.flatMap { page in page.annotations.last { ["Text", "FreeText", "Highlight", "Underline", "Squiggly", "StrikeOut", "Ink", "Square", "Circle"].contains($0.type ?? "") && $0.bounds.contains(convert(location, to: page)) } }
         if PDFSelectionContext(selection: currentSelection, document: document) == nil {
             let point = convert(event.locationInWindow, from: nil)
             if let page = page(for: point, nearest: false), page.document === document,
@@ -137,9 +154,9 @@ final class PDFSelectionView: PDFView {
             }
         }
         let menu = selectionMenu(for: currentSelection)
-        if let target, let document, selectionActions.removeHighlight != nil {
+        if let target, let document, selectionActions.removeHighlight != nil || selectionActions.removeNote != nil {
             let command = HighlightRemovalCommand(view: self, document: document, annotation: target)
-            let item = NSMenuItem(title: ["Ink", "Square", "Circle"].contains(target.type ?? "") ? "Delete Drawing" : "Delete Highlight", action: #selector(HighlightRemovalCommand.invoke(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: ["Text", "FreeText"].contains(target.type ?? "") ? "Delete Note" : ["Ink", "Square", "Circle"].contains(target.type ?? "") ? "Delete Drawing" : "Delete Highlight", action: #selector(HighlightRemovalCommand.invoke(_:)), keyEquivalent: "")
             item.target = command; item.representedObject = command; item.isEnabled = command.isEnabled
             menu.insertItem(.separator(), at: 0); menu.insertItem(item, at: 0)
         }
@@ -186,8 +203,13 @@ private final class HighlightRemovalCommand: NSObject {
     let document: PDFDocument
     let annotation: PDFAnnotation
     init(view: PDFSelectionView, document: PDFDocument, annotation: PDFAnnotation) { self.view = view; self.document = document; self.annotation = annotation }
-    var isEnabled: Bool { view?.document === document && annotation.page?.document === document && !document.isLocked && !document.isEncrypted && document.allowsCommenting && view?.selectionActions.removeHighlight != nil }
-    @objc func invoke(_ sender: NSMenuItem) { guard isEnabled else { return }; view?.selectionActions.removeHighlight?(document, annotation) }
+    private var isNote: Bool { ["Text", "FreeText"].contains(annotation.type ?? "") }
+    var isEnabled: Bool { view?.document === document && annotation.page?.document === document && !document.isLocked && !document.isEncrypted && document.allowsCommenting && (isNote ? view?.selectionActions.removeNote != nil : view?.selectionActions.removeHighlight != nil) }
+    @objc func invoke(_ sender: NSMenuItem) {
+        guard isEnabled else { return }
+        if isNote { view?.selectionActions.removeNote?(document, annotation) }
+        else { view?.selectionActions.removeHighlight?(document, annotation) }
+    }
 }
 
 @MainActor

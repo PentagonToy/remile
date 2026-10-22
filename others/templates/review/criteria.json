@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0",
+  "examples": "Independently constructed cross-domain scenarios. No original reviewer quotations, identities, manuscript measurements or bibliographic details are included.",
+  "criteria": [
+    {
+      "id": "consistency",
+      "title": "Internal consistency",
+      "check": "Compare numbers, units, labels and conditions across text, tables and captions. Require two comparable passages before suggesting a discrepancy.",
+      "example": {
+        "scenario": "A survey summary and its table describe the same group with different counts.",
+        "question": "Could these counts use different inclusion rules?",
+        "synthetic": true
+      },
+      "suppressWhen": "Do not flag differences when populations, units or aggregation differ."
+    },
+    {
+      "id": "scope",
+      "title": "Claims and validation",
+      "check": "Ask whether the scope or strength of a claim exceeds the available validation. Distinguish missing evidence from evidence outside the supplied context.",
+      "example": {
+        "scenario": "A scheduling method tested on one workload is described as reliable under all operating conditions.",
+        "question": "Would limiting this statement to the tested workload make its support clearer?",
+        "synthetic": true
+      },
+      "suppressWhen": "Do not demand a new experiment when the claim already states the evaluated scope."
+    },
+    {
+      "id": "comparison",
+      "title": "Comparison and attribution",
+      "check": "Ask whether benefits are compared under the same inputs and evaluation protocol. Separate representation value from predictive improvement and isolate confounding causes.",
+      "example": {
+        "scenario": "A forecasting pipeline adds a latent reconstruction but is compared with a direct predictor using a different test split.",
+        "question": "Could a shared test split help separate the benefit of the representation from the evaluation setup?",
+        "synthetic": true
+      },
+      "suppressWhen": "Different goals may justify different methods. Ask about the goal instead of declaring a method unnecessary."
+    },
+    {
+      "id": "rationale",
+      "title": "Method choices",
+      "check": "Ask why a consequential method, sampling scheme or parameter was chosen and whether the conclusion depends on it.",
+      "example": {
+        "scenario": "A document grouping study fixes a sampling budget without connecting it to the measured outcome.",
+        "question": "What evidence would help readers judge whether this sampling budget affects the conclusion?",
+        "synthetic": true
+      },
+      "suppressWhen": "An existing justification or an explicitly limited exploratory design can be sufficient. Do not automatically demand sensitivity experiments."
+    },
+    {
+      "id": "clarity",
+      "title": "Flow and repetition",
+      "check": "Identify repeated explanations or a missing logical link. Require two passages for a repetition concern.",
+      "example": {
+        "scenario": "An algorithm description and a later paragraph repeat the same procedural detail without adding interpretation.",
+        "question": "Could one of these passages point to the other and leave more room for interpreting the result?",
+        "synthetic": true
+      },
+      "suppressWhen": "A concise overview followed by necessary detail is not redundant."
+    },
+    {
+      "id": "literature",
+      "title": "Positioning and support",
+      "check": "Ask whether a claim needs support or comparison with related work. Name a paper only when its actual content and bibliographic identity are supplied and verified.",
+      "example": {
+        "scenario": "A manuscript states that prior approaches cannot address a task without identifying which approaches or conditions it means.",
+        "question": "Could this claim be tied to specific prior methods and the conditions in which their limitations apply?",
+        "synthetic": true
+      },
+      "suppressWhen": "Never invent references or favour papers because of the author\u2019s editorial role. A bibliography entry alone does not verify what a paper supports."
+    }
+  ]
+}

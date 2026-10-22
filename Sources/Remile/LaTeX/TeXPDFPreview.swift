@@ -1,25 +1,42 @@
 import SwiftUI
 import PDFKit
 
-@MainActor final class TeXPDFController: NSObject, ObservableObject, NSGestureRecognizerDelegate {
+@MainActor final class TeXPDFController: NSObject, ObservableObject {
     weak var view: PDFView?
     @Published private(set) var page = 0
     @Published private(set) var pages = 0
     private var pageObserver: NSObjectProtocol?
+    private var clickMonitor: Any?
+    private var pendingJump: TeXProject.PDFJump?
     var reverse: (TeXSync.PDFLocation) -> Void = { _ in }
     private var lastJump: UUID?
     private var highlight: Task<Void, Never>?
     func attach(_ view: PDFView) {
         if let pageObserver { NotificationCenter.default.removeObserver(pageObserver) }
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        highlight?.cancel(); lastJump = nil
         self.view = view
         pageObserver = NotificationCenter.default.addObserver(forName: .PDFViewPageChanged, object: view, queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in self?.updatePage() }
         }
         updatePage()
-        let click = NSClickGestureRecognizer(target: self, action: #selector(doubleClick(_:))); click.numberOfClicksRequired = 2; click.delaysPrimaryMouseButtonEvents = false; click.delegate = self
-        view.addGestureRecognizer(click)
+        // PDFKit's internal text view owns selection gestures. Observe its event
+        // without competing with or consuming the native word-selection gesture.
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            MainActor.assumeIsolated { _ = self?.handleDoubleClick(event) }
+            return event
+        }
     }
-    deinit { if let pageObserver { NotificationCenter.default.removeObserver(pageObserver) } }
+    func detach() {
+        if let pageObserver { NotificationCenter.default.removeObserver(pageObserver); self.pageObserver = nil }
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor); self.clickMonitor = nil }
+        highlight?.cancel(); pendingJump = nil; view = nil
+    }
+    deinit {
+        if let pageObserver { NotificationCenter.default.removeObserver(pageObserver) }
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        highlight?.cancel()
+    }
     func updatePage() {
         let count = view?.document?.pageCount ?? 0
         let number = view?.currentPage.flatMap { view?.document?.index(for: $0) }.map { $0 + 1 } ?? (count > 0 ? 1 : 0)
@@ -30,10 +47,20 @@ import PDFKit
         guard number > 0, let target = view?.document?.page(at: number - 1) else { return }
         view?.go(to: target); updatePage()
     }
-    func gestureRecognizer(_ gestureRecognizer: NSGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: NSGestureRecognizer) -> Bool { true }
-    @objc private func doubleClick(_ recognizer: NSClickGestureRecognizer) {
-        guard let view, let location = location(at: recognizer.location(in: view)) else { return }
-        reverse(location)
+    @discardableResult func handleDoubleClick(_ event: NSEvent) -> Bool {
+        guard event.type == .leftMouseDown, event.clickCount == 2, let view,
+              let window = view.window, event.window === window else { return false }
+        let point = view.convert(event.locationInWindow, from: nil)
+        guard view.visibleRect.contains(point), let hit = view.hitTest(view.convert(point, to: view.superview)), !(hit is NSScroller),
+              let page = view.page(for: point, nearest: false), let document = view.document, page.document === document,
+              let location = location(at: point) else { return false }
+        let selected = view.currentSelection
+        if selected?.pages.contains(where: { $0 === page }) == true,
+           let bounds = selected?.bounds(for: page), bounds.contains(view.convert(point, to: page)) {
+            let box = page.bounds(for: .mediaBox)
+            reverse(.init(page: document.index(for: page) + 1, x: bounds.midX - box.minX, y: box.maxY - bounds.midY))
+        } else { reverse(location) }
+        return true
     }
     private func location(at point: NSPoint) -> TeXSync.PDFLocation? {
         guard let view, let page = view.page(for: point, nearest: true), let document = view.document else { return nil }
@@ -49,7 +76,14 @@ import PDFKit
         return location(at: NSPoint(x: view.bounds.midX, y: view.bounds.midY))
     }
     func show(_ jump: TeXProject.PDFJump?) {
-        guard let jump, jump.id != lastJump, let view, let page = view.document?.page(at: jump.location.page - 1) else { return }
+        if let jump, jump.id != lastJump { pendingJump = jump }
+        showPendingJump()
+    }
+    func showPendingJump() {
+        guard let jump = pendingJump, jump.id != lastJump, let view, view.window != nil, view.bounds.width > 0, view.bounds.height > 0,
+              view.documentView?.bounds.isEmpty == false,
+              let page = view.document?.page(at: jump.location.page - 1) else { return }
+        pendingJump = nil
         lastJump = jump.id
         let box = page.bounds(for: .mediaBox), point = NSPoint(x: box.minX + jump.location.x, y: box.maxY - jump.location.y)
         let rect = NSRect(x: max(box.minX, point.x - 6), y: point.y - 12, width: min(460, box.width - max(0, point.x - box.minX)), height: 28)
@@ -72,13 +106,20 @@ import PDFKit
     }
 }
 
+@MainActor final class TeXPreviewPDFView: PDFView {
+    weak var navigation: TeXPDFController?
+    override func layout() { super.layout(); navigation?.showPendingJump() }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); navigation?.showPendingJump() }
+}
+
 struct TeXPDFPreview: NSViewRepresentable {
     let document: PDFDocument
     let zoom: ReaderZoom
     let controller: TeXPDFController
     let jump: TeXProject.PDFJump?
+    func makeCoordinator() -> TeXPDFController { controller }
     func makeNSView(context: Context) -> PDFView {
-        let view = PDFView(); view.autoScales = true; view.displayMode = .singlePageContinuous; view.document = document
+        let view = TeXPreviewPDFView(); view.navigation = controller; view.autoScales = true; view.displayMode = .singlePageContinuous; view.document = document
         ReaderScrolling.configure(view); zoom.attach(view); controller.attach(view); return view
     }
     func updateNSView(_ view: PDFView, context: Context) {
@@ -89,4 +130,5 @@ struct TeXPDFPreview: NSViewRepresentable {
         }
         ReaderScrolling.configure(view); controller.show(jump)
     }
+    static func dismantleNSView(_ view: PDFView, coordinator: TeXPDFController) { if coordinator.view === view { coordinator.detach() } }
 }

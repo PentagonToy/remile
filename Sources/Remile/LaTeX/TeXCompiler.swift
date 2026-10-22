@@ -63,7 +63,7 @@ final class TeXCompileJob: @unchecked Sendable {
             let tool = URL(fileURLWithPath: configuration.directory).appendingPathComponent(engine == .xe ? "xelatex" : engine == .lua ? "lualatex" : "pdflatex")
             environment["TEXINPUTS"] = source.path + "//:"
             environment.removeValue(forKey: "TEXMFOUTPUT")
-            try handle.write(contentsOf: Data("Submission check: fresh snapshot, no .bib/.bbl/.bst or cached auxiliary files; three LaTeX passes; BibTeX/Biber/latexmk not invoked. This uses the installed engine, not a publisher's historical distribution.\n".utf8))
+            try handle.write(contentsOf: Data("Submission check: fresh snapshot, no .bib/.bbl/.bst or cached auxiliary files. Three LaTeX passes. BibTeX/Biber/latexmk not invoked. This uses the installed engine, not a publisher's historical distribution.\n".utf8))
             var status: Int32 = 0
             for pass in 1...3 {
                 try handle.write(contentsOf: Data("Submission check: LaTeX pass \(pass)/3\n".utf8))
@@ -93,7 +93,7 @@ final class TeXCompileJob: @unchecked Sendable {
                 let input = try FileHandle(forReadingFrom: biber); defer { try? input.close() }
                 let magic = Array(try input.read(upToCount: 4) ?? Data())
                 // Packed universal Biber uses an obsolete lipo option on some macOS releases.
-                // Prepare only a build-local architecture slice; never alter the TeX installation.
+                // Prepare only a build-local architecture slice. Never alter the TeX installation.
                 if [[0xca, 0xfe, 0xba, 0xbe], [0xca, 0xfe, 0xba, 0xbf], [0xbe, 0xba, 0xfe, 0xca], [0xbf, 0xba, 0xfe, 0xca]].contains(magic.map(Int.init)) {
                     #if arch(arm64)
                     let architecture = "arm64"
@@ -105,16 +105,16 @@ final class TeXCompileJob: @unchecked Sendable {
                     let status = try execute(URL(fileURLWithPath: "/usr/bin/lipo"), arguments: [biber.path, "-thin", architecture, "-o", tools.appendingPathComponent("biber").path], directory: source, environment: environment, log: handle, logURL: logURL, deadline: deadline)
                     if status == 0 {
                         environment["PATH"] = tools.path + ":" + environment["PATH"]!
-                        try handle.write(contentsOf: Data("Biber: using a build-local \(architecture) copy; installed TeX tools unchanged.\n".utf8))
+                        try handle.write(contentsOf: Data("Biber: using a build-local \(architecture) copy. Installed TeX tools unchanged.\n".utf8))
                     }
                 }
             }
         }
-        let status = try execute(executable, arguments: (scratch ? ["-gg"] : []) + ["-norc", flag, configuration.bibliography ? "-bibtex" : "-bibtex-", "-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-no-shell-escape", "-synctex=1", "-outdir=\(build.path)", "./" + main], directory: source, environment: environment, log: handle, logURL: logURL, deadline: deadline)
+        let status = try execute(executable, arguments: (scratch ? ["-gg"] : []) + ["-norc", flag, configuration.bibliography ? "-bibtex" : "-bibtex-", "-interaction=nonstopmode", "-file-line-error", "-no-shell-escape", "-synctex=1", "-outdir=\(build.path)", "./" + main], directory: source, environment: environment, log: handle, logURL: logURL, deadline: deadline)
         let text = String(decoding: try Data(contentsOf: logURL), as: UTF8.self)
         let pdfURL = build.appendingPathComponent(((main as NSString).lastPathComponent as NSString).deletingPathExtension + ".pdf")
-        let pdf = status == 0 ? try? Data(contentsOf: pdfURL) : nil
-        return Result(pdf: pdf, log: String(text.suffix(150000)), output: pdfURL, success: pdf != nil)
+        let pdf = try? Data(contentsOf: pdfURL)
+        return Result(pdf: pdf, log: String(text.suffix(150000)), output: pdfURL, success: status == 0 && pdf != nil)
     }
     private func execute(_ executable: URL, arguments: [String], directory: URL, environment: [String: String], log: FileHandle, logURL: URL, deadline: Date) throws -> Int32 {
         let child = Process(); child.executableURL = executable; child.arguments = arguments; child.currentDirectoryURL = directory

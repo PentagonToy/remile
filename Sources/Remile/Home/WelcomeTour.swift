@@ -12,20 +12,20 @@ extension View {
 
 final class WelcomeTourProgress: ObservableObject { @Published var step = 0; @Published var replay = false }
 
-/// The home screen provides anchors; the tour owns only presentation and completion.
+/// The home screen provides anchors. The tour owns only presentation and completion.
 @MainActor struct WelcomeTour: ViewModifier {
     struct Step {
         let target: String, title: String, detail: String
     }
     static let steps = [
-        Step(target: "open", title: "Your documents, close at hand", detail: "Open a PDF or Markdown document to read, highlight and ask about it."),
-        Step(target: "search", title: "Find the passage", detail: "Add folders to your search library and index them on this Mac. Results take you straight to the matching page."),
-        Step(target: "markdown", title: "Write in Markdown", detail: "Start a note and switch between writing and reading. Save your changes to the same file."),
-        Step(target: "latex", title: "Work with LaTeX", detail: "Open a project, edit its source and compile a PDF. Errors explain what needs attention."),
-        Step(target: "overleaf", title: "Keep Overleaf within reach", detail: "Connect a project. Online sends your local edits automatically; new remote changes wait for review."),
-        Step(target: "tools", title: "A few useful tools", detail: "Convert documents, reduce PDF size or combine files when you need to."),
-        Step(target: "settings", title: "Make it yours", detail: "Choose appearance, AI, search and typesetting preferences here."),
-        Step(target: "guide", title: RemileBrand.tagline, detail: "You can return to the User guide whenever you need a hand. remile.")
+        Step(target: "open", title: "Your documents, close at hand", detail: "Open a document. Read, highlight and ask."),
+        Step(target: "search", title: "Find the passage", detail: "Add folders to your library. Find the matching page."),
+        Step(target: "markdown", title: "Write in Markdown", detail: "Write a note. Switch to reading when you’re ready."),
+        Step(target: "latex", title: "Work with LaTeX", detail: "Edit your source. Compile a PDF. Follow errors to the line."),
+        Step(target: "overleaf", title: "Keep Overleaf within reach", detail: "Connect a project. Local edits sync automatically. Remote changes wait for review."),
+        Step(target: "tools", title: "A few useful tools", detail: "Convert, compress or combine your documents."),
+        Step(target: "settings", title: "Make it yours", detail: "Choose your appearance, AI and search preferences."),
+        Step(target: "guide", title: RemileBrand.tagline, detail: "Return here whenever you need a hand.")
     ]
     @AppStorage("welcome.tourCompleted.v1") private var completed = false
     @StateObject private var state: WelcomeTourProgress

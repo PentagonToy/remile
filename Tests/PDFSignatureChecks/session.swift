@@ -17,12 +17,14 @@ Task { @MainActor in
         let undo = UndoManager(); undo.groupsByEvent = false; session.undoManager = undo
         reader.pdfSession = session
         session.toggleEditing()
-        expect(session.isEditing && session.canArrangePages, "Signed PDF allows annotation and page controls")
+        expect(!session.isEditing && session.protection.attempts == 1, "Entering Edit PDF is blocked and shakes the lock before consent")
         let points = [CGPoint(x: 60, y: 520), CGPoint(x: 100, y: 550), CGPoint(x: 170, y: 530)]
         let blocked = PDFDrawingTool.rectangle.annotation(points: points, on: page, color: .red)!
         session.addDrawing(blocked, on: page)
-        expect(session.protection.isLocked && session.protection.attempts == 1 && !session.hasPendingAnnotations, "Signed reader edits are blocked and shake the lock")
+        expect(session.protection.isLocked && session.protection.attempts == 2 && !session.hasPendingAnnotations, "Signed reader edits are blocked and shake the lock")
         try session.protection.authorise(data: original)
+        session.toggleEditing()
+        expect(session.isEditing && session.canArrangePages, "Explicit consent permits entering Edit PDF")
         let firstSnapshot = session.protection.snapshotURL!
         expect((try! Data(contentsOf: firstSnapshot)) == original, "Unlock keeps exactly the original PDF in a private temporary transaction")
 
@@ -72,14 +74,14 @@ Task { @MainActor in
         reader.discardPDFChanges()
         expect(!FileManager.default.fileExists(atPath: discardedSnapshot.path), "Discard removes the snapshot and leaves the saved PDF in place")
         let locked = try Data(contentsOf: output.appendingPathComponent("signed-p1.pdf"))
-        let restricted = PDFSession(); restricted.load(locked); restricted.toggleEditing(); try restricted.protection.authorise(data: locked)
+        let restricted = PDFSession(); restricted.load(locked); restricted.toggleEditing(); try restricted.protection.authorise(data: locked); restricted.toggleEditing()
         let square = PDFDrawingTool.rectangle.annotation(points: points, on: restricted.document!.page(at: 0)!, color: .red)!
         restricted.addDrawing(square, on: restricted.document!.page(at: 0)!)
         expect(restricted.editingError == nil && restricted.hasPendingAnnotations, "Disallowed-by-certification markup may be prepared for user review")
         _ = try restricted.prepareSave()
         expect(restricted.signatureSaveStatus(for: restricted.committedData!) == .atRisk, "Restricted markup is never falsely attested as signature-preserving")
         let damagedData = try Data(contentsOf: output.appendingPathComponent("damaged.pdf"))
-        let damagedSession = PDFSession(); damagedSession.load(damagedData); damagedSession.toggleEditing(); try damagedSession.protection.authorise(data: damagedData)
+        let damagedSession = PDFSession(); damagedSession.load(damagedData); damagedSession.toggleEditing(); try damagedSession.protection.authorise(data: damagedData); damagedSession.toggleEditing()
         let damagedPage = damagedSession.document!.page(at: 0)!
         damagedSession.addDrawing(PDFDrawingTool.rectangle.annotation(points: points, on: damagedPage, color: .red)!, on: damagedPage)
         let damagedOutput = try damagedSession.prepareSave()
@@ -91,6 +93,11 @@ Task { @MainActor in
         detached.discardPDFChanges()
         expect(!detached.signatureSaveNeedsWarning(detached.bytes), "Unchanged signed PDF needs no warning")
         let blankSession = PDFSession(); blankSession.load(insert.dataRepresentation()!)
+        expect(!blankSession.protection.requiresConsent && !blankSession.protection.authorised && !blankSession.protection.isLocked, "An ordinary PDF starts unprotected without pretending the user unlocked it")
+        let encrypted = PDFSession(); encrypted.load(insert.dataRepresentation(options: [PDFDocumentWriteOption.ownerPasswordOption: "owner", PDFDocumentWriteOption.userPasswordOption: "reader"])!)
+        try encrypted.protection.authorise(data: insert.dataRepresentation()!)
+        encrypted.toggleEditing()
+        expect(encrypted.protection.restricted && encrypted.protection.isLocked && !encrypted.protection.authorised && !encrypted.isEditing, "Consent cannot override encryption or enter editing")
         blankSession.insertPDFs([output.appendingPathComponent("signed-p0.pdf")])
         expect(blankSession.protection.isLocked, "Importing signed pages requests consent before mutation")
         try blankSession.protection.authorise(data: insert.dataRepresentation()!)

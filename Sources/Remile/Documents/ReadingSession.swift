@@ -3,7 +3,7 @@ import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// A document lives inside the main window; navigation never discards unsaved work.
+/// A document lives inside the main window. Navigation never discards unsaved work.
 @MainActor
 final class ReadingSession: ObservableObject {
     @Published var document = ReadingDocument() {
@@ -145,6 +145,11 @@ struct ReadingShell: View {
     @ObservedObject var reader: ReadingSession
     @ObservedObject private var overleaf: OverleafLibrary
     init(home: HomeModel, reader: ReadingSession) { self.home = home; self.reader = reader; self.overleaf = home.overleaf }
+    private var markdownActive: Bool {
+        guard !overleaf.browsing, home.texProject == nil, reader.url != nil else { return false }
+        if case .markdown = reader.document.content { return true }
+        return false
+    }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         ZStack {
@@ -155,7 +160,7 @@ struct ReadingShell: View {
                 })
             } else if let project = home.texProject {
                 VStack(spacing: 0) {
-                    if let connection = overleaf.connection(for: project.root) { OverleafBar(library: overleaf, project: project, connection: connection) }
+                    if let connection = overleaf.connection(for: project.root) { OverleafBar(library: overleaf, project: project, connection: connection).id(project.identity) }
                     TeXWorkspace(project: project, close: { home.closeTeX() }, title: overleaf.title(for: project.root), projectTags: overleaf.connection(for: project.root).flatMap { overleaf.tags[$0.id] } ?? []).id(project.identity)
                 }
             } else if let url = reader.url {
@@ -181,7 +186,9 @@ struct ReadingShell: View {
         .animation(reduceMotion ? nil : RemileMotion.navigation, value: reader.url)
         .frame(minWidth: 560, minHeight: 450)
         .overlay { if home.opening { ProgressView("Opening document…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
-        .toolbar { ToolbarItem(placement: .automatic) { OfflineModeButton() } }
+        .toolbar {
+            if !markdownActive { ToolbarItem(placement: .automatic) { OfflineModeButton() } }
+        }
         .toolbarBackground(RemileStyle.background, for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
         .background(WindowCloseGuard(reader: reader, home: home))

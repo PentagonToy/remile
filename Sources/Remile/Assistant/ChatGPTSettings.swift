@@ -12,7 +12,6 @@ struct ChatGPTSettings: View {
     @AppStorage(AIConfiguration.fallbackPreference) private var fallback = true
     @AppStorage(AIConfiguration.writingPreference) private var writing = true
     @AppStorage("chatgpt.dailyLimit") private var dailyLimit = 100
-    @AppStorage("chatgpt.synonyms") private var synonyms = true
     @AppStorage("chatgpt.grammar") private var grammar = true
     @AppStorage("editor.aiSuggestions") private var completion = false
     private var deviceReady: Bool { AppleIntelligence.status().ready }
@@ -44,7 +43,6 @@ struct ChatGPTSettings: View {
                 DisclosureGroup("Writing options") {
                     VStack(alignment: .leading, spacing: 10) {
                         Toggle("Grammar suggestions", isOn: $grammar)
-                        Toggle("Word alternatives", isOn: $synonyms)
                         Toggle("Inline completion on this Mac", isOn: $completion).disabled(!deviceReady || (provider == "ChatGPT" && !fallback))
                         SettingsHint("Apple Intelligence completion · Tab to accept.")
                     }.padding(.top, 10).padding(.leading, 18).disabled(!writing)
@@ -60,7 +58,7 @@ struct ChatGPTSettings: View {
             .onDisappear { if connection.busy { connection.cancelSignIn() } }
     }
     private var description: String {
-        if provider == "Off" { return "AI is off; reading and editing remain available." }
+        if provider == "Off" { return "AI is off. You can still read and edit." }
         if provider == "Apple Intelligence" { return "Questions and suggestions stay on this Mac." }
         if network.offline { return fallback && deviceReady ? "Offline · Apple Intelligence handles requests." : "Offline · ChatGPT requests are paused." }
         return "Questions and document context are sent to ChatGPT."
@@ -77,7 +75,7 @@ struct ChatGPTSettings: View {
                 Button("Continue with ChatGPT") { Task { await connection.signIn() } }.disabled(!canConnect)
             }
             if connection.busy { HStack { ProgressView().controlSize(.small); Text("Signing in…"); Spacer(); Button("Cancel") { connection.cancelSignIn() } } }
-            if let error = connection.error { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).lineLimit(1).remileHelp(error) }
+            if let error = connection.error { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
         }
     }
     private var usageControls: some View {

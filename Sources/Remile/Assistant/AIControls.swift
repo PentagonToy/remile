@@ -3,8 +3,9 @@ import SwiftUI
 struct GPTMark: View {
     @Environment(\.colorScheme) private var scheme
     private static let source: NSImage = {
-        guard let url = Bundle.main.resourceURL?.appendingPathComponent("Brand/chatgpt.svg"), let image = NSImage(contentsOf: url) else { return NSImage() }
-        return image
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let urls = [Bundle.main.resourceURL?.appendingPathComponent("Brand/chatgpt.svg"), root.appendingPathComponent("others/symbols/providers/chatgpt.svg")]
+        return urls.compactMap { $0 }.compactMap { NSImage(contentsOf: $0) }.first ?? NSImage()
     }()
     private static func coloured(_ colour: NSColor) -> NSImage {
         // Native menu labels ignore the SwiftUI tint of this SVG. Preserve the rendered colour.

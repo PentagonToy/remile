@@ -1,0 +1,671 @@
+{
+  "schemaVersion": 1,
+  "format": "Native SF Symbols names; resolve on the target macOS, do not redistribute Apple artwork.",
+  "symbols": [
+    {
+      "name": "airplane",
+      "sources": [
+        "Sources/Remile/App/NetworkAccessControls.swift"
+      ]
+    },
+    {
+      "name": "airplane.circle",
+      "sources": [
+        "Sources/Remile/App/NetworkAccessControls.swift"
+      ]
+    },
+    {
+      "name": "airplane.circle.fill",
+      "sources": [
+        "Sources/Remile/App/NetworkAccessControls.swift"
+      ]
+    },
+    {
+      "name": "apple.intelligence",
+      "sources": [
+        "Sources/Remile/Assistant/AIControls.swift"
+      ]
+    },
+    {
+      "name": "arrow.backward",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift"
+      ]
+    },
+    {
+      "name": "arrow.clockwise",
+      "sources": [
+        "Sources/Remile/Markdown/MarkdownWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafComments.swift",
+        "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafProjects.swift",
+        "Sources/Remile/Search/LibraryManager.swift",
+        "Sources/Remile/Search/SearchPDFPreview.swift"
+      ]
+    },
+    {
+      "name": "arrow.down.right.and.arrow.up.left",
+      "sources": [
+        "Sources/Remile/Convert/CompressWorkspace.swift"
+      ]
+    },
+    {
+      "name": "arrow.forward",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift"
+      ]
+    },
+    {
+      "name": "arrow.left",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Markdown/MarkdownWorkspace.swift"
+      ]
+    },
+    {
+      "name": "arrow.right",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Markdown/MarkdownWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafProjects.swift",
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "arrow.triangle.2.circlepath",
+      "sources": [
+        "Sources/Remile/Overleaf/OverleafViews.swift"
+      ]
+    },
+    {
+      "name": "arrow.up",
+      "sources": [
+        "Sources/Remile/Assistant/AssistantPanel.swift"
+      ]
+    },
+    {
+      "name": "arrow.up.left.and.arrow.down.right",
+      "sources": [
+        "Sources/Remile/PDF/PaperSize.swift"
+      ]
+    },
+    {
+      "name": "arrow.up.right.square",
+      "sources": [
+        "Sources/Remile/Search/SearchMarkdownPreview.swift",
+        "Sources/Remile/Search/SearchPDFPreview.swift"
+      ]
+    },
+    {
+      "name": "arrow.uturn.backward",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Search/SearchPDFPreview.swift"
+      ]
+    },
+    {
+      "name": "arrow.uturn.forward",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift"
+      ]
+    },
+    {
+      "name": "book",
+      "sources": [
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "book.closed",
+      "sources": [
+        "Sources/Remile/Home/HomeWorkspace.swift"
+      ]
+    },
+    {
+      "name": "books.vertical",
+      "sources": [
+        "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafViews.swift",
+        "Sources/Remile/Search/LibraryManager.swift",
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "checkmark",
+      "sources": [
+        "Sources/Remile/Overleaf/OverleafViews.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "checkmark.bubble",
+      "sources": [
+        "Sources/Remile/Overleaf/OverleafComments.swift"
+      ]
+    },
+    {
+      "name": "checkmark.circle",
+      "sources": [
+        "Sources/Remile/Assistant/ChatGPTSettings.swift",
+        "Sources/Remile/Convert/ConvertWorkspace.swift",
+        "Sources/Remile/LaTeX/TeXSetupGuide.swift",
+        "Sources/Remile/Overleaf/OverleafViews.swift",
+        "Sources/Remile/PDF/PDFPageOCR.swift",
+        "Sources/Remile/Search/LibraryManager.swift"
+      ]
+    },
+    {
+      "name": "checkmark.circle.fill",
+      "sources": [
+        "Sources/Remile/Convert/ConvertWorkspace.swift",
+        "Sources/Remile/LaTeX/TeXSubmissionCheck.swift",
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafViews.swift",
+        "Sources/Remile/Search/SearchPDFPreview.swift"
+      ]
+    },
+    {
+      "name": "chevron.down",
+      "sources": [
+        "Sources/Remile/Home/CombineWorkspace.swift",
+        "Sources/Remile/Home/HomeWorkspace.swift",
+        "Sources/Remile/LaTeX/TeXProjectSidebar.swift",
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "chevron.left",
+      "sources": [
+        "Sources/Remile/Convert/ConvertWorkspace.swift",
+        "Sources/Remile/Documents/ReadingSession.swift",
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "chevron.right",
+      "sources": [
+        "Sources/Remile/Assistant/AIControls.swift",
+        "Sources/Remile/Convert/ConvertWorkspace.swift",
+        "Sources/Remile/Home/HomeWorkspace.swift",
+        "Sources/Remile/LaTeX/TeXProjectSidebar.swift"
+      ]
+    },
+    {
+      "name": "chevron.up",
+      "sources": [
+        "Sources/Remile/Home/CombineWorkspace.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "circle.fill",
+      "sources": [
+        "Sources/Remile/Overleaf/OverleafViews.swift",
+        "Sources/Remile/Search/SearchPDFPreview.swift"
+      ]
+    },
+    {
+      "name": "clock",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXHistoryPanel.swift"
+      ]
+    },
+    {
+      "name": "clock.arrow.circlepath",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift"
+      ]
+    },
+    {
+      "name": "clock.badge.xmark",
+      "sources": [
+        "Sources/Remile/Home/HomeWorkspace.swift"
+      ]
+    },
+    {
+      "name": "cloud",
+      "sources": [
+        "Sources/Remile/Overleaf/OverleafViews.swift"
+      ]
+    },
+    {
+      "name": "doc",
+      "sources": [
+        "Sources/Remile/Convert/ConvertWorkspace.swift",
+        "Sources/Remile/LaTeX/TeXAssetPreview.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "doc.badge.arrow.up",
+      "sources": [
+        "Sources/Remile/Convert/ConvertWorkspace.swift"
+      ]
+    },
+    {
+      "name": "doc.badge.plus",
+      "sources": [
+        "Sources/Remile/Home/HomeWorkspace.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "doc.on.doc",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXSetupGuide.swift"
+      ]
+    },
+    {
+      "name": "doc.richtext",
+      "sources": [
+        "Sources/Remile/Convert/ConvertWorkspace.swift",
+        "Sources/Remile/LaTeX/TeXWorkspace.swift"
+      ]
+    },
+    {
+      "name": "doc.text",
+      "sources": [
+        "Sources/Remile/Convert/ConvertWorkspace.swift",
+        "Sources/Remile/Home/HomeWorkspace.swift",
+        "Sources/Remile/Home/RecentReadingRow.swift",
+        "Sources/Remile/LaTeX/TeXProjectSidebar.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Search/SearchCover.swift"
+      ]
+    },
+    {
+      "name": "doc.text.magnifyingglass",
+      "sources": [
+        "Sources/Remile/Search/SearchPDFPreview.swift"
+      ]
+    },
+    {
+      "name": "ellipsis",
+      "sources": [
+        "Sources/Remile/Home/HomeWorkspace.swift",
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Markdown/MarkdownWorkspace.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "exclamationmark.circle",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXSubmissionCheck.swift",
+        "Sources/Remile/Overleaf/OverleafViews.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "exclamationmark.circle.fill",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafViews.swift"
+      ]
+    },
+    {
+      "name": "exclamationmark.triangle",
+      "sources": [
+        "Sources/Remile/Convert/ConvertWorkspace.swift",
+        "Sources/Remile/LaTeX/TeXLogPanel.swift",
+        "Sources/Remile/LaTeX/TeXSetupGuide.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Search/SearchMarkdownPreview.swift",
+        "Sources/Remile/Search/SearchPDFPreview.swift"
+      ]
+    },
+    {
+      "name": "eye",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Markdown/MarkdownWorkspace.swift"
+      ]
+    },
+    {
+      "name": "eye.slash",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Markdown/MarkdownWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafViews.swift"
+      ]
+    },
+    {
+      "name": "folder",
+      "sources": [
+        "Sources/Remile/Home/HomeWorkspace.swift",
+        "Sources/Remile/Search/LibraryManager.swift"
+      ]
+    },
+    {
+      "name": "folder.badge.plus",
+      "sources": [
+        "Sources/Remile/Search/LibraryManager.swift"
+      ]
+    },
+    {
+      "name": "gearshape",
+      "sources": [
+        "Sources/Remile/App/EditorSidebarBrand.swift",
+        "Sources/Remile/Home/HomeWorkspace.swift",
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "highlighter",
+      "sources": [
+        "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Search/SearchPDFPreview.swift"
+      ]
+    },
+    {
+      "name": "house",
+      "sources": [
+        "Sources/Remile/Home/HomeWorkspace.swift"
+      ]
+    },
+    {
+      "name": "icloud.slash",
+      "sources": [
+        "Sources/Remile/Overleaf/OverleafViews.swift"
+      ]
+    },
+    {
+      "name": "info.circle",
+      "sources": [
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "leaf",
+      "sources": [
+        "Sources/Remile/Home/EditorButtons.swift"
+      ]
+    },
+    {
+      "name": "leaf.fill",
+      "sources": [
+        "Sources/Remile/Home/RecentReadingRow.swift"
+      ]
+    },
+    {
+      "name": "line.3.horizontal.decrease",
+      "sources": [
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "line.3.horizontal.decrease.circle",
+      "sources": [
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "link",
+      "sources": [
+        "Sources/Remile/Assistant/AssistantPanel.swift"
+      ]
+    },
+    {
+      "name": "list.bullet",
+      "sources": [
+        "Sources/Remile/PDF/PDFNavigationPanel.swift"
+      ]
+    },
+    {
+      "name": "list.bullet.indent",
+      "sources": [
+        "Sources/Remile/Markdown/MarkdownWorkspace.swift"
+      ]
+    },
+    {
+      "name": "lock",
+      "sources": [
+        "Sources/Remile/Overleaf/OverleafViews.swift"
+      ]
+    },
+    {
+      "name": "lock.doc",
+      "sources": [
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "lock.fill",
+      "sources": [
+        "Sources/Remile/PDF/PDFEditProtection.swift"
+      ]
+    },
+    {
+      "name": "lock.open.fill",
+      "sources": [
+        "Sources/Remile/PDF/PDFEditProtection.swift"
+      ]
+    },
+    {
+      "name": "magnifyingglass",
+      "sources": [
+        "Sources/Remile/Home/HomeWorkspace.swift",
+        "Sources/Remile/Markdown/MarkdownWorkspace.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "minus",
+      "sources": [
+        "Sources/Remile/App/ReaderZoom.swift"
+      ]
+    },
+    {
+      "name": "minus.circle",
+      "sources": [
+        "Sources/Remile/Home/CombineWorkspace.swift",
+        "Sources/Remile/Markdown/MarkdownTableEditor.swift",
+        "Sources/Remile/Overleaf/OverleafProjects.swift",
+        "Sources/Remile/Search/LibraryManager.swift"
+      ]
+    },
+    {
+      "name": "moon",
+      "sources": [
+        "Sources/Remile/App/ReaderThemeButton.swift"
+      ]
+    },
+    {
+      "name": "passed",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXSubmissionCheck.swift"
+      ]
+    },
+    {
+      "name": "pause.circle",
+      "sources": [
+        "Sources/Remile/PDF/PDFPageOCR.swift"
+      ]
+    },
+    {
+      "name": "pencil.tip",
+      "sources": [
+        "Sources/Remile/Assistant/AIControls.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "person.2.wave.2",
+      "sources": [
+        "Sources/Remile/Overleaf/OverleafViews.swift"
+      ]
+    },
+    {
+      "name": "play.fill",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift"
+      ]
+    },
+    {
+      "name": "plus",
+      "sources": [
+        "Sources/Remile/App/ReaderZoom.swift",
+        "Sources/Remile/Convert/ConvertWorkspace.swift",
+        "Sources/Remile/Documents/ReadingSession.swift",
+        "Sources/Remile/LaTeX/TeXProjectSidebar.swift",
+        "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift"
+      ]
+    },
+    {
+      "name": "quote.bubble",
+      "sources": [
+        "Sources/Remile/Assistant/AssistantPanel.swift"
+      ]
+    },
+    {
+      "name": "return",
+      "sources": [
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "rotate.left",
+      "sources": [
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "rotate.right",
+      "sources": [
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "sidebar.left",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafViews.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "sparkle.magnifyingglass",
+      "sources": [
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "sparkles",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXDiagnosticAdviceView.swift",
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "square.and.arrow.up",
+      "sources": [
+        "Sources/Remile/Documents/ReadingSession.swift",
+        "Sources/Remile/Overleaf/OverleafComments.swift",
+        "Sources/Remile/PDF/PDFCommentExportMenu.swift"
+      ]
+    },
+    {
+      "name": "square.and.pencil",
+      "sources": [
+        "Sources/Remile/Home/HomeWorkspace.swift"
+      ]
+    },
+    {
+      "name": "square.grid.2x2",
+      "sources": [
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "square.stack",
+      "sources": [
+        "Sources/Remile/Home/CombineWorkspace.swift"
+      ]
+    },
+    {
+      "name": "square.stack.3d.up",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXProjectSidebar.swift"
+      ]
+    },
+    {
+      "name": "sun.max",
+      "sources": [
+        "Sources/Remile/App/ReaderThemeButton.swift"
+      ]
+    },
+    {
+      "name": "terminal",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift"
+      ]
+    },
+    {
+      "name": "text.badge.checkmark",
+      "sources": [
+        "Sources/Remile/Markdown/EditorWritingReview.swift"
+      ]
+    },
+    {
+      "name": "text.bubble",
+      "sources": [
+        "Sources/Remile/Markdown/MarkdownWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafComments.swift",
+        "Sources/Remile/Overleaf/OverleafViews.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "text.magnifyingglass",
+      "sources": [
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "text.quote",
+      "sources": [
+        "Sources/Remile/Assistant/AssistantPanel.swift"
+      ]
+    },
+    {
+      "name": "textformat",
+      "sources": [
+        "Sources/Remile/Markdown/MarkdownWorkspace.swift"
+      ]
+    },
+    {
+      "name": "wand.and.stars",
+      "sources": [
+        "Sources/Remile/LaTeX/EditorToolsMenu.swift",
+        "Sources/Remile/LaTeX/TeXHistoryPanel.swift"
+      ]
+    },
+    {
+      "name": "xmark",
+      "sources": [
+        "Sources/Remile/Assistant/AssistantPanel.swift",
+        "Sources/Remile/Convert/ConvertWorkspace.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "xmark.circle.fill",
+      "sources": [
+        "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "xmark.octagon",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXLogPanel.swift"
+      ]
+    }
+  ]
+}

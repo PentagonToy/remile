@@ -37,7 +37,7 @@ struct OverleafLibraryWorkspace: View {
                 header(compact: true)
             }.padding(16)
             Divider()
-            ReaderSplit(initial: 200, minimum: 160, maximum: 260, minimumContent: 320, label: "Overleaf tags", pane: { tagList }, content: { projectList })
+            ReaderSplit(sizing: .sidebar, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: 320, label: "Overleaf tags", pane: { tagList }, content: { projectList })
         }.frame(maxWidth: .infinity, maxHeight: .infinity).background(RemileStyle.background)
             .navigationTitle("Overleaf library")
             .sheet(isPresented: $state.signIn, onDismiss: { Task { await refresh() } }) {
@@ -67,15 +67,19 @@ struct OverleafLibraryWorkspace: View {
         }.buttonStyle(RemileToolStyle())
     }
     private var tagList: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(spacing: 0) {
+            ScrollView {
+              VStack(alignment: .leading, spacing: 6) {
                 tagButton("All projects", id: "all", count: library.projects.count)
                 Text("Tags").font(RemileType.caption.weight(.semibold)).foregroundStyle(RemileStyle.secondaryInk).padding(.top, 18).padding(.horizontal, 10)
                 ForEach(tags) { tag in
                     tagButton(tag.name, id: tag.id, count: library.projects.filter { library.tags[$0.id]?.contains(where: { $0.id == tag.id }) == true }.count, color: OverleafTagMark.tint(tag.color))
                 }
                 tagButton("Untagged", id: "untagged", count: library.projects.filter { library.tags[$0.id, default: []].isEmpty }.count)
-            }.padding(12)
+              }.padding(12)
+            }
+            Divider()
+            EditorSidebarBrand(compact: false).padding(12).fixedSize(horizontal: false, vertical: true)
         }.background(RemileStyle.sidebar)
     }
     private func tagButton(_ name: String, id: String, count: Int, color: Color? = nil) -> some View {
@@ -97,11 +101,11 @@ struct OverleafLibraryWorkspace: View {
                     TextField("Find a project", text: $state.query).textFieldStyle(.roundedBorder)
                     Picker("Sort", selection: $sort) { Text("Manual").tag("Manual"); Text("Name").tag("Name"); Text("Account").tag("Account") }.frame(width: 170)
                 }
-                if let error = library.error {
+                if let error = library.error ?? library.tagError {
                     HStack {
                         Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).textSelection(.enabled)
                         Spacer(minLength: 8)
-                        if library.tagSignInProfile != nil { Button("Sign in") { state.signIn = true } }
+                        if library.tagSignInProfile != nil { Button("Connect Overleaf") { state.signIn = true } }
                     }
                 }
                 if visible.isEmpty {

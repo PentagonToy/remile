@@ -10,6 +10,9 @@ struct TeXLogPanel: View {
     }
     var body: some View {
         VStack(spacing: 0) {
+            if project.setupIssue != nil || !TeXConfiguration.current.missingTools(buffers: project.buffers).isEmpty {
+                HStack { Spacer(); Button("TeX setup") { project.setupNeeded = true }.remileHelp("View missing tools and packages") }.padding(.horizontal, 10).padding(.top, 8)
+            }
             if project.pdf != nil && !project.outputCurrent && !project.compiling && !project.log.isEmpty { Text("Previous build · recompile changes").font(RemileType.caption).foregroundStyle(RemileStyle.warning).padding(.top, 8) }
             if project.submissionCheck { Text("LaTeX only · 3 passes · no .bib/.bbl or BibTeX/Biber").font(RemileType.small).foregroundStyle(.secondary).padding(.top, 10) }
             Picker("Build output", selection: $state.tab) {
@@ -49,18 +52,20 @@ private struct TeXDiagnosticRow: View {
     @AppStorage("assistant.provider") private var provider = "Apple Intelligence"
     @StateObject private var presentation = Presentation()
     private final class Presentation: ObservableObject { @Published var showing = false }
+    private var location: TeXSync.SourceLocation? { project.diagnosticLocation(entry) }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button { project.reveal(entry) } label: {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: entry.severity == .error ? "xmark.octagon" : "exclamationmark.triangle").foregroundStyle(RemileStyle.warning)
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(entry.message).font(RemileType.callout).multilineTextAlignment(.leading).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        Text(entry.displayMessage).font(RemileType.callout).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                         if let file = entry.file { Text(file + (entry.line.map { ":\($0)" } ?? "")).font(RemileType.small).foregroundStyle(.secondary).lineLimit(2) }
                     }
+                    if location != nil { Spacer(minLength: 8); Image(systemName: "scope").foregroundStyle(RemileStyle.accent).accessibilityHidden(true) }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-            }.buttonStyle(.plain).remileHelp("Show source")
-            if entry.severity != .info {
+            }.buttonStyle(.plain).remileHelp(location == nil ? "Build diagnostic" : "Go to source")
+            if entry.severity != .info && !entry.isBuildSummary {
                 HStack { Spacer(); Button { presentation.showing = true } label: { HStack(spacing: 5) { GPTMark(); Text("Suggest fix").font(RemileType.caption) } }
                     .disabled(project.compiling || usage.active || usage.reason != nil || provider == "Off").opacity(usage.reason != nil ? 0.45 : 1).remileHelp(provider == "Off" ? "AI off" : usage.reason ?? "Suggest a fix")
                     .popover(isPresented: $presentation.showing, arrowEdge: .leading) { TeXChatGPTReview(project: project, diagnostic: entry) }

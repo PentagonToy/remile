@@ -42,6 +42,7 @@ struct PDFReader: NSViewRepresentable {
         if view.document !== session.document { view.cancelDrawing() }
         view.drawingTool = session.isEditing ? session.drawingTool : nil
         view.drawingColor = session.drawingColor.color
+        view.editNote = { [weak session] note in session?.beginEditingNote(note) }
         view.beginDrawing = { [weak session] in session?.allowDrawingGesture() ?? false }
         view.commitDrawing = { [weak session] page, annotation in session?.addDrawing(annotation, on: page) }
         view.finishDrawing = { [weak session] in session?.drawingTool = nil }
@@ -49,7 +50,7 @@ struct PDFReader: NSViewRepresentable {
     static func dismantleNSView(_ view: PDFView, coordinator: Coordinator) {
         if let view = view as? PDFSelectionView {
             view.cancelDrawing(); view.drawingTool = nil; view.beginDrawing = nil; view.commitDrawing = nil; view.finishDrawing = nil
-            view.selectionActions = PDFSelectionActions()
+            view.selectionActions = PDFSelectionActions(); view.editNote = nil
         }
         view.document?.cancelFindString()
         view.pageOverlayViewProvider = nil; coordinator.citations.update(nil)

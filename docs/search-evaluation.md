@@ -2,9 +2,9 @@
 
 ## Ranking
 
-The native engine combines lexical ranking (B0) with optional query expansion (B-guided). B0 uses page and 160-token passage BM25, IDF-weighted coverage, bounded proximity and headings. Partial matches remain candidates; quoted phrases are mandatory. Apple Intelligence can expand natural-language questions on this Mac. Keywords, Work offline, Manual mode and unavailable or failed model requests use B0.
+The native engine combines lexical ranking (B0) with optional query expansion (B-guided). B0 uses page and 160-token passage BM25, IDF-weighted coverage, bounded proximity and headings. Partial matches remain candidates. Quoted phrases are mandatory. Apple Intelligence can expand natural-language questions on this Mac. Keywords, Work offline, Manual mode and unavailable or failed model requests use B0.
 
-Ranking data is prepared in memory on the first search and reused until the library changes, including changes from another SQLite connection. Existing indexed text is sufficient; expansion requires neither reindexing nor a model download.
+Ranking data is prepared in memory on the first search and reused until the library changes, including changes from another SQLite connection. Existing indexed text is sufficient. Expansion requires neither reindexing nor a model download.
 
 ## Evidence
 
@@ -14,6 +14,6 @@ Pressure coupling, feature scaling and combustion-temperature questions expose w
 
 ## Resource measurements
 
-Preparing native ranking data for that corpus took about 4.35 seconds on an M5 with 16 GB RAM. This single measurement excludes interface and model preparation. Complete-app memory also includes previews, ranking data and system model costs; bundle size is not a memory measurement.
+Preparing native ranking data for that corpus took about 4.35 seconds on an M5 with 16 GB RAM. This single measurement excludes interface and model preparation. Complete-app memory also includes previews, ranking data and system model costs. Bundle size is not a memory measurement.
 
 Matched whole-app latency and memory comparisons against other PDF applications have not been established. Historical measurements of earlier ranking implementations do not describe the current engine.

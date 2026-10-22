@@ -28,7 +28,7 @@ struct LibrarySearchView: View {
                         Picker("Search pane", selection: $citationState.compactPreview) { Text("Results").tag(false); Text("Preview").tag(true) }.labelsHidden().pickerStyle(.segmented).padding(10)
                         if citationState.compactPreview { previewAndAsk } else { sidebar }
                     }
-                } else { ReaderSplit(initial: 300, minimum: 260, maximum: 360, minimumContent: model.askPresented ? 820 : 480, label: "search results", pane: { sidebar }, content: { previewAndAsk }) }
+                } else { ReaderSplit(sizing: .sidebar, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: model.askPresented ? 820 : 480, label: "search results", pane: { sidebar }, content: { previewAndAsk }) }
             }
         }.sheet(isPresented: $model.libraryPresented) { LibraryManager(model: model) }
             .sheet(isPresented: $citationState.settingsPresented) { searchSettings }

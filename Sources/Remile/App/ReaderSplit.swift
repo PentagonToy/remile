@@ -1,10 +1,18 @@
 import SwiftUI
 import AppKit
 
+enum ReaderSidebar {
+    static let minimum: CGFloat = 200
+    static let maximum: CGFloat = 440
+    static func preferredWidth(in available: CGFloat) -> CGFloat { min(360, max(240, available * 0.24)) }
+}
+
 /// Only the central grip resizes a pane. The remaining divider is visual, not a drag target.
 struct ReaderSplit<Pane: View, Content: View>: View {
     enum Side { case leading, trailing }
+    enum Sizing { case fixed, sidebar, equal }
     var side: Side = .leading
+    var sizing: Sizing = .fixed
     var isPresented = true
     var initial: CGFloat = 280
     var minimum: CGFloat = 240
@@ -27,7 +35,8 @@ struct ReaderSplit<Pane: View, Content: View>: View {
     }
     var body: some View {
         GeometryReader { geometry in
-            let width = Self.constrained(state.width ?? initial, available: geometry.size.width, minimum: minimum, maximum: maximum, content: minimumContent)
+            let preferred = sizing == .sidebar ? ReaderSidebar.preferredWidth(in: geometry.size.width) : sizing == .equal ? (geometry.size.width - Self.handleWidth) / 2 : initial
+            let width = Self.constrained(state.width ?? preferred, available: geometry.size.width, minimum: minimum, maximum: maximum, content: minimumContent)
             let narrow = geometry.size.width < minimum + minimumContent + Self.handleWidth
             let gutter: CGFloat = isPresented ? Self.handleWidth : 0
             let effective: CGFloat = !isPresented ? 0 : state.collapsed < 0 ? 0 : state.collapsed > 0 ? max(0, geometry.size.width - Self.handleWidth) : narrow ? (preferPaneWhenNarrow ? max(0, geometry.size.width - Self.handleWidth) : 0) : width

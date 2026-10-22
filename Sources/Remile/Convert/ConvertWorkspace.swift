@@ -111,7 +111,7 @@ struct ConvertWorkspace: View {
             Group {
                 if model.inputs.isEmpty { emptyState }
                 else {
-                    ReaderSplit(initial: 270, minimum: 240, maximum: 330, minimumContent: 400, label: "conversion files", pane: {
+                    ReaderSplit(sizing: .sidebar, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: 400, label: "conversion files", pane: {
                         fileQueue.frame(maxHeight: .infinity).background(RemileStyle.sidebar)
                     }, content: { preview.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity) })
                 }
@@ -132,14 +132,7 @@ struct ConvertWorkspace: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            Image(systemName: "doc.badge.arrow.up").font(.system(size: 23, weight: .medium))
-                .foregroundStyle(RemileStyle.accent).frame(width: 44, height: 44)
-                .background(RemileStyle.accent.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Convert to PDF").font(.system(size: 20, weight: .semibold))
-                Text("Images, Word and Markdown").font(RemileType.callout).foregroundStyle(.secondary)
-            }
-            Spacer()
+            DocumentToolHeader(title: "Convert to PDF", subtitle: "Images, Word and Markdown", symbol: "doc.badge.arrow.up")
             if !model.inputs.isEmpty {
                 Button { model.choose() } label: { Label("Add Files…", systemImage: "plus") }
                     .disabled(model.busy || model.saving)
@@ -148,30 +141,7 @@ struct ConvertWorkspace: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 18) {
-            HStack(spacing: -10) {
-                sourceIcon("photo", rotation: -10)
-                sourceIcon("doc.text", rotation: 0)
-                sourceIcon("text.document", rotation: 10)
-            }.padding(.bottom, 8).accessibilityHidden(true)
-            VStack(spacing: 8) {
-                Text("Make a PDF from your files").font(.system(size: 22, weight: .semibold))
-                Text("Drop files here, or choose them below.\nReview each result before saving.")
-                    .font(RemileType.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(4)
-            }
-            Button("Choose Files…", action: model.choose).buttonStyle(.borderedProminent).controlSize(.large)
-                .keyboardShortcut(.defaultAction)
-            Text("JPG, PNG, HEIC · DOC, DOCX · MD").font(RemileType.caption).foregroundStyle(.secondary)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(RemileStyle.accent.opacity(0.16), style: StrokeStyle(lineWidth: 1, dash: [6, 5])))
-            .padding(24)
-    }
-    private func sourceIcon(_ symbol: String, rotation: Double) -> some View {
-        Image(systemName: symbol).font(.system(size: 28, weight: .light)).foregroundStyle(RemileStyle.accent)
-            .frame(width: 66, height: 80).background(RemileStyle.background, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(RemileStyle.accent.opacity(0.12)))
-            .rotationEffect(.degrees(rotation))
+        DocumentToolEmptyState(symbols: ["photo", "doc.text", "text.document"], title: "Make a PDF from your files", detail: "Drop files here, or choose them below.\nReview each result before saving.", button: "Choose Files…", formats: "JPG, PNG, HEIC · DOC, DOCX · MD", choose: model.choose)
     }
 
     private var fileQueue: some View {
@@ -243,7 +213,7 @@ struct ConvertWorkspace: View {
                 }
                 ProgressView(value: model.fraction ?? 0)
             }
-            if let message = model.message { Text(message).font(RemileType.caption).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(3) }
+            if let message = model.message { Text(message).font(RemileType.caption).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
             HStack(spacing: 12) {
                 Button("Close") { dismiss() }.disabled(model.busy || model.saving).keyboardShortcut(.cancelAction)
                 if model.saving { ProgressView("Saving…").controlSize(.small) }
