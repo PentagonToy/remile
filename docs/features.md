@@ -36,7 +36,7 @@ Open a project folder, choose its main document and compile with a local TeX ins
 
 Files and Outline fold independently. Drag their dividing line to resize them. Outline follows literal input, include and subfile links. Virtual collections group files without changing source paths. Cmd/Shift selects multiple files for dragging or collection moves. Removing a collection preserves its files.
 
-Double-click a file or project title to rename it. Return or clicking elsewhere accepts a valid non-empty name. Escape or an empty name cancels. The + menu creates files, folders and collections. File context menus offer Rename, Copy relative path, Reveal in Finder, Duplicate and Move to Trash.
+Double-click a file or project title to rename it. Return confirms. Click elsewhere or press Escape to cancel. The + menu creates files, folders and collections. New and imported files can use any extension. File context menus offer Rename, Copy relative path, Reveal in Finder, Duplicate and Move to Trash.
 
 The bounded title box centres names that fit and keeps the beginning of long names visible. Selecting a PDF, EPS or image asset opens a preview beside the compiled document. EPS previews and pdfLaTeX conversion require `epstopdf` and supporting tools. SyncTeX links source and PDF locations. Cmd+/ toggles comments. Tab and Shift+Tab adjust indentation.
 

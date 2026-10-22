@@ -392,6 +392,7 @@ struct MarkdownEditor: NSViewRepresentable {
     func updateNSView(_ view: NSScrollView, context: Context) {
         controller.texTheme = texTheme
         controller.externalRanges = externalRanges; controller.showExternalEdits = showExternalEdits
-        controller.changed = { source = $0 }; controller.update(source, size: size, serif: serif, document: documentID)
+        let binding = _source
+        controller.changed = { binding.wrappedValue = $0 }; controller.update(source, size: size, serif: serif, document: documentID)
     }
 }

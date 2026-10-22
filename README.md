@@ -39,7 +39,7 @@ Update with `brew upgrade --cask remile`. The cask installs the app and the `rem
 
 ### Download
 
-Download [remile. 0.1.2 for Apple Silicon](https://github.com/PentagonToy/remile/releases/download/v0.1.2/remile-0.1.2-arm64.dmg), open the DMG and drag **remile.app** into **Applications**. Checksums are included with the [release](https://github.com/PentagonToy/remile/releases/tag/v0.1.2).
+Download [remile. 0.1.3 for Apple Silicon](https://github.com/PentagonToy/remile/releases/download/v0.1.3/remile-0.1.3-arm64.dmg), open the DMG and drag **remile.app** into **Applications**. Checksums are included with the [release](https://github.com/PentagonToy/remile/releases/tag/v0.1.3).
 
 ### Requirements
 
@@ -52,7 +52,7 @@ Download [remile. 0.1.2 for Apple Silicon](https://github.com/PentagonToy/remile
 | Overleaf, optional | Internet, Git and Git access to your Overleaf project. |
 | Apple Intelligence, optional | macOS 26 or later on an eligible Mac, with Apple Intelligence enabled. |
 | ChatGPT, optional | Internet and an eligible connected ChatGPT account. Account limits apply. |
-| Package trust | Version 0.1.2 uses an ad hoc signature and is not Apple-notarised. macOS may block its first launch. |
+| Package trust | Version 0.1.3 uses an ad hoc signature and is not Apple-notarised. macOS may block its first launch. |
 | Licence | [MIT](LICENSE). Platform components, external tools and connected services retain their own terms. |
 
 If macOS blocks the first launch, read [Apple’s guidance for opening downloaded apps](https://support.apple.com/en-au/102445). See [installation and updates](docs/distribution.md) for package details and the optional CLI setup after a DMG install.

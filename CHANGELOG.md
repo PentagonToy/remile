@@ -2,10 +2,10 @@
 
 ## Unreleased
 
+## 0.1.3 — 2026-10-22
+- Accept project files with any extension. Dismiss inline entries on an outside click and warn before deleting connected files. Release source and PDF navigation callbacks when leaving the editor.
 - Shorten help text and wrap explanatory hints. Use event-driven CLI requests, incremental source hashes, cached search grouping, bounded raster previews and asynchronous cache cleanup. Expose resource diagnostics through the CLI.
-
 - Use responsive shared navigation widths and an equal initial Markdown split. Remove custom word alternatives and background replacement lookups. Keep native right-click spelling corrections.
-
 - Add source-linked manuscript review questions with masked, synthetic criteria examples, persistent project results, Markdown and JSON export, Clear and CLI access.
 - Add opt-in live Overleaf text editing with preserved drafts, conflict review and exclusive project ownership.
 - Distinguish connection, pause reasons, pending files and project-wide server confirmation. Preserve pending intent when the live event stream closes.
@@ -13,20 +13,15 @@
 - Restore source/PDF navigation, including PDF double-clicks and jumps queued before preview layout.
 - Clarify PDF editing protection and note replies. Add note-icon deletion.
 - Shorten tours, help and documentation. Add shared writing guidance.
-
 - Double-click blank title-bar space to zoom and restore the window, preserving toolbar controls.
-
 - Add token-setup hover guidance and a shared help-bubble template. Organise actual artwork by brand, symbols and motion, with verified runtime paths and a native-symbol catalogue.
-
 - Check saved Overleaf sessions before opening login. Separate web account setup from Git tokens, validate project-list responses before completing connection, and distinguish login expiry, verification, Keychain and server failures.
-
 - Separate saved Overleaf project management from import. Add tag filters, coloured tag marks, sorting and persistent manual ordering.
 - Load remote Markdown images online through bounded, cancellable requests. Keep reading previews available offline or when images or TeX notation are unsupported, using labelled placeholders or source text.
 - Make blank title-bar space draggable while preserving toolbar controls. Fill Home card rows to the banner width at wide and narrow window sizes.
 - Give the disk image a drag-to-Applications layout with a paper background and installation arrow.
 
 ## 0.1.2 — 2026-10-21
-
 - Add PDF drawing, rectangles and ellipses, with colour selection and Undo. Defer annotation serialisation until Save and preview strokes as vector overlays.
 - Add signature editing locks and explicit risk consent in PDF readers and Search. Preserve original signed bytes for supported, permitted incremental annotation saves. Retain one temporary original during editing and clean it after Save or Discard. Integrity checks do not validate certificate trust, expiry or revocation.
 - Group each highlight selection into one annotation per page, including inline maths. Preserve form data and support undoable highlight and comment-thread deletion.
@@ -39,7 +34,6 @@
 - Bound temporary compilation storage and session caches. Consolidate documentation around current workflows, installation and limits.
 
 ## 0.1.1 — 2026-10-20
-
 - Place larger LaTeX and Overleaf titles in a bounded, subtle box at the centre of the action toolbar. Centre titles that fit and keep the beginning of overflowing titles visible. Double-click an Overleaf title to rename the online project after server confirmation.
 - Show Overleaf sync age in whole minutes.
 - Resize Files and Outline by dragging their dividing line.
@@ -53,7 +47,6 @@
 ## 0.1.0 — 2026-10-20
 
 First public macOS release for Apple Silicon.
-
 - Read and edit Markdown, annotate PDFs, and search an indexed local library.
 - Edit multi-file LaTeX projects with compilation, PDF preview, outline, source navigation and local history.
 - Connect Overleaf projects through local copies and review changes before synchronising.
