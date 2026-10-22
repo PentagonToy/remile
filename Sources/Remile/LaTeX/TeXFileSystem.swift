@@ -41,8 +41,7 @@ enum TeXFileSystem {
     static func topLevel(_ paths: [String]) -> [String] { paths.filter { path in !paths.contains { $0 != path && path.hasPrefix($0 + "/") } } }
     static func importFile(_ source: URL, root: URL, folder: String) throws -> String {
         let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
-        let allowed = ["tex", "bib", "sty", "cls", "pdf", "png", "jpg", "jpeg", "svg", "eps", "csv", "txt", "dat"]
-        guard source.isFileURL, values.isRegularFile == true, values.isSymbolicLink != true, (values.fileSize ?? Int.max) <= 64 * 1024 * 1024, allowed.contains(source.pathExtension.lowercased()) else { throw Failure(errorDescription: "Drop source files or document assets, up to 64 MB each.") }
+        guard source.isFileURL, values.isRegularFile == true, values.isSymbolicLink != true, (values.fileSize ?? Int.max) <= 64 * 1024 * 1024 else { throw Failure(errorDescription: "Add files up to 64 MB each.") }
         let path = folder.isEmpty ? source.lastPathComponent : folder + "/" + source.lastPathComponent
         let target = try url(path, root: root)
         guard !FileManager.default.fileExists(atPath: target.path) else { throw Failure(errorDescription: "A file with this name already exists.") }

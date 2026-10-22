@@ -22,7 +22,7 @@ import UniformTypeIdentifiers
         let id = UUID()
         let kind: NewItemKind
         var isCollection: Bool { switch kind { case .collection, .renameCollection: return true; default: return false } }
-        var placeholder: String { switch kind { case .file: return "File name.tex"; case .folder: return "Folder name"; case .collection: return "Collection name"; case .rename, .renameCollection: return "New name" } }
+        var placeholder: String { switch kind { case .file: return "File name"; case .folder: return "Folder name"; case .collection: return "Collection name"; case .rename, .renameCollection: return "New name" } }
         var symbol: String { switch kind { case .file: return "doc.text"; case .folder: return "folder"; case .collection, .renameCollection: return "square.stack.3d.up"; case .rename: return "doc.text" } }
         var initialName: String { switch kind { case .rename(let path): return (path as NSString).lastPathComponent; case .renameCollection(_, let name): return name; default: return "" } }
     }
@@ -308,6 +308,7 @@ import UniformTypeIdentifiers
         let affected = files.filter { file in paths.contains { file == $0 || file.hasPrefix($0 + "/") } }
         guard !affected.contains(main) else { message = "Choose another main document before removing this item."; return }
         let alert = NSAlert(); alert.messageText = paths.count == 1 ? "Move “\((paths[0] as NSString).lastPathComponent)” to Trash?" : "Move \(paths.count) items to Trash?"
+        if connected { alert.informativeText = "Also deleted from Overleaf." }
         alert.addButton(withTitle: "Move to Trash"); alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         for path in paths {
@@ -345,7 +346,6 @@ import UniformTypeIdentifiers
                 try TeXCollections.write(groups, root: root); collections = groups
             case .file(let parent):
                 guard !name.contains("/"), !name.hasPrefix("."), !name.contains("\n"), !name.contains("\r") else { throw TeXFileSystem.Failure(errorDescription: "Choose a file name without slashes, line breaks or a leading dot.") }
-                guard ["tex", "bib", "sty", "cls"].contains((name as NSString).pathExtension.lowercased()) else { throw TeXFileSystem.Failure(errorDescription: "Use .tex, .bib, .sty or .cls for a source file.") }
                 guard files.count < 2000, treeFiles.count < 10000 else { throw CocoaError(.fileWriteOutOfSpace) }
                 let path = parent.isEmpty ? name : parent + "/" + name
                 let url = try TeXFileSystem.url(path, root: root)

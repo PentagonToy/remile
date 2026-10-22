@@ -47,13 +47,13 @@ struct TeXWorkspace: View {
         }.background(RemileStyle.background).navigationTitle(project.displayName + (project.dirty ? " •" : ""))
         .task(id: project.selected + project.source.wrappedValue + language + String(spellcheck)) { await writing.check(project.source.wrappedValue, enabled: spellcheck, language: language, editor: editor) }
         .onAppear {
-            editor.syncToPreview = { project.syncToPDF(line: $0) }; preview.reverse = { project.syncToSource($0) }
+            editor.syncToPreview = { [weak project = project] in project?.syncToPDF(line: $0) }; preview.reverse = { [weak project = project] in project?.syncToSource($0) }
             editor.proofreadRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return }; writing?.proofread(range, in: view, editor: editor) }
             editor.dismissWriting = { [weak writing = writing] in writing?.dismissSuggestion() }
-            project.editSource = { [weak editor = editor, weak project = project] file, before, after, name in
+            project.editSource = { [weak editor = editor, weak project = project, weak state = presentation, size = CGFloat(fontSize)] file, before, after, name in
                 guard let editor, let project, let view = editor.textView, !view.hasMarkedText() else { return false }
-                project.selected = file; presentation.pane = "Source"
-                editor.update(before, size: CGFloat(fontSize), serif: false, document: file)
+                project.selected = file; state?.pane = "Source"
+                editor.update(before, size: size, serif: false, document: file)
                 editor.apply(.init(range: NSRange(location: 0, length: (before as NSString).length), text: after, selection: NSRange(location: 0, length: 0)), name: name)
                 return true
             }
@@ -62,7 +62,7 @@ struct TeXWorkspace: View {
         .onChange(of: project.compiling) { if !project.compiling { presentation.pane = "Preview" } }
         .onChange(of: project.compileFailed) { if project.compileFailed { presentation.pane = "Preview" } }
         .onChange(of: project.selected) { presentation.renameProject = false; presentation.renameSource = false; if project.buffers[project.selected] == nil { presentation.pane = "Source" } }
-        .onDisappear { project.editSource = nil; writing.dismissSuggestion() }
+        .onDisappear { project.editSource = nil; editor.syncToPreview = nil; preview.reverse = { _ in }; editor.proofreadRequested = nil; editor.dismissWriting = nil; writing.dismissSuggestion() }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.toggleComment"))) { event in if event.object as? TeXProject === project { editor.toggleComment() } }
         .onReceive(project.$sourceJump) { jump in
             guard let jump else { return }; presentation.pane = "Source"

@@ -161,10 +161,10 @@ private struct TeXSidebarCreation: View {
                     .accessibilityLabel(draft.placeholder).onSubmit { commit() }.onExitCommand { project.cancelNewItem() }
             }.padding(5).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 5))
             if let error = project.newItemError { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).fixedSize(horizontal: false, vertical: true) }
-        }.background(InlineEditBoundary { commit() }).padding(.horizontal, 12).padding(.vertical, 6)
+        }.background(InlineEditBoundary { project.cancelNewItem() }).padding(.horizontal, 12).padding(.vertical, 6)
             .onAppear { state.name = draft.initialName; focused = true }
-            .onChange(of: focused) { if !focused { commit() } }
-            .remileHelp("Return confirms the name. Escape or an empty name cancels.")
+            .onChange(of: focused) { if !focused { project.cancelNewItem() } }
+            .remileHelp("Return confirms. Click elsewhere or press Escape to cancel.")
     }
     private func commit() { guard project.newItemDraft?.id == draft.id else { return }; if !project.finishNewItem(state.name) { focused = true } }
 }

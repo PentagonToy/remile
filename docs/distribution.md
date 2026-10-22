@@ -1,6 +1,6 @@
 # Installation and updates
 
-remile. 0.1.2 targets macOS 14 and later. The published DMG contains an Apple Silicon app and its [CLI](cli.md).
+remile. 0.1.3 targets macOS 14 and later. The published DMG contains an Apple Silicon app and its [CLI](cli.md).
 
 ## Install
 
@@ -11,7 +11,7 @@ brew install --cask PentagonToy/tap/remile
 brew upgrade --cask remile
 ```
 
-The 0.1.2 package is ad hoc signed and is not Apple-notarised. If macOS blocks its first launch, verify the download source and follow [Apple’s downloaded-app guidance](https://support.apple.com/en-au/102445). Homebrew verifies the DMG checksum and installs the app and CLI. It does not bypass macOS security checks.
+The 0.1.3 package is ad hoc signed and is not Apple-notarised. If macOS blocks its first launch, verify the download source and follow [Apple’s downloaded-app guidance](https://support.apple.com/en-au/102445). Homebrew verifies the DMG checksum and installs the app and CLI. It does not bypass macOS security checks.
 
 ## Updates
 
