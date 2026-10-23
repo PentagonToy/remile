@@ -5,6 +5,11 @@ import CryptoKit
 
 /// Session cookies belong to remile.'s account, never another browser's store.
 @MainActor enum OverleafWebIdentity {
+    private static var stores: [UUID: WKWebsiteDataStore] = [:]
+    static func dataStore(_ id: UUID) -> WKWebsiteDataStore {
+        if let store = stores[id] { return store }
+        let store = WKWebsiteDataStore(forIdentifier: id); stores[id] = store; return store
+    }
     private static let access = OverleafSessionAccess()
     private static var savedDigests: [UUID: SHA256.Digest] = [:]
     private static var saveRetryAfter: [UUID: Date] = [:]
@@ -26,7 +31,7 @@ import CryptoKit
         return ["overleaf.com", "www.overleaf.com"].contains(domain.lowercased()) && (cookie.expiresDate.map { $0 > now } ?? true)
     }
     @discardableResult static func remember(_ id: UUID) async -> Bool {
-        let cookies = await WKWebsiteDataStore(forIdentifier: id).httpCookieStore.allCookies().filter { isUsable($0) }.sorted { ($0.domain, $0.path, $0.name) < ($1.domain, $1.path, $1.name) }
+        let cookies = await OverleafWebIdentity.dataStore(id).httpCookieStore.allCookies().filter { isUsable($0) }.sorted { ($0.domain, $0.path, $0.name) < ($1.domain, $1.path, $1.name) }
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         guard !cookies.isEmpty, let bytes = try? encoder.encode(cookies.map(Cookie.init)) else { return false }
         let digest = SHA256.hash(data: bytes)
@@ -38,14 +43,14 @@ import CryptoKit
         return false
     }
     static func restore(_ id: UUID, interactive: Bool = false) async throws {
-        let store = WKWebsiteDataStore(forIdentifier: id).httpCookieStore
+        let store = OverleafWebIdentity.dataStore(id).httpCookieStore
         let existing = await store.allCookies()
         // A current signed-in session takes precedence over an older saved session.
         if !interactive, existing.contains(where: { isUsable($0) && ["overleaf_session2", "overleaf.sid", "sharelatex.sid"].contains($0.name) }) { return }
         try await access.restore(id, interactive: interactive) { try await restoreSaved(id, interactive: interactive) }
     }
     private static func restoreSaved(_ id: UUID, interactive: Bool) async throws {
-        let store = WKWebsiteDataStore(forIdentifier: id).httpCookieStore
+        let store = OverleafWebIdentity.dataStore(id).httpCookieStore
         let result = await Task.detached {
             let request = query(id).merging([kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]) { _, new in new }
             return KeychainAccess.read(matching: request, interactive: interactive)
@@ -71,7 +76,7 @@ import CryptoKit
     private var timer: Task<Void, Never>?
     init(url: URL, profile: UUID) {
         self.url = url
-        let config = WKWebViewConfiguration(); config.websiteDataStore = WKWebsiteDataStore(forIdentifier: profile)
+        let config = WKWebViewConfiguration(); config.websiteDataStore = OverleafWebIdentity.dataStore(profile)
         web = WKWebView(frame: .zero, configuration: config)
         super.init(); web.navigationDelegate = self
     }

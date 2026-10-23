@@ -61,7 +61,7 @@ enum RemileArtwork {
         switch kind {
         case "icon": return "brand/icons"
         case "wordmark": return "brand/wordmarks"
-        case "lighthouse": return "motion/lighthouse"
+        case "lighthouse", "harbour", "harbour-focus": return "brand/scenes"
         case "airplane": return "motion/airplane"
         default: return "brand/banners"
         }

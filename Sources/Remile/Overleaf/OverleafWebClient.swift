@@ -19,6 +19,7 @@ import WebKit
         let id: String
         let name: String
         var tags: [Tag] = []
+        var tagsLoaded = true
     }
     enum Failure: LocalizedError {
         case signIn, response, verification, permission, rateLimited, unavailable, sessionLocked
@@ -60,7 +61,7 @@ import WebKit
             do { return try await webRequest(URL(string: "https://www.overleaf.com" + path)!, profile: profile) }
             catch Failure.signIn { throw Failure.sessionLocked }
         }
-        let store = WKWebsiteDataStore(forIdentifier: profile).httpCookieStore
+        let store = OverleafWebIdentity.dataStore(profile).httpCookieStore
         let cookies = await store.allCookies()
         let url = URL(string: "https://www.overleaf.com" + path)!
         if webTransport.contains(profile) { return try await webRequest(url, profile: profile) }
@@ -96,13 +97,13 @@ import WebKit
         let projects = try parseProjects(await request("/user/projects", profile: profile))
         // Tags are optional metadata. An unavailable tag endpoint must not hide projects.
         guard let data = try? await request("/tag", profile: profile), let tags = try? parseTags(data) else { return projects }
-        return projects.map { project in var item = project; item.tags = tags[item.id] ?? []; return item }
+        return projects.map { project in var item = project; item.tags = tags[item.id] ?? []; item.tagsLoaded = true; return item }
     }
     nonisolated static func parseTags(_ data: Data) throws -> [String: [Tag]] {
         guard data.count <= 8_000_000, let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]], rows.count <= 10_000 else { throw Failure.response }
         var result: [String: [Tag]] = [:]
         for row in rows {
-            guard let id = row["_id"] as? String, let name = row["name"] as? String, !name.isEmpty, let projects = row["project_ids"] as? [String], projects.count <= 10_000 else { continue }
+            guard let id = row["_id"] as? String, let name = row["name"] as? String, !name.isEmpty, let projects = row["project_ids"] as? [String], projects.count <= 10_000 else { throw Failure.response }
             let tag = Tag(id: id, name: String(name.prefix(200)), color: row["color"] as? String)
             for project in Set(projects) { if result[project, default: []].contains(where: { $0.id == id }) == false { result[project, default: []].append(tag) } }
         }
@@ -113,7 +114,7 @@ import WebKit
         var seen = Set<String>()
         return try rows.map { row in
             guard let id = row["_id"] as? String, OverleafConnection.projectID("https://www.overleaf.com/project/" + id) != nil, let name = row["name"] as? String else { throw Failure.response }
-            return Project(id: id.lowercased(), name: name)
+            return Project(id: id.lowercased(), name: name, tagsLoaded: false)
         }.filter { seen.insert($0.id).inserted }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     static func comments(_ project: OverleafConnection) async throws -> OverleafThreadArchive {

@@ -9,6 +9,11 @@ expect(tokens.contains { $0.kind == .command && (text as NSString).substring(wit
 expect(TeXEditorTheme.allCases.count == 5, "Five editor palettes")
 let log = "./setup/setting.tex:9: LaTeX Error: Option clash for package biblatex.\n\nLaTeX Warning: Citation undefined on input line 23.\n\nLaTeX Warning: Citation undefined on input line 23.\n"
 let diagnostics = TeXDiagnostics.parse(log)
+expect(TeXDiagnostics.logSeverity([]) == nil, "Clean build has no terminal dot")
+expect(TeXDiagnostics.logSeverity([TeXDiagnostic(id: 0, severity: .info, message: "Info", file: nil, line: nil)]) == nil, "Information does not create a warning dot")
+expect(TeXDiagnostics.logSeverity(TeXDiagnostics.parse("LaTeX Warning: Citation undefined.\n")) == .warning, "Warnings use the warning dot")
+expect(TeXDiagnostics.logSeverity(Array(diagnostics.reversed())) == .error, "Errors take precedence regardless of order")
+expect(TeXDiagnostics.logSeverity([], failed: true) == .error, "Failed builds remain visible without parsed errors")
 expect(diagnostics.filter { $0.severity == .error }.count == 1, "Fatal file-line error classified")
 expect(diagnostics.filter { $0.severity == .warning }.count == 1, "Repeated warning deduplicated")
 expect(diagnostics.first?.file == "./setup/setting.tex" && diagnostics.first?.line == 9, "Clickable location retained")
@@ -30,3 +35,11 @@ if CommandLine.arguments.count > 1 {
     print("SyncTeX:", pdf, "→", code)
 }
 print("Passed \(checks) TeX workspace checks")
+
+expect(TeXMainDocument.choose(sources: ["main.tex": "documentclass{article}"], saved: nil) == "main.tex", "A missing command backslash cannot prevent opening")
+expect(TeXMainDocument.choose(sources: ["main.tex": "", "template.tex": "\\documentclass{book}"], saved: nil) == "main.tex", "An empty main document opens before an unrelated template")
+expect(TeXMainDocument.choose(sources: ["draft.tex": "broken", "main.tex": ""], saved: "draft.tex") == "draft.tex", "A saved main document remains editable despite syntax errors")
+expect(TeXMainDocument.choose(sources: ["notes.tex": "\\section{Notes}", "chapter/a.tex": ""], saved: "missing.tex") == "notes.tex", "A project without a class declaration uses a stable source fallback")
+expect(TeXMainDocument.choose(sources: ["DRAFT.TEX": ""], saved: nil) == "DRAFT.TEX", "Uppercase TeX extensions are editable")
+expect(TeXMainDocument.choose(sources: ["refs.bib": ""], saved: nil) == nil, "A bibliography alone is not misidentified as a TeX source")
+print("Passed \(checks) TeX workspace checks including broken sources")

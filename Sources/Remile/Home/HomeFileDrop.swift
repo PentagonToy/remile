@@ -29,7 +29,7 @@ enum HomeFileDrop {
             guard urls.count == 1, ["pdf", "md", "markdown", "txt"].contains(urls[0].pathExtension.lowercased()) else { throw Failure(message: "Drop one PDF or Markdown document to open it.") }
             return .open(urls[0])
         case .latex:
-            guard urls.count == 1, (try? urls[0].resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { throw Failure(message: "Drop one LaTeX project folder.") }
+            guard urls.count == 1, (try? urls[0].resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true || urls[0].pathExtension.lowercased() == "zip" else { throw Failure(message: "Drop one LaTeX source ZIP or project folder.") }
             return .latex(urls[0].standardizedFileURL)
         case .convert:
             guard urls.allSatisfy({ url in
@@ -59,7 +59,7 @@ extension HomeModel {
         do {
             switch try HomeFileDrop.plan(urls, target: target) {
             case .open(let url): open(url)
-            case .latex(let root): openTeX(root)
+            case .latex(let root): if (try? root.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true && root.pathExtension.lowercased() == "zip" { importTeXArchive(root) } else { openTeX(root) }
             case .convert(let urls): presentConversion(urls)
             case .compress(let url): presentCompression(url)
             case .combine(let urls): Task { @MainActor in self.create(.combine, inputs: urls, open: { self.open($0) }) }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct EditorSidebarBrand: View {
     let compact: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("editor.sidebarArtwork") private var visible = true
     @Environment(\.colorScheme) private var scheme
     var body: some View {
@@ -15,7 +16,7 @@ struct EditorSidebarBrand: View {
                     Text("— remile.").font(.system(size: 14, design: .serif)).foregroundStyle(RemileStyle.accent)
                 }.padding(.horizontal, 4).padding(.bottom, 8).transition(.opacity)
             }
-        } }
+        }.animation(reduceMotion ? nil : RemileMotion.disclosure, value: compact) }
     }
 }
 

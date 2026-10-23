@@ -20,7 +20,7 @@ import WebKit
          saveSession: @escaping (UUID) async -> Bool = { await OverleafWebIdentity.remember($0) },
          unlockSession: @escaping (UUID) async throws -> Void = { try NetworkAccess.requireOnline(); try await OverleafWebIdentity.restore($0, interactive: true) }) {
         self.profile = profile; self.fetchProjects = fetchProjects; self.saveSession = saveSession; self.unlockSession = unlockSession
-        let config = WKWebViewConfiguration(); config.websiteDataStore = WKWebsiteDataStore(forIdentifier: profile)
+        let config = WKWebViewConfiguration(); config.websiteDataStore = OverleafWebIdentity.dataStore(profile)
         web = WKWebView(frame: .zero, configuration: config)
         super.init(); web.navigationDelegate = self
         verifySession()
@@ -118,7 +118,15 @@ struct OverleafSignIn: View {
                 Spacer()
             } else {
                 SignInWebView(web: session.web)
-                Text("Sign in to Overleaf. Some providers require a browser.").font(RemileType.small).foregroundStyle(.secondary).padding(12)
+                HStack {
+                    Text("Sign in to browse projects.").font(RemileType.small).foregroundStyle(.secondary)
+                    Spacer()
+                    if FileManager.default.fileExists(atPath: "/System/Applications/Passwords.app") {
+                        Button("Open Passwords") {
+                            NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: "/System/Applications/Passwords.app"), configuration: NSWorkspace.OpenConfiguration())
+                        }.remileHelp("Choose your saved Overleaf login")
+                    }
+                }.padding(12)
             }
         }.frame(width: 740, height: 620).background(RemileStyle.background)
             .onChange(of: session.signedIn) { if session.signedIn { done() } }

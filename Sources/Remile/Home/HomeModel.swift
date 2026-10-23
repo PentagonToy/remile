@@ -9,7 +9,8 @@ final class HomeModel: ObservableObject {
     let overleaf: OverleafLibrary
     @Published var texProject: TeXProject?
     let assistant = DocumentAssistant(historyKey: "search")
-    enum Page { case home, search }
+    enum Page { case home, search, reference }
+    let references = ReferenceModel()
     @Published var opening = false
     let pdfSearchEditing = SearchPDFModel()
     @Published var page: Page = .home
@@ -51,7 +52,6 @@ final class HomeModel: ObservableObject {
     @Published var message: String?
     @Published var error: String?
     @Published var recent: [URL] = []
-    @Published var plannedTool: String?
     @Published var conversion = ConversionModel()
     @Published var compression = CompressionModel()
     @Published var convertPresented = false
@@ -324,11 +324,14 @@ final class HomeModel: ObservableObject {
     @discardableResult func closeTeX() -> Bool {
         guard pdfSearchEditing.confirmLeaving() else { return false }
         guard texProject?.confirmLeaving() != false else { return false }
-        texProject = nil; return true
+        texProject?.releaseWorkspaceResources(); texProject = nil; return true
     }
     func chooseTeX() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = true; panel.title = "Open LaTeX Project"
-        if panel.runModal() == .OK, let url = panel.url { openTeX(url.pathExtension.lowercased() == "tex" ? url.deletingLastPathComponent() : url) }
+        if panel.runModal() == .OK, let url = panel.url {
+            if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true && url.pathExtension.lowercased() == "zip" { importTeXArchive(url) }
+            else { openTeX(url.pathExtension.lowercased() == "tex" ? url.deletingLastPathComponent() : url) }
+        }
     }
     func openTeX(_ root: URL) {
         do { let connection = overleaf.connection(for: root); let project = try TeXProject(root, historyEnabled: connection == nil, displayName: connection?.name); guard reader.close(), closeTeX() else { return }; texProject = project

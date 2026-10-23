@@ -37,13 +37,13 @@ struct ManuscriptReviewPanel: View {
                                     Text(item.question).font(RemileType.callout.weight(.semibold)).textSelection(.enabled)
                                     Text(item.reason).font(RemileType.caption).textSelection(.enabled)
                                     ForEach(Array(item.anchors.enumerated()), id: \.offset) { _, anchor in
-                                        Button { reveal(anchor) } label: { VStack(alignment: .leading, spacing: 4) { Label(anchor.file + ":" + String(anchor.line + 1), systemImage: "doc.text.magnifyingglass").lineLimit(2); Text(anchor.quote).lineLimit(4).foregroundStyle(RemileStyle.secondaryInk) } }.buttonStyle(.plain).font(RemileType.caption).bubbleHelp("Locate the quoted passage in the current source")
+                                        Button { reveal(anchor) } label: { VStack(alignment: .leading, spacing: 4) { Label(anchor.file + ":" + String(anchor.line + 1), systemImage: "doc.text.magnifyingglass").lineLimit(2); Text(anchor.quote).lineLimit(4).foregroundStyle(RemileStyle.secondaryInk) } }.buttonStyle(.plain).font(RemileType.caption).remileHelp("Locate the quoted passage in the current source")
                                     }
                                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 9))
                             }
                         }
                     }
-                }.padding(.trailing, 6)
+                }.scrollContentGutter()
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }.padding(12).background(RemileStyle.background)
             .task(id: String(project.editRevision) + ":" + String(project.fileRevision)) { state.hashes = project.sourceHashes }

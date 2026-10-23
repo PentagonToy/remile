@@ -10,7 +10,7 @@ struct LibrarySearchView: View {
     var goHome: (() -> Void)? = nil
     private var assistant: DocumentAssistant { model.assistant }
     @StateObject private var citationState = CitationState()
-    private final class CitationState: ObservableObject { @Published var focus: AssistantCitation?; @Published var selectedPassages: [AssistantPassage] = []; @Published var compactPreview = false; @Published var settingsPresented = false }
+    private final class CitationState: ObservableObject { @Published var references = false; @Published var focus: AssistantCitation?; @Published var selectedPassages: [AssistantPassage] = []; @Published var compactPreview = false; @Published var settingsPresented = false }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var selection: Binding<String?> {
@@ -28,9 +28,10 @@ struct LibrarySearchView: View {
                         Picker("Search pane", selection: $citationState.compactPreview) { Text("Results").tag(false); Text("Preview").tag(true) }.labelsHidden().pickerStyle(.segmented).padding(10)
                         if citationState.compactPreview { previewAndAsk } else { sidebar }
                     }
-                } else { ReaderSplit(sizing: .sidebar, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: model.askPresented ? 820 : 480, label: "search results", pane: { sidebar }, content: { previewAndAsk }) }
+                } else { ReaderSplit(sizing: .results, minimum: 280, maximum: 520, minimumContent: model.askPresented ? 820 : 480, label: "search results", pane: { sidebar }, content: { previewAndAsk }) }
             }
         }.sheet(isPresented: $model.libraryPresented) { LibraryManager(model: model) }
+            .sheet(isPresented: $citationState.references) { ReferencePicker(format: .markdown) }
             .sheet(isPresented: $citationState.settingsPresented) { searchSettings }
             .onChange(of: boostingEnabled) { model.invalidateSearch() }
             .onChange(of: network.offline) { model.invalidateSearch() }
@@ -105,6 +106,7 @@ struct LibrarySearchView: View {
             AIToolGroup {
             if model.exploring { Button("Stop", action: model.cancelExploration) }
             else { Button { model.explore() } label: { Label("Explore", systemImage: "sparkle.magnifyingglass") }.disabled(model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.summary.folders.isEmpty || assistantProvider == "Off" || network.offline).remileHelp("Find related concepts · " + assistantProvider) }
+            Button { citationState.references = true } label: { Image(systemName: "books.vertical") }.remileHelp("Reference library").accessibilityLabel("Reference library")
             AIProviderButton()
             Button { toggleAssistant() } label: { Label("Ask", systemImage: "text.bubble") }.remileHelp("Ask about search results · " + assistantProvider)
             }
@@ -188,7 +190,7 @@ struct LibrarySearchView: View {
                                             Text(entry.hit.name).font(RemileType.callout).lineLimit(2)
                                             Text(entry.hit.location).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1)
                                         }
-                                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8).scrollContentGutter()
                                         .background(model.selectedHit?.id == entry.id ? RemileStyle.accent.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
                                         .contentShape(Rectangle()).onTapGesture { selectResult(entry.hit) }.tag(entry.id)
                                         .remileHelp(entry.hit.excerpt).accessibilityElement(children: .ignore)
@@ -223,13 +225,13 @@ struct LibrarySearchView: View {
                                                 Text("\(group.hits.count) \(group.hits.count == 1 ? "match" : "matches") · \(group.hits.first?.isMarkdown == true ? "Markdown" : "PDF")").font(RemileType.caption).foregroundStyle(.secondary)
                                             }
                                             Spacer(minLength: 0)
-                                        }.padding(.vertical, 8).contentShape(Rectangle())
+                                        }.padding(.vertical, 8).scrollContentGutter().contentShape(Rectangle())
                                     }.buttonStyle(.plain).remileHelp(group.path).accessibilityLabel("\(group.name), best relevance position \(group.bestRank), \(group.hits.count) matches")
                                 }
                             }
                             }
                         }.listStyle(.plain).scrollContentBackground(.hidden)
-                            .animation(reduceMotion ? nil : RemileMotion.panel, value: model.expandedDocuments)
+                            .animation(reduceMotion ? nil : RemileMotion.disclosure, value: model.expandedDocuments)
                             .onChange(of: model.selectedHit?.id) { _, id in
                                 if let id { DispatchQueue.main.async { proxy.scrollTo(id, anchor: .center) } }
                             }

@@ -36,6 +36,7 @@ Task { @MainActor in
  defaults.set(false,forKey:"welcome.tourCompleted.v1")
  let library=OverleafLibrary(directory:output.appendingPathComponent("IsolatedOverleaf"))
  let model=HomeModel(index:LibraryIndex(location:output.appendingPathComponent("library.sqlite")),overleaf:library)
+ precondition(Set(WelcomeTour.steps.map(\.target)).isSuperset(of: ["search", "reference"]), "Tour includes Search and Reference")
  let progress=WelcomeTourProgress(),probe=AnchorProbe()
  let host=NSHostingView(rootView:ProbedHome(model:model,progress:progress,probe:probe,defaults:defaults).environment(\.colorScheme,.dark))
  let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1200,height:800),styleMask:[.titled,.resizable],backing:.buffered,defer:false)
@@ -44,7 +45,10 @@ Task { @MainActor in
   window.setContentSize(size)
   for i in 0..<WelcomeTour.steps.count {
    progress.step=i;host.layoutSubtreeIfNeeded()
-   let found = await wait { probe.frames[WelcomeTour.steps[i].target] != nil }
+   let found = await wait {
+    guard let frame = probe.frames[WelcomeTour.steps[i].target] else { return false }
+    return frame.width > 0 && frame.height > 0 && frame.intersects(host.bounds)
+   }
    precondition(found,"Missing actual Home target at step \(i+1)")
    try? await Task.sleep(for:.milliseconds(650))
    precondition(host.bounds.height<=size.height+1,"Tour grew the window")
@@ -53,7 +57,7 @@ Task { @MainActor in
  raster(host,"home-tour-final")
  precondition(!defaults.bool(forKey:"welcome.tourCompleted.v1"),"Inspecting steps completed tutorial unexpectedly")
  window.orderOut(nil)
- print("Passed all eight actual Home anchors at wide/narrow sizes, including nested editor targets and step 2→3")
+ print("Passed all \(WelcomeTour.steps.count) actual Home anchors at wide/narrow sizes, including Search and Reference")
  let guideState=UserGuidePresentation()
  let guide=NSHostingView(rootView:UserGuide(presentation:guideState).environment(\.colorScheme,.dark).foregroundStyle(RemileStyle.ink).tint(RemileStyle.accent))
  let sheet=NSWindow(contentRect:NSRect(x:0,y:0,width:700,height:620),styleMask:[.titled],backing:.buffered,defer:false)

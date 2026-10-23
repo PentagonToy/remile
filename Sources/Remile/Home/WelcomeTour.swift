@@ -19,7 +19,8 @@ final class WelcomeTourProgress: ObservableObject { @Published var step = 0; @Pu
     }
     static let steps = [
         Step(target: "open", title: "Your documents, close at hand", detail: "Open a document. Read, highlight and ask."),
-        Step(target: "search", title: "Find the passage", detail: "Add folders to your library. Find the matching page."),
+        Step(target: "search", title: "Search your library", detail: "Add folders to your library. Find the matching page."),
+        Step(target: "reference", title: "Keep your references together", detail: "Drop PDFs or BibTeX. Organise references, review duplicates and copy citations."),
         Step(target: "markdown", title: "Write in Markdown", detail: "Write a note. Switch to reading when you’re ready."),
         Step(target: "latex", title: "Work with LaTeX", detail: "Edit your source. Compile a PDF. Follow errors to the line."),
         Step(target: "overleaf", title: "Keep Overleaf within reach", detail: "Connect a project. Local edits sync automatically. Remote changes wait for review."),

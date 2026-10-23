@@ -10,7 +10,7 @@ This directory contains maintained artwork and the help template used by remile.
 | `symbols/providers` | ChatGPT mark used by provider controls |
 | `symbols/integrations` | Overleaf leaf used by project controls |
 | `symbols/system-symbols.json` | Actual literal SF Symbols names and source locations. Native system artwork is not redistributed |
-| `motion/lighthouse` | Light/Dark lighthouse vectors for Home and search |
+| `brand/scenes` | Light/Dark lighthouse and Harbour illustrations |
 | `motion/airplane` | Light/Dark flight artwork for Work offline transitions |
 | `templates/help` | Shared JSON tokens, editable Light/Dark examples and usage instructions for the native help bubble |
 | `licences` | Notices for third-party artwork and fixed search words |

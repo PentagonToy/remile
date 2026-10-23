@@ -9,21 +9,24 @@ struct OverleafLibraryWorkspace: View {
     private final class Presentation: ObservableObject {
         @Published var query = ""
         @Published var selectedTag = "all"
+        @Published var accountID: UUID?
         @Published var refreshing = false
         @Published var signIn = false
         @Published var removing: OverleafConnection?
     }
     @AppStorage("overleaf.library.sort") private var sort = "Manual"
 
+    private var accountProjects: [OverleafConnection] { library.projects.filter { state.accountID == nil || $0.profileID == state.accountID } }
+    private func untagged(_ project: OverleafConnection) -> Bool { library.tags[project.id]?.isEmpty == true && !library.unavailableTags.contains(project.id) }
     private var tags: [OverleafWebClient.Tag] {
         var unique: [String: OverleafWebClient.Tag] = [:]
-        for project in library.projects { for tag in library.tags[project.id] ?? [] { unique[tag.id] = tag } }
+        for project in accountProjects { for tag in library.tags[project.id] ?? [] { unique[tag.id] = tag } }
         return unique.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     private var projects: [OverleafConnection] {
-        let result = library.projects.filter { project in
+        let result = accountProjects.filter { project in
             let labels = library.tags[project.id] ?? []
-            let matchesTag = state.selectedTag == "all" || (state.selectedTag == "untagged" ? labels.isEmpty : labels.contains { $0.id == state.selectedTag })
+            let matchesTag = state.selectedTag == "all" || (state.selectedTag == "untagged" ? untagged(project) : (state.selectedTag == "unknown" ? library.tags[project.id] == nil || library.unavailableTags.contains(project.id) : labels.contains { $0.id == state.selectedTag }))
             return matchesTag && (state.query.isEmpty || ([project.name, project.account] + labels.map(\.name)).contains { $0.localizedCaseInsensitiveContains(state.query) })
         }
         if sort == "Name" { return result.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending } }
@@ -44,7 +47,8 @@ struct OverleafLibraryWorkspace: View {
                 if let profile = library.tagSignInProfile { OverleafSignIn(profile: profile) { state.signIn = false } }
             }
             .task { if !library.offlineMode && !NetworkAccess.offline && library.hasNetwork { await refresh() } }
-            .onChange(of: tags.map(\.id)) { if state.selectedTag != "all" && state.selectedTag != "untagged" && !tags.contains(where: { $0.id == state.selectedTag }) { state.selectedTag = "all" } }
+            .onChange(of: state.accountID) { state.selectedTag = "all" }
+            .onChange(of: tags.map(\.id)) { if state.selectedTag != "all" && state.selectedTag != "untagged" && state.selectedTag != "unknown" && !tags.contains(where: { $0.id == state.selectedTag }) { state.selectedTag = "all" } }
             .confirmationDialog("Remove from local library?", isPresented: Binding(get: { state.removing != nil }, set: { if !$0 { state.removing = nil } }), titleVisibility: .visible) {
                 Button("Move local copy to Trash", role: .destructive) {
                     if let project = state.removing, prepareRemoval(library.root(project)) { library.remove(project) }
@@ -70,13 +74,19 @@ struct OverleafLibraryWorkspace: View {
         VStack(spacing: 0) {
             ScrollView {
               VStack(alignment: .leading, spacing: 6) {
-                tagButton("All projects", id: "all", count: library.projects.count)
+                Picker("Account", selection: $state.accountID) {
+                    Text("All accounts").tag(UUID?.none)
+                    ForEach(library.accounts) { Text($0.name).tag(Optional($0.id)) }
+                }.padding(.bottom, 10)
+                tagButton("All projects", id: "all", count: accountProjects.count)
                 Text("Tags").font(RemileType.caption.weight(.semibold)).foregroundStyle(RemileStyle.secondaryInk).padding(.top, 18).padding(.horizontal, 10)
                 ForEach(tags) { tag in
-                    tagButton(tag.name, id: tag.id, count: library.projects.filter { library.tags[$0.id]?.contains(where: { $0.id == tag.id }) == true }.count, color: OverleafTagMark.tint(tag.color))
+                    tagButton(tag.name, id: tag.id, count: accountProjects.filter { library.tags[$0.id]?.contains(where: { $0.id == tag.id }) == true }.count, color: OverleafTagMark.tint(tag.color))
                 }
-                tagButton("Untagged", id: "untagged", count: library.projects.filter { library.tags[$0.id, default: []].isEmpty }.count)
-              }.padding(12)
+                tagButton("Untagged", id: "untagged", count: accountProjects.filter(untagged).count)
+                let unknown = accountProjects.filter { library.tags[$0.id] == nil || library.unavailableTags.contains($0.id) }.count
+                if unknown > 0 { tagButton("Tags unavailable", id: "unknown", count: unknown) }
+              }.padding(12).scrollContentGutter()
             }
             Divider()
             EditorSidebarBrand(compact: false).padding(12).fixedSize(horizontal: false, vertical: true)
@@ -99,7 +109,8 @@ struct OverleafLibraryWorkspace: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
                     TextField("Find a project", text: $state.query).textFieldStyle(.roundedBorder)
-                    Picker("Sort", selection: $sort) { Text("Manual").tag("Manual"); Text("Name").tag("Name"); Text("Account").tag("Account") }.frame(width: 170)
+                    Text("Sort").fixedSize()
+                    Picker("Sort", selection: $sort) { Text("Manual").tag("Manual"); Text("Name").tag("Name"); Text("Account").tag("Account") }.labelsHidden().frame(width: 108).padding(.trailing, -8)
                 }
                 if let error = library.error ?? library.tagError {
                     HStack {
@@ -109,7 +120,8 @@ struct OverleafLibraryWorkspace: View {
                     }
                 }
                 if visible.isEmpty {
-                    ContentUnavailableView(library.projects.isEmpty ? "No saved projects" : "No matching projects", systemImage: "books.vertical", description: Text(library.projects.isEmpty ? "Use Add projects to bring an Overleaf project here." : "Choose another tag or search term."))
+                    ContentUnavailableView(library.projects.isEmpty ? "No saved projects" : "No matching projects", systemImage: "books.vertical", description: Text(library.projects.isEmpty ? "Use Add projects to bring an Overleaf project here." : "Choose another account, tag or search term."))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: columns), spacing: 14) {
@@ -130,10 +142,10 @@ struct OverleafLibraryWorkspace: View {
                                         Button("Remove from library…", role: .destructive) { state.removing = project }.disabled(library.busy)
                                     }
                             }
-                        }.padding(.bottom, 12)
+                        }.padding(.bottom, 12).scrollContentGutter()
                     }.smoothScrolling()
                 }
-            }.padding(20)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(20)
         }
     }
     private func card(_ project: OverleafConnection) -> some View {

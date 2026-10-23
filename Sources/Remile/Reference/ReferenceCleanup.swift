@@ -1,0 +1,36 @@
+import Foundation
+import PDFKit
+
+/// Reversible formatting proposals. Applying them is an explicit, revision-checked action.
+enum ReferenceCleanup {
+    struct Change: Identifiable, Sendable {
+        let before: ReferenceRecord
+        let after: ReferenceRecord
+        var id: UUID { before.id }
+        var fields: [String] { Set(before.fields.keys).union(after.fields.keys).filter { before.fields[$0] != after.fields[$0] }.sorted() }
+    }
+    static func proposals(_ records: [ReferenceRecord], repository: ReferenceRepository) throws -> [Change] {
+        var result: [Change] = [], cached: [UUID: [String: String]] = [:]
+        for record in records where record.trashed == nil {
+            try Task.checkCancellation()
+            var next = record
+            for field in ["title", "author", "editor", "journal", "booktitle", "publisher", "year", "volume", "number", "pages", "doi", "url", "isbn", "issn"] {
+                if let value = next.fields[field] { next.fields[field] = value.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+            }
+            if let doi = next.fields["doi"], !doi.isEmpty { next.fields["doi"] = ReferenceDuplicates.normaliseDOI(doi) }
+            for attachment in record.attachments where next.fields["doi"]?.isEmpty != false || next.authors.isEmpty || next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension {
+                let fields: [String: String]
+                if let saved = cached[attachment.id] { fields = saved }
+                else {
+                    let url = repository.attachmentURL(attachment)
+                    guard (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map({ $0 <= 200_000_000 }) == true, let pdf = PDFDocument(url: url), !pdf.isLocked else { continue }
+                    fields = ReferencePDFMetadata.fields(pdf, fallback: (attachment.name as NSString).deletingPathExtension)
+                    cached[attachment.id] = fields
+                }
+                for (field, value) in fields where next.fields[field]?.isEmpty != false || (field == "title" && (next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension)) { next.fields[field] = value }
+            }
+            if next.fields != record.fields { result.append(Change(before: record, after: next)) }
+        }
+        return result
+    }
+}

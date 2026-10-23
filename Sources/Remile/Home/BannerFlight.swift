@@ -21,10 +21,10 @@ struct BannerFlight: View {
     }
     var body: some View {
         GeometryReader { geometry in
-            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: flight.departure == nil || !animations || reduceMotion)) { tick in
-                if let departure = flight.departure, animations, !reduceMotion,
+            DecorativeTimeline(interval: 1.0 / 30, enabled: flight.departure != nil) { date, moves in
+                if let departure = flight.departure, moves,
                    let image = RemileArtwork.image("airplane", dark: scheme == .dark) {
-                    let progress = min(1, max(0, tick.date.timeIntervalSince(departure) / 3.6))
+                    let progress = min(1, max(0, date.timeIntervalSince(departure) / 3.6))
                     let travel = network.offline ? 1 - progress : progress
                     let x = -60 + (geometry.size.width + 120) * travel
                     let baseline = geometry.size.height * 0.25
