@@ -35,7 +35,7 @@ struct OverleafAutoSync: ViewModifier {
 extension OverleafLibrary {
     /// New remote revisions always go through the existing manual comparison.
     func syncLocalChanges(_ project: OverleafConnection, save: () -> Bool = { true }) async {
-        guard !busy, !OverleafCredential.locked(project.profileID), !liveOwned.contains(project.id), !offlineMode, !NetworkAccess.offline, hasNetwork, review == nil, !automaticPaused.contains(project.id), !Task.isCancelled else { return }
+        guard allowsGit(project), !busy, !OverleafCredential.locked(project.profileID), !liveOwned.contains(project.id), !offlineMode, !NetworkAccess.offline, hasNetwork, review == nil, !automaticPaused.contains(project.id), !Task.isCancelled else { return }
         busy = true; syncRevision += 1
         defer { busy = false }
         let root = root(project), reviews = directory.appendingPathComponent("Reviews")

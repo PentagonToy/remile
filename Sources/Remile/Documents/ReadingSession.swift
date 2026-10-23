@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 /// A document lives inside the main window. Navigation never discards unsaved work.
 @MainActor
 final class ReadingSession: ObservableObject {
+    private(set) var identity = UUID()
     @Published var document = ReadingDocument() {
         didSet {
             if case .markdown(let before) = oldValue.content, case .markdown(let after) = document.content, before != after { provenance.transition(before: before, after: after); externalEdits = provenance.ranges }
@@ -27,7 +28,7 @@ final class ReadingSession: ObservableObject {
         case .markdown(let text): return Data(text.utf8)
         }
     }
-    var dirty: Bool { url != nil && (isUntitled || bytes != original || (pdfSession?.hasPendingAnnotations ?? false)) }
+    var dirty: Bool { url != nil && ((isUntitled ? !bytes.isEmpty : bytes != original) || (pdfSession?.hasPendingAnnotations ?? false)) }
     func open(_ destination: URL, data suppliedData: Data? = nil, recordRecent: Bool = true) throws {
         if destination.standardizedFileURL == url?.standardizedFileURL { return }
         let data = try suppliedData ?? Data(contentsOf: destination)
@@ -40,14 +41,14 @@ final class ReadingSession: ObservableObject {
         guard confirmLeaving() else { return }
         pdfSession?.protection.finish()
         externalEdits = []; provenance = EditorProvenance.Tracker(); editSource = nil; commentsExport = nil; pdfInspection = nil; pdfSession = nil
-        document.content = content; original = data; url = destination; isUntitled = false
+        identity = UUID(); document.content = content; original = data; url = destination; isUntitled = false
         if recordRecent { NSDocumentController.shared.noteNewRecentDocumentURL(destination) }
     }
     @discardableResult func newMarkdown() -> Bool {
         guard confirmLeaving() else { return false }
         pdfSession?.protection.finish()
         externalEdits = []; provenance = EditorProvenance.Tracker(); editSource = nil; commentsExport = nil; pdfInspection = nil; pdfSession = nil
-        document.content = .markdown(""); original = Data(); isUntitled = true
+        identity = UUID(); document.content = .markdown(""); original = Data(); isUntitled = true
         url = URL(fileURLWithPath: "/remile-untitled-" + UUID().uuidString + "/Untitled.md")
         return true
     }
@@ -161,15 +162,15 @@ struct ReadingShell: View {
             } else if let project = home.texProject {
                 VStack(spacing: 0) {
                     if let connection = overleaf.connection(for: project.root) { OverleafBar(library: overleaf, project: project, connection: connection).id(project.identity) }
-                    TeXWorkspace(project: project, close: { home.closeTeX() }, title: overleaf.title(for: project.root), projectTags: overleaf.connection(for: project.root).flatMap { overleaf.tags[$0.id] } ?? []).id(project.identity)
+                    TeXWorkspace(project: project, close: { home.closeTeX() }, title: overleaf.title(for: project.root), projectTags: overleaf.connection(for: project.root).flatMap { overleaf.tags[$0.id] } ?? [], freeOverleaf: overleaf.connection(for: project.root).map { overleaf.isFreeLimited($0) } ?? false).id(project.identity)
                 }
             } else if let url = reader.url {
                 DocumentWorkspace(document: $reader.document, fileURL: url, session: reader)
                     .id(url).transition(.opacity.combined(with: .offset(x: 12)))
-                    .navigationTitle(url.deletingPathExtension().lastPathComponent + (reader.dirty ? " •" : ""))
+                    .navigationTitle((home.references.title(for: url) ?? url.deletingPathExtension().lastPathComponent) + (reader.dirty ? " •" : ""))
                     .toolbar {
                         ToolbarItem(placement: .navigation) {
-                            Button { reader.close() } label: { Label("Home", systemImage: "chevron.left") }.remileHelp("Return to Home")
+                            Button { reader.close() } label: { Label(home.page == .reference ? "Reference" : "Home", systemImage: "chevron.left") }.remileHelp(home.page == .reference ? "Return to Reference" : "Return to Home")
                         }
                         ToolbarItem(placement: .primaryAction) {
                             if case .markdown = reader.document.content {

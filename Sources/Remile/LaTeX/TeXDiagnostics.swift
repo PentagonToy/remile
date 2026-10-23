@@ -12,6 +12,15 @@ struct TeXDiagnostic: Identifiable {
 }
 
 enum TeXDiagnostics {
+    static func logSeverity(_ entries: [TeXDiagnostic], failed: Bool = false) -> TeXDiagnostic.Severity? {
+        if failed { return .error }
+        var warning = false
+        for entry in entries {
+            if entry.severity == .error { return .error }
+            if entry.severity == .warning { warning = true }
+        }
+        return warning ? .warning : nil
+    }
     static func primaryError(_ entries: [TeXDiagnostic]) -> TeXDiagnostic? {
         let errors = entries.filter { $0.severity == .error }
         return errors.first { entry in

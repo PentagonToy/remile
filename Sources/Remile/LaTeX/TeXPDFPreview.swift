@@ -130,5 +130,5 @@ struct TeXPDFPreview: NSViewRepresentable {
         }
         ReaderScrolling.configure(view); controller.show(jump)
     }
-    static func dismantleNSView(_ view: PDFView, coordinator: TeXPDFController) { if coordinator.view === view { coordinator.detach() } }
+    static func dismantleNSView(_ view: PDFView, coordinator: TeXPDFController) { view.document = nil; if coordinator.view === view { coordinator.detach() } }
 }

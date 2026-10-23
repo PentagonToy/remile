@@ -111,9 +111,21 @@ final class TeXCompileJob: @unchecked Sendable {
             }
         }
         let status = try execute(executable, arguments: (scratch ? ["-gg"] : []) + ["-norc", flag, configuration.bibliography ? "-bibtex" : "-bibtex-", "-interaction=nonstopmode", "-file-line-error", "-no-shell-escape", "-synctex=1", "-outdir=\(build.path)", "./" + main], directory: source, environment: environment, log: handle, logURL: logURL, deadline: deadline)
+        let name = ((main as NSString).lastPathComponent as NSString).deletingPathExtension
+        let pdfURL = build.appendingPathComponent(name + ".pdf")
+        var pdf = try? Data(contentsOf: pdfURL)
+        if pdf == nil, engine == .xe {
+            let xdv = build.appendingPathComponent(name + ".xdv")
+            let converter = URL(fileURLWithPath: configuration.directory).appendingPathComponent("xdvipdfmx")
+            if manager.fileExists(atPath: xdv.path), manager.isExecutableFile(atPath: converter.path) {
+                try handle.write(contentsOf: Data("Preview: converting XeTeX output. Compilation errors remain in the log.\n".utf8))
+                var previewEnvironment = environment
+                previewEnvironment["shell_escape"] = "f"
+                let converted = try execute(converter, arguments: ["-o", pdfURL.path, xdv.path], directory: source, environment: previewEnvironment, log: handle, logURL: logURL, deadline: deadline)
+                if converted == 0 { pdf = try? Data(contentsOf: pdfURL) }
+            }
+        }
         let text = String(decoding: try Data(contentsOf: logURL), as: UTF8.self)
-        let pdfURL = build.appendingPathComponent(((main as NSString).lastPathComponent as NSString).deletingPathExtension + ".pdf")
-        let pdf = try? Data(contentsOf: pdfURL)
         return Result(pdf: pdf, log: String(text.suffix(150000)), output: pdfURL, success: status == 0 && pdf != nil)
     }
     private func execute(_ executable: URL, arguments: [String], directory: URL, environment: [String: String], log: FileHandle, logURL: URL, deadline: Date) throws -> Int32 {

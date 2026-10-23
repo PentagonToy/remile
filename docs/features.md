@@ -8,7 +8,7 @@ File → New Window (⇧⌘N) opens an independent workspace. Save follows the a
 
 Navigation sidebars share a responsive starting width across Home, Search, PDF, Markdown, LaTeX and the Overleaf library. Drag a grip to adjust a panel. Narrow windows prioritise the document. LaTeX retains its centred initial source/PDF boundary.
 
-A skippable tour appears on first launch. Replay it with Tour in User guide, available from Home and Help. General settings controls appearance, animations, Work offline and update checks. Reduce Motion suppresses added motion. See [installation and updates](distribution.md).
+A skippable tour appears on first launch. Replay it with Tour in User guide, available from Home and Help. General settings controls appearance, animations, Work offline and update checks. Reduce Motion suppresses added motion. Decorative motion stops when its window loses focus or its view closes. Slow lighthouse beams update at most 12 times per second. See [installation and updates](distribution.md).
 
 ## PDF
 
@@ -28,15 +28,17 @@ Reading previews load remote images near the viewport, with up to three requests
 
 Local raster images and passive SVGs appear in previews and PDF exports. Keep assets in the document folder or its subfolders. HTML `<img>` and `<picture>` are supported. Theme variants follow the reader appearance and PDF export uses the light fallback. PDF export requires local images and supported formulae. Scripts and embedded content are excluded.
 
-Editor settings control line numbers, source size, spelling and live preview. TeX completion offers commands and environment blocks. Tab accepts a candidate. Escape dismisses it. See [writing assistance](assistant.md) for proofreading and native spelling corrections.
+Markdown settings control line numbers, source size, spelling and live preview. TeX completion offers commands and environment blocks. Tab accepts a candidate. Escape dismisses it. See [writing assistance](assistant.md) for proofreading and native spelling corrections.
 
 ## LaTeX
 
-Open a project folder, choose its main document and compile with a local TeX installation. Project settings selects the engine, binary directory, editor theme and history interval. Settings → LaTeX sets a shared compilation limit of 90, 180, 300 or 600 seconds. The default is 180 seconds.
+LaTeX source ZIPs can be dropped onto the Home LaTeX card or selected through it. Choose a parent folder before extraction. remile. creates a new project folder, preserves assets and leaves the ZIP unchanged. Save writes to the extracted project. Source export creates a new ZIP. Unfinished source remains editable when compilation fails.
+
+Open a project folder, choose its main document and compile with a local TeX installation. LaTeX settings select the engine, binary directory, editor theme and history interval. Settings → LaTeX sets a shared compilation limit of 90, 180, 300 or 600 seconds. The default is 180 seconds.
 
 Files and Outline fold independently. Drag their dividing line to resize them. Outline follows literal input, include and subfile links. Virtual collections group files without changing source paths. Cmd/Shift selects multiple files for dragging or collection moves. Removing a collection preserves its files.
 
-Double-click a file or project title to rename it. Return confirms. Click elsewhere or press Escape to cancel. The + menu creates files, folders and collections. New and imported files can use any extension. File context menus offer Rename, Copy relative path, Reveal in Finder, Duplicate and Move to Trash.
+Double-click a file or project title to rename it. Return or a click elsewhere confirms. Escape cancels. The + menu creates files, folders and collections. New and imported files can use any extension. File context menus offer Rename, Copy relative path, Reveal in Finder, Duplicate and Move to Trash.
 
 The bounded title box centres names that fit and keeps the beginning of long names visible. Selecting a PDF, EPS or image asset opens a preview beside the compiled document. EPS previews and pdfLaTeX conversion require `epstopdf` and supporting tools. SyncTeX links source and PDF locations. Cmd+/ toggles comments. Tab and Shift+Tab adjust indentation.
 
@@ -71,3 +73,6 @@ Relevance groups results by document. Rank shows the global order. Results retai
 Apple Intelligence, ChatGPT and Manual share one provider selector. Ask works with PDFs, Markdown and search results. Proofreading and LaTeX suggestions present changes for review and support Undo. The eye control shows AI and CLI edits. See [AI and writing](assistant.md) for connections, context and privacy, and [CLI](cli.md) for local automation.
 
 Compilation uses temporary snapshots. Replaced and failed builds are removed. Abandoned build folders are pruned after seven days or above a combined 512 MB, excluding active builds. Text history keeps up to 120 entries and 32 MB per project. Search indexes, project copies and editor drafts remain separate from these disposable caches.
+
+
+The LaTeX and Overleaf build-log button stays visible in narrow windows. A dot above the terminal is red for errors or a failed build and yellow for warnings alone. Clean builds show the terminal without a dot. During compilation, the dot waits for the new result.

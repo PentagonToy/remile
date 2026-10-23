@@ -26,6 +26,30 @@
       "bundle": "Brand/remile_icon_light_rounded.svg"
     },
     {
+      "source": "brand/scenes/remile_harbour-focus_dark.svg",
+      "bundle": "Brand/remile_harbour-focus_dark.svg"
+    },
+    {
+      "source": "brand/scenes/remile_harbour-focus_light.svg",
+      "bundle": "Brand/remile_harbour-focus_light.svg"
+    },
+    {
+      "source": "brand/scenes/remile_harbour_dark.svg",
+      "bundle": "Brand/remile_harbour_dark.svg"
+    },
+    {
+      "source": "brand/scenes/remile_harbour_light.svg",
+      "bundle": "Brand/remile_harbour_light.svg"
+    },
+    {
+      "source": "brand/scenes/remile_lighthouse_dark.svg",
+      "bundle": "Brand/remile_lighthouse_dark.svg"
+    },
+    {
+      "source": "brand/scenes/remile_lighthouse_light.svg",
+      "bundle": "Brand/remile_lighthouse_light.svg"
+    },
+    {
       "source": "brand/wordmarks/remile_wordmark_dark.svg",
       "bundle": "Brand/remile_wordmark_dark.svg"
     },
@@ -42,20 +66,36 @@
       "bundle": "Brand/remile_airplane_light.svg"
     },
     {
-      "source": "motion/lighthouse/remile_lighthouse_dark.svg",
-      "bundle": "Brand/remile_lighthouse_dark.svg"
-    },
-    {
-      "source": "motion/lighthouse/remile_lighthouse_light.svg",
-      "bundle": "Brand/remile_lighthouse_light.svg"
-    },
-    {
       "source": "symbols/integrations/overleaf-mark.svg",
       "bundle": "Brand/overleaf-mark.svg"
     },
     {
       "source": "symbols/providers/chatgpt.svg",
       "bundle": "Brand/chatgpt.svg"
+    },
+    {
+      "source": "symbols/reference/reference-article.svg",
+      "bundle": "Brand/reference-article.svg"
+    },
+    {
+      "source": "symbols/reference/reference-book.svg",
+      "bundle": "Brand/reference-book.svg"
+    },
+    {
+      "source": "symbols/reference/reference-conference.svg",
+      "bundle": "Brand/reference-conference.svg"
+    },
+    {
+      "source": "symbols/reference/reference-newspaper.svg",
+      "bundle": "Brand/reference-newspaper.svg"
+    },
+    {
+      "source": "symbols/reference/reference-other.svg",
+      "bundle": "Brand/reference-other.svg"
+    },
+    {
+      "source": "symbols/reference/reference-webpage.svg",
+      "bundle": "Brand/reference-webpage.svg"
     }
   ],
   "templates": [

@@ -89,7 +89,7 @@ actor MultiLiveFixtureChannel: OverleafLiveChannel {
     }
     let (library, project, connection) = try fixture("live-runtime")
     let channel = LiveFixtureChannel(project: projectID, document: docID, text: base)
-    let live = OverleafLiveWorkspace(authenticate: { _ in }, makeChannel: { _ in channel })
+    let live = OverleafLiveWorkspace(syncFiles: false, authenticate: { _ in }, makeChannel: { _ in channel })
     await live.start(project: project, library: library, connection: connection)
     check(live.connected && library.liveOwned.contains(connection.id), "Live workspace owns the project before any Git timer can publish")
     do { _ = try library.writerLease(connection); fatalError("Concurrent Git writer admitted") } catch { }
@@ -123,7 +123,7 @@ actor MultiLiveFixtureChannel: OverleafLiveChannel {
     let (conflictLibrary, conflictProject, conflictConnection) = try fixture("live-conflict")
     conflictProject.buffers["main.tex"] = prefix + "LOCAL beta gamma\n"
     let first = LiveFixtureChannel(project: projectID, document: docID, text: prefix + "REMOTE beta gamma\n")
-    let conflicted = OverleafLiveWorkspace(authenticate: { _ in }, makeChannel: { _ in first })
+    let conflicted = OverleafLiveWorkspace(syncFiles: false, authenticate: { _ in }, makeChannel: { _ in first })
     await conflicted.start(project: conflictProject, library: conflictLibrary, connection: conflictConnection)
     check(conflicted.conflict != nil && conflictProject.buffers["main.tex"] == prefix + "LOCAL beta gamma\n", "Overlapping initial edits preserve the local draft and expose both versions")
     check(try String(contentsOf: conflictProject.root.appendingPathComponent("main.tex"), encoding: .utf8) == base, "A conflicting handshake does not overwrite the existing local file")
@@ -132,7 +132,7 @@ actor MultiLiveFixtureChannel: OverleafLiveChannel {
     let second = LiveFixtureChannel(project: projectID, document: docID, text: prefix + "REMOTE beta gamma\n")
     let third = LiveFixtureChannel(project: projectID, document: docID, text: prefix + "REMOTE beta gamma\n")
     var attempts = 0
-    let reopened = OverleafLiveWorkspace(authenticate: { _ in }, makeChannel: { _ in attempts += 1; return attempts == 1 ? second : third })
+    let reopened = OverleafLiveWorkspace(syncFiles: false, authenticate: { _ in }, makeChannel: { _ in attempts += 1; return attempts == 1 ? second : third })
     await reopened.start(project: conflictProject, library: conflictLibrary, connection: conflictConnection)
     let reopenedSubmissions = await second.submissions
     check(reopened.conflict != nil && reopenedSubmissions == 0, "A persisted conflict still requires review after reopening the live workspace")
@@ -146,7 +146,7 @@ actor MultiLiveFixtureChannel: OverleafLiveChannel {
     var sectionAttempt = 0
     let sectionFirst = LiveFixtureChannel(project: projectID, document: docID, text: prefix + "REMOTE beta gamma\n")
     let sectionNext = LiveFixtureChannel(project: projectID, document: docID, text: prefix + "REMOTE beta gamma\n")
-    let sectionLive = OverleafLiveWorkspace(authenticate: { _ in }, makeChannel: { _ in sectionAttempt += 1; return sectionAttempt == 1 ? sectionFirst : sectionNext })
+    let sectionLive = OverleafLiveWorkspace(syncFiles: false, authenticate: { _ in }, makeChannel: { _ in sectionAttempt += 1; return sectionAttempt == 1 ? sectionFirst : sectionNext })
     await sectionLive.start(project: sectionProject, library: sectionLibrary, connection: sectionConnection)
     await sectionLive.choose(text: prefix + "REVIEWED beta gamma\n")
     check(sectionLive.connected && sectionProject.buffers["main.tex"] == prefix + "REVIEWED beta gamma\n", "An explicit mixed-section result resumes after validating both current versions")
@@ -157,7 +157,7 @@ actor MultiLiveFixtureChannel: OverleafLiveChannel {
     let staleFirst = LiveFixtureChannel(project: projectID, document: docID, text: prefix + "REMOTE beta gamma\n")
     let staleNext = LiveFixtureChannel(project: projectID, document: docID, text: prefix + "NEWER beta gamma\n")
     var staleAttempt = 0
-    let staleLive = OverleafLiveWorkspace(authenticate: { _ in }, makeChannel: { _ in staleAttempt += 1; return staleAttempt == 1 ? staleFirst : staleNext })
+    let staleLive = OverleafLiveWorkspace(syncFiles: false, authenticate: { _ in }, makeChannel: { _ in staleAttempt += 1; return staleAttempt == 1 ? staleFirst : staleNext })
     await staleLive.start(project: staleProject, library: staleLibrary, connection: staleConnection)
     await staleLive.choose(text: prefix + "REVIEWED beta gamma\n")
     check(staleLive.conflict != nil && staleProject.buffers["main.tex"] == localSection, "A newer server version invalidates a section choice without replacing the draft")
@@ -166,7 +166,7 @@ actor MultiLiveFixtureChannel: OverleafLiveChannel {
 
     let (treeLibrary, treeProject, treeConnection) = try fixture("live-tree-change")
     let treeChannel = LiveFixtureChannel(project: projectID, document: docID, text: base)
-    let treeLive = OverleafLiveWorkspace(authenticate: { _ in }, makeChannel: { _ in treeChannel })
+    let treeLive = OverleafLiveWorkspace(syncFiles: false, authenticate: { _ in }, makeChannel: { _ in treeChannel })
     await treeLive.start(project: treeProject, library: treeLibrary, connection: treeConnection)
     await treeChannel.treeChanged()
     try await until { treeLive.requiresGitReview }
@@ -179,7 +179,7 @@ actor MultiLiveFixtureChannel: OverleafLiveChannel {
     let lost = LiveFixtureChannel(project: projectID, document: docID, text: base)
     let fresh = LiveFixtureChannel(project: projectID, document: docID, text: base)
     var reconnects = 0
-    let interrupted = OverleafLiveWorkspace(authenticate: { _ in }, makeChannel: { _ in reconnects += 1; return reconnects == 1 ? lost : fresh })
+    let interrupted = OverleafLiveWorkspace(syncFiles: false, authenticate: { _ in }, makeChannel: { _ in reconnects += 1; return reconnects == 1 ? lost : fresh })
     await interrupted.start(project: lostProject, library: lostLibrary, connection: lostConnection)
     await lost.holdSubmissions()
     let draft = prefix + "Unconfirmed local draft\n"
@@ -206,7 +206,7 @@ actor MultiLiveFixtureChannel: OverleafLiveChannel {
     _ = try OverleafGit.run(["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "Second fixture"], at: initialMultiProject.root)
     let multiProject = try TeXProject(initialMultiProject.root, historyEnabled: false)
     let multiChannel = MultiLiveFixtureChannel(project: projectID, text: base)
-    let multiLive = OverleafLiveWorkspace(authenticate: { _ in }, makeChannel: { _ in multiChannel })
+    let multiLive = OverleafLiveWorkspace(syncFiles: false, authenticate: { _ in }, makeChannel: { _ in multiChannel })
     await multiLive.start(project: multiProject, library: multiLibrary, connection: multiConnection)
     check(multiLive.connected && multiLive.issue == nil, "Multi-document fixture joins both existing project files")
     let beforeUploads = multiLive.lastConfirmedAt
@@ -229,7 +229,7 @@ actor MultiLiveFixtureChannel: OverleafLiveChannel {
 
     let (authLibrary, authProject, authConnection) = try fixture("live-auth-pauses")
     for (failure, reason) in [(OverleafWebClient.Failure.sessionLocked, "Connection locked"), (.signIn, "Sign in required"), (.permission, "Access not permitted")] {
-        let blocked = OverleafLiveWorkspace(authenticate: { _ in throw failure }, makeChannel: { _ in fatalError("An unauthenticated session must not open a socket") })
+        let blocked = OverleafLiveWorkspace(syncFiles: false, authenticate: { _ in throw failure }, makeChannel: { _ in fatalError("An unauthenticated session must not open a socket") })
         await blocked.start(project: authProject, library: authLibrary, connection: authConnection)
         check(!blocked.connected && blocked.pauseReason == reason, "Authentication and access failures give the correct persistent pause reason")
         await blocked.stop()

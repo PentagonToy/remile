@@ -75,7 +75,7 @@ struct CombineWorkspace: View {
                         }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
                             .background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 10))
                     }
-                }
+                }.scrollContentGutter()
             }.disabled(model.busy)
         }
     }

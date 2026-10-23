@@ -46,7 +46,7 @@ struct TeXSetupGuide: View {
                 lookupStatus
             } else {
                 if !missing.isEmpty { Text("Missing tools: " + missing.joined(separator: ", ")).font(RemileType.caption).foregroundStyle(.secondary) }
-                Text("Choose your existing TeX folder in Project settings, or install the missing tools with TeX Live Manager.")
+                Text("Choose your TeX folder in Settings, or install missing tools with TeX Live Manager.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if !lookup.running { ForEach(commands, id: \.self) { TeXGuidanceCommand(command: $0) } }

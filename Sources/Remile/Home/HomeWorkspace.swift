@@ -17,6 +17,11 @@ struct HomeWorkspace: View {
         ZStack {
             if model.page == .home {
                 homeLayout.transition(.opacity.combined(with: .offset(x: -16)))
+            } else if model.page == .reference {
+                ReferenceWorkspace(model: model.references, goHome: { navigate(.home) }, openPDF: { url, page in
+                    ReaderNavigation.shared.reveal(LibraryHit(path: url.path, folderID: "reference", page: page + 1, excerpt: "", score: 0), query: "")
+                    model.open(url)
+                })
             } else {
                 LibrarySearchView(model: model, open: open, goHome: { navigate(.home) })
                     .transition(.opacity.combined(with: .offset(x: 16)))
@@ -39,16 +44,10 @@ struct HomeWorkspace: View {
                 catch { model.error = error.localizedDescription }
             }
         } message: { Text("Moves remile.’s local LaTeX revisions to Trash. Your documents and project files stay in place.") }
-        .sheet(isPresented: Binding(get: { model.plannedTool != nil }, set: { if !$0 { model.plannedTool = nil } })) {
-            VStack(alignment: .leading, spacing: 18) {
-                Text(model.plannedTool ?? "").font(.title2.weight(.semibold))
-                Text("Coming soon.").foregroundStyle(.secondary)
-                HStack { Spacer(); Button("Done") { model.plannedTool = nil }.keyboardShortcut(.defaultAction) }
-            }.padding(28).frame(width: 420)
-        }
+
     }
     private var homeLayout: some View {
-        ReaderSplit(sizing: .sidebar, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: 320, label: "home sidebar", pane: {
+        ReaderSplit(initial: 180, minimum: 170, maximum: 300, minimumContent: 320, label: "home sidebar", revealToken: "tour-\(tour.step)-\(tour.replay)", pane: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 7) {
                     Image(nsImage: RemileArtwork.image("icon", dark: colorScheme == .dark) ?? NSImage(named: NSImage.applicationIconName) ?? NSImage()).resizable().scaledToFit().frame(width: 32, height: 32)
@@ -57,6 +56,10 @@ struct HomeWorkspace: View {
                 }.padding(.vertical, 22)
                 Label("Home", systemImage: "house").font(.system(size: 16, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).background(RemileStyle.accent.opacity(0.17), in: RoundedRectangle(cornerRadius: 9))
                 Button { navigate(.search) } label: { Label("Search", systemImage: "magnifyingglass").font(.system(size: 16, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("search")
+                Button { navigate(.reference) } label: {
+                    Label { Text("Reference").fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: "books.vertical") }
+                        .font(.system(size: 16, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11)
+                }.buttonStyle(.plain).tourTarget("reference")
                 Spacer()
                 Button { actions.settings = true } label: { Label("Settings", systemImage: "gearshape").frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("settings")
                 Button { model.guidePresented = true } label: { Label("User guide", systemImage: "book.closed").frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).remileHelp("A quick guide to remile.").tourTarget("guide")
@@ -112,7 +115,7 @@ struct HomeWorkspace: View {
                         Text("Editors").font(RemileType.heading)
                         HomeCardLayout(minimumWidth: 160) {
                             Button { model.newMarkdown() } label: { Label("Markdown", systemImage: "square.and.pencil").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("New Markdown document").tourTarget("markdown")
-                            Button { model.chooseTeX() } label: { Label("LaTeX", systemImage: "doc.text").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("Open a LaTeX project").tourTarget("latex").modifier(ToolFileDrop(model: model, target: .latex))
+                            Button { model.chooseTeX() } label: { Label("LaTeX", systemImage: "doc.text").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("Open a LaTeX project folder or source ZIP").tourTarget("latex").modifier(ToolFileDrop(model: model, target: .latex))
                             Button { model.overleaf.openLibrary() } label: { Label { Text("Overleaf") } icon: { OverleafMark() }.frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("Open Overleaf library").tourTarget("overleaf")
                         }.font(RemileType.body).buttonStyle(RemileEditorButtonStyle()).tourTarget("editors")
                     }
