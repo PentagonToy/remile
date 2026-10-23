@@ -29,7 +29,7 @@ import WebKit
         self.project = project
         let stream = AsyncThrowingStream<String, Error>.makeStream(bufferingPolicy: .bufferingOldest(1_000))
         messages = stream.stream; output = stream.continuation
-        let config = WKWebViewConfiguration(); config.websiteDataStore = WKWebsiteDataStore(forIdentifier: profile)
+        let config = WKWebViewConfiguration(); config.websiteDataStore = OverleafWebIdentity.dataStore(profile)
         // This transport has no visible view. Idle suspension would miss heartbeats.
         config.preferences.inactiveSchedulingPolicy = .none
         web = WKWebView(frame: .zero, configuration: config)

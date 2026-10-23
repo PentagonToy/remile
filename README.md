@@ -15,6 +15,7 @@ A local workspace for PDF, Markdown and LaTeX documents.
 - **PDF** — Read, annotate and search across your local PDF library, with matching passages beside the page.
 - **LaTeX** — Edit multi-file projects, navigate their outline, compile and preview the PDF.
 - **Overleaf** — Work on a local copy and review changes before synchronising with your online project.
+- **Reference** — Organise PDF/BibTeX records, review duplicates and keep citation keys with shared attachments. See [Reference](docs/reference.md).
 - **AI** — Use Apple Intelligence on your Mac or connect ChatGPT for document questions, [manuscript review](docs/manuscript-review.md), grammar suggestions and reviewed LaTeX repairs.
 
 Convert, compress, combine and export documents when you need to. Suggested source changes stay reviewable and undoable.

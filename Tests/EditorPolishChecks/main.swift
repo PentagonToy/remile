@@ -25,7 +25,7 @@ Task { @MainActor in
         expect(MarkdownEditing.pair("$$", range: NSRange(location: 1, length: 0), replacement: "$")?.text == "$$\n\n$$", "Promote display math fence")
         expect(MarkdownEditing.newline("\\begin{align}", selection: NSRange(location: 13, length: 0))?.text.contains("\\end{align}") == true, "Complete environment")
         let reader = ReadingSession(); expect(reader.newMarkdown(), "Create untitled Markdown")
-        expect(reader.isUntitled && reader.dirty && reader.url?.lastPathComponent == "Untitled.md", "Untitled routes into editor and requires Save")
+        expect(reader.isUntitled && !reader.dirty && reader.url?.lastPathComponent == "Untitled.md", "An empty untitled editor does not require Save")
         let controller = MarkdownEditorController(), scroll = controller.makeView()
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 500, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = scroll; window.orderFront(nil)

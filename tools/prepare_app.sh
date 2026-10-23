@@ -14,7 +14,7 @@ binary_directory="$(swift build --build-system native --scratch-path "$output_di
 application="$output_directory/remile.app"
 mkdir -p "$application/Contents/MacOS" "$application/Contents/Resources"
 mkdir -p "$application/Contents/Resources/Brand"
-artwork=(others/brand/{icons,banners,wordmarks}/*.svg others/motion/{airplane,lighthouse}/*.svg others/symbols/{providers,integrations}/*.svg)
+artwork=(others/brand/{icons,banners,wordmarks,scenes}/*.svg others/motion/airplane/*.svg others/symbols/{providers,integrations,reference}/*.svg)
 cp "${artwork[@]}" "$application/Contents/Resources/Brand/"
 mkdir -p "$application/Contents/Resources/Templates/Help"
 cp others/templates/help/bubble.json "$application/Contents/Resources/Templates/Help/"

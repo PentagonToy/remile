@@ -59,7 +59,8 @@ struct TeXProjectSidebar: View {
                         .coordinateSpace(name: "tex.sidebar.split").transaction { if state.dragOrigin != nil { $0.animation = nil } }
                 }
             Divider()
-            EditorSidebarFooter(compact: state.files || state.outline, title: "Project settings") { state.settings.toggle() }
+            EditorSidebarFooter(compact: state.files || state.outline, title: "Settings") { state.settings.toggle() }
+                .accessibilityLabel("LaTeX settings").remileHelp("LaTeX settings")
                 .popover(isPresented: $state.settings, arrowEdge: .trailing) { TeXProjectSettings(project: project).frame(width: 440, height: 540) }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(RemileStyle.sidebar)
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.files)
@@ -136,7 +137,7 @@ private struct TeXProjectSettings: View {
     @ObservedObject var project: TeXProject
     var body: some View {
         VStack(spacing: 0) {
-            Text("Project settings").font(RemileType.heading).frame(maxWidth: .infinity, alignment: .leading).padding(16)
+            Text("LaTeX settings").font(RemileType.heading).frame(maxWidth: .infinity, alignment: .leading).padding(16)
             HStack {
                 Text("Main document")
                 Picker("Main document", selection: $project.main) { ForEach(project.files.filter { $0.hasSuffix(".tex") }, id: \.self) { Text($0).tag($0) } }.labelsHidden()
@@ -151,22 +152,29 @@ private struct TeXSidebarCreation: View {
     @ObservedObject var project: TeXProject
     let draft: TeXProject.NewItemDraft
     @StateObject private var state = EntryState()
-    private final class EntryState: ObservableObject { @Published var name = "" }
+    private final class EntryState: ObservableObject { @Published var name = ""; var finished = false }
     @FocusState private var focused: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
                 Image(systemName: draft.symbol).foregroundStyle(RemileStyle.accent).frame(width: 17)
                 TextField(draft.placeholder, text: $state.name).textFieldStyle(.plain).focused($focused)
-                    .accessibilityLabel(draft.placeholder).onSubmit { commit() }.onExitCommand { project.cancelNewItem() }
+                    .accessibilityLabel(draft.placeholder).onSubmit { commit() }.onExitCommand { cancel() }
             }.padding(5).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 5))
             if let error = project.newItemError { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).fixedSize(horizontal: false, vertical: true) }
-        }.background(InlineEditBoundary { project.cancelNewItem() }).padding(.horizontal, 12).padding(.vertical, 6)
-            .onAppear { state.name = draft.initialName; focused = true }
-            .onChange(of: focused) { if !focused { project.cancelNewItem() } }
-            .remileHelp("Return confirms. Click elsewhere or press Escape to cancel.")
+        }.background(InlineEditBoundary(cancel: { cancel() }) { leave() }).padding(.horizontal, 12).padding(.vertical, 6)
+            .onAppear { state.name = draft.initialName; state.finished = false; focused = true }
+            .onDisappear { if isRename { commit() } }
+            .remileHelp(isRename ? "Return or click elsewhere to save · Esc cancels" : "Return confirms. Click elsewhere or press Esc to cancel.")
     }
-    private func commit() { guard project.newItemDraft?.id == draft.id else { return }; if !project.finishNewItem(state.name) { focused = true } }
+    private var isRename: Bool { switch draft.kind { case .rename, .renameCollection: return true; default: return false } }
+    private func cancel() { state.finished = true; if project.newItemDraft?.id == draft.id { project.cancelNewItem() } }
+    private func leave() { if isRename { commit() } else { cancel() } }
+    private func commit() {
+        guard !state.finished, project.newItemDraft?.id == draft.id else { return }
+        state.finished = true
+        if !project.finishNewItem(state.name) { state.finished = false; focused = true }
+    }
 }
 
 private struct TeXSidebarResizeCursor: NSViewRepresentable {

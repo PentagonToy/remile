@@ -12,6 +12,10 @@ Task { @MainActor in
         try manager.createDirectory(at: root, withIntermediateDirectories: true)
         try manager.createDirectory(at: incoming, withIntermediateDirectories: true)
         try Data("\\documentclass{article}\n\\begin{document}Test\\end{document}".utf8).write(to: root.appendingPathComponent("main.tex"))
+        try Data("documentclass{article}\nUnfinished document".utf8).write(to: root.appendingPathComponent("main.tex"))
+        let broken = try TeXProject(root, historyEnabled: false)
+        precondition(broken.main == "main.tex" && broken.buffers["main.tex"]?.hasPrefix("documentclass") == true, "Broken TeX remains editable")
+        try Data("\\documentclass{article}\n\\begin{document}Test\\end{document}".utf8).write(to: root.appendingPathComponent("main.tex"))
         let project = try TeXProject(root, historyEnabled: false)
         var checks = 0
         func check(_ value: Bool, _ label: String) { precondition(value, label); checks += 1; print("PASS: " + label) }

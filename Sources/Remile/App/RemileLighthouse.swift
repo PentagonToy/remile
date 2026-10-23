@@ -2,16 +2,13 @@ import SwiftUI
 
 /// A single lightweight beam shared by Home and the search waiting view.
 struct RemileLighthouse: View {
-    @AppStorage(AnimationPolicy.preference) private var animations = true
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
     var aim: Double? = nil
-    private var moves: Bool { animations && !reduceMotion }
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !moves)) { tick in
+        DecorativeTimeline(enabled: aim == nil) { date, moves in
             ZStack {
                 Canvas { context, size in
-                    let phase = moves ? (aim ?? sin(tick.date.timeIntervalSinceReferenceDate * .pi / 2.4)) : 0
+                    let phase = aim ?? (moves ? sin(date.timeIntervalSinceReferenceDate * .pi / 2.4) : 0)
                     let lamp = CGPoint(x: size.width * 193 / 310, y: size.height * 46 / 120)
                     let centre = size.height * (0.38 + 0.28 * phase)
                     let spread = size.height * 0.20

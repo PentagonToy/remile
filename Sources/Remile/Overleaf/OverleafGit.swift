@@ -10,6 +10,7 @@ struct OverleafConnection: Codable, Identifiable, Equatable, Sendable {
     var name: String
     var account: String
     var branch: String
+    var liveOnly: Bool? = nil
     var webURL: URL { URL(string: "https://www.overleaf.com/project/" + projectID)! }
     var remote: String { "https://git@git.overleaf.com/" + projectID }
     static func projectID(_ value: String) -> String? {
@@ -78,7 +79,7 @@ enum OverleafGit {
         let localChanges: Bool
     }
     /// Git output is bounded on disk, so large repositories cannot block a full pipe.
-    static func run(_ args: [String], at directory: URL, credential: UUID? = nil, allowFailure: Bool = false, input: Data? = nil) throws -> Result {
+    static func run(_ args: [String], at directory: URL, credential: UUID? = nil, allowFailure: Bool = false, input: Data? = nil, index: URL? = nil) throws -> Result {
         let networking = args.contains { $0.hasPrefix("https://") || $0.hasPrefix("http://") || $0.hasPrefix("ssh://") }
         if networking { try NetworkAccess.requireOnline() }
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("remile-git-" + UUID().uuidString)
@@ -93,6 +94,7 @@ enum OverleafGit {
         var environment = ProcessInfo.processInfo.environment
         for key in environment.keys where key.hasPrefix("GIT_") { environment.removeValue(forKey: key) }
         environment["GIT_TERMINAL_PROMPT"] = "0"; environment["LC_ALL"] = "C"; environment["GIT_CONFIG_NOSYSTEM"] = "1"; environment["GIT_CONFIG_GLOBAL"] = "/dev/null"
+        if let index { environment["GIT_INDEX_FILE"] = index.path }
         environment["GIT_AUTHOR_NAME"] = "remile."; environment["GIT_AUTHOR_EMAIL"] = "local@remile.invalid"
         environment["GIT_COMMITTER_NAME"] = "remile."; environment["GIT_COMMITTER_EMAIL"] = "local@remile.invalid"
         if let credential, args.contains(where: { $0.hasPrefix("https://git@git.overleaf.com/") }) {

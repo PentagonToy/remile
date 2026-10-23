@@ -15,7 +15,7 @@ struct OfflineModeControl: View {
     @ObservedObject private var network = NetworkAccessState.shared
     var body: some View {
         Toggle(isOn: Binding(get: { network.offline }, set: network.setOffline)) { Label("Work offline", systemImage: "airplane") }
-            .bubbleHelp("Pause ChatGPT, Overleaf sync, search boosting, update checks and package lookups. Local documents and standard search remain available.")
+            .remileHelp("Pause ChatGPT, Overleaf sync, search boosting, update checks and package lookups. Local documents and standard search remain available.")
     }
 }
 struct NetworkAccessScope: ViewModifier {
@@ -33,6 +33,6 @@ struct OfflineModeButton: View {
         Button { network.setOffline(!network.offline) } label: { Image(systemName: network.offline ? "airplane.circle.fill" : "airplane.circle") }
             .foregroundStyle(network.offline ? RemileStyle.accent : RemileStyle.ink.opacity(0.65))
             .accessibilityLabel(network.offline ? "Turn off offline mode" : "Work offline")
-            .bubbleHelp(network.offline ? "Offline mode · click to restore online services" : "Pause all online services in remile.")
+            .remileHelp(network.offline ? "Offline mode · click to restore online services" : "Pause all online services in remile.")
     }
 }

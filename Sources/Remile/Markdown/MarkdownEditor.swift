@@ -12,6 +12,10 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
     var externalRanges: [NSRange] = [] { didSet { if oldValue != externalRanges { scheduleStyle() } } }
     var showExternalEdits = false { didSet { if oldValue != showExternalEdits { scheduleStyle() } } }
     var syncToPreview: ((Int) -> Void)?
+    var inspectCitation: ((String) -> Void)?
+    var citationCompletion: ((String, NSRange) async -> EditorCompletion.Context?)?
+    var prepareCitation: ((EditorCompletion.Item) throws -> Void)?
+    var citationFailure: ((String) -> Void)?
     private let completion = EditorCompletionPanel()
     private var completionTask: Task<Void, Never>?
     private var focusMode = false
@@ -46,6 +50,7 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         view.delegate = self; view.setAccessibilityLabel("Markdown source")
         view.backgroundColor = NSColor(RemileStyle.surface); view.textColor = NSColor(RemileStyle.ink)
         view.sourceInteraction = { [weak self] in self?.fadeFlash(); self?.dismissWriting?() }
+        view.inspectCitation = { [weak self] key in self?.inspectCitation?(key) }
         view.proofreadSelection = { [weak self, weak view] range in guard let view else { return }; self?.proofreadRequested?(range, view) }
         view.completionKey = { [weak self] event in
             guard let self else { return false }
@@ -141,13 +146,23 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         guard textView?.string == source, NSMaxRange(range) <= (source as NSString).length else { return }
         apply(.init(range: range, text: replacement, selection: NSRange(location: range.location + (replacement as NSString).length, length: 0)), name: "Writing suggestion")
     }
+    func suspend() {
+        completionTask?.cancel(); styling?.cancel(); flashTask?.cancel()
+        completion.dismiss(); assistance.cancel(); changed = { _ in }
+    }
     func pasteMarkdown() { (textView as? MarkdownSourceTextView)?.pasteMarkdown(nil) }
     func textViewDidChangeSelection(_ notification: Notification) { completion.dismiss(); if focusMode { scheduleStyle() }; if let view = textView { assistance.schedule(view) } }
     private func scheduleCompletion() {
         completionTask?.cancel()
         completionTask = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: .milliseconds(160)) } catch { return }
-            guard let self, let view = self.textView else { return }; self.completion.show(in: view, tex: self.texTheme != nil); if self.completion.visible { self.assistance.cancel() }
+            guard let self, let view = self.textView, !view.hasMarkedText() else { return }
+            let source = view.string, selection = view.selectedRange()
+            let custom = self.texTheme == nil ? nil : await self.citationCompletion?(source, selection)
+            guard !Task.isCancelled, view.string == source, view.selectedRange() == selection else { return }
+            if self.texTheme != nil, ReferenceCitationCompletion.prefix(source, selection: selection) != nil, custom == nil { self.completion.dismiss(); return }
+            self.completion.show(in: view, tex: self.texTheme != nil, custom: custom, prepare: self.prepareCitation, failure: self.citationFailure)
+            if self.completion.visible { self.assistance.cancel() }
         }
     }
     private func scheduleStyle() {
@@ -297,6 +312,7 @@ final class MarkdownSourceTextView: NSTextView {
     var syncSelection: () -> Void = {}
     var sourceInteraction: () -> Void = {}
     var completionKey: (NSEvent) -> Bool = { _ in false }
+    var inspectCitation: ((String) -> Void)?
     var proofreadSelection: (NSRange) -> Void = { _ in }
     var markdownMode = true
     var resigned: () -> Void = {}
@@ -350,6 +366,12 @@ final class MarkdownSourceTextView: NSTextView {
     }
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let menu = super.menu(for: event) else { return nil }
+        let clickedRange = NSRange(location: characterIndexForInsertion(at: convert(event.locationInWindow, from: nil)), length: 0)
+        if inspectCitation != nil, let key = ReferenceEvidence.key(in: string, selection: clickedRange) {
+            let source = NSMenuItem(title: "View reference source", action: #selector(inspectSelectedCitation(_:)), keyEquivalent: "")
+            source.target = self; source.representedObject = key
+            menu.insertItem(source, at: 0); menu.insertItem(.separator(), at: 1)
+        }
         if selectedRange().length > 0 {
             let proofread = NSMenuItem(title: WritingProofreading.provider == "ChatGPT" ? "Proofread with ChatGPT" : "Proofread with Apple Intelligence", action: #selector(proofreadSelectedText(_:)), keyEquivalent: "")
             proofread.target = self; proofread.toolTip = "Review a grammar suggestion before applying it."
@@ -361,6 +383,7 @@ final class MarkdownSourceTextView: NSTextView {
         menu.addItem(item)
         return menu
     }
+    @objc private func inspectSelectedCitation(_ sender: NSMenuItem) { if let key = sender.representedObject as? String { inspectCitation?(key) } }
     @objc private func proofreadSelectedText(_ sender: Any?) { proofreadSelection(selectedRange()) }
     @objc private func completeMathCommand(_ sender: Any?) { complete(sender) }
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {

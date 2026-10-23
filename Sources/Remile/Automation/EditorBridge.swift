@@ -5,6 +5,7 @@ enum EditorBridge {
     struct Request: Codable {
         var id: UUID = UUID()
         let operation: String
+        var target: UUID?
         var file: String?
         var source: String?
         var expectedSHA256: String?
@@ -44,12 +45,19 @@ enum EditorBridge {
                             let output = folder.appendingPathComponent(request.id.uuidString + ".response.json")
                             if manager.fileExists(atPath: output.path) { try manager.removeItem(at: file); continue }
                             // A pending CLI command may need the first window to finish registering.
-                            var home = currentHome()
-                            for _ in 0..<100 where home == nil {
+                            let homes = RemileWindows.shared.models
+                            var home: HomeModel?
+                            if let target = request.target {
+                                home = homes.first { $0.automationTarget == target }
+                                if home == nil, currentHome()?.automationTarget == target { home = currentHome() }
+                            } else { home = currentHome() }
+                            for _ in 0..<100 where home == nil && request.target == nil && request.operation != "documents" {
                                 try await Task.sleep(for: .milliseconds(50)); home = currentHome()
                             }
                             let response: [String: Any]
-                            if let home { response = await handle(request, home: home) }
+                            if request.operation == "documents" { response = ["ok": true, "documents": homes.compactMap { $0.automationDescription }] }
+                            else if let home { response = await handle(request, home: home) }
+                            else if request.target != nil { response = ["ok": false, "error": "The target document is no longer open. Run documents again."] }
                             else { response = ["ok": false, "error": "The document window is not ready. Try again."] }
                             let bytes = try JSONSerialization.data(withJSONObject: response, options: [.sortedKeys])
                             try bytes.write(to: output, options: [.atomic]); try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: output.path); try manager.removeItem(at: file)
@@ -62,6 +70,7 @@ enum EditorBridge {
         }
     }
     @MainActor private static func handle(_ request: Request, home: HomeModel) async -> [String: Any] {
+        if let target = request.target, home.automationTarget != target { return ["ok": false, "error": "The target document changed. Run documents again."] }
         if request.operation == "diagnostics" { return RuntimeDiagnostics.snapshot(home) }
         if request.operation == "review" { return ManuscriptReviewCommands.handle(request, project: home.texProject) }
         if request.operation == "open" {
@@ -69,7 +78,7 @@ enum EditorBridge {
             home.open(URL(fileURLWithPath: path)); return ["ok": home.error == nil, "message": home.error ?? "", "opening": home.opening]
         }
         if request.operation == "status" {
-            return ["ok": true, "kind": home.texProject == nil ? "document" : "latex-local", "path": home.texProject?.root.path ?? home.reader.url?.path ?? "", "dirty": home.texProject?.dirty ?? home.reader.dirty, "compiling": home.texProject?.compiling ?? false, "selected": home.texProject?.selected ?? "", "pages": home.texProject?.pdf?.pageCount ?? 0, "errors": home.texProject?.diagnostics.filter { $0.severity == .error }.count ?? 0, "warnings": home.texProject?.diagnostics.filter { $0.severity == .warning }.count ?? 0, "historyMinutes": TeXHistory.intervalMinutes, "aiSuggestions": UserDefaults.standard.bool(forKey: "editor.aiSuggestions"), "compileCurrent": home.texProject?.outputCurrent ?? false]
+            return ["ok": true, "target": home.automationTarget?.uuidString ?? "", "kind": home.texProject == nil ? "document" : "latex-local", "path": home.texProject?.root.path ?? home.reader.url?.path ?? "", "dirty": home.texProject?.dirty ?? home.reader.dirty, "compiling": home.texProject?.compiling ?? false, "selected": home.texProject?.selected ?? "", "pages": home.texProject?.pdf?.pageCount ?? 0, "errors": home.texProject?.diagnostics.filter { $0.severity == .error }.count ?? 0, "warnings": home.texProject?.diagnostics.filter { $0.severity == .warning }.count ?? 0, "historyMinutes": TeXHistory.intervalMinutes, "aiSuggestions": UserDefaults.standard.bool(forKey: "editor.aiSuggestions"), "compileCurrent": home.texProject?.outputCurrent ?? false]
         }
         if request.operation == "library-search" {
             do {
@@ -165,6 +174,7 @@ enum EditorBridge {
         case "replace":
             guard request.expectedSHA256 == digest(source), let after = request.source, after.utf8.count <= 4_000_000, let edit = reader.editSource else { return ["ok": false, "error": "Source conflict or editor not ready. Read the current source hash first."] }
             guard await edit(source, after) else { return ["ok": false, "error": "The source changed or editor is not ready. Read it again before retrying."] }
+            if let target = request.target, reader.identity != target { return ["ok": false, "error": "The target document changed during the edit. Read the document state before retrying."] }
             reader.markExternalEdit(before: source, after: after)
             return ["ok": true, "sha256": digest(after), "saved": false]
         case "save":

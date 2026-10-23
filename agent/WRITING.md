@@ -22,6 +22,12 @@ remile. should feel calm, warm and clear. Help the reader act, then let them ret
 - Keep poetry in the banner, empty states and waiting moments. Keep operational guidance direct.
 - Preserve “Across time, a few words find you here.” and the established lighthouse voice. Do not decorate every control with a metaphor.
 
+## Hover help and persistent status
+
+Use `remileHelp` for SwiftUI hover hints and `toolTip` for AppKit controls. Both use native macOS tooltips. Do not open a custom popover on hover. Keep click-open popovers for settings, actions and details that need user attention.
+
+Show ongoing account restrictions in the workspace footer using the adaptive gold accent. Name the restricted feature. Base the notice on the connected account's saved plan and access settings, not the project title or source contents. A saved plan is a user preference, not verified subscription data.
+
 ## Examples
 
 | Prefer | Avoid |
@@ -36,3 +42,8 @@ The billing line describes remile. It does not promise free ChatGPT usage. Keep 
 ## Review before shipping
 
 Read the copy as a returning user. Can they find the action at a glance? Remove repeated context, split joined clauses and check that the remaining words are accurate. Verify Git and Live sync wording separately. Technical docs may need detail, but each sentence should still earn its place.
+
+
+## Scroll surfaces
+
+Reserve at least the shared 18 pt trailing gutter between app-owned scrolling cards and the scrollbar. Apply it outside the card background and inside the scroll viewport. Keep wider established spacing. Native document canvases retain their own layout. Attachment markers use the adaptive gold accent, reserving warning colours for conditions that need attention.

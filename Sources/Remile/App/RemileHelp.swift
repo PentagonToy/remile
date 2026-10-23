@@ -15,6 +15,7 @@ private struct NativeToolTip: NSViewRepresentable {
     func makeNSView(context: Context) -> Surface { let view = Surface(); view.setAccessibilityElement(false); view.setAccessibilityHidden(true); view.toolTip = text; return view }
     func updateNSView(_ view: Surface, context: Context) { if view.toolTip != text { view.toolTip = text } }
 }
+/// All hover guidance uses the native macOS tooltip, including AppKit controls.
 extension View {
     func remileHelp(_ text: String) -> some View { help(text).background(NativeToolTip(text: text)).accessibilityHint(text) }
 }

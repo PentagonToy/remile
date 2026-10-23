@@ -44,7 +44,7 @@ import WebKit
     private var started = false
     private init(profile: UUID, path: String, name: String) {
         self.path = path; self.name = name
-        let configuration = WKWebViewConfiguration(); configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: profile)
+        let configuration = WKWebViewConfiguration(); configuration.websiteDataStore = OverleafWebIdentity.dataStore(profile)
         web = WKWebView(frame: .zero, configuration: configuration)
         super.init(); web.navigationDelegate = self
     }

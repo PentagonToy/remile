@@ -7,7 +7,7 @@ struct MarkdownSettings: View {
     @AppStorage("markdown.livePreview") private var live = true
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Editor settings").font(RemileType.heading)
+            Text("Markdown settings").font(RemileType.heading)
             Toggle("Line numbers", isOn: $numbers)
             HStack { Text("Font size"); Spacer(); Stepper("\(Int(size))", value: $size, in: 11...32).frame(width: 115) }
             Toggle("Check spelling and grammar", isOn: $spelling)

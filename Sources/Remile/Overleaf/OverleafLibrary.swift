@@ -3,11 +3,21 @@ import WebKit
 import Network
 
 @MainActor final class OverleafLibrary: ObservableObject {
-    struct Account: Codable, Identifiable, Equatable { let id: UUID; var name: String }
+    enum Plan: String, Codable, CaseIterable { case free = "Free", premium = "Premium" }
+    struct Account: Codable, Identifiable, Equatable {
+        let id: UUID
+        var name: String
+        var plan: Plan? = nil
+        var premiumProjectAccess: Bool? = nil
+        // Older accounts keep their existing behaviour until a plan is selected.
+        var allowsGit: Bool { plan != .free || premiumProjectAccess == true }
+    }
+    static let premiumHint = "Git requires Overleaf Premium for you or the project owner."
     enum Status { case unchecked, online, offline, changes, conflict }
     @Published private(set) var accounts: [Account] = []
     @Published private(set) var projects: [OverleafConnection] = []
     @Published private(set) var tags: [UUID: [OverleafWebClient.Tag]] = [:]
+    @Published private(set) var unavailableTags = Set<UUID>()
     @Published var presented = false
     @Published var browsing = false
     @Published private(set) var tagSignInProfile: UUID?
@@ -61,7 +71,7 @@ import Network
         connection(for: root) == nil ? "LaTeX" : "Overleaf"
     }
     func probe(_ project: OverleafConnection) async {
-        guard !busy, !probing, !offlineMode, !NetworkAccess.offline, hasNetwork else { return }; probing = true; defer { probing = false }
+        guard allowsGit(project), !busy, !probing, !offlineMode, !NetworkAccess.offline, hasNetwork else { return }; probing = true; defer { probing = false }
         let root = root(project), revision = syncRevision
         do {
             let state = try await Task.detached {
@@ -99,17 +109,34 @@ import Network
         tagError = nil; tagSignInProfile = nil
         for account in accounts where projects.contains(where: { $0.profileID == account.id }) {
             if Task.isCancelled { return }
-            do { let catalog = try await OverleafWebClient.projects(account.id); rememberTags(catalog, profile: account.id) }
+            do { let catalog = try await OverleafWebClient.projects(account.id); rememberTags(catalog, profile: account.id); if catalog.contains(where: { !$0.tagsLoaded }) { tagError = "Could not refresh tags. Saved tags are shown." } }
             catch {
-                self.tagError = error.localizedDescription
+                unavailableTags.formUnion(projects.filter { $0.profileID == account.id }.map(\.id))
+                self.tagError = account.name + ": " + error.localizedDescription
                 if (error as? OverleafWebClient.Failure)?.needsConnection == true { tagSignInProfile = account.id }
             }
         }
     }
-    @discardableResult func saveAccount(name: String, token: String) -> Account? {
+    func isFreeLimited(_ project: OverleafConnection) -> Bool {
+        accounts.first { $0.id == project.profileID }.map { $0.plan == .free && !$0.allowsGit } ?? false
+    }
+    func allowsGit(_ project: OverleafConnection) -> Bool { project.liveOnly != true && allowsGit(project.profileID) }
+    func allowsGit(_ profile: UUID) -> Bool { accounts.first { $0.id == profile }?.allowsGit ?? true }
+    func setPlan(_ plan: Plan, premiumProjectAccess: Bool, for id: UUID) {
+        guard !busy, var account = accounts.first(where: { $0.id == id }) else { return }
+        account.plan = plan; account.premiumProjectAccess = premiumProjectAccess
+        do {
+            let updated = accounts.map { $0.id == id ? account : $0 }
+            try JSONEncoder().encode(updated).write(to: directory.appendingPathComponent("accounts.json"), options: .atomic)
+            accounts = updated; error = nil
+        } catch { self.error = error.localizedDescription }
+    }
+    @discardableResult func saveAccount(name: String, token: String, plan: Plan? = nil, premiumProjectAccess: Bool? = nil) -> Account? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines), token = token.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { error = "Name this account."; return nil }
-        let account = account(name) ?? Account(id: UUID(), name: name)
+        var account = account(name) ?? Account(id: UUID(), name: name)
+        if let plan { account.plan = plan }
+        if let premiumProjectAccess { account.premiumProjectAccess = premiumProjectAccess }
         do {
             if !token.isEmpty { try OverleafCredential.store(token, id: account.id) }
             var updated = accounts.filter { $0.id != account.id }; updated.append(account)
@@ -127,6 +154,9 @@ import Network
         guard !busy else { return }
         let account = account.trimmingCharacters(in: .whitespacesAndNewlines), existing = self.account(account)
         guard let projectID = OverleafConnection.projectID(url), !account.isEmpty, existing != nil || !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { error = "Enter an Overleaf project link, an account label and its Git token."; return }
+        if let existing, !existing.allowsGit {
+            await connectLive(projectID: projectID, name: name, account: existing); return
+        }
         guard !projects.contains(where: { $0.projectID == projectID && $0.account == account }) else { error = "This project is already connected for that account."; return }
         busy = true; error = nil
         var project = OverleafConnection(id: UUID(), projectID: projectID, name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Overleaf project" : name.trimmingCharacters(in: .whitespacesAndNewlines), account: account.trimmingCharacters(in: .whitespacesAndNewlines), branch: "master")
@@ -152,9 +182,39 @@ import Network
         }
         busy = false
     }
+    func connectLive(projectID: String, name: String, account: Account, download: ((String, UUID) async throws -> Data)? = nil) async {
+        guard !busy else { return }
+        guard !offlineMode, hasNetwork, !NetworkAccess.offline else { error = "Go online to import this project."; return }
+        guard OverleafConnection.projectID("https://www.overleaf.com/project/" + projectID) == projectID,
+              accounts.contains(where: { $0.id == account.id }), !projects.contains(where: { $0.profileID == account.id && $0.projectID == projectID }) else { error = "This project is already connected or unavailable."; return }
+        busy = true; error = nil; defer { busy = false }
+        var connection = OverleafConnection(id: UUID(), profileID: account.id, projectID: projectID, name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Overleaf project" : name.trimmingCharacters(in: .whitespacesAndNewlines), account: account.name, branch: "master")
+        connection.liveOnly = true
+        let root = root(connection), baseline = OverleafSourceArchive.baseline(connection.id, under: directory)
+        do {
+            let bytes: Data
+            if let download { bytes = try await download(projectID, account.id) }
+            else {
+                _ = try OverleafWebClient.parseProjects(await OverleafWebClient.request("/user/projects", profile: account.id))
+                bytes = try await OverleafSourceDownload(project: projectID, profile: account.id).load()
+            }
+            try Task.checkCancellation(); try NetworkAccess.requireOnline()
+            try await Task.detached { try OverleafSourceArchive.install(bytes, at: root, baseline: baseline) }.value
+            _ = try TeXProject(root, historyEnabled: false)
+            try OverleafLiveFiles.save(OverleafLiveFiles.scan(root), to: OverleafFileSync.baseline(connection, library: directory))
+            try persist(projects + [connection])
+            statuses[connection.id] = .unchecked
+        } catch {
+            try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: baseline)
+            self.error = error.localizedDescription
+        }
+    }
     func rememberTags(_ catalog: [OverleafWebClient.Project], profile: UUID) {
         for project in projects where project.profileID == profile {
-            if let item = catalog.first(where: { $0.id == project.projectID }) { tags[project.id] = item.tags }
+            if let item = catalog.first(where: { $0.id == project.projectID }) {
+                if item.tagsLoaded { tags[project.id] = item.tags; unavailableTags.remove(project.id) }
+                else { unavailableTags.insert(project.id) }
+            }
         }
         if let data = try? JSONEncoder().encode(tags) { try? data.write(to: directory.appendingPathComponent("project-tags.json"), options: .atomic) }
     }
@@ -171,6 +231,7 @@ import Network
         } catch { self.error = error.localizedDescription }
     }
     func check(_ project: OverleafConnection, save: () -> Bool = { true }) async {
+        guard allowsGit(project) else { error = Self.premiumHint; return }
         guard !busy, !liveOwned.contains(project.id), !offlineMode, !NetworkAccess.offline, hasNetwork else { return }
         busy = true; syncRevision += 1; error = nil
         let root = root(project), reviews = directory.appendingPathComponent("Reviews")
@@ -193,6 +254,7 @@ import Network
     }
     func finish(choices: [String: Bool], publish: Bool, reload: @escaping (URL) -> Void) async {
         guard let review, !busy, !liveOwned.contains(review.connection.id), !offlineMode else { return }
+        guard allowsGit(review.connection) else { error = Self.premiumHint; return }
         busy = true; syncRevision += 1; error = nil
         do {
             let writer = try writerLease(review.connection); defer { withExtendedLifetime(writer) {} }

@@ -14,10 +14,19 @@ struct ReaderThemeButton: View {
 }
 
 struct ReaderThemeFooter: View {
+    var notice: String? = nil
+    var noticeHelp: String = ""
     var body: some View {
         VStack(spacing: 0) {
             Divider()
-            HStack { Spacer(); ReaderThemeButton() }.padding(.horizontal, 12).frame(height: 32).background(RemileStyle.editorBar)
+            HStack(spacing: 12) {
+                if let notice {
+                    Text(notice).font(RemileType.caption).foregroundStyle(RemileStyle.accent)
+                        .lineLimit(1).truncationMode(.tail).remileHelp(noticeHelp)
+                }
+                Spacer(minLength: 0)
+                ReaderThemeButton()
+            }.padding(.horizontal, 12).frame(height: 32).background(RemileStyle.editorBar)
         }
     }
 }

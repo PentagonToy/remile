@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 @MainActor final class TeXProject: ObservableObject {
     let identity = UUID()
+    lazy var citations = ReferenceCitationSession(context: root.path)
     lazy var review = ManuscriptReviewStore.shared(for: root)
     @Published private(set) var root: URL
     @Published private var connectedName: String?
@@ -124,10 +125,8 @@ import UniformTypeIdentifiers
             guard data.count <= 4_000_000, sources.count < 2000, let text = String(data: data, encoding: .utf8) else { throw CocoaError(.fileReadTooLarge) }
             sources[relative] = text
         }
-        let candidates = sources.keys.filter { $0.hasSuffix(".tex") && sources[$0]!.contains("\\documentclass") }.sorted()
-        guard let chosen = candidates.contains("main.tex") ? "main.tex" : candidates.first else { throw CocoaError(.fileReadCorruptFile) }
         let saved = (UserDefaults.standard.dictionary(forKey: "latex.mainDocuments") as? [String: String])?[root.standardizedFileURL.path]
-        let initial = saved.flatMap { sources[$0] != nil && $0.hasSuffix(".tex") ? $0 : nil } ?? chosen
+        guard let initial = TeXMainDocument.choose(sources: sources, saved: saved) else { throw TeXFileSystem.Failure(errorDescription: "Add a .tex file to open this project.") }
         treeFiles = paths.sorted(); files = sources.keys.sorted(); buffers = sources; original = sources; main = initial; selected = initial
         treeFolders = try TeXFileSystem.folders(self.root)
         collections = TeXCollections.read(self.root)
@@ -148,6 +147,48 @@ import UniformTypeIdentifiers
         try text.write(to: url, atomically: true, encoding: .utf8)
         if expected != text { buffers[file] = text }
         original[file] = text
+    }
+    /// Install only reconciled file changes, preserving edits made while a request was pending.
+    func installLiveFiles(expected: [String: Data], result: [String: Data], paths: Set<String>) throws {
+        guard !compiling, try OverleafLiveFiles.scan(root, buffers: buffers) == expected else { throw OverleafLiveFiles.Failure.stale }
+        for path in paths {
+            guard OverleafLiveFiles.validPath(path) else { throw OverleafLiveFiles.Failure.invalid }
+            if let bytes = result[path], OverleafLiveFiles.source(path) {
+                guard bytes.count <= OverleafLive.textLimit, String(data: bytes, encoding: .utf8) != nil else { throw OverleafLiveFiles.Failure.invalid }
+            }
+            _ = try TeXFileSystem.url(path, root: root)
+        }
+        var installed: [String] = []
+        do {
+            for path in paths.sorted() {
+                let url = try TeXFileSystem.url(path, root: root)
+                if let bytes = result[path] {
+                    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try bytes.write(to: url, options: .atomic)
+                } else if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+                installed.append(path)
+            }
+        } catch {
+            for path in installed {
+                let url = root.appendingPathComponent(path)
+                if let bytes = expected[path] { try? bytes.write(to: url, options: .atomic) }
+                else { try? FileManager.default.removeItem(at: url) }
+            }
+            throw error
+        }
+        for path in paths {
+            if OverleafLiveFiles.source(path), let bytes = result[path], let text = String(data: bytes, encoding: .utf8) { buffers[path] = text; original[path] = text }
+            else { buffers[path] = nil; original[path] = nil; externalEdits[path] = nil; provenance[path] = nil; pendingHistory.remove(path) }
+        }
+        treeFiles = try TeXFileSystem.paths(root); treeFolders = try TeXFileSystem.folders(root)
+        for path in buffers.keys where !treeFiles.contains(path) { buffers[path] = nil; original[path] = nil }
+        for path in treeFiles where buffers[path] == nil && OverleafLiveFiles.source(path) {
+            if let bytes = result[path], let text = String(data: bytes, encoding: .utf8), bytes.count <= OverleafLive.textLimit { buffers[path] = text; original[path] = text }
+        }
+        files = buffers.keys.sorted()
+        if buffers[main] == nil, let replacement = TeXMainDocument.choose(sources: buffers, saved: nil) { main = replacement }
+        if !treeFiles.contains(selected) { selected = main }
+        build = nil; outputCurrent = false; fileRevision += 1
     }
     var source: Binding<String> { Binding(get: { self.buffers[self.selected] ?? "" }, set: { if self.buffers[self.selected] != nil { self.buffers[self.selected] = $0 } }) }
     @discardableResult func save() -> Bool {
@@ -222,6 +263,14 @@ import UniformTypeIdentifiers
         guard !compiling else { return }
         showsSubmission = true; compiling = true
         submission.start(root: root, main: main, buffers: buffers) { [weak self] in self?.compiling = false }
+    }
+    /// Closing a workspace must release previews even if a presentation temporarily retains its model.
+    func releaseWorkspaceResources() {
+        compileID = UUID(); task?.cancel(); job?.stop(); submission.stop()
+        outlineTask?.cancel(); historyTask?.cancel(); syncTask?.cancel()
+        citations.release(); pdf = nil; build = nil; diagnosticSource = nil
+        TeXCache.discard(cachedBuild); cachedBuild = nil
+        editSource = nil; compiling = false; syncing = false
     }
     func stop() { job?.stop(); submission.stop() }
     func visit(file: String, line: Int = 0) {
@@ -445,6 +494,26 @@ import UniformTypeIdentifiers
         captureHistory(file: file, marker: "After · " + name)
         if feedback, UserDefaults.standard.object(forKey: "editor.toolSounds") as? Bool ?? true, let sound = NSSound(named: "Tink") { sound.volume = 0.16; sound.play() }
         return true
+    }
+    /// Additive only. Existing keys and bibliography configuration remain untouched.
+    func addReference(_ record: ReferenceRecord, bibliography path: String) throws {
+        guard !compiling else { throw ReferenceFailure("Wait for compilation to finish.") }
+        guard path.lowercased().hasSuffix(".bib"), buffers[path] != nil || (path == "remile-references.bib" && !treeFiles.contains(where: { $0.lowercased().hasSuffix(".bib") })) else { throw ReferenceFailure("Choose an existing bibliography.") }
+        if let before = buffers[path] {
+            let after = try ReferenceCitation.appending(record, to: before)
+            guard after != before else { return }
+            captureHistory(file: path, marker: "Before · Add reference")
+            buffers[path] = after
+            captureHistory(file: path, marker: "After · Add reference")
+        } else {
+            guard files.count < 2000, treeFiles.count < 10000 else { throw ReferenceFailure("The project has too many files.") }
+            let url = try TeXFileSystem.url(path, root: root)
+            let source = try ReferenceCitation.appending(record, to: "")
+            try Data(source.utf8).write(to: url, options: .withoutOverwriting)
+            original[path] = source; buffers[path] = source
+            files.append(path); files.sort(); treeFiles.append(path); treeFiles.sort(); fileRevision += 1
+        }
+        message = "Reference added to " + path
     }
     func exportSource() {
         let panel = NSSavePanel(); panel.allowedContentTypes = [.zip]; panel.nameFieldStringValue = displayName + ".zip"

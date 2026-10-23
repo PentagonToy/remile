@@ -28,6 +28,7 @@ struct MarkdownWorkspace: View {
     }
     final class Presentation: ObservableObject {
         @Published var mode: Mode
+        @Published var references = false
         @Published var outline = false
         @Published var expanded = true
         @Published var settings = false
@@ -48,6 +49,7 @@ struct MarkdownWorkspace: View {
                     Button { preview.revealSource() } label: { Image(systemName: "arrow.left") }.remileHelp("Show preview selection in source")
                     Button { preview.reveal(line: editor.selectedLine) } label: { Image(systemName: "arrow.right") }.remileHelp("Show source in preview")
                 }
+                Button { presentation.references = true } label: { Image(systemName: "books.vertical") }.remileHelp("Reference library").accessibilityLabel("Reference library")
                 AIToolGroup {
                 AIProviderButton()
                 Button { presentation.ask.toggle() } label: { Image(systemName: "text.bubble") }.remileHelp("Ask about document").accessibilityLabel("Ask about document")
@@ -55,13 +57,13 @@ struct MarkdownWorkspace: View {
                 }
 
                 Button { showExternalEdits.toggle() } label: { Image(systemName: showExternalEdits ? "eye" : "eye.slash") }.remileHelp(RemileHints.edits(showExternalEdits)).accessibilityLabel("Show AI and CLI edits")
-                Menu { Toggle("Focus paragraph", isOn: $focusMode); Button("Editor settings…") { presentation.settings = true } } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize().remileHelp("Focus mode and editor settings")
+                Menu { Toggle("Focus paragraph", isOn: $focusMode); Button("Settings…") { presentation.settings = true } } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize().remileHelp("Focus mode and Markdown settings")
                 Button { render() } label: { Label("Render", systemImage: "arrow.clockwise") }.keyboardShortcut(.return, modifiers: [.command])
             }.font(RemileType.callout).buttonStyle(RemileToolStyle()).padding(.horizontal, 16).padding(.vertical, 6).background(RemileStyle.editorBar)
             Divider()
             Group {
                 if presentation.outline {
-                    ReaderSplit(sizing: .sidebar, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: 580, label: "outline", pane: { outlinePanel }, content: { documentContent })
+                    ReaderSplit(sizing: .outline, minimum: 180, maximum: 300, minimumContent: 580, label: "outline", pane: { outlinePanel }, content: { documentContent })
                 } else { documentContent }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
@@ -74,6 +76,13 @@ struct MarkdownWorkspace: View {
                 ReaderThemeButton()
             }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 12).frame(height: 32).background(RemileStyle.editorBar)
         }
+        .sheet(isPresented: $presentation.references) {
+            ReferencePicker(format: .markdown, insert: presentation.mode == .read ? nil : { record, _ in
+                guard let view = editor.textView, !view.hasMarkedText(), view.string == source else { throw ReferenceFailure("Open the Markdown editor before inserting a citation.") }
+                let text = try ReferenceCitation.text(record, format: .markdown), range = view.selectedRange()
+                editor.apply(.init(range: range, text: text, selection: NSRange(location: range.location + (text as NSString).length, length: 0)), name: "Insert citation")
+            }, context: fileURL?.path ?? "markdown-draft")
+        }
         .sheet(isPresented: $presentation.settings) { VStack(alignment: .trailing, spacing: 0) { MarkdownSettings(); Button("Done") { presentation.settings = false }.keyboardShortcut(.defaultAction).padding([.horizontal, .bottom], 20) }.background(RemileStyle.background) }
         .sheet(isPresented: Binding(get: { presentation.table != nil }, set: { if !$0 { presentation.table = nil } })) {
             if let state = presentation.table { MarkdownTableEditor(state: state, apply: { editor.applyTable($0, expected: state.source) }, close: { presentation.table = nil }) }
@@ -84,16 +93,18 @@ struct MarkdownWorkspace: View {
         .task(id: source + String(spellcheck) + language) { await writing.check(source, enabled: spellcheck, language: language, editor: editor) }
         .task(id: source) { if livePreview || preview.html == nil { await preview.render(source, url: previewURL) } }
         .onChange(of: livePreview) { if livePreview { render() } }
-        .onDisappear { session?.editSource = nil; writing.dismissSuggestion(); editor.proofreadRequested = nil; editor.dismissWriting = nil }
+        .onDisappear { editor.suspend(); session?.editSource = nil; writing.dismissSuggestion(); editor.proofreadRequested = nil; editor.dismissWriting = nil }
         .onAppear {
             assistant.useHistory(fileURL?.path)
             editor.proofreadRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return }; writing?.proofread(range, in: view, editor: editor) }
             editor.dismissWriting = { [weak writing = writing] in writing?.dismissSuggestion() }
             session?.editSource = { [weak editor = editor, weak state = presentation, weak session = session] before, after in
                 guard let session, case .markdown(let current) = session.document.content, current == before else { return false }
+                let identity = session.identity
                 state?.mode = .split
                 try? await Task.sleep(for: .milliseconds(100))
-                guard let editor, let view = editor.textView, view.window != nil, view.string == before else { return false }
+                guard session.identity == identity, case .markdown(let current) = session.document.content, current == before,
+                      let editor, let view = editor.textView, view.window != nil, view.string == before else { return false }
                 editor.apply(.init(range: NSRange(location: 0, length: (before as NSString).length), text: after, selection: NSRange(location: 0, length: 0)), name: "CLI edit")
                 return view.string == after
             }
@@ -158,7 +169,7 @@ struct MarkdownWorkspace: View {
             }
             if !presentation.expanded || preview.sections.isEmpty { Spacer(minLength: 0) }
             Divider()
-            EditorSidebarFooter(compact: presentation.expanded, title: "Editor settings") { presentation.settings = true }
+            EditorSidebarFooter(compact: presentation.expanded, title: "Settings") { presentation.settings = true }.accessibilityLabel("Markdown settings").remileHelp("Markdown settings")
         }.frame(maxHeight: .infinity, alignment: .top).background(RemileStyle.sidebar)
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: presentation.expanded)
     }
