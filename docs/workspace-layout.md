@@ -1,42 +1,33 @@
-# Workspace layout and motion
+# Workspace
 
-Pane defaults follow the task rather than one app-wide width. The main work area gets priority. Apple recommends reasonable minimum and maximum sizes, resizable thin dividers, persistent selection and alternatives for compact windows. These are principles, not a prescribed percentage. The defaults below are remile. product choices.
+A paper, a sentence, a thought worth keeping. Give each one a little room.
 
-| Workspace | Navigation | Main area | Details |
-| --- | --- | --- | --- |
-| Home | 180 pt | Remaining window | None |
-| Markdown | Outline 16%, bounded to 180–250 pt | Source and rendered preview split equally | Ask is optional |
-| LaTeX and Overleaf editor | Files 18%, bounded to 180–260 pt | Source and PDF split the remaining width equally | Narrow windows choose Source or Preview |
-| Overleaf library | Navigation 18%, bounded to 200–280 pt | Project library uses the remainder | None |
-| Search | Results 32%, bounded to 300–460 pt | Reading preview uses the remainder | Ask is optional |
-| Reference | Equal initial side panes, each 20% with a 200–320 pt bound | Wide reference list in the centre | Thumbnail and metadata inspector |
+Home brings your recent documents and tools together. Open a file to return to your work, or choose a workspace below.
 
-The bounds preserve readable controls at small widths and avoid oversized navigation on large displays. Reference stacks its preview below the list when three readable columns no longer fit. Enabling many reference columns adds horizontal scrolling rather than shrinking text. A person can still resize panes independently. Saved widths are clamped to the destination window when restored.
+## Find your place
 
-Each named split remembers its manually adjusted width. Portable settings include these widths. Reopen a workspace after importing a settings file to apply its saved split widths.
+| What you are working on | Where to begin |
+| --- | --- |
+| A paper to read or annotate | [PDF](workspace/pdf.md) |
+| A passage you remember | [Search](workspace/search.md) |
+| Papers and citations to keep | [Reference](reference.md) |
+| Notes or a Markdown draft | [Markdown](workspace/markdown.md) |
+| A LaTeX manuscript | [LaTeX](workspace/latex.md) |
+| A letter or short document | [Writer](writer.md) |
+| A shared Overleaf project | [Overleaf](workspace/overleaf.md) |
 
-Disclosure, panel collapse and sidebar artwork use the existing shared 0.36-second timing curve. Markdown, LaTeX, Overleaf, Search and Reference share it. Pointer resizing stays direct so a dragged divider follows the pointer. The app-wide Animations preference and the system Reduce Motion setting disable transitions. Reference library creation and Trash changes use the same disclosure motion. Library drag reordering has been removed.
+Keep your sources in [Reference](reference.md), ready when you need a citation.
 
-## Sources
+Not sure about an icon? [Find its meaning in the button guide](buttons.md).
 
-- [Apple Human Interface Guidelines: Split views](https://developer.apple.com/design/human-interface-guidelines/split-views)
-- [Apple Human Interface Guidelines: Sidebars](https://developer.apple.com/design/human-interface-guidelines/sidebars)
-- [Apple Human Interface Guidelines: Layout](https://developer.apple.com/design/human-interface-guidelines/layout)
+## Make room
 
-## Inline names
+Drag a panel divider to change its width. Hide a sidebar when you want more room for the page. Narrow windows offer a compact view so the document stays readable.
 
-Existing inline file, folder, collection and project names use Return or a click elsewhere to apply. Escape cancels. The edit keeps its original target when selection changes. New file and folder drafts retain their explicit Return confirmation, and multi-field forms retain Save. Reference metadata uses the same commit and cancel rules with record revision checks.
+Use **File → New Window** to work in a separate window. Save follows the active document, and remile asks about unsaved changes before you leave.
 
-## Opening unfinished LaTeX
+## Make it yours
 
-The editor opens readable TeX sources independently of compilation. Main selection uses a valid saved target, root main.tex, a source containing a class declaration, then a stable source fallback. Empty documents and missing command backslashes remain editable. Projects without a readable TeX source receive a specific error. Compilation diagnostics stay inside the workspace.
+Choose a theme and text size in Settings. Save a [preset](storage.md#presets) to carry supported preferences to another Mac. Turn off Animations in General, or use macOS Reduce Motion, for a quieter view.
 
-
-## Scroll content spacing
-
-App-owned scrolling cards reserve an 18 pt trailing gutter inside their viewport through ScrollContentSpacing. Cleanup, duplicate review, paper search, Reference settings/list/preview, Search result content, Overleaf library cards and review/combine cards use this spacing. Wider established spacing, including the User guide's 28 pt and Home's content padding, stays intact. The Reference list header reserves the same additional gutter as its rows. Native source editors and PDF canvases keep their own scrolling geometry.
-
-Reserve the gutter around the whole card, not just its text, so both overlay and always-visible scrollbars stay separated from the card edge. Keep scrollbar tracks at the viewport edge and retain their native behaviour.
-
-
-A new, empty Markdown draft closes without a save question. Entered text or whitespace still needs confirmation. Clearing a previously saved document remains an edit and keeps the save question. Explicit Save remains available for an empty draft.
+[Panel behaviour and shortcuts](details/workspace-layout.md) · [All controls](details/features.md)

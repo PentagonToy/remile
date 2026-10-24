@@ -14,6 +14,9 @@ struct UserGuide: View {
                 Button("Tour") { dismiss(); NotificationCenter.default.post(name: .remileReplayTour, object: nil) }.fixedSize()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction).fixedSize()
             }
+            Link(destination: URL(string: "https://pentagontoy.github.io/remile/workspace-layout.html")!) {
+                Label("Online guide", systemImage: "arrow.up.forward.square")
+            }.font(RemileType.caption).remileHelp("Workspace controls and help on the web")
             GeometryReader { viewport in
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {

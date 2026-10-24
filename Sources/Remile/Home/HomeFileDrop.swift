@@ -26,7 +26,7 @@ enum HomeFileDrop {
         guard !urls.isEmpty, urls.allSatisfy(\.isFileURL) else { throw Failure(message: "Drop local files from Finder.") }
         switch target {
         case .open:
-            guard urls.count == 1, ["pdf", "md", "markdown", "txt"].contains(urls[0].pathExtension.lowercased()) else { throw Failure(message: "Drop one PDF or Markdown document to open it.") }
+            guard urls.count == 1, ["pdf", "md", "markdown", "txt", "docx"].contains(urls[0].pathExtension.lowercased()) else { throw Failure(message: "Drop one PDF, Markdown or DOCX document.") }
             return .open(urls[0])
         case .latex:
             guard urls.count == 1, (try? urls[0].resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true || urls[0].pathExtension.lowercased() == "zip" else { throw Failure(message: "Drop one LaTeX source ZIP or project folder.") }

@@ -1,0 +1,52 @@
+[project]
+site_name = "remile."
+site_description = "A quiet workspace for PDF, Markdown and LaTeX on your Mac."
+site_url = "https://pentagontoy.github.io/remile/"
+repo_url = "https://github.com/PentagonToy/remile"
+repo_name = "PentagonToy/remile"
+edit_uri = ""
+docs_dir = "docs"
+site_dir = "site"
+use_directory_urls = false
+strict = true
+extra_css = ["stylesheets/remile.css"]
+copyright = "© 2026 PentagonToy · Your files, your pace."
+nav = [
+  { "Home" = "index.md" },
+  { "Start" = [ { "Get started" = "getting-started.md" }, { "Install and update" = "distribution.md" } ] },
+  { "Workspace" = [ { "Overview" = "workspace-layout.md" }, { "PDF" = "workspace/pdf.md" }, { "Search" = "workspace/search.md" }, { "Reference" = "reference.md" }, { "Markdown" = "workspace/markdown.md" }, { "LaTeX" = "workspace/latex.md" }, { "Writer" = "writer.md" }, { "Overleaf" = "workspace/overleaf.md" } ] },
+  { "Guide" = [ { "Buttons and status" = "buttons.md" }, { "Presets and storage" = "storage.md" }, { "AI and writing" = "assistant.md" }, { "Manuscript review" = "manuscript-review.md" } ] },
+  { "More" = [ { "A closer look" = "details/index.md" }, { "Detailed guides" = [ { "All controls" = "details/features.md" }, { "Reference" = "details/reference.md" }, { "Writer" = "details/writer.md" }, { "AI and context" = "details/assistant.md" }, { "Manuscript review" = "details/manuscript-review.md" }, { "Layout and motion" = "details/workspace-layout.md" }, { "Build and package" = "details/distribution.md" } ] }, { "CLI" = "cli.md" }, { "Privacy" = "privacy.md" }, { "Changelog" = "changelog.md" }, { "Source code" = "https://github.com/PentagonToy/remile" } ] },
+]
+
+[project.theme]
+variant = "modern"
+custom_dir = "tools/docs/overrides"
+language = "en"
+font = false
+logo = "assets/brand/icons/remile_icon_light_rounded.svg"
+favicon = "assets/brand/icons/remile_icon_light_rounded.svg"
+features = ["navigation.tabs", "navigation.top", "navigation.footer", "search.highlight", "content.code.copy"]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "custom"
+accent = "custom"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "custom"
+accent = "custom"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to light mode"
+
+[project.markdown_extensions]
+attr_list = {}
+md_in_html = {}
+tables = {}
+toc.permalink = true
+pymdownx.superfences = {}

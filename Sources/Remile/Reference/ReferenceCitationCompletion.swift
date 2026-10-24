@@ -64,8 +64,15 @@ enum ReferenceCitationCompletion {
         let query = ReferenceCitationIndex.fold(query), words = query.split(whereSeparator: \.isWhitespace).map(String.init)
         var result: [Suggestion] = [], keys = Set<String>()
         for (index, local) in [(project, true), (library, false)] {
-            for prefix in [true, false] {
-                for entry in index.entries where entry.key.hasPrefix(query) == prefix && words.allSatisfy({ entry.search.contains($0) }) {
+            for priority in 0...2 {
+                for entry in index.entries {
+                    let matches: Bool
+                    switch priority {
+                    case 0: matches = entry.key.hasPrefix(query)
+                    case 1: matches = !entry.key.hasPrefix(query) && words.allSatisfy { entry.metadata.contains($0) }
+                    default: matches = !entry.key.hasPrefix(query) && !words.allSatisfy({ entry.metadata.contains($0) }) && words.allSatisfy { entry.search.contains($0) }
+                    }
+                    guard matches else { continue }
                     guard keys.insert(entry.record.citationKey).inserted else { continue }
                     result.append(Suggestion(record: entry.record, project: local))
                     if result.count == limit { return result }
@@ -78,14 +85,16 @@ enum ReferenceCitationCompletion {
 
 /// Prepared off the typing path, reused by the editor and the reference picker.
 struct ReferenceCitationIndex: Sendable {
-    struct Entry: Sendable { let record: ReferenceRecord; let key: String; let search: String }
+    struct Entry: Sendable { let record: ReferenceRecord; let key: String; let metadata: String; let search: String }
     let entries: [Entry]
     init(_ records: [ReferenceRecord] = [], byTitle: Bool = false) {
         entries = records.filter { ReferenceBibTeX.validToken($0.citationKey) }.sorted {
             (byTitle ? $0.displayTitle : $0.citationKey).localizedStandardCompare(byTitle ? $1.displayTitle : $1.citationKey) == .orderedAscending
         }.map { record in
             var record = record; record.originalCitation = ""
-            return Entry(record: record, key: Self.fold(record.citationKey), search: Self.fold([record.citationKey, record.displayTitle, record.displayAuthors, record.year].joined(separator: " ")))
+            let metadata = Self.fold([record.citationKey, record.displayTitle, record.displayAuthors, record.year].joined(separator: " "))
+            let abstract = Self.fold(ReferenceText.display(record.fields["abstract"] ?? ""))
+            return Entry(record: record, key: Self.fold(record.citationKey), metadata: metadata, search: abstract.isEmpty ? metadata : metadata + " " + abstract)
         }
     }
     static func fold(_ value: String) -> String { value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current) }

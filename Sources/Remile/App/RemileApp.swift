@@ -12,7 +12,7 @@ final class RemileDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) { automationTask?.cancel() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         for home in RemileWindows.shared.models {
-            if !home.pdfSearchEditing.confirmLeaving() || home.texProject?.confirmLeaving() == false || !home.reader.confirmLeaving() { return .terminateCancel }
+            if home.writer?.confirmLeaving() == false || !home.pdfSearchEditing.confirmLeaving() || home.texProject?.confirmLeaving() == false || !home.reader.confirmLeaving() { return .terminateCancel }
         }
         return .terminateNow
     }
@@ -80,6 +80,7 @@ private struct HomeCommands: Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Window") { RemileWindows.shared.createWindow?() }.keyboardShortcut("n", modifiers: [.command, .shift])
             Divider()
+            Button("Writer") { model.newWriter() }
             Button("New Markdown") { model.newMarkdown() }.keyboardShortcut("n")
             Button("Open LaTeX Project…") { model.chooseTeX() }
             Divider()
@@ -91,15 +92,16 @@ private struct HomeCommands: Commands {
             Button("Combine PDFs…") { model.create(.combine, open: model.open) }
         }
         CommandGroup(replacing: .printItem) {
-            Button("Print…") { NotificationCenter.default.post(name: Notification.Name("remile.print"), object: model.reader) }.keyboardShortcut("p")
+            Button("Print…") { if model.page == .writer { model.writer?.printDocument() } else { NotificationCenter.default.post(name: Notification.Name("remile.print"), object: model.reader) } }.keyboardShortcut("p")
         }
         CommandGroup(replacing: .saveItem) {
-            Button("Save") { if let project = model.texProject { project.save() } else { model.reader.save() } }.keyboardShortcut("s")
-            Button("Save a Copy…") { model.reader.saveCopy() }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(model.texProject != nil)
+            Button("Save") { if model.page == .writer { model.writer?.save() } else if let project = model.texProject { project.save() } else { model.reader.save() } }.keyboardShortcut("s")
+            Button("Save a Copy…") { if model.page == .writer, let writer = model.writer { writer.exportCopy() } else { model.reader.saveCopy() } }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(model.texProject != nil)
         }
         CommandGroup(after: .saveItem) {
             Button("Close Document") {
-                if model.texProject != nil { model.closeTeX() }
+                if model.page == .writer { if model.writer?.confirmLeaving() != false { model.writer = nil; model.page = .home } }
+                else if model.texProject != nil { model.closeTeX() }
                 else if model.reader.url != nil { model.reader.close() }
                 else { NSApp.keyWindow?.performClose(nil) }
             }.keyboardShortcut("w")

@@ -12,9 +12,9 @@ struct BannerBeacon: View {
             let lamp = CGPoint(x: left + width * 193 / 310, y: top + height * 46 / 120)
             // Repaint only the beam's bounds, independently of the wordmark and tower.
             let reach = min(lamp.x - 10, geometry.size.width / 2 + min(300, geometry.size.width * 0.46) * 0.43 + 4)
-            DecorativeTimeline { date, moves in
+            DecorativeTimeline(preservesPhase: true) { date, _ in
                 Canvas { context, size in
-                    let phase = moves ? sin(date.timeIntervalSinceReferenceDate * .pi / 3.6) : 0
+                    let phase = sin(date.timeIntervalSinceReferenceDate * .pi / 3.6)
                     let centre = size.height / 2 + height * 0.24 * phase
                     var beam = Path()
                     beam.move(to: CGPoint(x: size.width, y: size.height / 2))

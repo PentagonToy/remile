@@ -1,0 +1,45 @@
+name: Website
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'tools/docs/**'
+      - 'others/brand/**'
+      - 'others/symbols/guide/**'
+      - 'zensical.toml'
+      - 'requirements-docs.txt'
+      - 'CHANGELOG.md'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-docs.txt
+      - run: python tools/docs/build.py --workspace "$RUNNER_TEMP/remile-docs" --site-dir "$RUNNER_TEMP/remile-site"
+      - run: python tools/docs/check.py "$RUNNER_TEMP/remile-site"
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: ${{ runner.temp }}/remile-site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v5
+        id: deployment

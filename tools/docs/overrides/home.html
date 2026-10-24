@@ -1,0 +1,35 @@
+{% extends "main.html" %}
+{% block content %}
+<div class="remile-home">
+  <section class="remile-hero" aria-labelledby="home-title">
+    <div class="remile-hero__copy">
+      <p class="remile-eyebrow">A native workspace for Mac</p>
+      <h1 id="home-title">Across time,<br>a few words<br>find you here.</h1>
+      <p class="remile-intro">Read a paper. Follow a thought.<br>Return to your words.</p>
+      <div class="remile-actions">
+        <a class="remile-button remile-button--primary" href="https://github.com/PentagonToy/remile/releases/download/v0.1.3/remile-0.1.3-arm64.dmg">Download for Mac <span aria-hidden="true">↗</span></a>
+        <a class="remile-button" href="{{ 'getting-started.html' | url }}">Get started <span aria-hidden="true">→</span></a>
+      </div>
+      <p class="remile-requirements">Version 0.1.3 · Apple Silicon · macOS 14+</p>
+    </div>
+    <div class="remile-hero__art" aria-hidden="true">
+      <span class="remile-orbit"></span>
+      <img class="remile-art-light" src="{{ 'assets/harbour-home-light.svg' | url }}" alt="" width="500" height="200">
+      <img class="remile-art-dark" src="{{ 'assets/harbour-home-dark.svg' | url }}" alt="" width="500" height="200">
+      <p class="remile-art-caption">A little room to think.</p>
+    </div>
+  </section>
+  <section class="remile-paths" aria-label="Find your way">
+    <a href="{{ 'workspace/pdf.html' | url }}"><span class="remile-number">01 / Read</span><h2>Keep the page<br>in view.</h2><p>PDFs, notes and the passages you came to find.</p><span class="remile-path-link">Explore the workspace <span aria-hidden="true">↗</span></span></a>
+    <a href="{{ 'reference.html' | url }}"><span class="remile-number">02 / Gather</span><h2>Give your sources<br>a place.</h2><p>Papers, bibliographies and citations, together.</p><span class="remile-path-link">Meet Reference <span aria-hidden="true">↗</span></span></a>
+    <a href="{{ 'workspace/latex.html' | url }}"><span class="remile-number">03 / Write</span><h2>Stay close<br>to your words.</h2><p>Markdown and LaTeX, with the result beside you.</p><span class="remile-path-link">Find your workflow <span aria-hidden="true">↗</span></span></a>
+  </section>
+  <section class="remile-principle" aria-labelledby="principle-title">
+    <p class="remile-eyebrow">Your files, your pace</p>
+    <h2 id="principle-title">Begin locally.<br>Connect when you choose.</h2>
+    <p>Reading, writing and local search need no AI account.<br>You choose when to ask AI or synchronise with Overleaf.</p>
+    <a href="{{ 'privacy.html' | url }}">How your files are handled <span aria-hidden="true">→</span></a>
+  </section>
+  <div class="remile-home-footer"><span>PDF · Markdown · LaTeX</span><a href="https://github.com/PentagonToy/remile">Open source · MIT <span aria-hidden="true">↗</span></a></div>
+</div>
+{% endblock %}

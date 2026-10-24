@@ -1,35 +1,27 @@
 # AI and writing
 
-Choose Manual, Apple Intelligence or ChatGPT in AI settings or the toolbar. Apple Intelligence runs on this Mac. ChatGPT uses an eligible connected account. Luna is the initial model when available. Manual disables model assistance and retains system spelling.
+Sometimes a second look helps. You choose when to ask for one.
 
-## Connections and usage
+## Choose a provider
 
-Connect ChatGPT through its sign-in flow. Credentials stay in macOS Keychain. A connection dot indicates that sign-in or unlock needs attention. Unlock connection requests Keychain access. Restarting clears the in-memory unlocked connection. App signing changes can require macOS approval again.
+Open **Settings → AI**. Use Apple Intelligence on a supported Mac, connect ChatGPT, or keep Manual mode.
 
-Automatic fallback optionally uses Apple Intelligence when ChatGPT is unavailable. With fallback off, requests report the unavailable service. The preferred provider remains selected.
+Reading, writing and standard local search remain available without an AI account. Your ChatGPT plan and credit settings apply.
 
-No separate API bill from remile. Your ChatGPT plan and credit settings apply. remile. does not purchase credits. The daily app limit defaults to 100 requests and measures remile. activity, not the account’s remaining allowance. Check ChatGPT Settings → Usage for account usage. See OpenAI’s [account guidance](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions) and [usage interface guidance](https://developers.openai.com/siwc/ui-ux-guidelines).
+## Ask about the page
 
-Inference requests are serialised. Repeated writing suggestions use bounded session caches. An allowance error pauses cloud requests. LaTeX repair requires an explicit request and review before applying.
+Open Ask while reading a PDF, Markdown file or search result. Enter a question and submit it. remile sends the question and selected document evidence to the chosen provider.
 
-## Writing
+Check important answers against the source. An answer is not independent verification of a paper.
 
-Select up to 2,000 characters of prose and choose Proofread with the selected provider. Review the replacement, apply it or dismiss it. Code, maths and TeX commands are excluded. Select a word and right-click for macOS spelling corrections. Undo restores the source.
+## Review a suggestion
 
-Automatic spelling and grammar underlines use macOS. Optional grey inline completions use Apple Intelligence: Tab accepts and Escape dismisses them. Switching documents clears a pending completion. AI settings provides one Writing suggestions switch, with individual options under its disclosure.
+Select text and use the writing tools for proofreading. LaTeX errors can also request a suggested repair. Read the proposed change before applying it. Applied source edits support Undo.
 
-LaTeX diagnostics offer Suggest fix. The proposal must match the unchanged source before it can be applied. Compilation guidance can also send bounded error summaries and package lookup results to ChatGPT on request, without source buffers. It displays advice and optional commands for review.
+For questions about a whole draft, open [Manuscript review](manuscript-review.md).
 
-## Document questions
+## Pause the connection
 
-Ask sends the question and selected document evidence to the chosen provider. Cloud evidence is limited to 64,000 UTF-8 bytes, with up to eight earlier turns and 20,000 bytes of conversation context. PDFs up to 96 pages include all extracted text when it fits. Otherwise relevant excerpts are selected. Longer indexed PDFs can reuse matching file-scoped library passages and neighbouring pages. Missing or stale indexes use direct retrieval. Device requests use smaller context budgets.
+The airplane button pauses remile's online services. Local documents and standard search stay available.
 
-Explicit selections and relevant visible pages take priority. Source links return to the passage. Evidence is extracted text. It does not cover every page image or establish that an answer or formula is correct. Low, Mid and High select response budgets.
-
-Prompt templates live in `Sources/Remile/Assistant/Prompts`. Document content is passed separately as untrusted input. Source edits require exact matches and remain undoable. remile. requests do not create ChatGPT conversation history.
-
-## Work offline
-
-Work offline is an app-wide switch in General settings and the document toolbar. It pauses ChatGPT, Overleaf, update checks and TeX package lookups, cancelling registered network work. Local editing, compilation, keyword search and available Apple Intelligence remain usable. Turning it off retains provider and per-project Online preferences.
-
-This switch controls remile.’s network requests. macOS services, cloud storage providers and already transmitted data remain outside its scope.
+[Provider setup, context and request limits](details/assistant.md) · [Your files and privacy](privacy.md)

@@ -7,7 +7,7 @@ struct LibraryManager: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Label("Library", systemImage: "books.vertical").font(.title2.weight(.semibold))
+                Label("Library", systemImage: "folder").font(.title2.weight(.semibold))
                 Spacer()
                 Button("Done") { model.libraryPresented = false }.keyboardShortcut(.defaultAction)
             }

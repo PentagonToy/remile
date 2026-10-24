@@ -36,13 +36,22 @@ final class NativeScrollMotion {
     private func handle(_ event: NSEvent) -> NSEvent? {
         guard let scroll, scroll.window === event.window else { return event }
         guard event.type == .scrollWheel else { stop(); return event }
-        let point = scroll.convert(event.locationInWindow, from: nil)
-        guard scroll.visibleRect.contains(point) else { return event }
+        guard Self.ownsWheel(at: event.locationInWindow, in: scroll) else { return event }
         guard event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
               !event.hasPreciseScrollingDeltas, event.phase.isEmpty, event.momentumPhase.isEmpty,
               AnimationPolicy.enabled(),
               abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX), event.deltaY != 0 else { stop(); return event }
         return move(by: event.deltaY) ? nil : event
+    }
+    /// An obscured preview must not intercept input intended for the panel above it.
+    static func ownsWheel(at point: NSPoint, in scroll: NSScrollView) -> Bool {
+        guard !scroll.isHiddenOrHasHiddenAncestor, let root = scroll.window?.contentView else { return false }
+        var hit = root.hitTest(root.convert(point, from: nil))
+        while let view = hit {
+            if let owner = view as? NSScrollView { return owner === scroll }
+            hit = view.superview
+        }
+        return false
     }
     @discardableResult func move(by wheelDelta: CGFloat) -> Bool {
         guard AnimationPolicy.enabled(), let scroll, let document = scroll.documentView else { return false }

@@ -202,6 +202,7 @@ struct SearchPDFPreview: View {
                             Text(hit.name).font(RemileType.heading).lineLimit(2).multilineTextAlignment(.leading).remileHelp(hit.name)
                             Text("Page \(hit.page)").font(RemileType.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
+                        ReferenceSaveButton(source: URL(fileURLWithPath: hit.path)).id(hit.path + revision.uuidString)
                         Button { ReaderNavigation.shared.reveal(hit, query: query); open(URL(fileURLWithPath: hit.path)) } label: { Label("Open", systemImage: "arrow.up.right.square") }.fixedSize()
                     }
                     HStack(spacing: 12) {
@@ -232,7 +233,8 @@ struct SearchPDFPreview: View {
                     else { ContentUnavailableView("Page changed. Update the Library index.", systemImage: "arrow.clockwise") }
                 }
             } else { ContentUnavailableView(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Search your library" : "Select a result", systemImage: "doc.text.magnifyingglass").frame(maxWidth: .infinity, maxHeight: .infinity) }
-        }.task(id: (hit?.id ?? "") + revision.uuidString) { model.show(hit, revision: revision) }.onDisappear { model.close() }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .task(id: (hit?.id ?? "") + revision.uuidString) { model.show(hit, revision: revision) }.onDisappear { model.close() }
             .modifier(SelectionTranslationModifier(request: $presentation.translation))
     }
     private func selectionActions(_ hit: LibraryHit) -> PDFSelectionActions {

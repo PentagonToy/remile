@@ -22,7 +22,7 @@ enum PortableSettings {
         "editor.language": .string("Automatic"), "editor.spellcheck": .bool(true), "editor.focusMode": .bool(false), "editor.showExternalEdits": .bool(false), "editor.toolSounds": .bool(true),
         "reader.elasticScrolling": .bool(true), "reader.markdownSerif": .bool(false), "markdown.autoPair": .bool(true), "markdown.livePreview": .bool(true),
         "search.boosting": .bool(true), "search.spellingSuggestions": .bool(true),
-        ReferenceKeyRule.preference: .string(ReferenceKeyRule.surnameYearWord.rawValue), ReferenceColumn.preference: .string(ReferenceColumn.defaults), ReferenceExport.abstractPreference: .bool(false)
+        ReferenceKeyRule.preference: .string(ReferenceKeyRule.surnameYearWord.rawValue), ReferenceColumn.preference: .string(ReferenceColumn.defaults), ReferenceColumnWidths.preference: .string("{}"), ReferenceExport.abstractPreference: .bool(false)
     ]
     static func snapshot(_ store: UserDefaults = .standard) -> Snapshot {
         var result = defaults
@@ -34,17 +34,17 @@ enum PortableSettings {
         return Snapshot(preferences: result)
     }
     static func validate(_ snapshot: Snapshot) throws {
-        guard snapshot.format == 1, snapshot.application == "remile", snapshot.preferences.count <= 60 else { throw Failure("Choose a supported remile settings file.") }
+        guard snapshot.format == 1, snapshot.application == "remile", snapshot.preferences.count <= 60 else { throw Failure("Choose a supported remile preset.") }
         for (key, value) in snapshot.preferences {
             if let fallback = defaults[key] {
                 switch (fallback, value) {
                 case (.bool, .bool): break
                 case (.number, .number(let number)) where number.isFinite && number >= 0 && number <= 5000: break
                 case (.string, .string(let text)) where text.count <= 2000: break
-                default: throw Failure("This settings file contains an invalid value.")
+                default: throw Failure("This preset contains an invalid value.")
                 }
             } else if WorkspaceLayout.paneNames.contains(where: { WorkspaceLayout.key($0) == key }), case .number(let width) = value, width.isFinite, (20...5000).contains(width) { }
-            else { throw Failure("This settings file contains unsupported preferences.") }
+            else { throw Failure("This preset contains unsupported preferences.") }
         }
         if case .string(let rule) = snapshot.preferences[ReferenceKeyRule.preference], !ReferenceKeyRule.allCases.contains(where: { $0.rawValue == rule }) { throw Failure("Choose a supported citation key format.") }
         if case .string(let appearance) = snapshot.preferences["reader.appearance"], !["System", "Light", "Dark"].contains(appearance) { throw Failure("Choose a supported theme.") }
@@ -52,6 +52,10 @@ enum PortableSettings {
         if case .number(let size) = snapshot.preferences["latex.fontSize"], !(11...40).contains(size) { throw Failure("Choose a readable LaTeX font size.") }
         if case .string(let columns) = snapshot.preferences[ReferenceColumn.preference], !Set(columns.split(separator: ",").map(String.init)).isSubset(of: Set(ReferenceColumn.allCases.map(\.rawValue))) { throw Failure("Choose supported reference columns.") }
     }
-    static func apply(_ snapshot: Snapshot, to store: UserDefaults = .standard) throws { try validate(snapshot); for (key, value) in snapshot.preferences { store.set(value.object, forKey: key) } }
+    static func apply(_ snapshot: Snapshot, to store: UserDefaults = .standard) throws {
+        try validate(snapshot)
+        for (key, value) in snapshot.preferences { store.set(value.object, forKey: key) }
+        if snapshot.preferences[ReferenceColumn.preference] != nil { store.set(true, forKey: "reference.columns.typeDefault") }
+    }
     struct Failure: LocalizedError { let errorDescription: String?; init(_ text: String) { errorDescription = text } }
 }

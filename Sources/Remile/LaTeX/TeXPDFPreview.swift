@@ -54,18 +54,21 @@ import PDFKit
         guard view.visibleRect.contains(point), let hit = view.hitTest(view.convert(point, to: view.superview)), !(hit is NSScroller),
               let page = view.page(for: point, nearest: false), let document = view.document, page.document === document,
               let location = location(at: point) else { return false }
-        let selected = view.currentSelection
-        if selected?.pages.contains(where: { $0 === page }) == true,
-           let bounds = selected?.bounds(for: page), bounds.contains(view.convert(point, to: page)) {
-            let box = page.bounds(for: .mediaBox)
-            reverse(.init(page: document.index(for: page) + 1, x: bounds.midX - box.minX, y: box.maxY - bounds.midY))
-        } else { reverse(location) }
+        guard let root = window.contentView,
+              let top = root.hitTest(root.convert(event.locationInWindow, from: nil)), top === view || top.isDescendant(of: view) else { return false }
+        reverse(location)
         return true
     }
     private func location(at point: NSPoint) -> TeXSync.PDFLocation? {
         guard let view, let page = view.page(for: point, nearest: true), let document = view.document else { return nil }
         let local = view.convert(point, to: page), box = page.bounds(for: .mediaBox)
-        return .init(page: document.index(for: page) + 1, x: max(0, local.x - box.minX), y: max(0, box.maxY - local.y))
+        var result = TeXSync.PDFLocation(page: document.index(for: page) + 1, x: max(0, local.x - box.minX), y: max(0, box.maxY - local.y))
+        let offset = page.characterIndex(at: local)
+        if offset >= 0, let text = page.string as NSString?, text.length <= 100_000, offset < text.length {
+            let start = max(0, offset - 180), count = min(360, text.length - start)
+            result.hint = .init(text: text.substring(with: NSRange(location: start, length: count)), offset: offset - start)
+        }
+        return result
     }
     func currentLocation() -> TeXSync.PDFLocation? {
         guard let view else { return nil }

@@ -1,6 +1,14 @@
-/agent/*
-!/agent/WRITING.md
+/agent/
+/AGENTS.md
+/AI.md
+/CLAUDE.md
+/.agents/
+/.codex/
 /.build/
 /.swiftpm/
 .DS_Store
 /others/videos/
+
+/site/
+/.cache/
+**/__pycache__/

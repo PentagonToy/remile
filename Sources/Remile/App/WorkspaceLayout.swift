@@ -7,6 +7,6 @@ enum WorkspaceLayout {
     static func files(_ width: CGFloat) -> CGFloat { min(260, max(180, width * 0.18)) }
     static func results(_ width: CGFloat) -> CGFloat { min(460, max(300, width * 0.32)) }
     static func referenceSide(_ width: CGFloat) -> CGFloat { min(320, max(200, (width - 28) * 0.20)) }
-    static let paneNames = ["home sidebar", "reference libraries", "reference preview", "outline", "Markdown editor", "project files", "LaTeX source", "Overleaf tags", "search results", "document sidebar", "Ask panel", "Markdown Ask"]
+    static let paneNames = ["home sidebar", "reference libraries", "reference preview", "outline", "Markdown editor", "project files", "LaTeX source", "Overleaf tags", "search results", "document sidebar", "Ask panel", "Markdown Ask", "writer tools"]
     static func key(_ label: String) -> String { "layout.pane." + label }
 }

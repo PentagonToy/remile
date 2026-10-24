@@ -273,6 +273,13 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         guard let view = textView, let change = EditorSourceEditing.toggleComment(view.string, selection: view.selectedRange()) else { return }
         apply(change, name: "Toggle Comment")
     }
+    @discardableResult func reveal(range: NSRange) -> Bool {
+        guard let view = textView, let layout = view.layoutManager, range.location >= 0, range.length > 0, NSMaxRange(range) <= (view.string as NSString).length else { return false }
+        clearFlash(); flashRange = range
+        view.setSelectedRange(range); view.scrollRangeToVisible(range); view.window?.makeFirstResponder(view)
+        layout.addTemporaryAttribute(.backgroundColor, value: RemileStyle.amber.withAlphaComponent(0.3), forCharacterRange: range)
+        return true
+    }
     func flash(line: Int) {
         guard let view = textView, let layout = view.layoutManager else { return }
         flashTask?.cancel()

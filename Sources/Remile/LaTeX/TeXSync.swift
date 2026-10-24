@@ -9,8 +9,9 @@ struct TeXBuild: Sendable {
 }
 
 enum TeXSync {
-    struct PDFLocation: Equatable, Sendable { let page: Int; let x: Double; let y: Double }
-    struct SourceLocation: Equatable, Sendable { let file: String; let line: Int }
+    struct TextHint: Equatable, Sendable { let text: String; let offset: Int }
+    struct PDFLocation: Equatable, Sendable { let page: Int; let x: Double; let y: Double; var hint: TextHint? = nil }
+    struct SourceLocation: Equatable, Sendable { let file: String; let line: Int; var range: NSRange? = nil }
     struct Failure: LocalizedError { let errorDescription: String? }
     static func forward(_ build: TeXBuild, file: String, line: Int) throws -> PDFLocation {
         let output = try run(build, arguments: ["view", "-i", "\(line + 1):0:\(build.source.appendingPathComponent(file).path)", "-o", build.pdf.path])
@@ -28,6 +29,48 @@ enum TeXSync {
         let file = String(url.path.dropFirst(prefix.count))
         guard build.buffers[file] != nil else { throw Failure(errorDescription: "This file is not editable in the project.") }
         return SourceLocation(file: file, line: line - 1)
+    }
+    /// Refine only a small SyncTeX neighbourhood. Ambiguous or weak matches keep the line result.
+    static func refine(_ location: SourceLocation, source: String, hint: TextHint?) -> SourceLocation {
+        guard location.line >= 0, let hint, hint.text.utf16.count <= 500 else { return location }
+        let text = source as NSString
+        var index = 0
+        for _ in 0..<min(location.line, 100_000) {
+            guard index < text.length else { return location }
+            index = NSMaxRange(text.lineRange(for: NSRange(location: index, length: 0)))
+        }
+        let start = max(0, index - 4000), count = min(16000, text.length - start)
+        guard count > 0 else { return location }
+        let window = text.substring(with: NSRange(location: start, length: count)) as NSString
+        let cleaned = NSMutableString(string: window)
+        let commands = try! NSRegularExpression(pattern: #"\\[A-Za-z@]+\*?|(?<!\\)%[^\n]*"#)
+        for match in commands.matches(in: window as String, range: NSRange(location: 0, length: window.length)).reversed() {
+            cleaned.replaceCharacters(in: match.range, with: String(repeating: " ", count: match.range.length))
+        }
+        let words = try! NSRegularExpression(pattern: #"[\p{L}\p{N}]+"#)
+        func tokens(_ string: NSString) -> [(word: String, range: NSRange)] {
+            words.matches(in: string as String, range: NSRange(location: 0, length: string.length)).map {
+                (string.substring(with: $0.range).decomposedStringWithCompatibilityMapping.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX")), $0.range)
+            }
+        }
+        let pdf = tokens(hint.text as NSString), code = tokens(cleaned)
+        guard let anchor = pdf.firstIndex(where: { NSLocationInRange(hint.offset, $0.range) }), pdf[anchor].word.count >= 2 else { return location }
+        var matches: [(index: Int, score: Int)] = []
+        for candidate in code.indices where code[candidate].word == pdf[anchor].word {
+            var score = 1
+            for direction in [-1, 1] {
+                for step in 1...8 {
+                    let a = anchor + direction * step, b = candidate + direction * step
+                    guard pdf.indices.contains(a), code.indices.contains(b), pdf[a].word == code[b].word else { break }
+                    score += 1
+                }
+            }
+            if score >= 4 { matches.append((candidate, score)) }
+        }
+        matches.sort { $0.score > $1.score }
+        guard let best = matches.first, matches.count == 1 || best.score >= matches[1].score + 2 else { return location }
+        let range = NSRange(location: start + code[best.index].range.location, length: code[best.index].range.length)
+        return SourceLocation(file: location.file, line: (text.substring(to: range.location)).filter { $0 == "\n" }.count, range: range)
     }
     /// The first result block is the closest candidate. No editor commands are executed.
     static func fields(_ output: String) -> [String: String] {

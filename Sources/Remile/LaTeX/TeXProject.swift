@@ -233,7 +233,7 @@ import UniformTypeIdentifiers
             defer { if managed && !retained { TeXCache.discard(destination) } }
             do {
                 let result = try await Task.detached { try job.run(root: root, main: main, buffers: buffers, configuration: configuration, output: destination, scratch: scratch, submissionCheck: submissionCheck) }.value
-                guard let self, self.compileID == id else { return }; self.outputCurrent = false; self.log = result.log; self.diagnostics = TeXDiagnostics.parse(result.log)
+                guard let self, self.compileID == id else { return }; self.outputCurrent = false; self.log = result.log; self.diagnostics = TeXDiagnostics.assessed(TeXDiagnostics.parse(result.log), main: main, source: buffers[main] ?? "")
                 if let data = result.pdf, let document = PDFDocument(data: data) {
                     self.outputCurrent = self.buffers == buffers && self.main == main
                     self.pdf = document; self.message = self.outputCurrent ? nil : "Edited · recompile"
@@ -252,7 +252,7 @@ import UniformTypeIdentifiers
                     self.message = error is CancellationError ? "Compilation stopped" : error.localizedDescription
                     let captured = (try? String(contentsOf: destination.appendingPathComponent("compiler.log"), encoding: .utf8)) ?? ""
                     self.log = String((captured + "\n" + (self.message ?? "Compilation failed")).suffix(150000))
-                    self.diagnostics = TeXDiagnostics.parse(self.log)
+                    self.diagnostics = TeXDiagnostics.assessed(TeXDiagnostics.parse(self.log), main: main, source: buffers[main] ?? "")
                     if !(error is CancellationError) { self.showsLog = true; self.setupIssue = TeXSetupIssue.detect(self.log); self.setupNeeded = false; self.showsHistory = false; self.compileFailed = true }
                 }
             }
@@ -549,7 +549,7 @@ import UniformTypeIdentifiers
         syncTask = Task { @MainActor [weak self] in
             defer { self?.syncing = false }
             do {
-                let target = try await Task.detached { try TeXSync.reverse(build, location: location) }.value
+                let target = try await Task.detached { let near = try TeXSync.reverse(build, location: location); return TeXSync.refine(near, source: build.buffers[near.file] ?? "", hint: location.hint) }.value
                 guard let self, !Task.isCancelled, !self.compiling, self.build?.pdf == build.pdf else { return }
                 guard self.buffers == build.buffers, self.main == build.main else { self.message = "Recompile to match source and PDF."; return }
                 self.message = nil; self.selected = target.file; self.sourceJump = SourceJump(location: target)

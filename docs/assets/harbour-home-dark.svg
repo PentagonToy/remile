@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 200" width="100%" height="100%">
+  <defs><linearGradient id="harbour-beam" x1="0" x2="1"><stop stop-color="#D6B777" stop-opacity="0"/><stop offset="1" stop-color="#D6B777" stop-opacity="0.22"/></linearGradient></defs>
+  <g>
+    <path d="M 404,56 L 104,14 L 104,96 Z" fill="url(#harbour-beam)"/>
+    <path d="M 60,118 Q 78,114 96,120 T 132,120 T 168,118 T 204,122 T 240,120 T 276,121 T 312,120 T 348,121 T 384,120 T 420,112 T 435,110"
+          fill="none" stroke="#2c3a47" stroke-width="2" stroke-linecap="round"/>
+    <path d="M 118,135 Q 140,132 160,138 T 210,136 T 260,137 T 310,135 T 360,137 T 380,136"
+          fill="none" stroke="#2c3a47" stroke-width="2" stroke-linecap="round"/>
+    <path d="M 226,108 C 235,118 275,128 322,123 C 324,122 325,116 324,101 C 290,111 255,111 226,108 Z"
+          fill="#1c2631"/>
+    <path d="M 226,108 C 255,111 290,111 324,101 C 322,106 310,110 290,111 C 265,111 240,110 226,108 Z"
+          fill="#f4f0ea"/>
+    <path d="M 226,108 C 235,120 275,128 322,123"
+          fill="none" stroke="#f4f0ea" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M 322,103 Q 342,118 367,100"
+          fill="none" stroke="#e5a93c" stroke-width="2" stroke-linecap="round"/>
+    <path d="M 367,93 C 367,90 375,90 375,93 L 375,124 C 375,126 367,126 367,124 Z"
+          fill="#2c3a47" stroke="#f4f0ea" stroke-width="1"/>
+    <line x1="366" y1="100" x2="376" y2="100" stroke="#e5a93c" stroke-width="2.2" stroke-linecap="round"/>
+    <line x1="366" y1="104" x2="376" y2="104" stroke="#e5a93c" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M 375,112 L 435,110" fill="none" stroke="#2c3a47" stroke-width="2" stroke-linecap="round"/>
+
+    <g fill="#A6B3BB">
+      <path d="M 398,64 H 412 L 419,111 H 391 Z"/>
+      <path d="M 394,49 H 416 L 405,36 Z"/>
+      <rect x="398" y="50" width="14" height="14" rx="1" fill="#D6B777"/>
+      <path d="M 394,64 H 416" fill="none" stroke="#A6B3BB" stroke-width="2" stroke-linecap="round"/>
+    </g>
+
+  </g>
+</svg>

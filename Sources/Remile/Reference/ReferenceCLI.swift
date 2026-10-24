@@ -7,6 +7,8 @@ enum ReferenceCLI {
         func option(_ key: String) -> String? { options.firstIndex(of: key).map { options[$0 + 1] } }
         // Evidence services validate identity themselves. Avoid loading the catalogue twice.
         switch options.first {
+        case "storage":
+            return ["ok": true, "schema": 1, "referenceDirectory": repository.root.path, "settingsFile": UserDefaults.standard.string(forKey: StoragePaths.settingsPreference) ?? ""]
         case "passages":
             guard let id = option("--id").flatMap(UUID.init(uuidString:)) else { throw ReferenceFailure("Choose an active reference.") }
             let saved = try ReferencePassages.snapshot(recordID: id, repository: repository), record = saved.record
@@ -34,6 +36,11 @@ enum ReferenceCLI {
         func file() throws -> URL {
             guard let path = option("--source-file"), path.hasPrefix("/") else { throw ReferenceFailure("Provide an absolute --source-file path.") }
             return URL(fileURLWithPath: path)
+        }
+        if options.first == "collect" {
+            guard let library else { throw ReferenceFailure("Choose a destination library ID.") }
+            let record = try ReferenceCollect.save(file(), library: library, repository: repository)
+            return ["ok": true, "schema": 1, "id": record.id.uuidString, "key": record.citationKey, "revision": record.revision.uuidString, "library": library.uuidString]
         }
         if options.first == "import" {
             guard let library else { throw ReferenceFailure("Choose a destination library ID.") }
@@ -69,7 +76,8 @@ enum ReferenceCLI {
         case "libraries": return ["ok": true, "schema": 1, "libraries": libraries.map { library in ["id": library.id.uuidString, "name": library.name, "parentID": library.parentID?.uuidString ?? "", "kind": library.parentID == nil ? "library" : "collection", "count": records.filter { ($0.library == library.id || $0.collectionID == library.id) && !inTrash($0) }.count] as [String: Any] }]
         case "list":
             let trash = options.contains("--trash"), text = option("--query") ?? ""
-            let rows = records.filter { inTrash($0) == trash && (library == nil || $0.library == library || $0.collectionID == library) && (text.isEmpty || $0.searchText.localizedCaseInsensitiveContains(text)) }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+            let sorting = ReferenceSort(column: ReferenceColumn(rawValue: option("--sort") ?? "title") ?? .title, ascending: option("--order") != "desc")
+            let rows = sorting.sorted(records.filter { inTrash($0) == trash && (library == nil || $0.library == library || $0.collectionID == library) && (text.isEmpty || $0.searchText.localizedCaseInsensitiveContains(text)) })
             let offset = Int(option("--offset") ?? "0") ?? 0, limit = Int(option("--limit") ?? "50") ?? 50
             return ["ok": true, "schema": 1, "total": rows.count, "offset": offset, "references": rows.dropFirst(offset).prefix(limit).map { record in
                 ["collectionID": record.collectionID?.uuidString ?? "", "libraryID": record.library.uuidString, "id": record.id.uuidString, "revision": record.revision.uuidString, "title": String(record.title.prefix(1000)), "authors": String(record.authors.prefix(500)), "year": String(record.year.prefix(32)), "publication": String(ReferenceColumn.publication.value(record).prefix(500)), "type": record.type, "summaryTruncated": record.title.count > 1000 || record.authors.count > 500 || record.year.count > 32 || ReferenceColumn.publication.value(record).count > 500, "key": record.citationKey, "attachments": record.attachments.count] as [String: Any]

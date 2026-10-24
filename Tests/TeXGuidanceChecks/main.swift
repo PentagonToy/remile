@@ -60,4 +60,36 @@ check(!absent.ready && absent.missingTools.contains("latexmk") && absent.missing
 let project = TeXEnvironment.check(configuration: .current, buffers: ["main.tex":"\\documentclass{local-journal}\n\\usepackage{remile-absent-spec}"], root: root)
 check(project.projectChecked && project.checkedFiles == 2)
 check(project.missingFiles == ["remile-absent-spec.sty"] && project.unverifiedFiles.isEmpty && project.issue != nil)
+
+let cascadeLog = "./chapter.tex:7: Undefined control sequence.\n\n./main.tex:4: LaTeX Error: Missing \\begin{document}.\n\nOverfull \\hbox (2pt too wide)\n\nLaTeX Warning: There were undefined references.\n\nLatexmk: Errors, so I did not complete making targets\n"
+let cascade = TeXDiagnostics.parse(cascadeLog)
+let brokenMain = "% fixture\n\ndocumentclass[review]{article}\n\\begin{document}\ntext\n\\end{document}"
+let assessed = TeXDiagnostics.assessed(cascade, main: "main.tex", source: brokenMain)
+check(assessed.first?.id == -1 && assessed.first?.line == 3 && assessed.first?.file == "main.tex")
+check(TeXDiagnostics.primaryError(assessed)?.message.contains("Missing \\") == true)
+check(assessed.count == cascade.count + 1 && Set(assessed.map(\.id)).count == assessed.count)
+let ranked = TeXDiagnostics.prioritised(cascade)
+check(ranked.first?.message.contains("begin{document}") == true)
+check(ranked.last?.isBuildSummary == true)
+let warnings = ranked.filter { $0.severity == .warning }
+check(warnings.first?.message.contains("undefined references") == true)
+let downstream = cascade.first { $0.message.contains("Undefined control sequence") }!
+let focus = TeXDiagnostics.repairFocus(downstream, entries: assessed)
+check(focus.id == -1)
+check(TeXDiagnostics.repairFocus(downstream, entries: [downstream]).id == downstream.id)
+let evidence = TeXDiagnostics.repairEvidence(selected: downstream, focus: focus, entries: assessed, file: "main.tex", excerpt: brokenMain, main: "main.tex", preamble: brokenMain)
+check(evidence["mainPreamble"] as? String == brokenMain)
+check((evidence["diagnostic"] as? [String: Any])?["file"] as? String == "main.tex")
+check((evidence["selectedDiagnostic"] as? [String: Any])?["file"] as? String == "./chapter.tex")
+check((evidence["earliestErrors"] as? [[String: Any]])?.count == 4)
+for safe in ["% documentclass{article}", "\\input{preamble}\n\\begin{document}\ntext", "\\documentclass{article}\n\\begin{document}\ndocumentclass{example}", "\\documentclass{article}\ndocumentclass{example}"] {
+ check(!TeXDiagnostics.assessed(cascade, main: "main.tex", source: safe).contains { $0.id == -1 })
+}
+check(!TeXDiagnostics.assessed([], main: "main.tex", source: brokenMain).contains { $0.id == -1 })
+let stableErrors = (0..<4).map { TeXDiagnostic(id: $0, severity: .error, message: "Undefined command \\fixture", file: "chapter.tex", line: $0 + 1) }
+check(TeXDiagnostics.prioritised(stableErrors).map(\.id) == [0, 1, 2, 3])
+let boundedEvidence = TeXDiagnostics.repairEvidence(selected: downstream, focus: focus, entries: assessed, file: "main.tex", excerpt: brokenMain, main: "main.tex", preamble: String(repeating: "x", count: 100_000))
+check((boundedEvidence["mainPreamble"] as? String)?.count == 6000)
+check(boundedEvidence["rankingIsHeuristic"] as? Bool == true)
+check(!TeXDiagnosticAdvice.instructions.contains("Prefer repairing the existing TeX installation"))
 print("Passed \(checks) TeX guidance and read-only environment checks")

@@ -9,7 +9,8 @@ final class HomeModel: ObservableObject {
     let overleaf: OverleafLibrary
     @Published var texProject: TeXProject?
     let assistant = DocumentAssistant(historyKey: "search")
-    enum Page { case home, search, reference }
+    enum Page { case home, search, reference, writer }
+    @Published var writer: WriterModel?
     let references = ReferenceModel()
     @Published var opening = false
     let pdfSearchEditing = SearchPDFModel()
@@ -265,6 +266,7 @@ final class HomeModel: ObservableObject {
     var resultPosition: Int? { visibleHits.firstIndex { $0.id == selectedHit?.id } }
 
     func open(_ url: URL) {
+        if url.pathExtension.lowercased() == "docx" { openWriter(url); return }
         if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true { openTeX(url); return }
         if url.pathExtension.lowercased() == "tex" { openTeX(url.deletingLastPathComponent()); return }
         guard closeTeX(), !opening else { return }
@@ -322,6 +324,7 @@ final class HomeModel: ObservableObject {
     }
 
     @discardableResult func closeTeX() -> Bool {
+        guard closeWriter() else { return false }
         guard pdfSearchEditing.confirmLeaving() else { return false }
         guard texProject?.confirmLeaving() != false else { return false }
         texProject?.releaseWorkspaceResources(); texProject = nil; return true
@@ -343,11 +346,36 @@ final class HomeModel: ObservableObject {
             recordRecent(project.root); project.compile() }
         catch { self.error = "Unable to open LaTeX project: " + error.localizedDescription }
     }
+    @discardableResult func closeWriter() -> Bool {
+        guard page == .writer, let writer else { return true }
+        guard writer.confirmLeaving() else { return false }
+        self.writer = nil; page = .home; return true
+    }
+    private func makeWriter() -> WriterModel {
+        let model = WriterModel()
+        model.didVisit = { [weak self] in self?.recordRecent($0) }
+        return model
+    }
+    func openWriter(_ url: URL) {
+        guard !opening, closeTeX(), reader.close() else { return }
+        let model = makeWriter(); opening = true; error = nil
+        Task {
+            defer { opening = false }
+            if await model.openFile(url) { writer = model; overleaf.browsing = false; page = .writer }
+            else { error = model.error }
+        }
+    }
+    func newWriter() {
+        guard closeTeX(), reader.close(), !opening else { return }
+        overleaf.browsing = false
+        if writer == nil { writer = makeWriter() }
+        page = .writer
+    }
     func newMarkdown() { guard closeTeX(), !opening else { return }; if reader.newMarkdown() { page = .home } }
 
     func chooseDocument() -> URL? {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = ReadingDocument.readableContentTypes
+        panel.allowedContentTypes = ReadingDocument.readableContentTypes + [UTType(filenameExtension: "docx")!]
         panel.prompt = "Open"; panel.canChooseDirectories = false
         return panel.runModal() == .OK ? panel.url : nil
     }

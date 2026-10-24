@@ -134,6 +134,7 @@ struct OverleafLibraryWorkspace: View {
                                     }
                                     .contextMenu {
                                         Button("Open") { openProject(project) }
+                                        OverleafProjectIDButton(project: project)
                                         Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([library.root(project)]) }
                                         Divider()
                                         Button("Move earlier") { sort = "Manual"; _ = library.moveProject(project.id, before: visible[index - 1].id) }.disabled(index == 0)

@@ -7,7 +7,7 @@ enum ReferenceCleanup {
         let before: ReferenceRecord
         let after: ReferenceRecord
         var id: UUID { before.id }
-        var fields: [String] { Set(before.fields.keys).union(after.fields.keys).filter { before.fields[$0] != after.fields[$0] }.sorted() }
+        var fields: [String] { (Set(before.fields.keys).union(after.fields.keys).filter { before.fields[$0] != after.fields[$0] } + (before.type != after.type ? ["@type"] : [])).sorted() }
     }
     static func proposals(_ records: [ReferenceRecord], repository: ReferenceRepository) throws -> [Change] {
         var result: [Change] = [], cached: [UUID: [String: String]] = [:]
@@ -18,7 +18,7 @@ enum ReferenceCleanup {
                 if let value = next.fields[field] { next.fields[field] = value.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
             }
             if let doi = next.fields["doi"], !doi.isEmpty { next.fields["doi"] = ReferenceDuplicates.normaliseDOI(doi) }
-            for attachment in record.attachments where next.fields["doi"]?.isEmpty != false || next.authors.isEmpty || next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension {
+            for attachment in record.attachments where next.fields["doi"]?.isEmpty != false || next.authors.isEmpty || ReferencePDFMetadata.placeholderTitle(next.title) || next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension {
                 let fields: [String: String]
                 if let saved = cached[attachment.id] { fields = saved }
                 else {
@@ -27,9 +27,10 @@ enum ReferenceCleanup {
                     fields = ReferencePDFMetadata.fields(pdf, fallback: (attachment.name as NSString).deletingPathExtension)
                     cached[attachment.id] = fields
                 }
-                for (field, value) in fields where next.fields[field]?.isEmpty != false || (field == "title" && (next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension)) { next.fields[field] = value }
+                for (field, value) in fields where next.fields[field]?.isEmpty != false || (field == "title" && (ReferencePDFMetadata.placeholderTitle(next.title) || next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension)) { next.fields[field] = value }
             }
-            if next.fields != record.fields { result.append(Change(before: record, after: next)) }
+            if next.fields["archiveprefix"]?.lowercased() == "arxiv", next.fields["journal"]?.isEmpty != false, next.type == "article" { next.type = "misc" }
+            if next.fields != record.fields || next.type != record.type { result.append(Change(before: record, after: next)) }
         }
         return result
     }

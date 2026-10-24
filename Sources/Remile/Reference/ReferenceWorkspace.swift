@@ -13,7 +13,10 @@ struct ReferenceWorkspace: View {
         @Published var editor: Entry?
         @Published var repair: ReferenceRecord?
         @Published var cleanup = false
+        @Published var metadata: ReferenceRecord?
         @Published var paperSearch = false
+        @Published var paperTarget: ReferenceRecord?
+        @Published var storageID = UUID()
         @Published var windowTarget = false
         @Published var attachments: ReferenceRecord?
         @Published var evidence: ReferenceRecord?
@@ -21,6 +24,8 @@ struct ReferenceWorkspace: View {
         @Published var hoveredRecord: UUID?
         @Published var harbourTarget = false
         @Published var previewTarget = false
+        @Published var widths = ReferenceColumnWidths.decode(UserDefaults.standard.string(forKey: ReferenceColumnWidths.preference) ?? "{}")
+        var widthStarts: [String: Double] = [:]
         @Published var settings = false
         @Published var regenerate = false
         @Published var addingLibrary = false
@@ -31,28 +36,37 @@ struct ReferenceWorkspace: View {
         @Published var emptyTrash = false
     }
     @FocusState private var namingLibrary: Bool
+    @AppStorage(ReferenceColumnWidths.preference) private var savedWidths = "{}"
     @AppStorage(ReferenceColumn.preference) private var columnSource = ReferenceColumn.defaults
     @AppStorage("reference.libraryExpanded") private var libraryExpanded = true
     @AppStorage("reference.libraryExpanded.defaultOpen") private var libraryDefaultApplied = false
     @AppStorage("reference.harbourExpanded") private var harbourExpanded = true
     private struct Entry: Identifiable { let id = UUID(); var record: ReferenceRecord?; var citation = "" }
     private struct DuplicateGroup: Identifiable { let id = UUID(); let records: [ReferenceRecord] }
+    private var toolbar: some View {
+        HStack(spacing: 14) {
+            Button(action: goHome) { Image(systemName: "chevron.left") }.buttonStyle(.plain).accessibilityLabel("Back to Home").remileHelp("Back to Home")
+            Text("Reference").font(.title2.weight(.semibold))
+            Spacer()
+            Menu {
+                Button("Find a paper…") { model.error = nil; state.paperTarget = nil; state.paperSearch = true }
+                Button("Import files…") { model.chooseFiles() }
+                Button("Add manually…") { model.error = nil; state.editor = Entry() }
+                Button("Paste citation…") { model.error = nil; state.editor = Entry(citation: NSPasteboard.general.string(forType: .string) ?? "") }
+            } label: { Label("Add", systemImage: "plus") }.fixedSize()
+            Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward") }.disabled(!model.canUndo).accessibilityLabel("Undo").remileHelp("Undo the last Reference change")
+            Button { model.undo(redo: true) } label: { Image(systemName: "arrow.uturn.forward") }.disabled(!model.canRedo).accessibilityLabel("Redo").remileHelp("Redo the last Reference change")
+            Button { model.error = nil; state.cleanup = true } label: { Label("Clean up", systemImage: "wand.and.stars") }.disabled(model.libraryRecords.filter { $0.trashed == nil }.isEmpty || model.showingTrash || model.busy)
+            Button { state.repair = model.selection } label: { Label { Text("GPT") } icon: { GPTMark() } }.disabled(model.selection == nil || model.showingTrash)
+            Button { state.regenerate = true } label: { Label("Key", systemImage: "key") }.disabled(model.libraryRecords.allSatisfy { $0.trashed != nil }).remileHelp("Regenerate library citation keys")
+        }.padding(18).disabled(model.busy)
+    }
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 14) {
-                Button(action: goHome) { Image(systemName: "chevron.left") }.buttonStyle(.plain).accessibilityLabel("Back to Home").remileHelp("Back to Home")
-                Text("Reference").font(.title2.weight(.semibold))
-                Spacer()
-                Menu {
-                    Button("Find a paper…") { model.error = nil; state.paperSearch = true }
-                    Button("Import files…") { model.chooseFiles() }
-                    Button("Add manually…") { model.error = nil; state.editor = Entry() }
-                    Button("Paste citation…") { model.error = nil; state.editor = Entry(citation: NSPasteboard.general.string(forType: .string) ?? "") }
-                } label: { Label("Add", systemImage: "plus") }.fixedSize()
-                Button { model.error = nil; state.cleanup = true } label: { Label("Clean up", systemImage: "wand.and.stars") }.disabled(model.libraryRecords.filter { $0.trashed == nil }.isEmpty || model.showingTrash || model.busy)
-                Button { state.repair = model.selection } label: { HStack(spacing: 6) { GPTMark(); Text("GPT") } }.disabled(model.selection == nil || model.showingTrash)
-                Button { state.regenerate = true } label: { Label("Key", systemImage: "key") }.disabled(model.libraryRecords.allSatisfy { $0.trashed != nil }).remileHelp("Regenerate library citation keys")
-            }.padding(18).disabled(model.busy)
+            ViewThatFits(in: .horizontal) {
+                toolbar.labelStyle(.titleAndIcon)
+                toolbar.labelStyle(.iconOnly)
+            }
             Divider()
             GeometryReader { window in
                 let side = WorkspaceLayout.referenceSide(window.size.width)
@@ -74,8 +88,10 @@ struct ReferenceWorkspace: View {
             .overlay(Color.black.opacity(draggingFiles ? 0.10 : 0).allowsHitTesting(false))
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: draggingFiles)
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: $state.windowTarget) { receive($0) }
-            .onAppear { if !libraryDefaultApplied { libraryExpanded = true; libraryDefaultApplied = true } }
-            .task { await model.watch() }
+            .onChange(of: savedWidths) { state.widths = ReferenceColumnWidths.decode(savedWidths) }
+            .onAppear { ReferenceColumn.applyDefaults(); if !libraryDefaultApplied { libraryExpanded = true; libraryDefaultApplied = true } }
+            .task(id: state.storageID) { await model.watch() }
+            .onReceive(NotificationCenter.default.publisher(for: StoragePaths.changed)) { _ in state.storageID = UUID(); model.load() }
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: libraryExpanded)
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: harbourExpanded)
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.addingLibrary)
@@ -95,7 +111,8 @@ struct ReferenceWorkspace: View {
             .onChange(of: state.addingLibrary) { namingLibrary = state.addingLibrary }
             .sheet(item: $state.attachments) { record in ReferenceAttachments(model: model, recordID: record.id) }
             .sheet(item: $state.evidence) { record in ReferenceEvidenceView(record: record) }
-            .sheet(isPresented: $state.paperSearch) { ReferencePaperSearch(model: model) }
+            .sheet(isPresented: $state.paperSearch) { ReferencePaperSearch(model: model, target: state.paperTarget) }
+            .sheet(item: $state.metadata) { record in ReferenceCleanupReview(model: model, target: record) }
             .sheet(isPresented: $state.cleanup) { ReferenceCleanupReview(model: model) }
             .sheet(item: $state.editor) { entry in ReferenceEditor(model: model, record: entry.record, citation: entry.citation) }
             .sheet(item: $state.duplicateReview) { group in ReferenceDuplicateReview(model: model, records: group.records) }
@@ -218,9 +235,13 @@ struct ReferenceWorkspace: View {
         VStack(spacing: 0) {
             TextField("Find a reference", text: $model.query).textFieldStyle(.roundedBorder).padding(14)
             GeometryReader { geometry in
+            let visible = ReferenceColumn.visible(columnSource)
+            let others = visible.filter { $0 != .title }.reduce(0.0) { $0 + width($1) }
+            let overhead = Double(80 + visible.count * 10)
+            let titleWidth = state.widths["title"] ?? max(300, geometry.size.width - others - overhead)
             ScrollView(.horizontal) {
             VStack(spacing: 0) {
-            columns().font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.trailing, ScrollContentSpacing.gutter).padding(.bottom, 8)
+            columns(titleWidth: titleWidth).font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.trailing, ScrollContentSpacing.gutter).padding(.bottom, 8)
             Divider()
             if model.items.isEmpty {
                 VStack(spacing: 12) {
@@ -230,11 +251,11 @@ struct ReferenceWorkspace: View {
                 }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { scroll in
-                    ScrollView { LazyVStack(spacing: 2) { ForEach(model.items) { record in row(record).id(record.id) } }.padding(10).scrollContentGutter() }
+                    ScrollView { LazyVStack(spacing: 2) { ForEach(model.items) { record in row(record, titleWidth: titleWidth).id(record.id) } }.padding(10).scrollContentGutter() }
                         .onAppear { if let id = model.selected { scroll.scrollTo(id) } }
                 }
             }
-            }.frame(width: max(geometry.size.width, 260 + ReferenceColumn.visible(columnSource).filter { $0 != .title }.reduce(0) { $0 + $1.width + 10 }), height: geometry.size.height)
+            }.frame(width: max(geometry.size.width, titleWidth + others + overhead), height: geometry.size.height)
             }
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
@@ -243,11 +264,11 @@ struct ReferenceWorkspace: View {
                 receive(providers)
             }
     }
-    private func row(_ record: ReferenceRecord) -> some View {
+    private func row(_ record: ReferenceRecord, titleWidth: Double) -> some View {
         Button { let flags = NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags; model.select(record.id, extending: flags.contains(.command), range: flags.contains(.shift)) } label: {
             HStack(spacing: 10) {
                 ReferenceKindIcon(kind: .classify(record), hasAttachment: !record.attachments.isEmpty).frame(width: 22)
-                columnCells(record)
+                columnCells(record, titleWidth: titleWidth)
             }.font(RemileType.callout).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 9)
                 .background(model.selectedIDs.contains(record.id) ? RemileStyle.accent.opacity(0.18) : model.duplicates[record.id] != nil ? RemileStyle.accent.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 5))
                 .contentShape(Rectangle())
@@ -263,6 +284,8 @@ struct ReferenceWorkspace: View {
             Divider()
             if record.trashed != nil { Button("Restore", systemImage: "arrow.uturn.backward") { if let library = model.libraries.first(where: { ($0.id == record.library || $0.id == record.collectionID) && $0.trashed != nil }) { model.restoreLibrary(library.id) } else { model.trash(record, restore: true) } } }
             else {
+                Button("Read metadata…", systemImage: "doc.text.viewfinder") { state.metadata = record }
+                Button("Find a paper…", systemImage: "doc.text.magnifyingglass") { model.error = nil; state.paperTarget = record; state.paperSearch = true }
                 Button("View source", systemImage: "doc.text.magnifyingglass") { state.evidence = record }.disabled(model.showingTrash)
                 Button("Edit…", systemImage: "pencil") { model.error = nil; state.editor = Entry(record: record) }
                 Button("Duplicate", systemImage: "plus.square.on.square") { model.duplicate(record) }
@@ -291,15 +314,49 @@ struct ReferenceWorkspace: View {
         }.disabled(model.busy)
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: rowTarget(record.id)) { receive($0, target: record, pdfOnly: true) }
     }
-    private func columns() -> some View {
-        HStack(spacing: 10) { Color.clear.frame(width: 22, height: 1); columnCells(nil) }
+    private func columns(titleWidth: Double) -> some View {
+        HStack(spacing: 10) { Color.clear.frame(width: 22, height: 1); columnCells(nil, titleWidth: titleWidth) }
     }
-    @ViewBuilder private func columnCells(_ record: ReferenceRecord?) -> some View {
+    @ViewBuilder private func columnCells(_ record: ReferenceRecord?, titleWidth: Double) -> some View {
         let columns = ReferenceColumn.visible(columnSource)
         ForEach(columns) { column in
-            if column == .title { Text(record.map { column.value($0) } ?? column.label).frame(maxWidth: .infinity, alignment: .leading) }
-            else { Text(record.map { column.value($0) } ?? column.label).foregroundStyle(.secondary).frame(width: CGFloat(column.width), alignment: .leading) }
+            Group {
+                if let record { Text(column.value(record)).foregroundStyle(column == .title ? RemileStyle.ink : .secondary) }
+                else {
+                    Button { model.sort(by: column) } label: {
+                        HStack(spacing: 4) {
+                            Text(column.label)
+                            if model.sorting.column == column { Image(systemName: model.sorting.ascending ? "chevron.up" : "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(RemileStyle.accent) }
+                            Spacer(minLength: 0)
+                        }.contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                        .accessibilityLabel(column.label)
+                        .accessibilityValue(model.sorting.column == column ? (model.sorting.ascending ? "Ascending" : "Descending") : "Not sorted")
+                        .remileHelp("Sort by " + column.label)
+                }
+            }.frame(width: column == .title ? titleWidth : width(column), alignment: .leading)
+                .overlay(alignment: .trailing) {
+                    if record == nil { resize(column, current: column == .title ? titleWidth : width(column)) }
+                }
         }
+    }
+
+    private func width(_ column: ReferenceColumn) -> Double { state.widths[column.rawValue] ?? column.width }
+    private func resize(_ column: ReferenceColumn, current: Double) -> some View {
+        Color.clear.frame(width: 8, height: 22).contentShape(Rectangle())
+            .overlay(Rectangle().fill(RemileStyle.ink.opacity(0.15)).frame(width: 1, height: 12))
+            .background(ResizeCursorRegion())
+            .gesture(DragGesture(minimumDistance: 2).onChanged { event in
+                if state.widthStarts[column.rawValue] == nil { state.widthStarts[column.rawValue] = current }
+                state.widths[column.rawValue] = ReferenceColumnWidths.clamp((state.widthStarts[column.rawValue] ?? current) + event.translation.width, column: column)
+            }.onEnded { _ in
+                state.widthStarts[column.rawValue] = nil; savedWidths = ReferenceColumnWidths.encode(state.widths)
+            })
+            .accessibilityElement().accessibilityLabel("Resize " + column.label).accessibilityValue("\(Int(current)) points")
+            .accessibilityAdjustableAction { direction in
+                state.widths[column.rawValue] = ReferenceColumnWidths.clamp(current + (direction == .increment ? 20 : -20), column: column)
+                savedWidths = ReferenceColumnWidths.encode(state.widths)
+            }.remileHelp("Resize " + column.label)
     }
     private func removeAttachments(_ record: ReferenceRecord) {
         model.error = nil

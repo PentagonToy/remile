@@ -5,16 +5,30 @@ import CoreText
 
 @_cdecl("__isPlatformVersionAtLeast")
 public func citationHostVersion(_ a: Int32, _ b: Int32, _ c: Int32) -> Int32 { ProcessInfo.processInfo.isOperatingSystemAtLeast(.init(majorVersion: Int(a), minorVersion: Int(b), patchVersion: Int(c))) ? 1 : 0 }
+@MainActor final class SearchPreviewFixtureState: ObservableObject {
+    @Published var ask = false
+    let editing = SearchPDFModel()
+    let revision = UUID()
+}
+struct SearchPreviewFixture: View {
+    @ObservedObject var state: SearchPreviewFixtureState
+    let hit: LibraryHit
+    var body: some View {
+        SearchPreviewSplit(askPresented: state.ask, label: "synthetic live search Ask", assistant: { Text("Ask").frame(maxWidth: .infinity, maxHeight: .infinity) }, preview: {
+            SearchPDFPreview(hit: hit, query: "evidence", revision: state.revision, open: { _ in }, editing: state.editing)
+        })
+    }
+}
 NSApplication.shared.setActivationPolicy(.prohibited)
 Task { @MainActor in
     do {
         let root = URL(fileURLWithPath: CommandLine.arguments[1]).appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try Data("\\documentclass{article}\n\\begin{document}\n\\cite{k\n\\end{document}".utf8).write(to: root.appendingPathComponent("main.tex"))
-        let existing = "@article{known, title={Existing evidence}, year={2025}}\n"
+        let existing = "@article{known, title={Existing evidence}, year={2025}, abstract={Spectral {Galerkin} advection and stability}}\n"
         try Data(existing.utf8).write(to: root.appendingPathComponent("existing.bib"))
         let repository = ReferenceRepository(root: root.appendingPathComponent("catalogue"))
-        let record = try repository.add([ReferenceRecord(key: "keyExample", fields: ["title": "A synthetic source", "author": "Key, Example", "year": "2026"])])[0]
+        let record = try repository.add([ReferenceRecord(key: "keyExample", fields: ["title": "A synthetic source", "author": "Key, Example", "year": "2026", "abstract": "Wall stress and turbulence closure learning."])])[0]
         let context = root.path
         ReferenceCitationPreferences.write(.init(library: record.library, bibliography: "existing.bib"), context: context)
         defer { UserDefaults.standard.removeObject(forKey: ReferenceCitationPreferences.key(context)) }
@@ -33,6 +47,11 @@ Task { @MainActor in
         precondition(completion.items.first?.label == "known", "Citation rows show only the key")
         precondition(completion.items.first?.detail?.contains("Existing evidence") == true, "Selected citation retains readable metadata")
         precondition(completion.items.first?.referenceID == nil, "Existing project bibliography is suggested first")
+        for (query, key) in [("galerkin", "known"), ("synthetic source", record.citationKey), ("closure learning", record.citationKey), ("synthetic turbulence", record.citationKey)] {
+            let source = "\\cite{" + query
+            let result = await session.completion(source: source, selection: NSRange(location: source.utf16.count, length: 0), buffers: project.buffers)
+            precondition(result?.items.contains { $0.label == key && $0.insertion == key + "}" } == true, "Project/library title and abstract queries insert only a citation key")
+        }
         for _ in 0..<12 { _ = await session.completion(source: view.string, selection: view.selectedRange(), buffers: project.buffers) }
         precondition(session.libraryLoads == 1 && session.bibliographyPreparations == 1, "Typing reuses prepared catalogue and bibliography")
         let panel = EditorCompletionPanel()
@@ -76,10 +95,12 @@ Task { @MainActor in
         window.contentView = hosting; hosting?.layoutSubtreeIfNeeded()
         try await Task.sleep(for: .milliseconds(150))
         precondition(reader.view?.document != nil, "Source preview loads its PDF")
-        let sourcePage = reader.view!.document!.page(at: 0)!
-        let quoteRange = (sourcePage.string! as NSString).range(of: "Synthetic source evidence.")
+        var sourcePage = reader.view!.document!.page(at: 0)
+        let quoteRange = (sourcePage!.string! as NSString).range(of: "Synthetic source evidence.")
         precondition(quoteRange.location != NSNotFound, "Synthetic PDF has selectable text")
-        reader.view?.setCurrentSelection(sourcePage.selection(for: quoteRange), animate: false)
+        reader.view?.setCurrentSelection(sourcePage!.selection(for: quoteRange), animate: false)
+        // The fixture must release its page before checking the document's lifetime.
+        sourcePage = nil
         let selection = try reader.selection()
         precondition(selection.page == 1 && selection.range == quoteRange, "PDF selection supplies its exact page and range")
         let passage = try ReferencePassages.save(recordID: evidenceRecord.id, attachmentID: attachment.id, expectedSHA256: attachment.sha256, page: selection.page, range: selection.range, repository: repository)
@@ -94,6 +115,22 @@ Task { @MainActor in
         window.contentView = NSView(); hosting = nil
         for _ in 0..<20 where releasedPDF != nil { try await Task.sleep(for: .milliseconds(25)) }
         precondition(releasedPDF == nil, "Closing the source preview releases its PDF document")
+        let searchState = SearchPreviewFixtureState()
+        let searchHit = LibraryHit(path: pdfURL.path, folderID: UUID().uuidString, page: 1, excerpt: "Synthetic source evidence.", score: 1)
+        var searchHost: NSHostingView<SearchPreviewFixture>? = NSHostingView(rootView: SearchPreviewFixture(state: searchState, hit: searchHit))
+        window.setContentSize(CGSize(width: 1000, height: 700)); window.contentView = searchHost
+        searchHost?.layoutSubtreeIfNeeded()
+        for _ in 0..<100 where searchState.editing.document == nil { try await Task.sleep(for: .milliseconds(25)) }
+        weak var searchDocument = searchState.editing.document
+        precondition(searchDocument?.page(at: 0)?.string?.contains("Synthetic source evidence.") == true, "Actual Search preview loads searchable PDF content")
+        for ask in [true, false, true, false] {
+            searchState.ask = ask
+            try await Task.sleep(for: .milliseconds(200))
+            precondition(searchDocument != nil && searchState.editing.document === searchDocument && !searchState.editing.loading, "Ask preserves the actual Search PDF model and loaded document")
+        }
+        window.contentView = NSView(); searchHost = nil
+        for _ in 0..<20 where searchState.editing.document != nil { try await Task.sleep(for: .milliseconds(25)) }
+        precondition(searchState.editing.document == nil, "Leaving Search still releases its PDF")
         window.close()
         project.buffers["main.tex"] = "\\documentclass{article}\n\\begin{document}Synthetic closing check.\\end{document}\n"
         precondition(project.save(), "Synthetic project saves before closing")

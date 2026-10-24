@@ -53,10 +53,10 @@ cat > "$application/Contents/Info.plist" <<PLIST
 <key>UTTypeConformsTo</key><array><string>public.data</string></array>
 </dict></array>
 <key>CFBundleDocumentTypes</key><array><dict>
-<key>CFBundleTypeName</key><string>PDF and Markdown documents</string>
+<key>CFBundleTypeName</key><string>PDF, Markdown and Word documents</string>
 <key>CFBundleTypeRole</key><string>Editor</string>
 <key>LSHandlerRank</key><string>Alternate</string>
-<key>LSItemContentTypes</key><array><string>com.adobe.pdf</string><string>net.daringfireball.markdown</string><string>public.plain-text</string></array>
+<key>LSItemContentTypes</key><array><string>com.adobe.pdf</string><string>net.daringfireball.markdown</string><string>public.plain-text</string><string>org.openxmlformats.wordprocessingml.document</string></array>
 </dict></array>
 </dict></plist>
 PLIST

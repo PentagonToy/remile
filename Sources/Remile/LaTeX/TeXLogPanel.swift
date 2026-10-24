@@ -6,9 +6,10 @@ struct TeXLogPanel: View {
     private enum Tab: String, CaseIterable { case all = "All logs", errors = "Errors", warnings = "Warnings", terminal = "Terminal" }
     private final class LogState: ObservableObject { @Published var tab = Tab.all }
     private var entries: [TeXDiagnostic] {
-        switch state.tab { case .errors: return project.diagnostics.filter { $0.severity == .error }; case .warnings: return project.diagnostics.filter { $0.severity == .warning }; default: return project.diagnostics }
+        switch state.tab { case .errors: return TeXDiagnostics.prioritised(project.diagnostics).filter { $0.severity == .error }; case .warnings: return TeXDiagnostics.prioritised(project.diagnostics).filter { $0.severity == .warning }; default: return TeXDiagnostics.prioritised(project.diagnostics) }
     }
     var body: some View {
+        let firstErrorID = TeXDiagnostics.primaryError(project.diagnostics)?.id
         VStack(spacing: 0) {
             if project.setupIssue != nil || !TeXConfiguration.current.missingTools(buffers: project.buffers).isEmpty {
                 HStack { Spacer(); Button("TeX setup") { project.setupNeeded = true }.remileHelp("View missing tools and packages") }.padding(.horizontal, 10).padding(.top, 8)
@@ -26,7 +27,7 @@ struct TeXLogPanel: View {
                     LazyVStack(alignment: .leading, spacing: 8) {
                         if entries.isEmpty { Text(project.compiling ? "Compiling…" : project.log.isEmpty ? "No compilation yet" : "No \(state.tab == .errors ? "errors" : state.tab == .warnings ? "warnings" : "diagnostics")").foregroundStyle(.secondary).padding(16) }
                         ForEach(entries) { entry in
-                            TeXDiagnosticRow(project: project, entry: entry)
+                            TeXDiagnosticRow(project: project, entry: entry, checkFirst: entry.id == firstErrorID)
 
 
                         }
@@ -47,6 +48,7 @@ struct TeXLogPanel: View {
 private struct TeXDiagnosticRow: View {
     @ObservedObject var project: TeXProject
     let entry: TeXDiagnostic
+    var checkFirst = false
     @ObservedObject private var usage = AIUsage.shared
     @ObservedObject private var connection = ChatGPTConnection.shared
     @AppStorage("assistant.provider") private var provider = "Apple Intelligence"
@@ -55,6 +57,7 @@ private struct TeXDiagnosticRow: View {
     private var location: TeXSync.SourceLocation? { project.diagnosticLocation(entry) }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if checkFirst { Text("Check first").font(RemileType.caption.weight(.semibold)).foregroundStyle(RemileStyle.accent) }
             Button { project.reveal(entry) } label: {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: entry.severity == .error ? "xmark.octagon" : "exclamationmark.triangle").foregroundStyle(RemileStyle.warning)

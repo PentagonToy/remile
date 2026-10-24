@@ -18,6 +18,18 @@ enum EditorBridge {
         var submissionCheck: Bool?
         var start: Int?
         var length: Int?
+        var zoom: Double?
+        var rulers: Bool?
+        var fit: Bool?
+        var header: String?
+        var footer: String?
+        var topLine: Bool?
+        var bottomLine: Bool?
+        var pageNumbers: Bool?
+        var columns: Int?
+        var object: UUID?
+        var wrap: Bool?
+        var locked: Bool?
     }
     static var directory: URL { FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app/Automation") }
     static func digest(_ source: String) -> String { SourceDigest.sha256(source) }
@@ -55,7 +67,8 @@ enum EditorBridge {
                                 try await Task.sleep(for: .milliseconds(50)); home = currentHome()
                             }
                             let response: [String: Any]
-                            if request.operation == "documents" { response = ["ok": true, "documents": homes.compactMap { $0.automationDescription }] }
+                            if request.operation == "overleaf" { response = await OverleafCommands.handle(request, homes: homes, current: currentHome()) }
+                            else if request.operation == "documents" { response = ["ok": true, "documents": homes.compactMap { $0.automationDescription }] }
                             else if let home { response = await handle(request, home: home) }
                             else if request.target != nil { response = ["ok": false, "error": "The target document is no longer open. Run documents again."] }
                             else { response = ["ok": false, "error": "The document window is not ready. Try again."] }
@@ -77,8 +90,9 @@ enum EditorBridge {
             guard let path = request.file, path.hasPrefix("/"), FileManager.default.fileExists(atPath: path) else { return ["ok": false, "error": "Provide an existing absolute path."] }
             home.open(URL(fileURLWithPath: path)); return ["ok": home.error == nil, "message": home.error ?? "", "opening": home.opening]
         }
+        if home.page == .writer, let writer = home.writer, ["status", "read", "replace", "save", "export", "writer-view", "writer-page", "writer-object"].contains(request.operation) { return WriterCommands.handle(request, model: writer) }
         if request.operation == "status" {
-            return ["ok": true, "target": home.automationTarget?.uuidString ?? "", "kind": home.texProject == nil ? "document" : "latex-local", "path": home.texProject?.root.path ?? home.reader.url?.path ?? "", "dirty": home.texProject?.dirty ?? home.reader.dirty, "compiling": home.texProject?.compiling ?? false, "selected": home.texProject?.selected ?? "", "pages": home.texProject?.pdf?.pageCount ?? 0, "errors": home.texProject?.diagnostics.filter { $0.severity == .error }.count ?? 0, "warnings": home.texProject?.diagnostics.filter { $0.severity == .warning }.count ?? 0, "historyMinutes": TeXHistory.intervalMinutes, "aiSuggestions": UserDefaults.standard.bool(forKey: "editor.aiSuggestions"), "compileCurrent": home.texProject?.outputCurrent ?? false]
+            return ["ok": true, "projectID": home.automationProjectID, "target": home.automationTarget?.uuidString ?? "", "kind": home.texProject == nil ? "document" : "latex-local", "path": home.texProject?.root.path ?? home.reader.url?.path ?? "", "dirty": home.texProject?.dirty ?? home.reader.dirty, "compiling": home.texProject?.compiling ?? false, "selected": home.texProject?.selected ?? "", "pages": home.texProject?.pdf?.pageCount ?? 0, "errors": home.texProject?.diagnostics.filter { $0.severity == .error }.count ?? 0, "warnings": home.texProject?.diagnostics.filter { $0.severity == .warning }.count ?? 0, "historyMinutes": TeXHistory.intervalMinutes, "aiSuggestions": UserDefaults.standard.bool(forKey: "editor.aiSuggestions"), "compileCurrent": home.texProject?.outputCurrent ?? false]
         }
         if request.operation == "library-search" {
             do {
