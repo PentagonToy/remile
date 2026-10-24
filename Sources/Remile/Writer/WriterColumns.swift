@@ -1,0 +1,40 @@
+import SwiftUI
+
+struct WriterColumns: View {
+    @ObservedObject var model: WriterModel
+    var compact = false
+
+    var body: some View {
+        HStack(spacing: compact ? 4 : 8) {
+            if compact { Text("Columns").foregroundStyle(.secondary) }
+            ForEach(1...2, id: \.self) { count in
+                Button {
+                    var page = model.pageStyle; page.columns = count; model.setPageStyle(page)
+                } label: {
+                    Group {
+                        if compact {
+                            HStack(spacing: 5) { symbol(count); Text(String(count)) }.padding(.horizontal, 7).frame(height: 26)
+                        } else {
+                            VStack(spacing: 8) { symbol(count).scaleEffect(1.3).frame(height: 28); Text(count == 1 ? "1 column" : "2 columns") }
+                                .frame(maxWidth: .infinity).frame(height: 66)
+                        }
+                    }
+                    .foregroundStyle(model.pageStyle.columnCount == count ? RemileStyle.accent : RemileStyle.ink)
+                    .background(model.pageStyle.columnCount == count ? RemileStyle.accent.opacity(0.15) : RemileStyle.editorBar, in: RoundedRectangle(cornerRadius: RemileRadius.control))
+                    .overlay(RoundedRectangle(cornerRadius: RemileRadius.control).strokeBorder(RemileStyle.accent.opacity(model.pageStyle.columnCount == count ? 0.45 : 0.08)))
+                    .contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel(count == 1 ? "1 column" : "2 columns")
+                    .accessibilityAddTraits(model.pageStyle.columnCount == count ? .isSelected : [])
+                    .remileHelp(count == 1 ? "One column for this document" : "Two columns for this document")
+            }
+        }.font(RemileType.small)
+    }
+    private func symbol(_ count: Int) -> some View {
+        HStack(spacing: 2) {
+            ForEach(0..<count, id: \.self) { _ in
+                VStack(spacing: 2) { ForEach(0..<4, id: \.self) { _ in Rectangle().frame(height: 1) } }
+            }
+        }.padding(3).frame(width: 17, height: 21)
+            .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(lineWidth: 1)).accessibilityHidden(true)
+    }
+}

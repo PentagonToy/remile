@@ -26,6 +26,7 @@ struct ReaderSettings: View {
             HStack(spacing: 0) {
                 VStack(spacing: 6) {
                     category("General", symbol: "slider.horizontal.3")
+                    category("Storage", symbol: "externaldrive")
                     category("AI", symbol: "sparkles")
                     category("Search", symbol: "magnifyingglass")
                     category("LaTeX", symbol: "doc.text")
@@ -43,7 +44,6 @@ struct ReaderSettings: View {
                                 ForEach(ReaderAppearance.allCases, id: \.rawValue) { Text($0.rawValue).tag($0.rawValue) }
                             }.pickerStyle(.segmented)
                         }
-                        Section("Portable settings") { SettingsTransferView() }
                         Section("Network") { OfflineModeControl(); SettingsHint("Pause online services. Keep working locally.") }
                         Section("Reading") {
                             Toggle("Serif text in Markdown", isOn: $serif)
@@ -68,6 +68,7 @@ struct ReaderSettings: View {
                             }.pickerStyle(.segmented)
                         }
                     }.formStyle(.grouped).scrollContentBackground(.hidden) }
+                    else if presentation.section == "Storage" { StorageSettings() }
                     else if presentation.section == "Search" { LibrarySearchSettings() }
                     else if presentation.section == "LaTeX" { TeXSettings(project: windows.active?.texProject) }
                     else { Form {

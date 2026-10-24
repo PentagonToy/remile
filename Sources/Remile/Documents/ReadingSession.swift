@@ -94,11 +94,12 @@ final class ReadingSession: ObservableObject {
         }
         panel.allowsOtherFileTypes = false
         guard panel.runModal() == .OK, let destination = panel.url else { return }
-        do { try bytes.write(to: destination, options: .atomic) }
+        do { try StorageFileAccess.requireWritable(destination); try bytes.write(to: destination, options: .atomic) }
         catch { NSAlert(error: error).runModal() }
     }
     @discardableResult func save() -> Bool {
         guard let url else { return true }
+        do { try StorageFileAccess.requireWritable(url) } catch { NSAlert(error: error).runModal(); return false }
         do { try preparePDFSave() } catch { NSAlert(error: error).runModal(); return false }
         switch confirmSignatureSave(bytes) {
         case .cancel: return false
@@ -239,7 +240,7 @@ private struct WindowCloseGuard: NSViewRepresentable {
         weak var previous: NSWindowDelegate?
         var titlebarDrag: TitlebarDrag?
         init(reader: ReadingSession, home: HomeModel) { self.reader = reader; self.home = home }
-        func windowShouldClose(_ sender: NSWindow) -> Bool { (previous?.windowShouldClose?(sender) ?? true) && home.closeTeX() && reader.close() }
+        func windowShouldClose(_ sender: NSWindow) -> Bool { (previous?.windowShouldClose?(sender) ?? true) && home.writer?.confirmLeaving() != false && home.closeTeX() && reader.close() }
         func windowDidBecomeKey(_ notification: Notification) {
             if let window = notification.object as? NSWindow { RemileWindows.shared.register(home, window: window) }
             previous?.windowDidBecomeKey?(notification)

@@ -44,6 +44,7 @@ Reference writes use the same transaction service as the native workspace:
 
 | Command | Result |
 | --- | --- |
+| `reference collect --library UUID --source-file /path/document.pdf` | Save a PDF through the same deduplicating operation as Search |
 | `reference import --library UUID --source-file /path/records.bib` | Import BibTeX or a PDF into an explicit library or collection |
 | `reference update --id UUID --expected-revision UUID --source-file /path/record.bib` | Replace metadata from one BibTeX entry, preserving the citation key and an omitted abstract |
 | `reference attach --id UUID --expected-revision UUID --source-file /path/paper.pdf` | Attach a managed PDF |
@@ -54,6 +55,25 @@ Reference writes use the same transaction service as the native workspace:
 
 Read `show` immediately before a mutation and supply its revision. A stale revision fails without applying the change. The native workspace reloads external catalogue changes through directory events. Permanent deletion, library creation, merge and network lookup remain native actions. If a write is interrupted, inspect the catalogue before retrying. Import is not idempotent.
 
+## Overleaf projects
+
+Start remile, then use **Copy project ID** in the Overleaf library or Recently opened. The same Overleaf ID works across Macs after the project has been connected there.
+
+```sh
+remile overleaf list --query "remile-sample-4"
+remile overleaf show --id overleaf:PROJECT_ID
+remile overleaf read --id overleaf:PROJECT_ID --file main.tex
+remile overleaf open --id overleaf:PROJECT_ID
+```
+
+Replace `PROJECT_ID` with the copied 24-character ID. `list` returns project names, persistent IDs, connection UUIDs and local roots. Several account connections to the same project require `--connection UUID`. Several open windows require `--target UUID` from `documents`.
+
+`show` returns known sync status and the last recorded sync time. For an open project it also returns the session target, source hashes, unsaved state and whether its PDF matches the current source. For a closed project, PDF currency is unknown. `read` returns an open editor buffer or the saved UTF-8 source, its SHA-256 and origin. It accepts project-relative text paths up to 4 MB and refuses paths outside the project. Unsaved buffers take precedence over disk files.
+
+Listing, showing and reading do not fetch remote changes. `remoteFreshness: not-checked` means these results cannot establish the latest Overleaf version. `observedAt` records local observation time. Read again after edits, and retain source hashes with review findings.
+
+`open` reuses a unique open session or opens the local project through the normal editor, which starts compilation. It refuses to replace unsaved work. Use the returned target with `read`, `pdf-read`, `logs` and other live commands. Opening is explicit. Read-only inspection does not open or compile a project. Research folders are supplied separately in the agent request.
+
 ## Live editor
 
 Run `documents` to discover open document sessions, then pass `--target UUID` to a live document command. `status` also returns this identity. An explicit target never falls back to another window, and reopening a document gives it a new session identity. Without a target, commands retain active-window behaviour. Check the target status and buffer fingerprint before applying edits. An open request creates a window when none is open.
@@ -63,6 +83,9 @@ Run `documents` to discover open document sessions, then pass `--target UUID` to
 | `open /path/document` | Open a document or project |
 | `documents` | List open document session identities, paths, kinds and unsaved state |
 | `status [--target UUID]` | Read document state and compile counts |
+| `writer-view [--zoom 0.25..2\|--fit] [--rulers on\|off] [--target UUID]` | Read or change the open Writer viewport without editing its contents |
+| `writer-page [--columns 1\|2] [--header TEXT] [--footer TEXT] [--top-line on\|off] [--bottom-line on\|off] [--page-numbers on\|off]` | Read page layout or change it with `--expected-sha256 HASH`. Use `--clear-header` or `--clear-footer` to remove text |
+| `writer-object --id UUID [--wrap on\|off] [--lock on\|off]` | Read object layout or change it with `--expected-sha256 HASH` |
 | `diagnostics` | Read main-process memory, source size, cached hashes, build-cache ownership and automation transport |
 | `library-search "question or keywords" [--no-boost]` | Search the current local library with the same engine and boosting policy as the app. Return ranked paths, pages, excerpts and matched terms |
 | `pdf-read [/path/document.pdf] [--page N] [--find text] [--render /path/new.png]` | Read PDF page text, annotation data and search bounds. Optionally render a page image |
@@ -99,7 +122,7 @@ Bibliography embedding prepares classic BibTeX output. Submission comparison che
 
 The application processes fixed requests through `~/Library/Application Support/local.remile.app/Automation`. Directory events wake the server when files change. It does not poll while idle. Owner-only request and response files use UUID names. The CLI writes a request, reads its response and removes both files. Edits require the current source fingerprint. Exports require a new output path.
 
-A timeout does not confirm whether an operation ran. Inspect the current state before retrying a write. Operation expiry and recovery remain planned in the [agent and library strategy](agent-library-strategy.md). Use an explicit session target for document edits. Offline path commands and global library search do not use session targets. For PDF reads, comments and reviews, choose a path or a target rather than combining them.
+A timeout does not confirm whether an operation ran. Inspect the current state before retrying a write. Queued writes do not yet expose operation expiry or recoverable operation IDs. Use an explicit session target for document edits. Offline path commands and global library search do not use session targets. For PDF reads, comments and reviews, choose a path or a target rather than combining them.
 
 `diagnostics` reads the active workspace without editing it or generating AI requests. Memory values describe the main process and exclude WebKit helper processes and system model services. Active build folders are ownership counts, not an on-disk size measurement. Use matched documents and window states when comparing runs.
 
@@ -139,3 +162,9 @@ Use `reference show --id UUID` to discover attachment IDs. Then run `remile refe
 
 
 `diagnostics` includes decorative update ticks and whether the app has an active key window. Compare tick differences over a measured interval. Paused or hidden artwork should add no ticks. These fields describe presentation activity, not GPU usage or a whole-app performance score.
+
+## PDF images and tables
+
+Use `pdf-regions /absolute/paper.pdf --page 4` to list embedded image regions. Add `--tables` to recognise tables on that page on this Mac (macOS 26 or later). Table results include `needsReview: true`. Check values against `pdf-read` and the original page.
+
+Export a region with `--region image-1 --output /absolute/new.png --expected-sha256 HASH`. Use the hash returned by inspection. Tables require `--tables` and a `.tsv` or `.md` output. Existing files are never overwritten. Region bounds use PDF page points before rotation, with a bottom-left origin. Images are page-region renders up to 2,200 pixels on the longest edge.

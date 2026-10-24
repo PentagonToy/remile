@@ -96,7 +96,8 @@ struct TeXWorkspace: View {
         .onReceive(project.$sourceJump) { jump in
             guard let jump else { return }; presentation.pane = "Source"
             editor.update(project.buffers[jump.location.file] ?? "", size: CGFloat(fontSize), serif: false, document: jump.location.file)
-            editor.reveal(line: jump.location.line); editor.flash(line: jump.location.line)
+            if let range = jump.location.range, editor.reveal(range: range) { }
+            else { editor.reveal(line: jump.location.line); editor.flash(line: jump.location.line) }
         }
     }
     @ViewBuilder private var sourcePane: some View {

@@ -93,7 +93,7 @@ import Network
         busy = false; await probe(project)
     }
     func root(_ project: OverleafConnection) -> URL { directory.appendingPathComponent("Projects/" + project.id.uuidString) }
-    func connection(for root: URL) -> OverleafConnection? { projects.first { self.root($0).standardizedFileURL == root.standardizedFileURL } }
+    func connection(for root: URL) -> OverleafConnection? { projects.first { self.root($0).standardizedFileURL.path == root.standardizedFileURL.path } }
     func savedAccount(_ label: String) -> OverleafConnection? { projects.first { $0.account == label.trimmingCharacters(in: .whitespacesAndNewlines) } }
     func account(_ label: String) -> Account? { accounts.first { $0.name == label.trimmingCharacters(in: .whitespacesAndNewlines) } }
     func openLibrary(add: Bool = false) { adding = add; if add { presented = true } else { presented = false; browsing = true }; error = nil }

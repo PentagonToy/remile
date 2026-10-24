@@ -42,6 +42,7 @@ Task { @MainActor in
     navigation.reverse = { jumps.append($0) }
     expect(navigation.handleDoubleClick(event(location)), "A double-click inside the PDF is received without competing with selection")
     expect(jumps.count == 1 && jumps[0].page == 2 && abs(jumps[0].x - bounds.midX) < 1, "Double-clicking selected text uses that selection on its actual page")
+    expect(jumps[0].hint?.text.contains("Mapping") == true, "PDF double-click carries a bounded text hint")
     expect(view.currentSelection?.string == "Mapping", "Source navigation preserves the native PDF selection")
     expect(!navigation.handleDoubleClick(event(location, count: 1)), "Single clicks remain native PDF interactions")
     expect(!navigation.handleDoubleClick(event(.zero)), "Clicks outside the PDF do not navigate")

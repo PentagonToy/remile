@@ -4,7 +4,7 @@ Write the display name as **remile.** in lowercase, including the full stop. Pat
 
 ## Voice
 
-Lead with the action or result. Keep guidance short and direct. Save poetic language for quiet moments such as the banner and waiting states. Follow the [writing guide](../agent/WRITING.md).
+Lead with the action or result. Keep guidance short and direct. Save poetic language for quiet moments such as the banner and waiting states. Use short British English sentences and familiar action labels.
 
 ## Colour
 

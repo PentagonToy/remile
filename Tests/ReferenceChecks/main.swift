@@ -360,7 +360,7 @@ venue.fields["journal"] = " "
 try check(ReferenceColumn.publication.value(venue) == "Elsevier", "Venue column falls back to publisher when journal is blank")
 venue.fields["booktitle"] = "Annual Conference"
 try check(ReferenceColumn.publication.value(venue) == "Annual Conference", "Conference venue precedes publisher")
-try check(ReferenceColumn.visible(ReferenceColumn.defaults) == [.title, .author, .publication, .year], "New default includes the optional venue column before year")
+try check(ReferenceColumn.visible(ReferenceColumn.defaults) == [.title, .author, .publication, .year, .type], "Default columns include venue, year and Type")
 try check(!ReferenceColumn.visible("title,author,year").contains(.publication), "Users can hide the venue column without it reappearing")
 print("Passed \(checks) Reference checks including venue columns")
 
@@ -546,6 +546,15 @@ var remoteSuggestion = ReferenceRecord(key: "KeyOther", fields: ["title": "Libra
 let suggestions = ReferenceCitationCompletion.suggestions(query: "Key", project: [localSuggestion], library: [remoteSuggestion, localSuggestion])
 try check(suggestions.count == 2 && suggestions[0].project && !suggestions[1].project, "Project references precede library and duplicate keys appear once")
 try check(ReferenceCitationCompletion.suggestions(query: "Library evidence", project: [], library: [remoteSuggestion]).count == 1, "Search reference titles")
+let abstractSuggestion = ReferenceRecord(key: "AbstractOnly", fields: ["title": "A numerical method", "abstract": "Wall stress and turbulent boundary layers. Énergie is conserved."])
+try check(ReferenceCitationCompletion.suggestions(query: "TURBULENT boundary", project: [], library: [abstractSuggestion]).first?.record.citationKey == "AbstractOnly", "Search a library abstract without matching the key")
+try check(ReferenceCitationCompletion.suggestions(query: "numerical stress", project: [abstractSuggestion], library: []).first?.project == true, "Query words can span title and abstract")
+try check(ReferenceCitationCompletion.suggestions(query: "energie", project: [], library: [abstractSuggestion]).count == 1, "Abstract search folds accents")
+let titleSuggestion = ReferenceRecord(key: "TitleOnly", fields: ["title": "Wall turbulence"])
+let prefixSuggestion = ReferenceRecord(key: "wall2026", fields: ["title": "Other work"])
+try check(ReferenceCitationCompletion.suggestions(query: "wall", project: [], library: [abstractSuggestion, titleSuggestion, prefixSuggestion]).map { $0.record.citationKey } == ["wall2026", "TitleOnly", "AbstractOnly"], "Key prefixes and title metadata rank above abstract-only matches")
+let abstractBib = try ReferenceBibTeX.parse("@article{BibAbstract, title={A method}, abstract={Spectral {Galerkin} advection}}")
+try check(ReferenceCitationCompletion.suggestions(query: "galerkin", project: abstractBib, library: []).first?.record.citationKey == "BibAbstract", "BibTeX abstract matches through display normalisation")
 try check(ReferenceCitationPreferences.destination(["existing.bib"], preferred: nil) == "existing.bib", "Use sole existing bibliography")
 try check(ReferenceCitationPreferences.destination(["one.bib", "two.bib"], preferred: nil) == nil, "Ambiguous bibliographies require selection")
 try check(ReferenceCitationPreferences.destination(["one.bib", "two.bib"], preferred: "two.bib") == "two.bib", "Remember selected bibliography")
@@ -559,6 +568,11 @@ print("Passed \(checks) Reference checks including citation completion and proje
 
 let suggestedCLI = try ReferenceCLI.response(["suggest", "--library", external.library.uuidString, "--query", external.citationKey], repository: writeRepo)
 try check((suggestedCLI["suggestions"] as? [[String: String]])?.contains { $0["id"] == external.id.uuidString } == true, "Agent suggestions use the shared citation matcher")
+var agentAbstract = ReferenceRecord(key: "agentAbstract", fields: ["title": "Agent metadata fixture", "abstract": "Anisotropic phonon transport."])
+agentAbstract.libraryID = external.library
+let agentAbstractRecord = try writeRepo.add([agentAbstract])[0]
+let abstractCLI = try ReferenceCLI.response(["suggest", "--library", external.library.uuidString, "--query", "phonon"], repository: writeRepo)
+try check((abstractCLI["suggestions"] as? [[String: String]])?.contains { $0["id"] == agentAbstractRecord.id.uuidString && $0["key"] == agentAbstractRecord.citationKey } == true, "Agent CLI suggestions find an abstract-only match and return its key")
 rejects("Agent suggestions need an explicit library") { _ = try ReferenceCLI.response(["suggest", "--query", "test"], repository: writeRepo) }
 print("Passed \(checks) Reference checks including agent citation suggestions")
 
@@ -617,4 +631,263 @@ try check(try ReferencePassages.list(recordID: evidenceRecord.id, repository: ev
 try evidenceRepository.trash(evidenceRecord.id)
 try evidenceRepository.emptyTrash()
 try check(!FileManager.default.fileExists(atPath: evidenceRoot.appendingPathComponent("Passages/" + evidenceRecord.id.uuidString + ".json").path), "Permanent reference removal also removes stored passages")
+let undoRoot = output.appendingPathComponent("undo")
+let undoHistory = ReferenceRepository.History()
+let undoRepository = ReferenceRepository(root: undoRoot, history: undoHistory)
+let undoLibrary = try undoRepository.addLibrary("Writing")
+let undoRecord = try undoRepository.add([ReferenceRecord(fields: ["title": "Original"])], libraryID: undoLibrary.id)[0]
+var undoEdited = undoRecord; undoEdited.fields["title"] = "Edited"
+let undoSaved = try undoRepository.update(undoEdited, expected: undoEdited.revision)
+try undoRepository.undo()
+let undone = try undoRepository.records()[0]
+try check(undone.title == "Original" && undone.revision != undoRecord.revision, "Undo restores metadata with a fresh revision")
+rejects("Undo never revives a stale CLI revision") { _ = try undoRepository.update(undoEdited, expected: undoRecord.revision) }
+try undoRepository.undo(redo: true)
+try check(try undoRepository.records()[0].title == "Edited", "Redo reapplies metadata")
+try undoRepository.undo()
+try undoRepository.undo()
+try check(try undoRepository.records().isEmpty, "Consecutive undo removes an added record")
+try undoRepository.undo()
+try check(try undoRepository.libraries() == [.primary], "Library creation can be undone")
+try undoRepository.undo(redo: true)
+try undoRepository.undo(redo: true)
+try check(try undoRepository.records()[0].title == "Original", "Consecutive redo restores library and record")
+var branchEdit = try undoRepository.records()[0]; branchEdit.fields["title"] = "New branch"
+_ = try undoRepository.update(branchEdit, expected: branchEdit.revision)
+try check(!undoHistory.canRedo, "A new edit discards redo history")
+let externalRepository = ReferenceRepository(root: undoRoot)
+var externalEdit = try externalRepository.records()[0]; externalEdit.fields["title"] = "CLI edit"
+_ = try externalRepository.update(externalEdit, expected: externalEdit.revision)
+rejects("External edits are not overwritten") { try undoRepository.undo() }
+try check(try !undoHistory.canUndo && !undoHistory.canRedo && externalRepository.records()[0].title == "CLI edit", "External change clears session history")
+let undoAttachment = try undoRepository.importFiles([evidencePDF], attachingTo: externalEdit.id, expected: try undoRepository.records()[0].revision)[0]
+try undoRepository.removeAttachments(Set(undoAttachment.attachments.map(\.id)), from: undoAttachment.id, expected: undoAttachment.revision)
+try undoRepository.undo()
+try check(try undoRepository.records()[0].attachments.count == 1, "Undo restores an unlinked attachment")
+try undoRepository.undo()
+try check(try undoRepository.records()[0].attachments.isEmpty, "Undo reverses attachment import")
+try undoRepository.undo(redo: true)
+try check(try undoRepository.records()[0].attachments.count == 1, "Redo reuses existing PDF bytes")
+let refreshedAttachment = try undoRepository.records()[0].attachments[0]
+try undoRepository.refreshAttachment(refreshedAttachment.id)
+try check(undoHistory.canUndo, "An unchanged PDF refresh preserves undo history")
+try Data("Changed synthetic PDF bytes".utf8).write(to: undoRepository.attachmentURL(refreshedAttachment))
+try undoRepository.refreshAttachment(refreshedAttachment.id)
+try check(!undoHistory.canUndo && !undoHistory.canRedo, "Changed PDF bytes cannot be undone as metadata")
+try undoRepository.trash(externalEdit.id)
+try undoRepository.emptyTrash()
+try check(!undoHistory.canUndo && !undoHistory.canRedo, "Empty Trash ends undo history")
+try check(try undoRepository.records().isEmpty, "Permanently deleted records stay deleted")
+let boundedHistory = ReferenceRepository.History()
+let boundedRepository = ReferenceRepository(root: output.appendingPathComponent("bounded-undo"), history: boundedHistory)
+for index in 0..<32 { _ = try boundedRepository.add([ReferenceRecord(fields: ["title": "Item \(index)"])]) }
+for _ in 0..<30 { try boundedRepository.undo() }
+try check(try !boundedHistory.canUndo && boundedRepository.records().count == 2, "Undo retains at most thirty changes")
+let collectRepository = ReferenceRepository(root: output.appendingPathComponent("collect"))
+let collected = try ReferenceCollect.save(pdfURL, library: ReferenceLibrary.primaryID, repository: collectRepository)
+let collectedAgain = try ReferenceCollect.save(pdfURL, library: ReferenceLibrary.primaryID, repository: collectRepository)
+try check(collected.id == collectedAgain.id && (try collectRepository.records()).count == 1, "Collect reuses an existing reference")
+try check(collected.attachments == collectedAgain.attachments, "Collect reuses managed PDF bytes")
+try check(try Data(contentsOf: pdfURL) == pdfBytes, "Collect preserves source PDF")
+let collectedCLI = try ReferenceCLI.response(["collect", "--library", ReferenceLibrary.primaryID.uuidString, "--source-file", pdfURL.path], repository: collectRepository)
+try check(collectedCLI["id"] as? String == collected.id.uuidString, "CLI collect uses the same operation")
+_ = try collectRepository.importFiles([pdfURL])
+let countBeforeAmbiguous = try collectRepository.records().count
+rejects("Collect never guesses between duplicate references") { _ = try ReferenceCollect.save(pdfURL, library: ReferenceLibrary.primaryID, repository: collectRepository) }
+try check(try collectRepository.records().count == countBeforeAmbiguous, "Ambiguous collect has no catalogue mutation")
+rejects("Collect accepts PDFs only") { _ = try ReferenceCollect.save(bad, library: ReferenceLibrary.primaryID, repository: collectRepository) }
+let collectCollection = try collectRepository.addLibrary("Chosen collection", parentID: ReferenceLibrary.primaryID)
+let inCollection = try ReferenceCollect.save(pdfURL, library: collectCollection.id, repository: collectRepository)
+try check(inCollection.collectionID == collectCollection.id, "Collect honours the chosen collection")
+try check(inCollection.attachments == collected.attachments, "A new collection shares existing managed PDF bytes")
+let inCollectionAgain = try ReferenceCollect.save(pdfURL, library: collectCollection.id, repository: collectRepository)
+try check(inCollection.id == inCollectionAgain.id, "Repeated collect stays idempotent within a collection")
 print("Passed \(checks) Reference checks including durable PDF passages")
+
+let attachDraft = try collectRepository.add([ReferenceRecord(fields: ["title": "A retained original title", "doi": "10.1234/fixture"])])[0]
+let attachedFound = try collectRepository.addFetched(attachDraft, pdf: pdfBytes, libraryID: attachDraft.library, attachingTo: attachDraft.id, expected: attachDraft.revision)
+try check(attachedFound.fields == attachDraft.fields && attachedFound.key == attachDraft.key && attachedFound.id == attachDraft.id, "Found PDF preserves the selected entry identity and fields")
+try check(attachedFound.attachments.count == 1 && attachedFound.revision != attachDraft.revision, "Found PDF attaches with a new revision")
+rejects("Stale found-PDF target") { _ = try collectRepository.addFetched(attachDraft, pdf: pdfBytes, libraryID: attachDraft.library, attachingTo: attachDraft.id, expected: attachDraft.revision) }
+let attachedAgain = try collectRepository.addFetched(attachedFound, pdf: pdfBytes, libraryID: attachedFound.library, attachingTo: attachedFound.id, expected: attachedFound.revision)
+try check(attachedAgain.attachments.count == 1, "Repeated found PDF does not duplicate bytes")
+try check(ReferencePaperLookup.matches(attachDraft, fields: ["doi": "https://doi.org/10.1234/FIXTURE"]), "PDF DOI matching normalises links and case")
+try check(!ReferencePaperLookup.matches(attachDraft, fields: ["doi": "10.1234/other", "title": attachDraft.title]), "Conflicting DOI prevents a title-only PDF match")
+try check(ReferencePaperLookup.matches(attachDraft, fields: ["title": "A retained ORIGINAL title"]), "PDF title match ignores case")
+try check(!ReferencePaperLookup.matches(ReferenceRecord(fields: ["title": "Intro"]), fields: ["title": "Intro"]), "Short ambiguous titles do not auto-match PDFs")
+let moveSource = output.appendingPathComponent("storage-source")
+let moveRepo = ReferenceRepository(root: moveSource)
+let moveRecord = try moveRepo.addFetched(ReferenceRecord(fields: ["title": "A storage migration fixture"]), pdf: pdfBytes, libraryID: ReferenceLibrary.primaryID)
+let storageParent = output.appendingPathComponent("storage-parent"); try FileManager.default.createDirectory(at: storageParent, withIntermediateDirectories: true)
+let storeName = "remile.storage-checks." + UUID().uuidString
+let defaults = UserDefaults(suiteName: storeName)!
+defer { defaults.removePersistentDomain(forName: storeName) }
+let moved = try moveRepo.withLibraryLock { try StoragePaths.relocate(from: moveSource, into: storageParent, defaults: defaults) }
+let movedRepo = ReferenceRepository(root: moved)
+try check(try movedRepo.records() == moveRepo.records(), "Migration preserves catalogue identities and revisions")
+try check(try Data(contentsOf: movedRepo.attachmentURL(moveRecord.attachments[0])) == pdfBytes, "Migration verifies and retains PDF bytes")
+try check(FileManager.default.fileExists(atPath: moveRepo.attachmentURL(moveRecord.attachments[0]).path), "Migration retains the previous files for recovery")
+try check(defaults.string(forKey: StoragePaths.referencePreference) == moved.path, "Verified migration activates the destination")
+defaults.set(moveSource.path, forKey: StoragePaths.referencePreference)
+try check(StoragePaths.reference(defaults: defaults) == moved, "Old processes follow the relocation marker")
+rejects("Existing migration destination") { _ = try StoragePaths.relocate(from: moved, into: storageParent, defaults: defaults) }
+rejects("Nested storage folder") { _ = try StoragePaths.relocate(from: moved, into: moved, defaults: defaults) }
+let unsafeParent = output.appendingPathComponent("unsafe-parent"); try FileManager.default.createDirectory(at: unsafeParent, withIntermediateDirectories: true)
+try FileManager.default.createSymbolicLink(at: moved.appendingPathComponent("unsafe-link"), withDestinationURL: pdfURL)
+rejects("Symlink migration") { _ = try StoragePaths.relocate(from: moved, into: unsafeParent, defaults: defaults) }
+try check(!FileManager.default.fileExists(atPath: unsafeParent.appendingPathComponent("remile-reference").path), "Failed migration never publishes a partial library")
+try check(defaults.string(forKey: StoragePaths.referencePreference) == moveSource.path, "Failed migration retains the previous setting")
+rejects("Missing external storage") { try StoragePaths.requireAvailable(output.appendingPathComponent("absent-volume")) }
+let storageCLI = try ReferenceCLI.response(["storage"], repository: movedRepo)
+try check(storageCLI["referenceDirectory"] as? String == moved.path, "CLI reports the same library directory")
+print("Passed \(checks) Reference checks including storage migration and found PDFs")
+
+let localMatch = ReferenceRecord(fields: ["title": "A careful study of reference metadata", "doi": "10.1234/pdf-evidence"])
+let localFixture = output.appendingPathComponent("local-lookup.pdf"); try (pdfData as Data).write(to: localFixture)
+try check(try ReferencePaperLookup.localPDFs(for: localMatch, candidates: [localFixture, localFixture]).count == 1, "Local lookup verifies first-page DOI and deduplicates files")
+try check(try ReferencePaperLookup.localPDFs(for: attachDraft, candidates: [localFixture]).isEmpty, "Unrelated open PDF is not proposed")
+print("Passed \(checks) Reference checks including local PDF lookup")
+
+let blockedParent = output.appendingPathComponent("blocked-parent"); try FileManager.default.createDirectory(at: blockedParent, withIntermediateDirectories: true)
+let blockedSource = output.appendingPathComponent("blocked-source"); try FileManager.default.createDirectory(at: blockedSource, withIntermediateDirectories: true)
+try Data("retained".utf8).write(to: blockedSource.appendingPathComponent("example"))
+rejects("Cancelled final storage switch") { _ = try StoragePaths.relocate(from: blockedSource, into: blockedParent, defaults: defaults, commit: { _ in throw ReferenceFailure("An open document prevents relocation") }) }
+try check(!FileManager.default.fileExists(atPath: blockedParent.appendingPathComponent("remile-reference").path), "Rejected final switch retains source and removes staging files")
+try check(try Data(contentsOf: blockedSource.appendingPathComponent("example")) == Data("retained".utf8), "Rejected final switch preserves source bytes")
+print("Passed \(checks) Reference checks including rejected storage publication")
+
+try check(attachedAgain.revision == attachedFound.revision, "An already attached PDF leaves the record revision unchanged")
+let repairRepo = ReferenceRepository(root: output.appendingPathComponent("repair-found-pdf"))
+let repairDraft = try repairRepo.addFetched(ReferenceRecord(fields: ["title": "Recover an unavailable attachment"]), pdf: pdfBytes, libraryID: ReferenceLibrary.primaryID)
+try FileManager.default.removeItem(at: repairRepo.attachmentURL(repairDraft.attachments[0]))
+let repairedPDF = try repairRepo.addFetched(repairDraft, pdf: pdfBytes, libraryID: repairDraft.library, attachingTo: repairDraft.id, expected: repairDraft.revision)
+try check(repairedPDF.attachments.count == 1 && repairedPDF.attachments[0].id != repairDraft.attachments[0].id, "Found PDF repairs a missing stored attachment")
+try check(try Data(contentsOf: repairRepo.attachmentURL(repairedPDF.attachments[0])) == pdfBytes, "Repaired attachment points to verified stored bytes")
+print("Passed \(checks) Reference checks including missing attachment recovery")
+
+let sortOld = ReferenceRecord(fields: ["title": "Beta 2", "author": "Zulu, Alice", "year": "9", "journal": "Zebra"])
+let sortNew = ReferenceRecord(fields: ["title": "Alpha 10", "author": "Adams, Eve", "year": "10", "journal": "Atlas"])
+let sortMissing = ReferenceRecord(fields: ["title": "Gamma", "year": ""])
+let sortUnknown = ReferenceRecord(fields: ["title": "Delta", "year": "n.d."])
+let sortData = [sortOld, sortNew, sortMissing, sortUnknown]
+try check(ReferenceSort().sorted(sortData).map(\.id) == [sortNew, sortOld, sortUnknown, sortMissing].map(\.id), "Titles sort alphabetically")
+try check(ReferenceSort(column: .year).sorted(sortData).map(\.id) == [sortOld, sortNew, sortUnknown, sortMissing].map(\.id), "Years sort numerically with unknown values last")
+try check(ReferenceSort(column: .year, ascending: false).sorted(sortData).prefix(2).map(\.id) == [sortNew.id, sortOld.id], "Descending years keep populated numeric years first")
+try check(ReferenceSort(column: .author).sorted(sortData).first?.id == sortNew.id, "Authors sort by full names")
+try check(ReferenceSort(column: .publication, ascending: false).sorted(sortData).first?.id == sortOld.id, "Publication sorting uses displayed publication fields")
+var sortToggle = ReferenceSort(); sortToggle.select(.year)
+try check(sortToggle.column == .year && sortToggle.ascending, "New column starts ascending")
+sortToggle.select(.year); try check(!sortToggle.ascending, "Repeated heading click reverses order")
+sortToggle.select(.type); try check(sortToggle.ascending, "Switching headings resets to ascending")
+let sortingRepo = ReferenceRepository(root: output.appendingPathComponent("sorting")); let sortedStored = try sortingRepo.add(sortData)
+let sortedCLI = try ReferenceCLI.response(["list", "--sort", "year", "--order", "desc", "--limit", "2"], repository: sortingRepo)
+let cliSortIDs = (sortedCLI["references"] as! [[String: Any]]).map { $0["id"] as! String }
+try check(cliSortIDs == [sortedStored[1].id.uuidString, sortedStored[0].id.uuidString], "CLI sorts before pagination using the native comparator")
+rejects("Unknown sort column") { _ = try ReferenceCLI.response(["list", "--sort", "unknown"], repository: sortingRepo) }
+rejects("Unknown sort direction") { _ = try ReferenceCLI.response(["list", "--order", "reverse"], repository: sortingRepo) }
+let sortModel = MainActor.assumeIsolated { ReferenceModel(repository: sortingRepo) }
+MainActor.assumeIsolated { sortModel.load() }
+let sortDeadline = Date().addingTimeInterval(5)
+while MainActor.assumeIsolated({ sortModel.busy }) && Date() < sortDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+try check(MainActor.assumeIsolated { sortModel.items.count == 4 }, "Native sort model loads the synthetic rows")
+MainActor.assumeIsolated { sortModel.selected = sortedStored[0].id; sortModel.selectedIDs = [sortedStored[0].id]; sortModel.sort(by: .year); sortModel.sort(by: .year) }
+try check(MainActor.assumeIsolated { sortModel.items.first?.id == sortedStored[1].id && sortModel.selected == sortedStored[0].id }, "Native heading reorder preserves selection and invalidates cached order")
+MainActor.assumeIsolated { sortModel.query = "Alpha" }
+try check(MainActor.assumeIsolated { sortModel.items.count == 1 }, "Changing the query invalidates cached rows")
+MainActor.assumeIsolated { sortModel.query = ""; sortModel.showingTrash = true }
+try check(MainActor.assumeIsolated { sortModel.items.isEmpty }, "Trash visibility invalidates cached rows")
+let columnStoreName = "remile.column-checks." + UUID().uuidString; let columnStore = UserDefaults(suiteName: columnStoreName)!
+defer { columnStore.removePersistentDomain(forName: columnStoreName) }
+columnStore.set("title,author,publication,year", forKey: ReferenceColumn.preference); ReferenceColumn.applyDefaults(columnStore)
+try check(ReferenceColumn.visible(columnStore.string(forKey: ReferenceColumn.preference)!).contains(.type), "Type is added to the old default column layout")
+columnStore.set("title,year", forKey: ReferenceColumn.preference); ReferenceColumn.applyDefaults(columnStore)
+try check(columnStore.string(forKey: ReferenceColumn.preference) == "title,year", "Hiding Type after migration stays respected")
+print("Passed \(checks) Reference checks including shared column sorting")
+
+try check(ReferencePDFMetadata.placeholderTitle("arXiv:1706.03762v7 [cs.CL] 2 Aug 2023"), "arXiv margin stamps are not titles")
+try check(ReferencePDFMetadata.arxivID(in: "arXiv:1706.03762v7 [cs.CL] 2 Aug 2023") == "1706.03762v7", "Local PDF extraction recognises versioned arXiv identifiers")
+try check(ReferencePDFMetadata.arxivID(in: "arXiv:1706.03762 https://arxiv.org/abs/1706.03762v7") != nil, "Versioned and unversioned forms identify the same paper")
+try check(ReferencePDFMetadata.arxivID(in: "arXiv:1706.03762 arXiv:2301.00001") == nil, "Conflicting archive identifiers stay ambiguous")
+do { _ = try ReferenceCorrection.parse("@article{x,author={Jane Doe}}") } catch { try check(!error.localizedDescription.contains("one reference at a time") && error.localizedDescription.contains("title"), "Missing-title suggestions report the actual response problem") }
+try check(ReferenceColumnWidths.decode("{\"title\":99999,\"year\":1}")["title"] == 1200, "Column widths clamp unusually large persisted values")
+try check(ReferenceColumnWidths.decode("{\"year\":1}")["year"] == 44, "Small columns retain a usable minimum")
+try check(ReferenceColumnWidths.decode("not JSON").isEmpty, "Invalid stored widths fall back to defaults")
+try check(ReferenceColumnWidths.decode(ReferenceColumnWidths.encode(["title": 420, "publication": 130])) == ["title": 420, "publication": 130], "Manual column widths round trip")
+print("Passed \(checks) Reference checks including metadata and column resizing")
+
+let arxivBytes = NSMutableData(); var arxivBox = CGRect(x: 0, y: 0, width: 612, height: 792)
+let arxivContext = CGContext(consumer: CGDataConsumer(data: arxivBytes)!, mediaBox: &arxivBox, nil)!
+arxivContext.beginPDFPage(nil)
+for (line, size, y) in [("arXiv:1706.03762v7 [cs.CL] 2 Aug 2023", 14.0, 760.0), ("Attention Is All You Need", 22.0, 710.0), ("Abstract", 12.0, 600.0)] {
+ arxivContext.textPosition = CGPoint(x: 40, y: y)
+ CTLineDraw(CTLineCreateWithAttributedString(NSAttributedString(string: line, attributes: [.font: NSFont.systemFont(ofSize: size)])), arxivContext)
+}
+arxivContext.endPDFPage(); arxivContext.closePDF()
+let arxivPDF = PDFDocument(data: arxivBytes as Data)!
+arxivPDF.documentAttributes = [PDFDocumentAttribute.titleAttribute: "arXiv:1706.03762v7 [cs.CL] 2 Aug 2023"]
+let arxivFields = ReferencePDFMetadata.fields(arxivPDF, fallback: "fixture")
+try check(arxivFields["title"] == "Attention Is All You Need" && arxivFields["eprint"] == "1706.03762v7", "Local parser distinguishes a margin stamp from the actual paper title")
+let arxivRepo = ReferenceRepository(root: output.appendingPathComponent("arxiv-cleanup"))
+let badArxiv = try arxivRepo.addFetched(ReferenceRecord(fields: ["title": "arXiv:1706.03762v7 [cs.CL] 2 Aug 2023"]), pdf: arxivBytes as Data, libraryID: ReferenceLibrary.primaryID)
+let localChanges = try ReferenceCleanup.proposals([badArxiv], repository: arxivRepo)
+try check(localChanges.count == 1 && localChanges[0].after.title == "Attention Is All You Need" && localChanges[0].after.type == "misc", "Existing bad arXiv imports receive a local reversible metadata repair")
+try arxivRepo.applyCleanup(localChanges)
+let fixedArxiv = try arxivRepo.records()[0]
+try check(fixedArxiv.key == badArxiv.key && fixedArxiv.attachments == badArxiv.attachments && fixedArxiv.type == "misc", "Applying local metadata repairs preserves citation keys and attachments")
+print("Passed \(checks) Reference checks including arXiv margin-stamp recovery")
+
+// A second Mac selects its own synced path. Reading never creates a catalogue or lock.
+let secondMac = output.appendingPathComponent("second-mac-synced-library")
+try FileManager.default.copyItem(at: moved, to: secondMac)
+try StoragePaths.connect(to: secondMac, defaults: defaults)
+try check(StoragePaths.reference(defaults: defaults).path == secondMac.path && StoragePaths.isReadOnly(secondMac, defaults: defaults), "Existing synced library connects read only using this Mac's path")
+let sharedRead = ReferenceRepository(root: secondMac, readOnly: true)
+let sharedRecords = try sharedRead.records()
+let movedRecords = try movedRepo.records()
+try check(sharedRecords.map(\.id) == movedRecords.map(\.id), "Second Mac retains stable reference identities")
+try check(try Data(contentsOf: sharedRead.attachmentURL(sharedRecords[0].attachments[0])) == pdfBytes, "Relative PDF attachments survive a different Mac path")
+let beforeShared = try Data(contentsOf: secondMac.appendingPathComponent("library.json"))
+rejects("Shared read-only catalogue rejects edits") { _ = try sharedRead.addLibrary("Must not appear") }
+rejects("CLI writes share the read-only boundary") { _ = try ReferenceCLI.response(["trash", "--id", sharedRecords[0].id.uuidString, "--expected-revision", sharedRecords[0].revision.uuidString], repository: sharedRead) }
+try check(try Data(contentsOf: secondMac.appendingPathComponent("library.json")) == beforeShared, "Rejected edits preserve cloud catalogue bytes")
+let noSync = output.appendingPathComponent("not-downloaded-yet")
+try FileManager.default.createDirectory(at: noSync, withIntermediateDirectories: true)
+rejects("Unfinished sync never becomes an empty replacement") { try StoragePaths.connect(to: noSync, defaults: defaults) }
+try check(StoragePaths.reference(defaults: defaults).path == secondMac.path, "Failed connection preserves active library")
+let malformedSync = output.appendingPathComponent("malformed-sync")
+try FileManager.default.createDirectory(at: malformedSync, withIntermediateDirectories: true)
+try Data("not a catalogue".utf8).write(to: malformedSync.appendingPathComponent("library.json"))
+rejects("Invalid synced catalogue does not change storage") { try StoragePaths.connect(to: malformedSync, defaults: defaults) }
+rejects("Cancelled library switch preserves preferences") { try StoragePaths.connect(to: moved, defaults: defaults, commit: { _ in throw ReferenceFailure("Cancelled") }) }
+try check(StoragePaths.reference(defaults: defaults).path == secondMac.path, "Cancelled switch leaves the old connection intact")
+settingsStore.set(secondMac.path, forKey: StoragePaths.referencePreference)
+settingsStore.set(secondMac.path, forKey: StoragePaths.readOnlyPreference)
+let preset = PortableSettings.snapshot(settingsStore)
+try check(preset.preferences[StoragePaths.referencePreference] == nil && preset.preferences[StoragePaths.readOnlyPreference] == nil, "Presets exclude machine-specific storage and access mode")
+let importedPreset = "remile.preset-destination." + UUID().uuidString
+let importedStore = UserDefaults(suiteName: importedPreset)!
+defer { importedStore.removePersistentDomain(forName: importedPreset) }
+try PortableSettings.apply(preset, to: importedStore)
+ReferenceColumn.applyDefaults(importedStore)
+try check(importedStore.string(forKey: ReferenceColumn.preference) == "title,publisher,year", "A preset's exact columns survive fresh-install migration")
+try check(importedStore.string(forKey: StoragePaths.referencePreference) == nil, "Loading a preset does not redirect the receiving Mac's library")
+print("Passed \(checks) Reference checks including shared-folder reading and presets")
+
+rejects("Read-only PDF save cannot alter the synced original") { try StorageFileAccess.requireWritable(sharedRead.attachmentURL(sharedRecords[0].attachments[0]), defaults: defaults) }
+try StorageFileAccess.requireWritable(output.appendingPathComponent("personal-copy.pdf"), defaults: defaults)
+try check(true, "A read-only library still allows copies outside its folder")
+print("Passed \(checks) Reference checks including read-only PDF protection")
+let emptyMove = output.appendingPathComponent("empty-move-source")
+let emptyParent = output.appendingPathComponent("empty-move-parent")
+try FileManager.default.createDirectory(at: emptyMove, withIntermediateDirectories: true)
+try FileManager.default.createDirectory(at: emptyParent, withIntermediateDirectories: true)
+let emptyDestination = try StoragePaths.relocate(from: emptyMove, into: emptyParent, defaults: defaults)
+try StoragePaths.connect(to: emptyDestination, defaults: defaults)
+try check(try ReferenceRepository(root: emptyDestination, readOnly: true).records().isEmpty, "A new empty library remains openable after moving")
+let partialMove = output.appendingPathComponent("partial-move-source")
+let partialParent = output.appendingPathComponent("partial-move-parent")
+try FileManager.default.createDirectory(at: partialMove, withIntermediateDirectories: true)
+try FileManager.default.createDirectory(at: partialParent, withIntermediateDirectories: true)
+try pdfBytes.write(to: partialMove.appendingPathComponent("unsynced.pdf"))
+rejects("Missing catalogue with existing files cannot be moved as an empty library") { _ = try StoragePaths.relocate(from: partialMove, into: partialParent, defaults: defaults) }
+print("Passed \(checks) Reference checks including empty and partial cloud folders")

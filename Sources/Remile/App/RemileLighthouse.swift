@@ -5,10 +5,10 @@ struct RemileLighthouse: View {
     @Environment(\.colorScheme) private var scheme
     var aim: Double? = nil
     var body: some View {
-        DecorativeTimeline(enabled: aim == nil) { date, moves in
+        DecorativeTimeline(enabled: aim == nil, preservesPhase: true) { date, _ in
             ZStack {
                 Canvas { context, size in
-                    let phase = aim ?? (moves ? sin(date.timeIntervalSinceReferenceDate * .pi / 2.4) : 0)
+                    let phase = aim ?? sin(date.timeIntervalSinceReferenceDate * .pi / 2.4)
                     let lamp = CGPoint(x: size.width * 193 / 310, y: size.height * 46 / 120)
                     let centre = size.height * (0.38 + 0.28 * phase)
                     let spread = size.height * 0.20

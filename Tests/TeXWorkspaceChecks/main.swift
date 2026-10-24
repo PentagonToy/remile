@@ -43,3 +43,22 @@ expect(TeXMainDocument.choose(sources: ["notes.tex": "\\section{Notes}", "chapte
 expect(TeXMainDocument.choose(sources: ["DRAFT.TEX": ""], saved: nil) == "DRAFT.TEX", "Uppercase TeX extensions are editable")
 expect(TeXMainDocument.choose(sources: ["refs.bib": ""], saved: nil) == nil, "A bibliography alone is not misidentified as a TeX source")
 print("Passed \(checks) TeX workspace checks including broken sources")
+
+let preciseSource = "\\documentclass{article}\n\\begin{document}\n\\rev{Earlier results are discussed here. They also assessed transfer to an unseen case at a higher Karlovitz number, both without retraining and with limited-data fine-tuning.}\n\\end{document}"
+let hintText = "They also assessed transfer to an unseen case at a higher Karlovitz number, both without retraining and with limited-data fine-tuning."
+let wordOffset = (hintText as NSString).range(of: "number").location
+let near = TeXSync.SourceLocation(file: "main.tex", line: 2)
+let precise = TeXSync.refine(near, source: preciseSource, hint: .init(text: hintText, offset: wordOffset))
+expect(precise.range != nil && (preciseSource as NSString).substring(with: precise.range!) == "number", "PDF context refines a long macro-wrapped source line to its clicked word")
+let repeatedSource = preciseSource + "\n" + preciseSource
+expect(TeXSync.refine(near, source: repeatedSource, hint: .init(text: hintText, offset: wordOffset)).range == nil, "Repeated equally strong contexts retain SyncTeX line fallback")
+expect(TeXSync.refine(near, source: preciseSource, hint: .init(text: "number", offset: 0)).range == nil, "A common word without context is not enough")
+expect(TeXSync.refine(near, source: preciseSource, hint: nil) == near, "Missing PDF text retains existing navigation")
+let unicodeSource = "é 😀 " + preciseSource
+let unicodeRefined = TeXSync.refine(TeXSync.SourceLocation(file: "main.tex", line: 0), source: unicodeSource, hint: .init(text: hintText, offset: wordOffset))
+expect(unicodeRefined.range != nil && (unicodeSource as NSString).substring(with: unicodeRefined.range!) == "number", "Refined offsets preserve UTF-16 positions after emoji")
+print("Passed \(checks) TeX workspace checks including bounded text refinement")
+
+let farAway = String(repeating: "padding ", count: 4000) + preciseSource
+expect(TeXSync.refine(.init(file: "main.tex", line: 0), source: farAway, hint: .init(text: hintText, offset: wordOffset)).range == nil, "Refinement does not search distant document text beyond its fixed window")
+print("Passed \(checks) TeX workspace checks including refinement bounds")

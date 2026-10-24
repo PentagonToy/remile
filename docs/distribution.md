@@ -1,26 +1,29 @@
-# Installation and updates
+# Install and update
 
-remile. 0.1.3 targets macOS 14 and later. The published DMG contains an Apple Silicon app and its [CLI](cli.md).
+remile. runs on Apple Silicon Macs with macOS 14 or later.
 
-## Install
+## Download
 
-Download the DMG from [GitHub releases](https://github.com/PentagonToy/remile/releases), open it and drag remile.app to Applications. Alternatively, use the [Homebrew tap](https://github.com/PentagonToy/homebrew-tap):
+Open the [latest release](https://github.com/PentagonToy/remile/releases/latest), download the Apple Silicon DMG, then drag **remile.app** into **Applications**.
+
+The public package is not Apple-notarised. If macOS blocks first launch, verify the download source and follow [Apple's downloaded-app guidance](https://support.apple.com/en-au/102445).
+
+## Use Homebrew
 
 ```sh
 brew install --cask PentagonToy/tap/remile
+```
+
+The cask installs the app and CLI. It checks the package checksum and retains macOS security checks.
+
+## Update
+
+Quit remile before replacing the app. For a Homebrew installation, run:
+
+```sh
 brew upgrade --cask remile
 ```
 
-The 0.1.3 package is ad hoc signed and is not Apple-notarised. If macOS blocks its first launch, verify the download source and follow [Apple’s downloaded-app guidance](https://support.apple.com/en-au/102445). Homebrew verifies the DMG checksum and installs the app and CLI. It does not bypass macOS security checks.
+**Settings → General → Check for updates** opens a matching download when a newer stable release is available. It sends no document content or account credentials.
 
-## Updates
-
-Quit remile. before replacing the app. Use Homebrew for Homebrew installations. Settings → General checks for newer stable releases and opens the matching download in a browser. This check sends no document content or account credentials. The app does not replace itself.
-
-## Build and package
-
-`VERSION` supplies the package version. Set `REMILE_BUILD_DIRECTORY` to an external output directory and run `tools/prepare_app.sh` to build the app with its artwork, licences and CLI. The default signature is ad hoc when no local certificate is configured. `REMILE_SIGN_IDENTITY` selects a Developer ID identity with hardened runtime and timestamp. Notarisation and stapling are separate operations.
-
-Run `tools/prepare_dmg.sh /absolute/remile.app /absolute/output` to create `remile-VERSION-ARCH.dmg`, `SHA256SUMS` and a draft Homebrew cask. The installer opens with remile.app and an Applications shortcut on a paper background. Keep the tested source commit, app version and `vVERSION` release tag aligned. Publish the matching DMG and checksum, then update the tap with that checksum.
-
-For local development, the builder can read a shared certificate fingerprint from `~/Library/Application Support/PentagonToy/Development/signing-identity`. Baker can use the same certificate. Local signing does not request a distribution timestamp. An explicit `REMILE_SIGN_IDENTITY` takes precedence, and `-` selects ad-hoc signing. Keep the certificate’s private key in Keychain.
+[Open your first document](getting-started.md) · [Builds, signing and packages](details/distribution.md)

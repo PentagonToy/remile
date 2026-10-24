@@ -16,7 +16,11 @@ struct TeXChatGPTReview: View {
         var before = ""
         var task: Task<Void, Never>?
         var key = ""
+        var buffers: [String: String] = [:]
+        var log = ""
+        var main = ""
     }
+    private var focus: TeXDiagnostic { TeXDiagnostics.repairFocus(diagnostic, entries: project.diagnostics) }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { GPTMark(); Text("LaTeX suggestion").font(RemileType.heading); Spacer(); Button("Done") { state.task?.cancel(); dismiss() }.keyboardShortcut(.cancelAction) }
@@ -25,9 +29,10 @@ struct TeXChatGPTReview: View {
                 Text(state.file).font(RemileType.caption).foregroundStyle(.secondary)
                 Text(edit.reason).font(RemileType.callout).textSelection(.enabled)
                 HStack(alignment: .top) { preview("Current", edit.before, colour: RemileStyle.warning); preview("Suggested", edit.after, colour: RemileStyle.success) }.frame(height: 150)
-                HStack { Text("Review before applying.").font(RemileType.caption).foregroundStyle(.secondary); Spacer(); Button("Apply and compile") { apply(edit) }.disabled(project.compiling || project.buffers[state.file] != state.before) }
+                HStack { Text("Review before applying.").font(RemileType.caption).foregroundStyle(.secondary); Spacer(); Button("Apply and compile") { apply(edit) }.disabled(project.compiling || project.buffers != state.buffers || project.log != state.log || project.main != state.main) }
             } else {
-                Text(diagnostic.displayMessage).font(RemileType.callout).fixedSize(horizontal: false, vertical: true)
+                Text(focus.displayMessage).font(RemileType.callout).fixedSize(horizontal: false, vertical: true)
+                if focus.id != diagnostic.id { Text("Checking an earlier cause first.").font(RemileType.caption).foregroundStyle(.secondary) }
                 HStack {
                     if !connection.connected { Button("Connect ChatGPT") { state.settings = true } }
                     else { Button("Suggest fix") { request() }.disabled(project.compiling || AIUsage.shared.reason != nil) }
@@ -45,22 +50,28 @@ struct TeXChatGPTReview: View {
     }
     private func request() {
         guard !state.busy, !project.compiling, AIUsage.shared.reason == nil else { return }
-        var file = diagnostic.file ?? project.main
+        let entries = project.diagnostics
+        let focus = TeXDiagnostics.repairFocus(diagnostic, entries: entries)
+        var file = focus.file ?? project.main
         if file.hasPrefix("./") { file = String(file.dropFirst(2)) }
         if project.buffers[file] == nil { file = project.main }
         guard let source = project.buffers[file] else { return }
         state.file = file; state.before = source; state.error = nil
-        state.key = connection.model + file + SHA256.hash(data: Data((source + diagnostic.message).utf8)).map { String(format: "%02x", $0) }.joined()
+        state.buffers = project.buffers; state.log = project.log; state.main = project.main
+        let input = TeXDiagnostics.repairEvidence(selected: diagnostic, focus: focus, entries: entries, file: file, excerpt: Self.excerpt(source, line: focus.line), main: project.main, preamble: project.buffers[project.main] ?? "")
+        guard let data = try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys]) else { return }
+        state.key = connection.model + file + SHA256.hash(data: Data((source + String(decoding: data, as: UTF8.self)).utf8)).map { String(format: "%02x", $0) }.joined()
         if let edit = TeXFixCache.entries.first(where: { $0.key == state.key })?.edit { state.edit = edit; return }
         state.busy = true
-        let input: [String: Any] = ["file": file, "source": Self.excerpt(source, line: diagnostic.line), "diagnostic": diagnostic.message, "line": diagnostic.line ?? 0]
         state.task = Task {
             defer { state.busy = false }
             do {
-                let data = try JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])
                 let response = try await connection.respond(String(decoding: data, as: UTF8.self), instructions: AssistantPrompts.latexRepair)
                 try Task.checkCancellation()
-                guard project.buffers[file] == source else { throw ChatGPTIdentity.Failure("The source changed. Request a new suggestion.") }
+                guard project.buffers == state.buffers, project.log == state.log, project.main == state.main else { throw ChatGPTIdentity.Failure("The source changed. Request a new suggestion.") }
+                if let reply = try? JSONDecoder().decode(ChatGPTEdit.self, from: Data(response.utf8)), reply.before == reply.after, !reply.reason.isEmpty {
+                    state.error = String(reply.reason.prefix(2000)); return
+                }
                 let edit = try ChatGPTEdit.parse(response, source: source)
                 state.edit = edit; TeXFixCache.entries.append((state.key, edit)); TeXFixCache.entries = Array(TeXFixCache.entries.suffix(8))
             } catch is CancellationError { }
@@ -74,7 +85,7 @@ struct TeXChatGPTReview: View {
     }
     private func apply(_ edit: ChatGPTEdit) {
         do {
-            guard project.buffers[state.file] == state.before, !project.compiling else { throw ChatGPTIdentity.Failure("The source changed. Request a new suggestion.") }
+            guard project.buffers == state.buffers, project.log == state.log, project.main == state.main, !project.compiling else { throw ChatGPTIdentity.Failure("The source changed. Request a new suggestion.") }
             let after = try edit.applying(to: state.before)
             guard project.applyTool(file: state.file, before: state.before, after: after, name: "ChatGPT LaTeX fix") else { throw ChatGPTIdentity.Failure(project.message ?? "Could not apply this edit.") }
             project.markExternalEdit(file: state.file, before: state.before, after: after)

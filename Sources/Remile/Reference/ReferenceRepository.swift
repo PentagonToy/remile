@@ -5,13 +5,28 @@ import Darwin
 
 /// Shared by native views and command adapters. Only this service writes the catalogue.
 struct ReferenceRepository: Sendable {
-    let root: URL
+    private let configuredRoot: URL?
+    var root: URL { configuredRoot ?? StoragePaths.reference() }
     private let keyRule: ReferenceKeyRule?
-    init(root: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app/Reference"), keyRule: ReferenceKeyRule? = nil) { self.root = root; self.keyRule = keyRule }
-    private struct Catalogue: Codable { var schema = 1; var records: [ReferenceRecord] = []; var libraries: [ReferenceLibrary]?; var garbage: [ReferenceAttachment]? }
+    private let history: History?
+    private let readOnly: Bool
+    init(root: URL? = nil, keyRule: ReferenceKeyRule? = nil, history: History? = nil, readOnly: Bool = false) { self.configuredRoot = root; self.keyRule = keyRule; self.history = history; self.readOnly = readOnly }
+    fileprivate struct Catalogue: Codable { var schema = 1; var records: [ReferenceRecord] = []; var libraries: [ReferenceLibrary]?; var garbage: [ReferenceAttachment]? }
+    func recordingHistory(_ history: History) -> Self { Self(root: configuredRoot, keyRule: keyRule, history: history, readOnly: readOnly) }
+    func undo(redo: Bool = false) throws {
+        guard let history else { return }
+        try catalogueTransaction(historyMove: redo) { try history.apply(to: &$0, redo: redo, root: root) }
+    }
     private var catalogue: URL { root.appendingPathComponent("library.json") }
+    func requireStorage() throws { if configuredRoot == nil { try StoragePaths.requireAvailable(root) } }
     private func readCatalogue() throws -> Catalogue {
-        guard FileManager.default.fileExists(atPath: catalogue.path) else { return Catalogue() }
+        try requireStorage()
+        guard FileManager.default.fileExists(atPath: catalogue.path) else {
+            if configuredRoot == nil && root.standardizedFileURL != StoragePaths.defaultReference.standardizedFileURL {
+                throw ReferenceFailure("The library is not downloaded. Wait for folder sync, then try again.")
+            }
+            return Catalogue()
+        }
         let values = try catalogue.resourceValues(forKeys: [.fileSizeKey])
         guard (values.fileSize ?? Int.max) <= 32_000_000 else { throw ReferenceFailure("The reference library is too large to read.") }
         let stored = try JSONDecoder().decode(Catalogue.self, from: Data(contentsOf: catalogue))
@@ -21,6 +36,7 @@ struct ReferenceRepository: Sendable {
     }
     func snapshot() throws -> (records: [ReferenceRecord], libraries: [ReferenceLibrary]) {
         let stored = try readCatalogue()
+        history?.observe(stored)
         return (stored.records, stored.libraries ?? [.primary])
     }
     func records() throws -> [ReferenceRecord] { try readCatalogue().records }
@@ -63,6 +79,7 @@ struct ReferenceRepository: Sendable {
     }
     /// Commit catalogue removal first. Only unreferenced managed PDFs are then removed.
     func emptyTrash() throws {
+        defer { history?.clear() }
         let removed: [ReferenceAttachment] = try catalogueTransaction { catalogue in
             var libraries = catalogue.libraries ?? [.primary]
             let deleted = Set(libraries.filter { $0.trashed != nil }.map(\.id))
@@ -136,13 +153,13 @@ struct ReferenceRepository: Sendable {
             for change in changes {
                 guard let index = records.firstIndex(where: { $0.id == change.id }), records[index].revision == change.before.revision, records[index].trashed == nil else { throw ReferenceFailure("A reference changed. Run Clean up again before applying.") }
                 _ = try destination(records[index].collectionID ?? records[index].library)
-                records[index].fields = change.after.fields
+                records[index].fields = change.after.fields; records[index].type = change.after.type
                 records[index].revision = UUID(); records[index].modified = Date()
             }
         }
     }
     func refreshAttachment(_ id: UUID) throws {
-        try transaction { records in
+        try transaction(recordHistory: false) { records in
             guard let file = records.flatMap(\.attachments).first(where: { $0.id == id }) else { return }
             let url = attachmentURL(file)
             guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 200_000_000 else { throw ReferenceFailure("This PDF is too large to update.") }
@@ -236,7 +253,7 @@ struct ReferenceRepository: Sendable {
         }
     }
     /// Inputs are copied into managed storage. Originals and existing attachments are never replaced.
-    @discardableResult func importFiles(_ urls: [URL], attachingTo target: UUID? = nil, expected: UUID? = nil, libraryID: UUID = ReferenceLibrary.primaryID, matchingExisting: Bool = false) throws -> [ReferenceRecord] {
+    @discardableResult func importFiles(_ urls: [URL], attachingTo target: UUID? = nil, expected: UUID? = nil, libraryID: UUID = ReferenceLibrary.primaryID, matchingExisting: Bool = false, rejectAmbiguous: Bool = false) throws -> [ReferenceRecord] {
         guard !urls.isEmpty, urls.count <= 100, urls.allSatisfy(\.isFileURL) else { throw ReferenceFailure("Choose up to 100 PDF or BibTeX files.") }
         let destinationLibrary = try destination(libraryID)
         var created: [URL] = []
@@ -280,9 +297,11 @@ struct ReferenceRepository: Sendable {
                             let matches = records.indices.filter { index in
                                 let candidate = records[index]
                                 return candidate.trashed == nil && candidate.library == library &&
+                                    (!rejectAmbiguous || destinationLibrary.parentID == nil || candidate.collectionID == destinationLibrary.id) &&
                                     (candidate.attachments.contains { $0.sha256 == attachment.sha256 } ||
                                      (!doi.isEmpty && ReferenceDuplicates.normaliseDOI(candidate.fields["doi"] ?? "") == doi))
                             }
+                            if rejectAmbiguous, matches.count > 1 { throw ReferenceFailure("Several references match. Resolve them in Reference first.") }
                             if matchingExisting, matches.count == 1, let index = matches.first {
                                 if !records[index].attachments.contains(where: { $0.sha256 == attachment.sha256 }) { records[index].attachments.append(attachment) }
                                 for (key, value) in fields where records[index].fields[key]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false { records[index].fields[key] = value }
@@ -302,16 +321,22 @@ struct ReferenceRepository: Sendable {
             throw error
         }
     }
-    @discardableResult func addFetched(_ draft: ReferenceRecord, pdf: Data?, libraryID: UUID) throws -> ReferenceRecord {
+    @discardableResult func addFetched(_ draft: ReferenceRecord, pdf: Data?, libraryID: UUID, attachingTo target: UUID? = nil, expected: UUID? = nil) throws -> ReferenceRecord {
+        guard target == nil || pdf != nil else { throw ReferenceFailure("Choose a PDF before attaching it.") }
         let destination = try destination(libraryID)
         var created: URL?
         do {
             return try transaction { records in
                 var record = draft
+                if let target {
+                    guard let current = records.first(where: { $0.id == target && $0.trashed == nil }), current.revision == expected else { throw ReferenceFailure("The reference changed. Open it again.") }
+                    record = current
+                }
                 record.libraryID = destination.parentID ?? destination.id; record.collectionID = destination.parentID == nil ? nil : destination.id
                 if let bytes = pdf {
                     guard bytes.count <= 25 * 1024 * 1024, let document = PDFDocument(data: bytes), !document.isLocked, document.pageCount > 0 else { throw ReferenceFailure("Choose a readable PDF smaller than 25 MB.") }
                     let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+                    if target != nil, let existing = record.attachments.first(where: { $0.sha256 == hash }), (try? Data(contentsOf: attachmentURL(existing), options: .mappedIfSafe)) == bytes { return record }
                     var attachment = ReferenceAttachment(name: String(record.displayTitle.prefix(100)) + ".pdf", sha256: hash, bytes: bytes.count)
                     if let shared = records.flatMap(\.attachments).first(where: { $0.sha256 == hash && (try? Data(contentsOf: attachmentURL($0), options: .mappedIfSafe)) == bytes }) { attachment = shared }
                     else {
@@ -320,7 +345,12 @@ struct ReferenceRepository: Sendable {
                         try bytes.write(to: url, options: .withoutOverwriting); created = url
                         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
                     }
-                    record.attachments = [attachment]
+                    if target == nil { record.attachments = [attachment] }
+                    else if let index = record.attachments.firstIndex(where: { $0.sha256 == attachment.sha256 }) { record.attachments[index] = attachment }
+                    else { record.attachments.append(attachment) }
+                }
+                if let target, let index = records.firstIndex(where: { $0.id == target }) {
+                    record.revision = UUID(); record.modified = Date(); records[index] = record; return record
                 }
                 return try append([record], to: &records)[0]
             }
@@ -374,8 +404,8 @@ struct ReferenceRepository: Sendable {
                   record.attachments.allSatisfy({ $0.bytes >= 0 && $0.bytes <= 200_000_000 && $0.sha256.count == 64 && $0.sha256.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) && $0.name.utf8.count <= 1024 }) else { throw ReferenceFailure("Check the reference fields and attachments before saving.") }
         }
     }
-    private func transaction<T>(_ action: (inout [ReferenceRecord]) throws -> T) throws -> T {
-        try catalogueTransaction { catalogue in
+    private func transaction<T>(recordHistory: Bool = true, _ action: (inout [ReferenceRecord]) throws -> T) throws -> T {
+        try catalogueTransaction(recordHistory: recordHistory) { catalogue in
             let before = Dictionary(uniqueKeysWithValues: catalogue.records.map { ($0.id, $0) })
             let result = try action(&catalogue.records)
             let libraries = catalogue.libraries ?? [.primary]
@@ -385,9 +415,10 @@ struct ReferenceRepository: Sendable {
             return result
         }
     }
-    private func catalogueTransaction<T>(_ action: (inout Catalogue) throws -> T) throws -> T {
+    private func catalogueTransaction<T>(historyMove: Bool? = nil, recordHistory: Bool = true, _ action: (inout Catalogue) throws -> T) throws -> T {
         try withLibraryLock {
             var catalogue = try readCatalogue()
+            let before = catalogue
             let result = try action(&catalogue)
             try validate(catalogue.records)
             let libraries = catalogue.libraries ?? [.primary]
@@ -395,10 +426,16 @@ struct ReferenceRepository: Sendable {
             let data = try JSONEncoder().encode(catalogue)
             guard data.count <= 32_000_000 else { throw ReferenceFailure("The reference catalogue is full.") }
             try data.write(to: self.catalogue, options: .atomic)
+            if let historyMove { history?.didMove(to: catalogue, redo: historyMove) }
+            else if recordHistory { history?.record(before: before, after: catalogue) }
+            else if before.records != catalogue.records { history?.clear() }
             return result
         }
     }
     func withLibraryLock<T>(_ action: () throws -> T) throws -> T {
+        StoragePaths.gate.lock(); defer { StoragePaths.gate.unlock() }
+        try requireStorage()
+        guard !readOnly && !StoragePaths.isReadOnly(root) else { throw ReferenceFailure("This library is read only. Enable editing in Storage on one Mac at a time.") }
         let manager = FileManager.default
         try manager.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let descriptor = Darwin.open(root.appendingPathComponent("library.lock").path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)
@@ -407,5 +444,73 @@ struct ReferenceRepository: Sendable {
         guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else { throw ReferenceFailure("The reference library is busy. Try again.") }
         defer { flock(descriptor, LOCK_UN) }
         return try action()
+    }
+}
+
+extension ReferenceRepository {
+    /// Session-only metadata deltas. PDF bytes are never copied into history.
+    final class History: @unchecked Sendable {
+        private struct Change: Codable {
+            var before: [ReferenceRecord]
+            var after: [ReferenceRecord]
+            var librariesBefore: [ReferenceLibrary]?
+            var librariesAfter: [ReferenceLibrary]?
+            var bytes: Int = 0
+        }
+        private let lock = NSRecursiveLock()
+        private var past: [Change] = []
+        private var future: [Change] = []
+        private var expected: Data?
+        var canUndo: Bool { lock.lock(); defer { lock.unlock() }; return !past.isEmpty }
+        var canRedo: Bool { lock.lock(); defer { lock.unlock() }; return !future.isEmpty }
+        func clear() { lock.lock(); defer { lock.unlock() }; past.removeAll(); future.removeAll(); expected = nil }
+        private func fingerprint(_ catalogue: Catalogue) -> Data? {
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            return (try? encoder.encode(catalogue)).map { Data(SHA256.hash(data: $0)) }
+        }
+        fileprivate func observe(_ catalogue: Catalogue) {
+            lock.lock(); defer { lock.unlock() }
+            if let expected, expected != fingerprint(catalogue) { clear() }
+        }
+        fileprivate func record(before: Catalogue, after: Catalogue) {
+            lock.lock(); defer { lock.unlock() }
+            observe(before)
+            let old = Dictionary(uniqueKeysWithValues: before.records.map { ($0.id, $0) })
+            let new = Dictionary(uniqueKeysWithValues: after.records.map { ($0.id, $0) })
+            let ids = Set(old.keys).union(new.keys).filter { old[$0] != new[$0] }
+            let oldLibraries = before.libraries ?? [.primary], newLibraries = after.libraries ?? [.primary]
+            guard !ids.isEmpty || oldLibraries != newLibraries else { return }
+            var change = Change(before: before.records.filter { ids.contains($0.id) }, after: after.records.filter { ids.contains($0.id) }, librariesBefore: oldLibraries == newLibraries ? nil : oldLibraries, librariesAfter: oldLibraries == newLibraries ? nil : newLibraries)
+            change.bytes = (try? JSONEncoder().encode(change).count) ?? Int.max
+            future.removeAll()
+            guard change.bytes <= 8_000_000 else { clear(); return }
+            past.append(change)
+            while past.count > 30 || past.reduce(0, { $0 + $1.bytes }) > 8_000_000 { past.removeFirst() }
+            expected = fingerprint(after)
+        }
+        fileprivate func apply(to catalogue: inout Catalogue, redo: Bool, root: URL) throws {
+            lock.lock(); defer { lock.unlock() }
+            guard expected != nil, expected == fingerprint(catalogue) else { clear(); throw ReferenceFailure("Reference changed elsewhere. Undo history was cleared.") }
+            guard let change = (redo ? future : past).last else { throw ReferenceFailure("Nothing to undo or redo.") }
+            let restore = redo ? change.after : change.before
+            let ids = Set((change.before + change.after).map(\.id))
+            for attachment in restore.flatMap(\.attachments) {
+                guard FileManager.default.fileExists(atPath: root.appendingPathComponent(attachment.relativePath).path) else { throw ReferenceFailure("An attachment is missing. This change cannot be restored.") }
+            }
+            var garbage = catalogue.garbage ?? []
+            for attachment in catalogue.records.filter({ ids.contains($0.id) }).flatMap(\.attachments) where !garbage.contains(where: { $0.id == attachment.id }) { garbage.append(attachment) }
+            catalogue.garbage = garbage
+            catalogue.records.removeAll { ids.contains($0.id) }
+            catalogue.records.append(contentsOf: restore.map { record in
+                var record = record; record.revision = UUID(); record.modified = Date(); return record
+            })
+            if let libraries = redo ? change.librariesAfter : change.librariesBefore { catalogue.libraries = libraries }
+        }
+        fileprivate func didMove(to catalogue: Catalogue, redo: Bool) {
+            lock.lock(); defer { lock.unlock() }
+            if redo, let change = future.popLast() { past.append(change) }
+            else if !redo, let change = past.popLast() { future.append(change) }
+            expected = fingerprint(catalogue)
+        }
     }
 }

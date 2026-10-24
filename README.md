@@ -20,7 +20,7 @@ A local workspace for PDF, Markdown and LaTeX documents.
 
 Convert, compress, combine and export documents when you need to. Suggested source changes stay reviewable and undoable.
 
-[Install & updates](docs/distribution.md) · [Changelog](CHANGELOG.md) · [Features](docs/features.md) · [AI & writing](docs/assistant.md) · [CLI](docs/cli.md) · [Brand](docs/brand.md)
+[Website](https://pentagontoy.github.io/remile/) · [Install & updates](docs/distribution.md) · [Changelog](CHANGELOG.md) · [Features](docs/features.md) · [AI & writing](docs/assistant.md) · [CLI](docs/cli.md) · [Brand](docs/brand.md)
 
 ## Begin with a document
 

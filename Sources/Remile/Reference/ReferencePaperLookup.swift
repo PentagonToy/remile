@@ -5,6 +5,38 @@ import PDFKit
 enum ReferencePaperLookup {
     static let pdfLimit = 25 * 1024 * 1024
     struct Paper: Identifiable, Sendable { let record: ReferenceRecord; var id: UUID { record.id } }
+    static func matches(_ record: ReferenceRecord, fields: [String: String]) -> Bool {
+        let wanted = ReferenceDuplicates.normaliseDOI(record.fields["doi"] ?? "")
+        let actual = ReferenceDuplicates.normaliseDOI(fields["doi"] ?? "")
+        if !wanted.isEmpty && !actual.isEmpty { return wanted == actual }
+        func title(_ value: String) -> String { value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX")).unicodeScalars.filter(CharacterSet.alphanumerics.contains).map(String.init).joined() }
+        let expected = title(record.title)
+        return expected.count >= 20 && expected == title(fields["title"] ?? "")
+    }
+    static func localPDFs(for record: ReferenceRecord, candidates: [URL]) throws -> [URL] {
+        var result: [URL] = [], seen = Set<URL>()
+        for url in candidates.prefix(20) where url.isFileURL && url.pathExtension.lowercased() == "pdf" {
+            try Task.checkCancellation()
+            guard seen.insert(url.standardizedFileURL).inserted,
+                  let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= pdfLimit,
+                  let pdf = PDFDocument(url: url), !pdf.isLocked, pdf.pageCount > 0,
+                  matches(record, fields: ReferencePDFMetadata.fields(pdf, fallback: url.deletingPathExtension().lastPathComponent)) else { continue }
+            result.append(url)
+        }
+        return result
+    }
+    static func metadata(for record: ReferenceRecord) async throws -> ReferenceRecord {
+        if let id = ReferencePDFMetadata.arxivID(in: "arXiv:" + (record.fields["eprint"] ?? "") + " " + record.title + " " + (record.fields["url"] ?? "")) {
+            let data = try await request(URL(string: "https://arxiv.org/bibtex/" + encoded(id))!, limit: 100_000, accept: "application/x-bibtex")
+            let entries = try ReferenceBibTeX.parse(String(decoding: data, as: UTF8.self))
+            guard entries.count == 1, entries[0].fields["eprint"]?.replacingOccurrences(of: #"v[0-9]+$"#, with: "", options: .regularExpression) == id.replacingOccurrences(of: #"v[0-9]+$"#, with: "", options: .regularExpression) else { throw ReferenceFailure("The archive record did not match this paper.") }
+            return entries[0]
+        }
+        let doi = ReferenceDuplicates.normaliseDOI(record.fields["doi"] ?? "")
+        let papers = try await search(doi.hasPrefix("10.") ? doi : record.title)
+        guard let paper = papers.first(where: { matches(record, fields: $0.record.fields) }) else { throw ReferenceFailure("No exact match. Add a DOI or arXiv ID and try again.") }
+        return paper.record
+    }
     static func search(_ query: String) async throws -> [Paper] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, query.count <= 500 else { throw ReferenceFailure("Enter a DOI or a title of up to 500 characters.") }
@@ -17,6 +49,7 @@ enum ReferencePaperLookup {
         return try parseCrossref(data, single: single).map { Paper(record: $0) }
     }
     static func openPDFs(doi: String) async throws -> [URL] {
+        let doi = ReferenceDuplicates.normaliseDOI(doi)
         guard doi.hasPrefix("10.") else { return [] }
         var url = URLComponents(string: "https://api.openalex.org")!
         url.percentEncodedPath = "/works/https://doi.org/" + encoded(doi)

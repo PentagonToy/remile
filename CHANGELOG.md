@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Copy the selected or clicked PDF table directly as spreadsheet cells, with a cancellable progress message instead of a review window.
+
+- Drag PDF images into native editors and avoid selecting nearby text when opening an image menu. Preserve direct text selection on OCR layers.
+
+- Copy embedded PDF image regions and copy locally recognised tables as spreadsheet cells. Share page inspection and export with the CLI.
+
+- Copy portable Overleaf project IDs from the library and recent documents. Resolve them through CLI project discovery, source reads and explicit opening with buffer hashes and PDF currency.
+
 - Import LaTeX source ZIPs from the Home card into a new chosen folder, preserving the archive and its project assets. Share bounded extraction with Overleaf imports.
 - Discover open documents and explicitly target CLI requests by session UUID. Add Reference import, metadata update, attachment changes, Trash/restore and key regeneration with revision checks.
 

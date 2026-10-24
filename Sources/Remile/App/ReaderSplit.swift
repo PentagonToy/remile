@@ -105,7 +105,7 @@ struct ReaderSplit<Pane: View, Content: View>: View {
         }.frame(width: Self.handleWidth).frame(maxHeight: .infinity)
     }
 }
-private struct ResizeCursorRegion: NSViewRepresentable {
+struct ResizeCursorRegion: NSViewRepresentable {
     final class Region: NSView {
         override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeLeftRight) }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }

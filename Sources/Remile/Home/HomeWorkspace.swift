@@ -17,6 +17,8 @@ struct HomeWorkspace: View {
         ZStack {
             if model.page == .home {
                 homeLayout.transition(.opacity.combined(with: .offset(x: -16)))
+            } else if model.page == .writer, let writer = model.writer {
+                WriterWorkspace(model: writer, goHome: { if model.closeWriter() { model.page = .home } }).navigationTitle(writer.title)
             } else if model.page == .reference {
                 ReferenceWorkspace(model: model.references, goHome: { navigate(.home) }, openPDF: { url, page in
                     ReaderNavigation.shared.reveal(LibraryHit(path: url.path, folderID: "reference", page: page + 1, excerpt: "", score: 0), query: "")
@@ -103,6 +105,7 @@ struct HomeWorkspace: View {
                                     ForEach(Array(model.recent.prefix(narrow && compact ? 4 : 6)), id: \.self) { url in
                                         Button { open(url) } label: { RecentReadingRow(url: url, openedAt: model.lastOpened(url), displayName: model.overleaf.connection(for: url)?.name, overleaf: model.overleaf.connection(for: url) != nil).frame(height: compact ? 68 : 88).onDrag { NSItemProvider(object: url as NSURL) } }.buttonStyle(RemilePressStyle())
                                             .contextMenu {
+                                                if let project = model.overleaf.connection(for: url) { OverleafProjectIDButton(project: project) }
                                                 Button("Reveal in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                                                 Button("Remove from Recent", systemImage: "clock.badge.xmark") { model.removeRecent(url) }
                                             }
@@ -114,6 +117,7 @@ struct HomeWorkspace: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Editors").font(RemileType.heading)
                         HomeCardLayout(minimumWidth: 160) {
+                            Button { model.newWriter() } label: { Label("Writer", systemImage: "text.alignleft").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("Letters and short documents")
                             Button { model.newMarkdown() } label: { Label("Markdown", systemImage: "square.and.pencil").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("New Markdown document").tourTarget("markdown")
                             Button { model.chooseTeX() } label: { Label("LaTeX", systemImage: "doc.text").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("Open a LaTeX project folder or source ZIP").tourTarget("latex").modifier(ToolFileDrop(model: model, target: .latex))
                             Button { model.overleaf.openLibrary() } label: { Label { Text("Overleaf") } icon: { OverleafMark() }.frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("Open Overleaf library").tourTarget("overleaf")
@@ -149,7 +153,7 @@ struct HomeWorkspace: View {
         }.buttonStyle(RemilePressStyle()).remileHelp(detail)
     }
 
-    private func navigate(_ page: HomeModel.Page) { guard model.pdfSearchEditing.confirmLeaving() else { return }; model.page = page }
+    private func navigate(_ page: HomeModel.Page) { guard model.closeWriter(), model.pdfSearchEditing.confirmLeaving() else { return }; model.page = page }
 
     private func open(_ url: URL) { model.open(url) }
 }

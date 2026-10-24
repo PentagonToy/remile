@@ -28,7 +28,7 @@ struct LibrarySearchView: View {
                         Picker("Search pane", selection: $citationState.compactPreview) { Text("Results").tag(false); Text("Preview").tag(true) }.labelsHidden().pickerStyle(.segmented).padding(10)
                         if citationState.compactPreview { previewAndAsk } else { sidebar }
                     }
-                } else { ReaderSplit(sizing: .results, minimum: 280, maximum: 520, minimumContent: model.askPresented ? 820 : 480, label: "search results", pane: { sidebar }, content: { previewAndAsk }) }
+                } else { ReaderSplit(sizing: .results, minimum: 260, maximum: 520, minimumContent: model.askPresented ? 600 : 420, label: "search results", pane: { sidebar }, content: { previewAndAsk }) }
             }
         }.sheet(isPresented: $model.libraryPresented) { LibraryManager(model: model) }
             .sheet(isPresented: $citationState.references) { ReferencePicker(format: .markdown) }
@@ -58,10 +58,8 @@ struct LibrarySearchView: View {
         }.frame(width: 540, height: 600).background(RemileStyle.background).tint(RemileStyle.accent)
     }
 
-    @ViewBuilder private var previewAndAsk: some View {
-        if model.askPresented {
-            ReaderSplit(side: .trailing, initial: 360, minimum: 320, maximum: 440, minimumContent: 480, preferPaneWhenNarrow: true, label: "Ask panel", pane: { searchAssistant }, content: { preview })
-        } else { preview }
+    private var previewAndAsk: some View {
+        SearchPreviewSplit(askPresented: model.askPresented, assistant: { searchAssistant }, preview: { preview })
     }
     private var searchAssistant: some View {
         AssistantPanel(assistant: assistant, passages: citationState.selectedPassages + assistantHits.map(\.assistantPassage).filter { passage in !citationState.selectedPassages.contains { $0.id == passage.id } }, topic: model.query, select: { source in
@@ -112,7 +110,7 @@ struct LibrarySearchView: View {
             }
     }
     private var libraryButton: some View {
-        Button { model.libraryPresented = true } label: { Label("Library", systemImage: "books.vertical") }.remileHelp("Manage indexed folders")
+        Button { model.libraryPresented = true } label: { Label("Library", systemImage: "folder") }.remileHelp("Manage indexed folders")
     }
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -154,7 +152,7 @@ struct LibrarySearchView: View {
             }
             if let error = model.queryError { Text(error).font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 14) }
             if model.summary.folders.isEmpty {
-                ContentUnavailableView { Label("Build your library", systemImage: "books.vertical") } actions: {
+                ContentUnavailableView { Label("Build your library", systemImage: "folder") } actions: {
                     Button("Add to Library…", action: model.addFolder).buttonStyle(.borderedProminent)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -298,6 +296,7 @@ struct LibrarySearchView: View {
 
     private func toggleAssistant() {
         if model.askPresented { assistant.cancel() }
+        else if model.selectedHit != nil { citationState.compactPreview = true }
         withAnimation(reduceMotion ? nil : RemileMotion.panel) { model.askPresented.toggle() }
     }
 

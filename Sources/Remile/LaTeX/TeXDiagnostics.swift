@@ -12,6 +12,56 @@ struct TeXDiagnostic: Identifiable {
 }
 
 enum TeXDiagnostics {
+    static func priority(_ entry: TeXDiagnostic) -> Int {
+        let text = entry.message.lowercased()
+        if entry.severity == .error {
+            if entry.isBuildSummary || text.contains("emergency stop") || text.contains("fatal error occurred") { return 9 }
+            if text.contains("documentclass") || text.contains("missing \\begin{document}") { return 0 }
+            if text.contains("not found") || text.contains("not loadable") || text.contains("option clash") || text.contains("runaway argument") || text.contains("file ended while scanning") { return 1 }
+            return 2
+        }
+        if entry.severity == .warning {
+            if text.contains("undefined") || text.contains("rerun") || text.contains("not found") { return 4 }
+            if text.contains("overfull") || text.contains("underfull") { return 7 }
+            return 5
+        }
+        return 8
+    }
+    static func prioritised(_ entries: [TeXDiagnostic]) -> [TeXDiagnostic] {
+        entries.enumerated().sorted {
+            let left = priority($0.element), right = priority($1.element)
+            return left == right ? $0.offset < $1.offset : left < right
+        }.map(\.element)
+    }
+    /// Add only directly observed source mistakes, never a guessed missing class.
+    static func assessed(_ entries: [TeXDiagnostic], main: String, source: String) -> [TeXDiagnostic] {
+        guard entries.contains(where: { $0.severity == .error }) else { return prioritised(entries) }
+        let lines = Array(source.components(separatedBy: .newlines).prefix(200).prefix { !$0.contains("\\begin{document}") })
+        guard !lines.contains(where: { $0.range(of: #"^\s*\\documentclass\b"#, options: .regularExpression) != nil }) else { return prioritised(entries) }
+        let bareClass = #"^\s*documentclass\s*(?:\[[^\]]*\]\s*)?\{"#
+        if let index = lines.prefix(200).firstIndex(where: { $0.range(of: bareClass, options: .regularExpression) != nil }) {
+            let root = TeXDiagnostic(id: -1, severity: .error, message: "Missing \\ before \\documentclass. Later errors may follow from this.", file: main, line: index + 1)
+            return [root] + prioritised(entries)
+        }
+        return prioritised(entries)
+    }
+    static func repairFocus(_ selected: TeXDiagnostic, entries: [TeXDiagnostic]) -> TeXDiagnostic {
+        let first = prioritised(entries).first
+        return first.map { priority($0) < 2 ? $0 : selected } ?? selected
+    }
+    static func repairEvidence(selected: TeXDiagnostic, focus: TeXDiagnostic, entries: [TeXDiagnostic], file: String, excerpt: String, main: String, preamble: String) -> [String: Any] {
+        func row(_ entry: TeXDiagnostic) -> [String: Any] {
+            ["message": String(entry.message.prefix(1200)), "file": entry.file ?? "", "line": entry.line ?? 0]
+        }
+        let header = preamble.components(separatedBy: .newlines).prefix(160).joined(separator: "\n")
+        return ["file": file, "source": excerpt, "diagnostic": row(focus), "selectedDiagnostic": row(selected),
+                "checkFirst": prioritised(entries).prefix(6).map(row),
+                "earliestErrors": entries.filter { $0.severity == .error }.sorted { $0.id < $1.id }.prefix(12).map(row),
+                "mainFile": main, "mainPreamble": String(header.prefix(6000)),
+                "errorCount": entries.filter { $0.severity == .error }.count,
+                "warningCount": entries.filter { $0.severity == .warning }.count,
+                "rankingIsHeuristic": true]
+    }
     static func logSeverity(_ entries: [TeXDiagnostic], failed: Bool = false) -> TeXDiagnostic.Severity? {
         if failed { return .error }
         var warning = false
@@ -22,7 +72,7 @@ enum TeXDiagnostics {
         return warning ? .warning : nil
     }
     static func primaryError(_ entries: [TeXDiagnostic]) -> TeXDiagnostic? {
-        let errors = entries.filter { $0.severity == .error }
+        let errors = prioritised(entries).filter { $0.severity == .error }
         return errors.first { entry in
             !["Emergency stop", "Fatal error occurred", "Latexmk: Errors", "Latexmk: Could not"].contains(where: entry.message.contains)
         } ?? errors.first

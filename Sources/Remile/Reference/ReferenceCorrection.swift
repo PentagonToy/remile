@@ -6,7 +6,9 @@ enum ReferenceCorrection {
         var text = output.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("```"), let start = text.firstIndex(of: "\n"), text.hasSuffix("```") { text = String(text[text.index(after: start)..<text.index(text.endIndex, offsetBy: -3)]) }
         let records = try ReferenceBibTeX.parse(text)
-        guard records.count == 1, records[0].fields["title"]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { throw ReferenceFailure("Request a suggestion for one reference at a time.") }
+        guard !records.isEmpty else { throw ReferenceFailure("No BibTeX entry was returned. Nothing changed.") }
+        guard records.count == 1 else { throw ReferenceFailure("Multiple entries were returned. Nothing changed.") }
+        guard records[0].fields["title"]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { throw ReferenceFailure("The suggestion has no title. Nothing changed.") }
         return records[0]
     }
 }

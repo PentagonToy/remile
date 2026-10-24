@@ -13,7 +13,7 @@ art = root / 'others'
 assets = []
 for path in sorted(art.rglob('*.svg')):
     relative = path.relative_to(art).as_posix()
-    if relative.startswith('templates/'):
+    if relative.startswith(('templates/', 'symbols/guide/')):
         continue
     assets.append({'source': relative, 'bundle': 'Brand/' + path.name})
 assert len({x['bundle'] for x in assets}) == len(assets), 'Duplicate runtime asset name'

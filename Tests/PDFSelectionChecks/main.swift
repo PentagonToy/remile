@@ -166,5 +166,39 @@ let beforeCancel = drawings.count
 view.cancelDrawing()
 expect(drawings.count == beforeCancel && page.annotations.isEmpty, "Cancelling a gesture retains neither an annotation nor a write")
 expect(PDFDrawingTool.rectangle.annotation(points: [.zero, .zero], on: page, color: .red) == nil, "Zero-size shapes are ignored")
+let imageDocument = PDFDocument(data: pdfImageFixture(rotation: 0))!
+let imagePage = imageDocument.page(at: 0)!
+let imageView = PDFSelectionView(frame: NSRect(x: 0, y: 0, width: 700, height: 600))
+imageView.document = imageDocument; imageView.autoScales = true; imageView.layoutDocumentView()
+let titleSelection = imagePage.selection(for: NSRange(location: 0, length: 6))!
+imageView.setCurrentSelection(titleSelection, animate: false)
+let imagePoint = CGPoint(x: 120, y: 110)
+let imageLocation = imageView.convert(imageView.convert(imagePoint, from: imagePage), to: nil)
+let imageEvent = NSEvent.mouseEvent(with: .rightMouseDown, location: imageLocation, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
+let imageMenu = imageView.menu(for: imageEvent)!
+expect(imageMenu.items.first?.title == "Copy Image", "Image menu offers image copying first")
+if #available(macOS 26.0, *) {
+    expect(imageMenu.items.contains(where: { $0.title == "Copy Table" }), "Table copying is a direct menu action")
+    expect(!imageMenu.items.contains(where: { $0.title.contains("Recognise Tables") }), "No recognition-window action remains")
+}
+expect(imageView.currentSelection == nil, "Image right-click clears an unrelated text selection")
+expect(imageMenu.items.first(where: { $0.title == "Copy" })?.isEnabled == false, "Image menu does not target nearby text")
+expect(!PDFImageDrag.hasText(at: imagePoint, on: imagePage), "Figure pixels are not a nearest text match")
+expect(PDFImageDrag.hasText(at: CGPoint(x: titleSelection.bounds(for: imagePage).midX, y: titleSelection.bounds(for: imagePage).midY), on: imagePage), "Actual PDF text remains selectable")
+let drag = PDFImageDrag(view: imageView)
+expect(drag.prepare(at: imageView.convert(imagePoint, from: imagePage)) && drag.isPending, "An image press prepares a drag without rendering")
+drag.cancel()
+expect(!drag.isPending, "Cancelling clears the pending gesture")
+let candidate = PDFImageDrag.Candidate(page: imagePage, reference: imagePage.pageRef, bounds: CGRect(x: 80, y: 90, width: 100, height: 50), crop: imagePage.bounds(for: .cropBox), rotation: imagePage.rotation, start: .zero)
+let dragImage = try! PDFImageDrag.image(candidate, in: imageView)
+let pasteboard = NSPasteboard.withUniqueName()
+expect(pasteboard.writeObjects([dragImage]), "Image drag provides native pasteboard representations")
+expect(pasteboard.canReadObject(forClasses: [NSImage.self]), "A native editor can receive the image")
+expect(pasteboard.types?.contains(.tiff) == true, "TIFF image data is available to Notes and native editors")
+pasteboard.releaseGlobally()
+imagePage.rotation = 90
+expect(!candidate.isCurrent(in: imageView), "Changing the page invalidates the old drag")
+imageView.document = nil
+expect(imagePage.annotations.isEmpty, "Image interactions do not add PDF highlights")
 print("\(checks) PDF selection checks passed. Synthetic native PDFs; no user file or clipboard change.")
 }

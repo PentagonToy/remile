@@ -3,13 +3,13 @@ import Combine
 import UniformTypeIdentifiers
 
 @MainActor final class ReferenceModel: ObservableObject {
-    @Published private(set) var records: [ReferenceRecord] = []
-    @Published private(set) var libraries: [ReferenceLibrary] = [.primary]
-    @Published var selectedLibrary = ReferenceLibrary.primaryID
+    @Published private(set) var records: [ReferenceRecord] = [] { didSet { cachedItems = nil } }
+    @Published private(set) var libraries: [ReferenceLibrary] = [.primary] { didSet { cachedItems = nil } }
+    @Published var selectedLibrary = ReferenceLibrary.primaryID { didSet { cachedItems = nil } }
     @Published var selected: UUID?
     @Published var selectedIDs = Set<UUID>()
-    @Published var query = ""
-    @Published var showingTrash = false
+    @Published var query = "" { didSet { cachedItems = nil } }
+    @Published var showingTrash = false { didSet { cachedItems = nil } }
     @Published private(set) var busy = false
     @Published var error: String?
     private var reloadRequested = false
@@ -20,16 +20,26 @@ import UniformTypeIdentifiers
     var previewPages: [UUID: Int] = [:]
     var previewAttachments: [UUID: UUID] = [:]
     let repository: ReferenceRepository
-    init(repository: ReferenceRepository = ReferenceRepository()) { self.repository = repository }
+    @Published private(set) var sorting = ReferenceSort()
+    private var cachedItems: [ReferenceRecord]?
+    func sort(by column: ReferenceColumn) { cachedItems = nil; sorting.select(column) }
+    private let history = ReferenceRepository.History()
+    init(repository: ReferenceRepository = ReferenceRepository()) { self.repository = repository.recordingHistory(history) }
+    var canUndo: Bool { !busy && history.canUndo }
+    var canRedo: Bool { !busy && history.canRedo }
+    func undo(redo: Bool = false) { perform { try $0.undo(redo: redo); return nil } }
     var activeLibraries: [ReferenceLibrary] { libraries.filter { $0.trashed == nil } }
     var deletedLibraries: [ReferenceLibrary] { libraries.filter { child in child.trashed != nil && (child.parentID == nil || libraries.first(where: { $0.id == child.parentID })?.trashed == nil) } }
     var trashRecords: [ReferenceRecord] { let ids = Set(libraries.filter { $0.trashed != nil }.map(\.id)); return records.filter { $0.trashed != nil || ids.contains($0.library) || $0.collectionID.map(ids.contains) == true } }
     func contents(_ library: UUID) -> [ReferenceRecord] { let hidden = Set(libraries.filter { $0.trashed != nil }.map(\.id)); return records.filter { ($0.library == library || $0.collectionID == library) && !hidden.contains($0.library) && $0.collectionID.map(hidden.contains) != true } }
     var libraryRecords: [ReferenceRecord] { contents(selectedLibrary) }
     var items: [ReferenceRecord] {
+        if let cachedItems { return cachedItems }
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (showingTrash ? trashRecords : libraryRecords.filter { $0.trashed == nil }).filter { (text.isEmpty || $0.searchText.localizedCaseInsensitiveContains(text)) }
-            .map { (record: $0, title: $0.displayTitle) }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }.map(\.record)
+        let filtered = (showingTrash ? trashRecords : libraryRecords.filter { $0.trashed == nil }).filter { text.isEmpty || $0.searchText.localizedCaseInsensitiveContains(text) }
+        let result = sorting.sorted(filtered)
+        cachedItems = result
+        return result
     }
     var selection: ReferenceRecord? { items.first { $0.id == selected } }
     func selectLibrary(_ id: UUID, trash: Bool = false) { selectedLibrary = id; showingTrash = trash; selected = items.first?.id; selectedIDs = Set([selected].compactMap { $0 }) }
@@ -43,6 +53,7 @@ import UniformTypeIdentifiers
     }
     func watch() async {
         do {
+            try repository.requireStorage()
             try FileManager.default.createDirectory(at: repository.root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let changes = try DirectoryChanges(repository.root)
             defer { changes.cancel() }
@@ -69,6 +80,9 @@ import UniformTypeIdentifiers
     func emptyTrash() { perform { try $0.emptyTrash(); return nil } }
     func reorderLibrary(_ id: UUID, before target: UUID) { perform { try $0.reorderLibrary(id, before: target); return nil } }
     func merge(_ snapshots: [ReferenceRecord], preferred: UUID, alignMetadata: Bool, resolvedFields: [String: String]? = nil, completion: @escaping () -> Void) { perform(completion: completion) { try $0.merge(snapshots, preferred: preferred, alignMetadata: alignMetadata, resolvedFields: resolvedFields); return preferred } }
+    func attachFetched(_ data: Data, to record: ReferenceRecord, completion: @escaping () -> Void, failure: @escaping () -> Void) {
+        perform(completion: completion, failure: failure) { try $0.addFetched(record, pdf: data, libraryID: record.collectionID ?? record.library, attachingTo: record.id, expected: record.revision).id }
+    }
     func addFetched(_ record: ReferenceRecord, pdf: Data?, completion: @escaping () -> Void, failure: @escaping () -> Void) {
         let library = selectedLibrary
         perform(completion: completion, failure: failure) { try $0.addFetched(record, pdf: pdf, libraryID: library).id }

@@ -30,7 +30,7 @@ import Foundation
                     guard !Task.isCancelled else { return ReferenceCitationIndex() }
                     records += ((try? ReferenceBibTeX.parse(sources[path]!)) ?? []).map { record in
                         var copy = record
-                        copy.fields = record.fields.filter { ["title", "author", "year"].contains($0.key) }; copy.originalCitation = ""
+                        copy.fields = record.fields.filter { ["title", "author", "year", "abstract"].contains($0.key) }; copy.originalCitation = ""
                         return copy
                     }
                 }

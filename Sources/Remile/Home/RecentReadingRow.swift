@@ -12,8 +12,8 @@ struct RecentReadingRow: View {
     private final class Preview: ObservableObject { @Published var image: NSImage? }
     private var isTeX: Bool { (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
     @Environment(\.colorScheme) private var scheme
-    private var tag: String { isTeX ? "TeX" : url.pathExtension.lowercased() == "pdf" ? "PDF" : "MD" }
-    private var kind: String { isTeX ? (overleaf ? "Overleaf" : "Local LaTeX") : tag == "PDF" ? "PDF" : "Markdown" }
+    private var tag: String { isTeX ? "TeX" : url.pathExtension.lowercased() == "pdf" ? "PDF" : url.pathExtension.lowercased() == "docx" ? "DOCX" : "MD" }
+    private var kind: String { isTeX ? (overleaf ? "Overleaf" : "Local LaTeX") : tag == "PDF" ? "PDF" : tag == "DOCX" ? "Word" : "Markdown" }
     private var tint: Color {
         if isTeX { return scheme == .dark ? Color(red: 0.55, green: 0.76, blue: 0.66) : Color(red: 0.16, green: 0.43, blue: 0.33) }
         if tag == "MD" { return scheme == .dark ? Color(red: 0.57, green: 0.70, blue: 0.90) : Color(red: 0.20, green: 0.37, blue: 0.60) }
