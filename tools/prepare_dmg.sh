@@ -5,7 +5,7 @@ application="${1:?Provide an absolute remile.app path}"
 output_directory="${2:?Provide an absolute output directory}"
 source_directory="${0:A:h:h}"
 case "$application:$output_directory" in /*:/*) ;; *) exit 1 ;; esac
-version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$application/Contents/Info.plist")
+version=$(/usr/libexec/PlistBuddy -c 'Print RemileDisplayVersion' "$application/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$application/Contents/Info.plist")
 architectures=$(/usr/bin/lipo -archs "$application/Contents/MacOS/Remile")
 case "$architectures" in arm64|x86_64) architecture="$architectures" ;; *) print -u2 'Expected one supported architecture.'; exit 1 ;; esac
 mkdir -p "$output_directory"

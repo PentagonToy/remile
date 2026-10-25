@@ -26,20 +26,54 @@ enum ReferencePaperLookup {
         return result
     }
     static func metadata(for record: ReferenceRecord) async throws -> ReferenceRecord {
+        try await pdfMetadata(record, deadline: Date().addingTimeInterval(50))
+    }
+    static func pdfMetadata(_ record: ReferenceRecord, deadline: Date) async throws -> ReferenceRecord {
         if let id = ReferenceRecognition.archiveID(record) {
             try await ReferenceArchivePacing.shared.wait()
             var url = URLComponents(string: "https://export.arxiv.org/api/query")!
             url.queryItems = [URLQueryItem(name: "id_list", value: id)]
-            let data = try await request(url.url!, limit: 200_000, accept: "application/atom+xml")
+            let data = try await request(url.url!, limit: 200_000, accept: "application/atom+xml", deadline: deadline)
             return try ReferenceArxiv.parse(data, expectedID: id)
         }
         let doi = ReferenceDuplicates.normaliseDOI(record.fields["doi"] ?? "")
-        let papers = try await search(doi.hasPrefix("10.") ? doi : record.title)
+        let papers = try await search(doi.hasPrefix("10.") ? doi : record.title, deadline: deadline)
         let exact = papers.filter { matches(record, fields: $0.record.fields) }
         guard exact.count == 1, let paper = exact.first else { throw ReferenceFailure("No unique match. Add a DOI or arXiv ID and try again.") }
-        return paper.record
+        return try await fillingAbstract(paper.record, deadline: deadline)
     }
-    static func search(_ query: String) async throws -> [Paper] {
+    static func fillingAbstract(_ record: ReferenceRecord, deadline: Date, load: @escaping @Sendable (String, Date) async throws -> Data = { doi, deadline in try await openAccessData(doi: doi, deadline: deadline, abstractOnly: true) }) async throws -> ReferenceRecord {
+        guard (record.fields["abstract"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return record }
+        let doi = ReferenceDuplicates.normaliseDOI(record.fields["doi"] ?? "")
+        guard doi.hasPrefix("10.") else { return record }
+        var result = record
+        do {
+            let data = try await load(doi, deadline)
+            try Task.checkCancellation()
+            if let abstract = try openAbstract(data, doi: doi) { result.fields["abstract"] = abstract }
+        } catch is CancellationError { throw CancellationError() }
+        catch { /* Optional abstract availability must not discard other recognised fields. */ }
+        try Task.checkCancellation()
+        return result
+    }
+    static func openAbstract(_ data: Data, doi: String) throws -> String? {
+        guard data.count <= 200_000, let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let index = object["abstract_inverted_index"] as? [String: [Int]], !index.isEmpty, index.count <= 3000 else { return nil }
+        let identifiers = [object["doi"] as? String].compactMap { $0 } + (object["locations"] as? [[String: Any]] ?? []).compactMap { $0["doi"] as? String }
+        guard identifiers.contains(where: { ReferenceDuplicates.normaliseDOI($0) == ReferenceDuplicates.normaliseDOI(doi) }) else { return nil }
+        var words: [Int: String] = [:], characters = 0
+        for (word, positions) in index {
+            guard !word.isEmpty, word.count <= 500, positions.count <= 3000 else { return nil }
+            for position in positions {
+                characters += word.count + 1
+                guard position >= 0, position < 3000, characters <= 12_000, words.updateValue(word, forKey: position) == nil else { return nil }
+            }
+        }
+        guard !words.isEmpty, words.count == (words.keys.max() ?? -1) + 1 else { return nil }
+        let abstract = (0..<words.count).compactMap { words[$0] }.joined(separator: " ")
+        return abstract.count >= 20 ? abstract : nil
+    }
+    static func search(_ query: String, deadline: Date = .distantFuture) async throws -> [Paper] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, query.count <= 500 else { throw ReferenceFailure("Enter a DOI or a title of up to 500 characters.") }
         let doi = ReferenceDuplicates.normaliseDOI(query)
@@ -47,34 +81,16 @@ enum ReferencePaperLookup {
         let single = doi.hasPrefix("10.") && !doi.contains(where: \.isWhitespace)
         if single { url.percentEncodedPath += "/" + encoded(doi) }
         else { url.queryItems = [URLQueryItem(name: "query.bibliographic", value: query), URLQueryItem(name: "rows", value: "5")] }
-        let data = try await request(url.url!, limit: 1_500_000, accept: "application/json")
+        let data = try await request(url.url!, limit: 1_500_000, accept: "application/json", deadline: deadline)
         return try parseCrossref(data, single: single).map { Paper(record: $0) }
     }
-    static func openPDFs(doi: String) async throws -> [URL] {
+    static func openAccessData(doi: String, deadline: Date, abstractOnly: Bool = false) async throws -> Data {
         let doi = ReferenceDuplicates.normaliseDOI(doi)
-        guard doi.hasPrefix("10.") else { return [] }
+        guard doi.hasPrefix("10.") else { throw ReferenceFailure("Add a DOI to search public repositories.") }
         var url = URLComponents(string: "https://api.openalex.org")!
         url.percentEncodedPath = "/works/https://doi.org/" + encoded(doi)
-        let data = try await request(url.url!, limit: 2_000_000, accept: "application/json")
-        let direct = try parseOpenPDFs(data)
-        if !direct.isEmpty { return direct }
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], let access = object["open_access"] as? [String: Any], access["is_oa"] as? Bool == true,
-              let raw = access["oa_url"] as? String, let landing = URL(string: raw), publicURL(landing) else { return [] }
-        let (head, resolved) = try await fetch(landing, limit: 192_000, accept: "text/html", headOnly: true)
-        return landingPDFs(head, base: resolved)
-    }
-    static func download(_ candidates: [URL]) async throws -> Data {
-        var last: Error = ReferenceFailure("No open PDF was found. You can add the reference without a PDF.")
-        for url in candidates.prefix(2) {
-            try Task.checkCancellation()
-            do {
-                let bytes = try await request(url, limit: pdfLimit, accept: "application/pdf")
-                guard bytes.prefix(5) == Data("%PDF-".utf8), let pdf = PDFDocument(data: bytes), !pdf.isLocked, pdf.pageCount > 0 else { throw ReferenceFailure("The source did not return a readable PDF.") }
-                return bytes
-            } catch is CancellationError { throw CancellationError() }
-            catch { last = error }
-        }
-        throw last
+        if abstractOnly { url.queryItems = [URLQueryItem(name: "select", value: "doi,locations,abstract_inverted_index")] }
+        return try await request(url.url!, limit: abstractOnly ? 200_000 : 2_000_000, accept: "application/json", deadline: deadline)
     }
     static func parseCrossref(_ data: Data, single: Bool) throws -> [ReferenceRecord] {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], let message = object["message"] as? [String: Any] else { throw ReferenceFailure("The metadata service returned an unreadable response.") }
@@ -121,32 +137,41 @@ enum ReferencePaperLookup {
         guard data.count <= 192_000, let html = String(data: data, encoding: .utf8) else { return [] }
         let tags = try! NSRegularExpression(pattern: #"<meta\b[^>]{0,4000}>"#, options: .caseInsensitive)
         let attributes = try! NSRegularExpression(pattern: #"([a-zA-Z_-]+)\s*=\s*["']([^"']*)["']"#)
-        for match in tags.matches(in: html, range: NSRange(html.startIndex..., in: html)) {
+        let links = try! NSRegularExpression(pattern: #"<link\b[^>]{0,4000}>"#, options: .caseInsensitive)
+        var result: [URL] = [], seen = Set<URL>()
+        let all = tags.matches(in: html, range: NSRange(html.startIndex..., in: html)) + links.matches(in: html, range: NSRange(html.startIndex..., in: html))
+        for match in all.prefix(200) {
             let tag = (html as NSString).substring(with: match.range) as NSString
             var values: [String: String] = [:]
             for attribute in attributes.matches(in: tag as String, range: NSRange(location: 0, length: tag.length)) { values[tag.substring(with: attribute.range(at: 1)).lowercased()] = tag.substring(with: attribute.range(at: 2)) }
-            guard values["name"]?.lowercased() == "citation_pdf_url", let raw = values["content"], let url = URL(string: text(raw), relativeTo: base)?.absoluteURL, publicURL(url) else { continue }
-            return [url]
+            let meta = values["name"]?.lowercased() == "citation_pdf_url"
+            let alternate = values["type"]?.lowercased() == "application/pdf" && (values["rel"] ?? "").lowercased().split(separator: " ").contains("alternate")
+            guard meta || alternate, let raw = values[meta ? "content" : "href"], let url = URL(string: text(raw), relativeTo: base)?.absoluteURL, publicURL(url), seen.insert(url).inserted else { continue }
+            result.append(url)
+            if result.count == 3 { break }
         }
-        return []
+        return result
     }
     static func publicURL(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "https", url.user == nil, url.password == nil, let host = url.host?.lowercased(), !host.isEmpty else { return false }
-        return host.contains(".") && !host.hasSuffix(".local") && !host.hasSuffix(".localhost") && !host.hasSuffix(".internal") && !host.contains(":") && host.range(of: #"^[0-9.]+$"#, options: .regularExpression) == nil
+        let name = host.hasSuffix(".") ? String(host.dropLast()) : host
+        return name.contains(".") && !["local", "localhost", "internal", "home", "lan"].contains(name.split(separator: ".").last.map(String.init) ?? "") && !name.contains(":") && name.split(separator: ".").last.map { $0.range(of: #"^[a-z][a-z0-9-]{1,62}$"#, options: .regularExpression) != nil } == true
     }
     private static func encoded(_ value: String) -> String { value.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-._~")))! }
     private static func text(_ value: String) -> String {
         value.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression).replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&lt;", with: "<").replacingOccurrences(of: "&gt;", with: ">").replacingOccurrences(of: "&quot;", with: "\"").replacingOccurrences(of: "&#39;", with: "'").trimmingCharacters(in: .whitespacesAndNewlines)
     }
     private final class Redirects: NSObject, URLSessionTaskDelegate {
-        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(request.url.map(publicURL) == true ? request : nil) }
+        private var count = 0
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { count += 1; completionHandler(count <= 8 && request.url.map(publicURL) == true ? request : nil) }
     }
-    private static func request(_ url: URL, limit: Int, accept: String) async throws -> Data { try await fetch(url, limit: limit, accept: accept).0 }
-    private static func fetch(_ url: URL, limit: Int, accept: String, headOnly: Bool = false) async throws -> (Data, URL) {
+    private static func request(_ url: URL, limit: Int, accept: String, deadline: Date = .distantFuture) async throws -> Data { try await fetch(url, limit: limit, accept: accept, deadline: deadline).0 }
+    private static func fetch(_ url: URL, limit: Int, accept: String, headOnly: Bool = false, deadline: Date = .distantFuture) async throws -> (Data, URL) {
         try NetworkAccess.requireOnline(); guard publicURL(url) else { throw ReferenceFailure("Choose a public HTTPS source.") }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil; configuration.httpCookieStorage = nil; configuration.httpShouldSetCookies = false; configuration.urlCredentialStorage = nil
-        configuration.timeoutIntervalForRequest = 15; configuration.timeoutIntervalForResource = 40
+        guard deadline.timeIntervalSinceNow > 0 else { throw ReferenceFailure("PDF lookup timed out. Try again.") }
+        configuration.timeoutIntervalForRequest = min(15, deadline.timeIntervalSinceNow); configuration.timeoutIntervalForResource = min(40, deadline.timeIntervalSinceNow)
         let session = URLSession(configuration: configuration, delegate: Redirects(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         let lease = try NetworkAccess.gate.watch(session); defer { NetworkAccess.gate.release(lease) }

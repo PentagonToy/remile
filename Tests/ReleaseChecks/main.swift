@@ -3,6 +3,11 @@ var checks = 0
 func verify(_ value: @autoclosure () -> Bool, _ label: String) { precondition(value(), label); checks += 1 }
 verify(RemileVersion("0.10.0")! > RemileVersion("0.9.9")!, "Versions compare numerically")
 verify(RemileVersion("v0.1.0")!.description == "0.1.0", "Release tags accept v prefix")
+verify(RemileVersion("v0.1.4-beta.1")!.description == "0.1.4-beta.1", "Beta display version retains the full tag")
+verify(RemileVersion("0.1.4-beta.2")! > RemileVersion("0.1.4-beta.1")!, "Beta versions compare numerically")
+verify(RemileVersion("0.1.4-beta.1")! < RemileVersion("0.1.4")!, "Stable supersedes its beta")
+verify(RemileVersion("0.1.4-beta.1")! > RemileVersion("0.1.3")!, "A newer beta compares above an earlier stable core")
+for value in ["0.1.4-beta.0", "0.1.4-beta.01", "0.1.4-beta.x", "0.1.4-beta.1.extra"] { verify(RemileVersion(value) == nil, "Malformed beta versions are rejected") }
 for value in ["0.1", "0.1.0-beta", "0.-1.0", "01.0.0", "0.1.0.0", "999999999999999999999.0.0"] { verify(RemileVersion(value) == nil, "Invalid versions rejected") }
 func record(_ version: String, draft: Bool = false, prerelease: Bool = false, architecture: String = "arm64", address: String? = nil) -> [String: Any] {
     ["tag_name": "v" + version, "draft": draft, "prerelease": prerelease, "assets": [["name": "remile-\(version)-\(architecture).dmg", "state": "uploaded", "browser_download_url": address ?? "https://github.com/PentagonToy/remile/releases/download/v\(version)/remile-\(version)-\(architecture).dmg"]]]
@@ -14,4 +19,7 @@ verify(release?.version == RemileVersion("0.10.0"), "Latest compatible stable fi
 verify(release?.download.host == "github.com", "Download stays on GitHub")
 let unsuitable = try JSONSerialization.data(withJSONObject: [record("0.1.0"), record("0.9.0", draft: true), record("0.8.0", address: "https://example.invalid/app.dmg")])
 verify(try! RemileRelease.newest(unsuitable, after: current, architecture: "arm64") == nil, "No offer for current, draft or untrusted assets")
+let betaCurrent = RemileVersion("0.1.4-beta.1")!
+let stableAfterBeta = try JSONSerialization.data(withJSONObject: [record("0.1.3"), record("0.1.4-beta.2", prerelease: true), record("0.1.4")])
+verify(try! RemileRelease.newest(stableAfterBeta, after: betaCurrent)?.version == RemileVersion("0.1.4"), "Beta installations can discover the eventual stable release")
 print("\(checks) release checks passed")

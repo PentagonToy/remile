@@ -148,7 +148,7 @@ Reference list summaries include publication/type and a summaryTruncated flag. L
 
 `remile reference citation --id UUID --kind latex` returns a citation, BibTeX entry and reference revision without changing files. Use `--kind markdown` for `[@key]` syntax. Discover IDs through `reference list`. An agent can inspect the destination bibliography with `read`, then use the existing hash-checked `replace` workflow to append the entry. Check existing keys before writing and preserve the original source. No citation command deletes entries or automatically changes bibliography configuration.
 
-`remile reference suggest --library UUID --query text --limit 8` uses the editor's citation matcher. Search keys, titles, authors and stored abstracts. Add `--context "sentence before the citation"` to rank by local topic overlap. This read-only command uses the selected library, without an active editor or project bibliography. Context is limited to 1,200 UTF-16 units.
+`remile reference suggest --library UUID --query text --limit 8` uses the editor's citation matcher. Search keys, titles, authors and stored abstracts. Add `--context "sentence before the citation"` to rank by local topic overlap. Use `--libraries UUID,UUID` instead of `--library UUID` to search several libraries or collections together. This read-only command uses that selection, without an active editor or project bibliography. Context is limited to 1,200 UTF-16 units.
 
 With useful context, each suggestion includes a `relevance` object:
 
@@ -185,3 +185,9 @@ Use `pdf-regions /absolute/paper.pdf --page 4` to list embedded image regions. A
 Export a region with `--region image-1 --output /absolute/new.png --expected-sha256 HASH`. Use the hash returned by inspection. Tables require `--tables` and a `.tsv` or `.md` output. Existing files are never overwritten. Region bounds use PDF page points before rotation, with a bottom-left origin. Images are page-region renders up to 2,200 pixels on the longest edge.
 
 Reference CLI import and collect keep their local-only behaviour. Use `reference recognise` afterwards for explicit online enrichment. `status` reports whether the active LaTeX project is a draft.
+
+### Evaluate citation retrieval
+
+For local development, `tools/evaluate_citations.sh /absolute/new-output --tex /path/main.tex --bib /path/references.bib` extracts explicit citation contexts and writes `ranking.json`. It reads only the supplied files and never changes them. Existing citations provide a retrieval reference, not verified scientific ground truth. Included files and macro-generated citations are not expanded.
+
+The report gives recall@5 and MRR truncated at rank 5, plus the expected and returned keys for every example. Missing bibliography keys are counted separately. A small synthetic regression fixture is available with `--dataset /absolute/repository/Tests/CitationRankingChecks/fixtures.json`. It checks mechanics rather than general citation quality. No manuscript feedback is added to the engine's index.

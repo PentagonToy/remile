@@ -20,9 +20,19 @@ Colour opens four palettes and the native custom colour picker. The default is [
 
 ## Save and export
 
-Choose DOCX or PDF in the save panel. DOCX is the default. Export creates a separate copy. PDF preserves the page layout and searchable body text. DOCX contains editable text and floating objects, plus remile source data for reopening the document in Writer.
+| Action | Result |
+| --- | --- |
+| **Save** | Save changes to the working DOCX at its current location. A new page asks for a name once. |
+| **Save As…** | Save a new editable DOCX and continue working in that file. Available in File or the Save button's context menu. |
+| **Export** | Create a separate PDF or DOCX copy. Keep the working file and its unsaved state unchanged. |
 
-DOCX files open from Home, drop targets and the document chooser. Opened and saved files appear in Recently opened with a gold DOCX badge. Basic external DOCX text opens as a new unsaved copy. Supported inline images, shapes and equations reuse the local Word renderer and become inline images. Floating Word objects, tables, headers, footers and other unsupported layouts are rejected. A failed import leaves the current Writer document intact. An imported document never overwrites its original automatically. Full Word and Pages layout compatibility has not been verified.
+PDF preserves the page layout and searchable body text. Writer's DOCX contains editable text and objects plus a verified editing snapshot. The export panel chooses the copy's format. Saving a working document uses DOCX.
+
+DOCX files open from Home, drop targets and the document chooser. The original filename and path are retained. Opening alone does not mark a document as edited or ask for a save when closing. Recently opened uses a muted rose DOCX badge, distinct from PDF gold.
+
+Supported text-only edits to an external Word document can save in place. The original package, paragraph properties and unrelated parts are preserved. The current path is checked for external changes before writing. Edits that change paragraph structure, formatting or rich objects need a Writer DOCX copy instead. Save offers a separate name in that case. The original remains unchanged.
+
+Supported inline images, shapes and equations use the local Word renderer and become inline images. Floating Word objects, tables, headers, footers and other unsupported layouts are rejected. A failed open keeps the current document intact. Full Word and Pages layout compatibility has not been verified.
 
 Undo and Redo cover body edits, formatting, objects and page changes. Closing an edited document offers Save, Discard or Cancel. There is no crash recovery yet.
 

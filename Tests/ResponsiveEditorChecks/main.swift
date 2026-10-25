@@ -20,7 +20,7 @@ check(EditorSourceEditing.indent("hello", selection: NSRange(location: 2, length
 let item = EditorCompletion.context("it", selection: NSRange(location: 2, length: 0), tex: true)!
 check(item.items.first?.insertion == "\\item ", "item is first")
 check(item.items.allSatisfy { !$0.label.contains("environment") }, "clear candidate labels")
-check(EditorCompletion.context("\\begin{al", selection: NSRange(location: 9, length: 0), tex: true)?.items.first?.insertion == "align}", "begin environment completion")
+check(EditorCompletion.context("\\begin{al", selection: NSRange(location: 9, length: 0), tex: true)?.items.first?.insertion == "align}\n    \n\\end{align}", "begin completion includes its matching end")
 let bbl = "\\begin{thebibliography}{1}\\bibitem{x} Example.\\end{thebibliography}"
 check(try TeXSourceTools.inlineBibliography("\\bibliographystyle{plain}\n\\bibliography{refs}", bbl: bbl).contains(bbl), "submission embedding remains supported")
 print("Passed \(passed) responsive editor checks")

@@ -1,6 +1,6 @@
 # Live Overleaf synchronisation
 
-Git remains the default for Git-backed imports. Source-only Free imports start Live while the project is visible. Live combines versioned text edits with file reconciliation. It uses remile.'s own Overleaf web session and a native Socket.IO 0.9 adapter. No Node runtime or browser cookie import is required. WebKit supplies the verified account context while Swift owns protocol routing and document state. Live mode joins Overleaf's collaboration session, so it does not retain the private-presence behaviour of Git sync. Installed development checks cover text round trips, conflicting drafts and controlled connection-loss recovery. Broader collaboration validation remains necessary before release.
+Projects start in Live mode while visible. An explicit choice of Private is remembered for that project. Private uses Git review for Git-backed imports. Live combines versioned text edits with file reconciliation. It uses remile.'s own Overleaf web session and a native Socket.IO 0.9 adapter. No Node runtime or browser cookie import is required. WebKit supplies the verified account context while Swift owns protocol routing and document state. Live mode joins Overleaf's collaboration session, so it does not retain the private-presence behaviour of Git sync. Installed development checks cover text round trips, conflicting drafts and controlled connection-loss recovery. Broader collaboration validation remains necessary before release.
 
 ## Ownership and lifetime
 
@@ -26,9 +26,11 @@ The older coordinator deliberately requires review for divergent snapshots. The 
 
 ## Connection status
 
-The project bar shows a direct Private / Live selector and one current status. Comments, the library and connection settings have visible buttons. Connection settings contain the offline switch, account management and any Git unlock action. Narrow windows shorten status labels and show compact action icons. Git checking is shown only outside Live mode. PDF freshness remains beside Compile because server confirmation does not mean the PDF has been rebuilt.
+The project bar shows a direct Live / Private selector and one current status. Comments, the library and connection settings have visible buttons. Connection settings contain the offline switch, account management and any Git unlock action. Narrow windows shorten status labels and show compact action icons. Git checking is shown only outside Live mode. PDF freshness remains beside Compile because server confirmation does not mean the PDF has been rebuilt.
 
-The project bar distinguishes connecting, paused, awaiting server confirmation and confirmed states. Pending counts include every connected text file, including edits made before the next upload. Confirmation advances only when no document has pending intent and reconciliation has finished. Idle polling does not advance the confirmation time. A closed event stream pauses Live even when no explicit error frame arrives. The pause label gives a short reason, with the full explanation available from the label. Passive Git sync waits for an explicit Unlock action when Keychain access is locked, without repeating error dialogs.
+The project bar distinguishes connecting, paused, awaiting server confirmation and confirmed states. Pending counts include every connected text file, including edits made before the next upload. Confirmation advances only when no document has pending intent and reconciliation has finished. Idle polling does not advance the confirmation time. A closed event stream pauses Live even when no explicit error frame arrives. Click Paused to reconnect, or to review conflicting text when present. The reason remains available in native hover help. Passive Git sync waits for an explicit Unlock action when Keychain access is locked, without repeating error dialogs.
+
+If the advertised file tree changes while the source archive is downloading, the initial snapshot is checked again up to three times. A stable snapshot enters ordinary three-way reconciliation automatically. Repeated changes pause with a reconnect action. Conflicting local and remote edits still require review.
 
 ## Draft preservation
 

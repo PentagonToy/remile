@@ -9,3 +9,10 @@ enum OverleafProjectID {
     }
     static func reference(_ id: String) -> String { "overleaf:" + id.lowercased() }
 }
+
+/// Local to this Mac. An explicit choice wins over the first-open default.
+enum OverleafSyncPreference {
+    private static func key(_ id: UUID) -> String { "overleaf.prefersLive." + id.uuidString }
+    static func live(_ id: UUID, store: UserDefaults = .standard) -> Bool { store.object(forKey: key(id)) as? Bool ?? true }
+    static func choose(_ live: Bool, for id: UUID, store: UserDefaults = .standard) { store.set(live, forKey: key(id)) }
+}

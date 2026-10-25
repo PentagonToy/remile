@@ -257,6 +257,10 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         view.setSelectedRange(range); view.scrollRangeToVisible(range); view.window?.makeFirstResponder(view)
     }
     func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
+        if texTheme != nil, !pairing, !textView.hasMarkedText(), replacementString == "}",
+           let change = EditorCompletion.closeEnvironment(textView.string, selection: affectedCharRange) {
+            pairing = true; defer { pairing = false }; apply(change, name: "Complete Environment"); return false
+        }
         guard !pairing, !textView.hasMarkedText(), UserDefaults.standard.object(forKey: "markdown.autoPair") as? Bool ?? true,
               let replacementString, let change = MarkdownEditing.pair(textView.string, range: affectedCharRange, replacement: replacementString) else { return true }
         pairing = true; defer { pairing = false }

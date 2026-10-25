@@ -10,15 +10,19 @@ Keep the comfort of a local editor and the connection to your shared project.
 
 Create a token in **Overleaf → Account settings → Git integration**. Compiling locally also needs a TeX installation.
 
+## Start in Live
+
+Projects start in Live when online. Text edits sync with Overleaf while you work. remile remembers an explicit switch to Private or Local on this Mac. Work offline pauses remote access.
+
 ## Work, then review
 
-In Online mode, saved local changes sync automatically while the project is open. New remote changes wait in **Check changes** for your review.
+In Private mode, saved local changes sync through Git while the project is open. New remote changes wait in **Check changes** for your review.
 
-Resolve conflicts before updating or publishing. Offline mode stops remote work, while your local draft stays editable.
+Resolve conflicts before updating or publishing. After review, remile keeps your active source, cursor and scroll position when that file still exists. Offline mode stops remote work, while your local draft stays editable.
 
 Use `\cite{` in the source editor for local citation suggestions. [Read the citation hints →](../reference.md#read-citation-hints)
 
-## Choose live editing carefully
+## Choose a mode
 
 Live mode shares existing text edits and pauses Git publication. File changes or overlapping edits can need review. Read the [live sync details](../overleaf-realtime.md) before using it for a shared session.
 

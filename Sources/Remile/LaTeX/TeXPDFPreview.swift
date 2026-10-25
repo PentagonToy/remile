@@ -73,8 +73,22 @@ import PDFKit
         guard let view, let page = view.page(for: point, nearest: true), let document = view.document else { return nil }
         let local = view.convert(point, to: page), box = page.bounds(for: .mediaBox)
         var result = TeXSync.PDFLocation(page: document.index(for: page) + 1, x: max(0, local.x - box.minX), y: max(0, box.maxY - local.y))
-        let offset = page.characterIndex(at: local)
-        if offset >= 0, page.characterBounds(at: offset).insetBy(dx: -2, dy: -2).contains(local), let text = page.string as NSString?, text.length <= 100_000, offset < text.length {
+        var offset = page.characterIndex(at: local)
+        // PDF text-stream order can disagree with the glyph under the pointer.
+        // Use PDFKit's selected word and its page bounds before refining a source token.
+        if let word = page.selectionForWord(at: local)?.string?.trimmingCharacters(in: .whitespacesAndNewlines), !word.isEmpty,
+           let text = page.string as NSString?, text.length <= 100_000 {
+            var range = NSRange(location: 0, length: text.length), matched: Int?
+            while range.length > 0 {
+                let found = text.range(of: word, options: [], range: range)
+                guard found.location != NSNotFound else { break }
+                if page.selection(for: found)?.bounds(for: page).insetBy(dx: -2, dy: -2).contains(local) == true { matched = found.location; break }
+                range = NSRange(location: NSMaxRange(found), length: text.length - NSMaxRange(found))
+            }
+            guard let matched else { return result }
+            offset = matched
+        } else { return result }
+        if offset >= 0, let text = page.string as NSString?, text.length <= 100_000, offset < text.length {
             let start = max(0, offset - 180), count = min(360, text.length - start)
             result.hint = .init(text: text.substring(with: NSRange(location: start, length: count)), offset: offset - start)
         }

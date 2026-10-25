@@ -3,7 +3,13 @@ import CryptoKit
 
 /// Project-local preferences stay outside the manuscript and travel through neither Git nor Live.
 enum ReferenceCitationPreferences {
-    struct Choice: Codable { var library: UUID?; var bibliography: String? }
+    struct Choice: Codable {
+        var library: UUID?
+        var bibliography: String?
+        var libraries: [UUID]?
+        var selectedLibraries: Set<UUID> { Set(libraries ?? library.map { [$0] } ?? []) }
+    }
+    static func includes(_ record: ReferenceRecord, libraries: Set<UUID>) -> Bool { libraries.contains(record.library) || record.collectionID.map(libraries.contains) == true }
     static func key(_ context: String) -> String { "reference.citation." + SHA256.hash(data: Data(context.utf8)).map { String(format: "%02x", $0) }.joined() }
     static func read(_ context: String, store: UserDefaults = .standard) -> Choice {
         guard let data = store.data(forKey: key(context)), let choice = try? JSONDecoder().decode(Choice.self, from: data) else { return Choice() }
@@ -62,6 +68,7 @@ enum ReferenceCitationCompletion {
         let limit = max(0, min(50, limit))
         guard limit > 0 else { return [] }
         let query = ReferenceCitationIndex.fold(query), words = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        let queryTerms = ReferenceRelevance.tokens(query)
         let context = ReferenceRelevance.Context(context)
         let frequencies = project.frequencies.merging(library.frequencies, uniquingKeysWith: +)
         let count = project.count + library.count
@@ -82,6 +89,7 @@ enum ReferenceCitationCompletion {
                 else if words.allSatisfy({ entry.metadata.contains($0) }) { priority = 1 }
                 else if words.allSatisfy({ entry.search.contains($0) }) { priority = 2 }
                 else if let borrowedSearch, words.allSatisfy({ borrowedSearch.contains($0) }) { priority = 2 }
+                else if !queryTerms.isEmpty && queryTerms.allSatisfy({ document.terms[$0] != nil }) { priority = 2 }
                 else { continue }
                 guard keys.insert(entry.record.citationKey).inserted else { continue }
                 matches.append((entry, document, local, priority, ReferenceRelevance.score(document, context: context, frequencies: frequencies, count: count)))

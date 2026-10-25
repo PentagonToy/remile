@@ -33,6 +33,7 @@ import AppKit
         }
         if let failure { throw failure }
         model.load(text: text, objects: [], paper: PaperSize.a4.rawValue, landscape: false)
+        model.foreignDocument = WriterForeignDocument(archive: archive, text: text)
         return false
     }
 }

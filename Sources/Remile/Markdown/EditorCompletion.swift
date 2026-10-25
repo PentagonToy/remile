@@ -5,6 +5,21 @@ enum EditorCompletion {
     struct Item: Equatable { let label: String; let insertion: String; var caret: Int? = nil; var referenceID: UUID? = nil; var detail: String? = nil; var annotation: String? = nil }
     struct Context { let range: NSRange; let items: [Item] }
     static let environments = ["align", "align*", "aligned", "equation", "equation*", "gather", "gather*", "itemize", "enumerate", "description", "figure", "table", "tabular", "cases", "matrix", "pmatrix", "bmatrix", "split", "document", "abstract"]
+    static func closeEnvironment(_ source: String, selection: NSRange) -> MarkdownEditing.Change? {
+        let text = source as NSString
+        guard selection.length == 0, selection.location <= text.length else { return nil }
+        let line = text.lineRange(for: selection), count = selection.location - line.location
+        guard count <= 240 else { return nil }
+        let prefix = text.substring(with: NSRange(location: line.location, length: count)) as NSString
+        guard let regex = try? NSRegularExpression(pattern: #"^([ \t]*)\\begin\{([A-Za-z*]+)$"#), let match = regex.firstMatch(in: prefix as String, range: NSRange(location: 0, length: prefix.length)) else { return nil }
+        let name = prefix.substring(with: match.range(at: 2)), indent = prefix.substring(with: match.range(at: 1))
+        guard environments.contains(name) else { return nil }
+        let closing = selection.location < text.length && text.character(at: selection.location) == 125 ? 1 : 0
+        let tail = text.substring(from: selection.location + closing).prefix(1000)
+        guard !tail.contains("\\end{\(name)}") else { return nil }
+        let body = indent + "    " + (["itemize", "enumerate", "description"].contains(name) ? "\\item " : "")
+        return .init(range: NSRange(location: selection.location, length: closing), text: "}\n" + body + "\n" + indent + "\\end{\(name)}", selection: NSRange(location: selection.location + 2 + (body as NSString).length, length: 0))
+    }
     static func context(_ source: String, selection: NSRange, tex: Bool) -> Context? {
         let value = source as NSString
         guard selection.length == 0, selection.location > 0, selection.location <= value.length else { return nil }
@@ -23,7 +38,15 @@ enum EditorCompletion {
         if let expression = try? NSRegularExpression(pattern: #"\\(?:begin|end)\{([A-Za-z*]*)$"#), let match = expression.firstMatch(in: prefix, range: NSRange(location: 0, length: (prefix as NSString).length)) {
             let raw = prefix as NSString, name = raw.substring(with: match.range(at: 1))
             let closing = selection.location < value.length && value.character(at: selection.location) == 125 ? 1 : 0
-            let items = available.filter { $0.hasPrefix(name) }.map { Item(label: $0, insertion: $0 + "}") }
+            let opening = prefix.contains("\\begin{")
+            let tail = value.substring(from: selection.location + closing).prefix(1000)
+            let items = available.filter { $0.hasPrefix(name) }.map { environment -> Item in
+                guard tex, opening, !tail.contains("\\end{\(environment)}") else { return Item(label: environment, insertion: environment + "}") }
+                let indent = String(prefix.prefix { $0 == " " || $0 == "\t" })
+                let body = indent + "    " + (["itemize", "enumerate", "description"].contains(environment) ? "\\item " : "")
+                let first = environment + "}\n" + body
+                return Item(label: environment, insertion: first + "\n" + indent + "\\end{\(environment)}", caret: (first as NSString).length)
+            }
             if !items.isEmpty { return Context(range: NSRange(location: selection.location - (name as NSString).length, length: (name as NSString).length + closing), items: Array(items.prefix(8))) }
         }
         var begin = units.count

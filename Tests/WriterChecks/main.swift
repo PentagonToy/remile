@@ -268,7 +268,35 @@ let plainURL = try writerImportFixture(output, name: "foreign-text", body: "<w:p
 importFinished = false
 Task { @MainActor in importPassed = await importModel.openFile(plainURL); importFinished = true }
 while !importFinished { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
-try check(importPassed && importModel.storage.string.contains("A foreign letter") && importModel.dirty && importModel.url == nil, "Foreign text opens as a separate unsaved copy")
+try check(importPassed && importModel.storage.string.contains("A foreign letter") && !importModel.dirty && importModel.url == plainURL, "Foreign text keeps its original path without a false edit")
+let originalForeign = try Data(contentsOf: plainURL)
+try check(importModel.confirmLeaving(decision: { preconditionFailure("Unchanged Word files must close quietly") }), "Unchanged foreign Word file needs no save confirmation")
+try check(importModel.save() && (try Data(contentsOf: plainURL)) == originalForeign, "Saving an unchanged Word file does not rewrite its bytes")
+let revisedForeign = NSMutableAttributedString(attributedString: importModel.storage)
+let foreignRange = (revisedForeign.string as NSString).range(of: "foreign")
+revisedForeign.replaceCharacters(in: foreignRange, with: "revised")
+importModel.replaceBody(revisedForeign)
+try check(importModel.save() && !importModel.dirty && importModel.url == plainURL, "Supported foreign text edits save to the original file")
+let revisedArchive = try WordArchive(Data(contentsOf: plainURL)), originalArchive = try WordArchive(originalForeign)
+try check(String(decoding: try revisedArchive.read("word/document.xml"), as: UTF8.self).contains("A revised letter"), "Word receives the edited body text")
+for part in originalArchive.entries where part.name != "word/document.xml" {
+    try check(try originalArchive.read(part.name) == revisedArchive.read(part.name), "In-place Word saving preserves package part " + part.name)
+}
+let beforeUnsupportedSave = try Data(contentsOf: plainURL)
+let styledForeign = NSMutableAttributedString(attributedString: importModel.storage)
+styledForeign.addAttribute(.font, value: NSFont.systemFont(ofSize: 19), range: NSRange(location: 0, length: 1))
+importModel.replaceBody(styledForeign)
+try check(!importModel.save(to: plainURL) && (try Data(contentsOf: plainURL)) == beforeUnsupportedSave, "A rich Word edit cannot flatten the original file")
+let foreignCopyCanvas = WriterCanvas(model: importModel)
+foreignCopyCanvas.rebuild()
+let foreignCopy = output.appendingPathComponent("foreign-copy.docx")
+try check(importModel.save(to: foreignCopy) && importModel.url == foreignCopy, "A rich edit can become a new editable Writer DOCX")
+try check(try Data(contentsOf: plainURL) == beforeUnsupportedSave, "Saving a Writer copy keeps the source Word file")
+let changedOutside = (try Data(contentsOf: foreignCopy)) + Data("external edit".utf8)
+try changedOutside.write(to: foreignCopy)
+importModel.changed()
+try check(!importModel.save(to: foreignCopy) && (try Data(contentsOf: foreignCopy)) == changedOutside, "An externally changed Word file is never overwritten")
+try check(!importModel.save(to: output.appendingPathComponent("wrong-working-file.pdf")) && importModel.url == foreignCopy, "A PDF export cannot become the editable working file")
 let inlineShape = "<w:p><w:r><w:t>Before shape</w:t></w:r><w:r><w:drawing><wp:inline><wp:extent cx=\"1270000\" cy=\"635000\"/><a:spPr><a:prstGeom prst=\"ellipse\"/><a:solidFill><a:srgbClr val=\"56B4E9\"/></a:solidFill></a:spPr></wp:inline></w:drawing></w:r></w:p>"
 let shapeURL = try writerImportFixture(output, name: "foreign-shape", body: inlineShape)
 let shapeModel = WriterModel()

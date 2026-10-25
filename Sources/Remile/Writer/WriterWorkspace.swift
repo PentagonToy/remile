@@ -32,8 +32,9 @@ struct WriterWorkspace: View {
                 Text(model.title + (model.dirty ? " · Edited" : "")).font(RemileType.callout.weight(.semibold)).lineLimit(1).padding(.horizontal, 12).padding(.vertical, 5).frame(maxWidth: 360).background(RemileStyle.editorBar, in: RoundedRectangle(cornerRadius: RemileRadius.control))
                 Spacer()
                 Button { model.open() } label: { Image(systemName: "folder") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent).remileHelp("Open a DOCX document").accessibilityLabel("Open document")
-                Button { model.save() } label: { Label("Save", systemImage: "square.and.arrow.down") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent)
-                Button { model.exportCopy() } label: { Label("Export", systemImage: "square.and.arrow.up") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent)
+                Button { model.save() } label: { Label("Save", systemImage: "square.and.arrow.down") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent).remileHelp("Save changes to the working DOCX file.")
+                    .contextMenu { Button("Save As…") { model.saveAs() } }
+                Button { model.exportCopy() } label: { Label("Export", systemImage: "square.and.arrow.up") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent).remileHelp("Create a separate PDF or DOCX copy.")
             }.font(RemileType.control).padding(.horizontal, 16).padding(.vertical, 6).background(RemileStyle.background)
             Divider()
             GeometryReader { geometry in
