@@ -357,6 +357,11 @@ final class HomeModel: ObservableObject {
             recordRecent(project.root); project.compile() }
         catch { self.error = "Unable to open LaTeX project: " + error.localizedDescription }
     }
+    func refreshReviewedTeX(_ root: URL) {
+        guard let project = texProject, project.root == root.standardizedFileURL else { openTeX(root); return }
+        do { try project.reloadReviewedFiles(); project.compile() }
+        catch { self.error = error.localizedDescription }
+    }
     @discardableResult func closeWriter() -> Bool {
         guard page == .writer, let writer else { return true }
         guard writer.confirmLeaving() else { return false }

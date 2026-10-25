@@ -53,6 +53,13 @@ enum ReferenceRelevance {
     private static let commands = try! NSRegularExpression(pattern: #"\\(?:cite|citep|citet|parencite|textcite|autocite|footcite|smartcite|nocite|ref|label)\*?(?:\[[^\]]*\])*\{[^}]*\}|\\[A-Za-z]+\*?"#)
     private static let numberPattern = try! NSRegularExpression(pattern: #"\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b"#)
     private static let sentenceBoundary = try! NSRegularExpression(pattern: #"[.!?]\s+(?=[A-Z])"#)
+    private static let concepts: [(NSRegularExpression, String)] = [
+        (#"\b(?:ml|machine[\s\p{Pd}]+learning)\b"#, "conceptmachinelearning"),
+        (#"\b(?:dnns?|deep[\s\p{Pd}]+neural[\s\p{Pd}]+networks?)\b"#, "conceptdeepneuralnetwork"),
+        (#"\blarge[\s\p{Pd}]+eddy[\s\p{Pd}]+simulations?\b"#, "conceptlargeeddysimulation"),
+        (#"\blaminar[\s\p{Pd}]+burning[\s\p{Pd}]+velocity\b"#, "conceptlaminarburningvelocity")
+    ].map { (try! NSRegularExpression(pattern: $0.0), $0.1) }
+    private static let conceptNames = ["conceptmachinelearning": "machine learning", "conceptdeepneuralnetwork": "deep neural network", "conceptlargeeddysimulation": "large eddy simulation", "conceptlaminarburningvelocity": "laminar burning velocity"]
     static func sameSource(_ a: ReferenceRecord, _ b: ReferenceRecord) -> Bool {
         let doiA = ReferenceDuplicates.normaliseDOI(a.fields["doi"] ?? ""), doiB = ReferenceDuplicates.normaliseDOI(b.fields["doi"] ?? "")
         if !doiA.isEmpty && !doiB.isEmpty { return doiA.hasPrefix("10.") && doiA.contains("/") && doiA == doiB }
@@ -70,13 +77,18 @@ enum ReferenceRelevance {
     }
     static func tokens(_ value: String) -> [String] {
         var value = plain(value).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-        // Expand a small, explicit vocabulary on both sides. No inferred scientific equivalences.
-        for (short, long) in [("ml", "machine learning"), ("dnn", "deep neural network"), ("dnns", "deep neural networks")] {
-            value = value.replacingOccurrences(of: "\\b" + short + "\\b", with: long, options: .regularExpression)
+        for (subscriptDigit, digit) in [("₂", "2"), ("₃", "3")] { value = value.replacingOccurrences(of: subscriptDigit, with: digit) }
+        // Exact notation aliases only. Water and ammonium must remain distinct.
+        value = value.replacingOccurrences(of: #"\bnh[_\s]*3(?![a-z0-9])"#, with: "ammonia", options: .regularExpression)
+            .replacingOccurrences(of: #"\bh[_\s]*2(?![a-z0-9])"#, with: "hydrogen", options: .regularExpression)
+        // Count each recognised phrase once, including its abbreviation, rather than adding synonyms.
+        for (expression, token) in concepts {
+            value = expression.stringByReplacingMatches(in: value, range: NSRange(value.startIndex..., in: value), withTemplate: token)
         }
         let numbers = numberPattern.matches(in: value, range: NSRange(value.startIndex..., in: value)).map { "#" + (value as NSString).substring(with: $0.range) }
         return numbers + value.components(separatedBy: CharacterSet.alphanumerics.inverted).compactMap {
             guard !stop.contains($0), !$0.allSatisfy(\.isNumber) else { return nil }
+            if let concept = conceptNames[$0] { return concept }
             var word = $0
             if word.count > 4, word.hasSuffix("s"), !word.hasSuffix("ss"), !word.hasSuffix("is") { word.removeLast() }
             return word.count >= 2 && !stop.contains(word) ? word : nil
@@ -110,7 +122,8 @@ enum ReferenceRelevance {
         guard context.terms.count >= 2 else { return nil }
         let matched = context.terms.filter { document.terms[$0] != nil }
         let coverage = Double(matched.count) / Double(context.terms.count)
-        let label = matched.count >= 2 && coverage >= 0.35 ? "Topic match" : matched.isEmpty ? "No clear match" : "Limited overlap"
+        let substantive = matched.filter { !$0.hasPrefix("#") }
+        let label = substantive.count >= 2 && coverage >= 0.35 ? "Topic match" : matched.isEmpty ? "No clear match" : "Limited overlap"
         let sentences = document.abstract.components(separatedBy: CharacterSet(charactersIn: ".!?\n")).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         let wanted = Set(context.terms)
         let best = sentences.map { (text: $0, matches: Set(tokens($0)).intersection(wanted).count) }.max { $0.matches < $1.matches }

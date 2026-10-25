@@ -13,6 +13,10 @@ enum ReferenceColumn: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String { switch self { case .title: "Title"; case .author: "Author / Editor"; case .year: "Year"; case .publisher: "Publisher"; case .publication: "Journal / Publisher"; case .key: "Citation key"; case .type: "Type"; case .added: "Date added" } }
     var width: Double { switch self { case .year: 48; case .author: 112; case .publication: 150; case .added: 98; case .type: 110; default: 130 } }
+    func displayedValue(_ record: ReferenceRecord) -> String {
+        let text = value(record)
+        return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "—" : text
+    }
     func value(_ record: ReferenceRecord) -> String {
         switch self {
         case .title: record.displayTitle

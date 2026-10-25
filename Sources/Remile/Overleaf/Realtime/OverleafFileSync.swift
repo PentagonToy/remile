@@ -23,12 +23,19 @@ struct OverleafFileSnapshot: Sendable { let tree: OverleafLiveFiles.Tree; let fi
         } catch { await socket.stop(); throw error }
     }
     func snapshot(_ advertised: OverleafLiveFiles.Tree?) async throws -> OverleafFileSnapshot {
-        let before: OverleafLiveFiles.Tree
+        var before: OverleafLiveFiles.Tree
         if let advertised { before = advertised } else { before = try await tree() }
-        let bytes = try await OverleafSourceDownload(project: connection.projectID, profile: connection.profileID).load()
-        let after = try await tree()
-        guard before == after else { throw OverleafLiveFiles.Failure.stale }
-        return OverleafFileSnapshot(tree: after, files: try OverleafLiveFiles.archive(bytes, tree: after))
+        for attempt in 0..<3 {
+            try Task.checkCancellation()
+            let bytes = try await OverleafSourceDownload(project: connection.projectID, profile: connection.profileID).load()
+            let after = try await tree()
+            if before == after {
+                do { return OverleafFileSnapshot(tree: after, files: try OverleafLiveFiles.archive(bytes, tree: after)) }
+                catch OverleafLiveFiles.Failure.stale where attempt < 2 { }
+            }
+            before = after
+        }
+        throw OverleafLiveFiles.Failure.stale
     }
     private func open() async throws { if !opened { try await service.open(); opened = true } }
     func upload(_ bytes: Data, path: String, root: String) async throws -> OverleafLiveFiles.Entry { try await open(); return try await service.upload(bytes, path: path, root: root) }
@@ -95,7 +102,7 @@ struct OverleafFileSnapshot: Sendable { let tree: OverleafLiveFiles.Tree; let fi
             try check(); guard try OverleafLiveFiles.scan(project.root, buffers: project.buffers) == local else { throw OverleafLiveFiles.Failure.stale }
             try OverleafLiveFiles.save(before.files, to: baseline)
             assetFingerprint = OverleafLiveFiles.fingerprint(local, assetsOnly: true)
-            return Result(reconnect: false, bases: bases)
+            return Result(reconnect: before.tree != tree, bases: bases)
         }
         try preserve(local: local, remote: before.files, connection: connection, library: library)
         if library.allowsGit(connection) { try await gitRecovery(connection: connection, root: project.root) }

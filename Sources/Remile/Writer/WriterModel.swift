@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import PDFKit
 import UniformTypeIdentifiers
+import CryptoKit
 
 @MainActor final class WriterModel: NSObject, ObservableObject {
     let identity = UUID()
@@ -37,6 +38,8 @@ import UniformTypeIdentifiers
     @Published private(set) var pages = 1
     private(set) var objects: [WriterObject] = []
     private(set) var url: URL?
+    var foreignDocument: WriterForeignDocument?
+    private var sourceFingerprint: String?
     weak var activeText: NSTextView?
     weak var canvas: WriterCanvas?
     var didVisit: ((URL) -> Void)?
@@ -266,22 +269,66 @@ import UniformTypeIdentifiers
     }
     @discardableResult func save(to destination: URL? = nil) -> Bool {
         canvas?.window?.makeFirstResponder(nil)
-        let destination = destination ?? url ?? chooseDestination(pdf: false)
-        guard let destination else { return false }
-        do { let data = try data(for: destination); try data.write(to: destination, options: .atomic); url = destination; dirty = false; revision = UUID(); didVisit?(destination); return true }
+        do {
+            if destination == nil, !dirty, url != nil { return true }
+            var output = destination ?? url
+            var bytes: Data?
+            if output?.standardizedFileURL == url?.standardizedFileURL, let foreignDocument {
+                bytes = try foreignDocument.updating(self)
+                if bytes == nil {
+                    guard destination == nil else { throw ReferenceFailure("This edit needs a DOCX copy to keep the original Word file.") }
+                    output = nil
+                }
+            }
+            guard let output = output ?? chooseDestination(pdf: false, copy: foreignDocument != nil) else { return false }
+            guard output.pathExtension.lowercased() == "docx" else { throw ReferenceFailure("Save as DOCX. Use Export for a PDF copy.") }
+            if output.standardizedFileURL == url?.standardizedFileURL {
+                try requireUnchangedSource(output)
+                if foreignDocument != nil && bytes == nil { throw ReferenceFailure("Choose a different name for the DOCX copy.") }
+            } else { bytes = nil }
+            let data = try bytes ?? WriterArchive.encode(self)
+            let nextForeign = try bytes == nil ? nil : WriterForeignDocument(archive: WordArchive(data), text: storage)
+            try StorageFileAccess.requireWritable(output)
+            try data.write(to: output, options: .atomic)
+            foreignDocument = nextForeign
+            url = output; sourceFingerprint = digest(data); dirty = false; revision = UUID(); didVisit?(output); return true
+        }
         catch { self.error = error.localizedDescription; return false }
     }
-    func chooseDestination(pdf: Bool) -> URL? {
-        let panel = NSSavePanel(); panel.nameFieldStringValue = title + (pdf ? ".pdf" : ".docx")
-        panel.message = "DOCX keeps editing available. PDF keeps the page layout."
+    private func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+    private func digestFile(_ source: URL) throws -> String {
+        let values = try source.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard values.isRegularFile == true, (values.fileSize ?? Int.max) <= 32_000_000 else { throw ReferenceFailure("Use a DOCX smaller than 32 MB.") }
+        let file = try FileHandle(forReadingFrom: source); defer { try? file.close() }
+        var hash = SHA256(), count = 0
+        while let chunk = try file.read(upToCount: 65_536), !chunk.isEmpty {
+            count += chunk.count; guard count <= 32_000_000 else { throw ReferenceFailure("The Word file is too large.") }; hash.update(data: chunk)
+        }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+    private func requireUnchangedSource(_ source: URL) throws {
+        guard let sourceFingerprint, try digestFile(source) == sourceFingerprint else { throw ReferenceFailure("This file changed outside Writer. Save a copy to keep both versions.") }
+    }
+    func chooseDestination(pdf: Bool, exporting: Bool = false, copy: Bool = false, chooseFormat: Bool = true) -> URL? {
+        let panel = NSSavePanel(); panel.title = exporting ? "Export a copy" : copy ? "Save a copy" : "Save"; panel.prompt = exporting ? "Export" : "Save"
+        panel.nameFieldStringValue = title + (copy ? " copy" : "") + (pdf ? ".pdf" : ".docx")
+        panel.allowedContentTypes = [UTType(filenameExtension: pdf ? "pdf" : "docx")!]
         let choice = WriterSaveFormat(panel: panel, pdf: pdf)
-        panel.accessoryView = choice.view
+        if exporting && chooseFormat { panel.accessoryView = choice.view }
         return withExtendedLifetime(choice) { panel.runModal() == .OK ? panel.url : nil }
     }
     func exportCopy() {
         canvas?.window?.makeFirstResponder(nil)
-        guard let output = chooseDestination(pdf: false) else { return }
-        do { try data(for: output).write(to: output, options: .atomic) } catch { self.error = error.localizedDescription }
+        guard let output = chooseDestination(pdf: true, exporting: true) else { return }
+        do { try requireCopyDestination(output); try data(for: output).write(to: output, options: .atomic) } catch { self.error = error.localizedDescription }
+    }
+    @discardableResult func saveAs(to output: URL? = nil) -> Bool {
+        guard let output = output ?? chooseDestination(pdf: false, copy: true) else { return false }
+        return save(to: output)
+    }
+    private func requireCopyDestination(_ output: URL) throws {
+        guard output.standardizedFileURL != url?.standardizedFileURL else { throw ReferenceFailure("Choose a different name for the exported copy.") }
+        try StorageFileAccess.requireWritable(output)
     }
     func data(for destination: URL) throws -> Data {
         if destination.pathExtension.lowercased() == "docx" { return try WriterArchive.encode(self) }
@@ -290,8 +337,8 @@ import UniformTypeIdentifiers
     }
     func exportPDF(to destination: URL? = nil) {
         canvas?.window?.makeFirstResponder(nil)
-        guard let destination = destination ?? chooseDestination(pdf: true), let canvas else { return }
-        do { try canvas.pdf().write(to: destination, options: .atomic) } catch { self.error = error.localizedDescription }
+        guard let destination = destination ?? chooseDestination(pdf: true, exporting: true, chooseFormat: false), let canvas else { return }
+        do { try requireCopyDestination(destination); try canvas.pdf().write(to: destination, options: .atomic) } catch { self.error = error.localizedDescription }
     }
     func printDocument() {
         canvas?.window?.makeFirstResponder(nil)
@@ -310,12 +357,13 @@ import UniformTypeIdentifiers
         let expected = revision
         loading = true; defer { loading = false }
         do {
+            let fingerprint = try digestFile(url)
             let candidate = WriterModel()
-            let own = try await WriterForeignImport.load(url, into: candidate)
+            _ = try await WriterForeignImport.load(url, into: candidate)
             guard revision == expected else { throw ReferenceFailure("The document changed. Open the file again.") }
+            guard try digestFile(url) == fingerprint else { throw ReferenceFailure("The file changed while opening. Open it again.") }
             load(text: candidate.storage, objects: candidate.objects, paper: candidate.paper, landscape: candidate.landscape, pageStyle: candidate.pageStyle)
-            self.url = own ? url : nil; dirty = !own
-            if !own { error = "Imported a copy. Some objects may be images." }
+            self.url = url; sourceFingerprint = fingerprint; foreignDocument = candidate.foreignDocument; dirty = false; error = nil
             undo.removeAllActions(); selected = nil; revision = UUID(); canvas?.rebuild(); didVisit?(url)
             return true
         } catch { self.error = error.localizedDescription; return false }
@@ -339,11 +387,17 @@ import UniformTypeIdentifiers
 @MainActor private final class WriterSaveFormat: NSObject {
     let panel: NSSavePanel
     let popup = NSPopUpButton()
-    let view = NSStackView()
+    let view = NSView(frame: NSRect(x: 0, y: 0, width: 340, height: 44))
     init(panel: NSSavePanel, pdf: Bool) {
         self.panel = panel; super.init()
         popup.addItems(withTitles: ["DOCX", "PDF"]); popup.selectItem(at: pdf ? 1 : 0); popup.target = self; popup.action = #selector(change)
-        view.orientation = .horizontal; view.spacing = 10; view.addArrangedSubview(NSTextField(labelWithString: "Format")); view.addArrangedSubview(popup)
+        let label = NSTextField(labelWithString: "Format"); label.alignment = .right
+        label.widthAnchor.constraint(equalToConstant: 72).isActive = true
+        let row = NSStackView(views: [label, popup])
+        row.orientation = .horizontal; row.alignment = .centerY; row.spacing = 8; row.translatesAutoresizingMaskIntoConstraints = false
+        popup.setAccessibilityLabel("Export format"); popup.widthAnchor.constraint(equalToConstant: 160).isActive = true
+        view.addSubview(row)
+        NSLayoutConstraint.activate([row.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20), row.centerYAnchor.constraint(equalTo: view.centerYAnchor), row.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20)])
         change()
     }
     @objc private func change() {

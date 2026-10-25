@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ReferencePaperSearch: View {
     @ObservedObject var model: ReferenceModel
+    @ObservedObject private var network = NetworkAccessState.shared
     var target: ReferenceRecord? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var state = Presentation()
@@ -10,6 +11,7 @@ struct ReferencePaperSearch: View {
         @Published var papers: [ReferencePaperLookup.Paper] = []
         @Published var selected: UUID?
         @Published var pdfs: [URL] = []
+        @Published var fetched: ReferencePDFResolver.Found?
         @Published var includePDF = true
         @Published var loading = false
         @Published var findingPDF = false
@@ -17,6 +19,7 @@ struct ReferencePaperSearch: View {
         @Published var searched = false
         @Published var error: String?
         @Published var pdfMessage: String?
+        @Published var publisher: ReferenceRecord?
         var searchTask: Task<Void, Never>?
         var pdfTask: Task<Void, Never>?
         var addTask: Task<Void, Never>?
@@ -47,9 +50,9 @@ struct ReferencePaperSearch: View {
                 }.padding(.vertical, 3).scrollContentGutter()
             }.frame(maxHeight: .infinity) }
             if chosen != nil {
-                if state.findingPDF { HStack { ProgressView().controlSize(.small); Text("Looking for an open PDF…").foregroundStyle(.secondary) }.font(RemileType.caption) }
+                if state.findingPDF { HStack { ProgressView().controlSize(.small); Text("Looking for a PDF…").foregroundStyle(.secondary) }.font(RemileType.caption) }
                 else if let url = state.pdfs.first {
-                    HStack { Toggle("Include PDF", isOn: $state.includePDF); Spacer(); Text(url.isFileURL ? url.lastPathComponent : (url.host ?? "")).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1) }.disabled(state.adding)
+                    HStack { Toggle("Include PDF", isOn: $state.includePDF); Spacer(); Text(url.isFileURL ? url.lastPathComponent : [url.host ?? "", state.fetched?.version ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1) }.disabled(state.adding)
                 } else { Text(state.pdfMessage ?? (target == nil ? "No open PDF found. Metadata can still be added." : "No open PDF found. Search by DOI or title, or add a local PDF.")).font(RemileType.caption).foregroundStyle(.secondary) }
             }
             if let error = state.error ?? model.error { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).fixedSize(horizontal: false, vertical: true) }
@@ -57,18 +60,30 @@ struct ReferencePaperSearch: View {
                 Button("Cancel") { state.searchTask?.cancel(); state.pdfTask?.cancel(); state.addTask?.cancel(); dismiss() }.keyboardShortcut(.cancelAction).disabled(model.busy)
                 if let target { Button("Add local PDF…") { model.chooseFiles(target: target); dismiss() }.disabled(state.adding || model.busy) }
                 Spacer()
-                Text("Crossref · OpenAlex").font(RemileType.small).foregroundStyle(.secondary)
+                if let paper = chosen, ReferencePublisherPolicy.source(paper.record) != nil {
+                    Button("Publisher access…") {
+                        state.pdfTask?.cancel(); state.findingPDF = false
+                        state.publisher = paper.record
+                    }.disabled(state.adding || model.busy || network.offline)
+                        .remileHelp("Optionally sign in on the publisher’s website and download its PDF here.")
+                }
                 Button(state.adding ? "Adding…" : target == nil ? "Add" : "Attach PDF") { add() }.disabled(chosen == nil || state.adding || state.findingPDF || model.busy || (target != nil && (!state.includePDF || state.pdfs.isEmpty))).keyboardShortcut(.defaultAction)
             }
         }.padding(24).frame(width: 600, height: 510).background(RemileStyle.background).tint(RemileStyle.accent)
+            .sheet(item: $state.publisher) { record in
+                ReferencePublisherAccess(record: record) { found in
+                    guard state.selected == record.id else { return }
+                    state.fetched = found; state.pdfs = [found.source]; state.includePDF = true; state.pdfMessage = nil; state.error = nil
+                }
+            }
             .onAppear {
                 if let target { state.query = target.fields["doi"].flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } ?? target.title; state.papers = [.init(record: target)]; state.selected = target.id; findPDF(.init(record: target)) }
             }
-            .onDisappear { state.searchTask?.cancel(); state.pdfTask?.cancel(); state.addTask?.cancel() }
+            .onDisappear { state.searchTask?.cancel(); state.pdfTask?.cancel(); state.addTask?.cancel(); state.fetched = nil; state.pdfs = [] }
     }
     private func search() {
         guard !state.loading && !state.adding else { return }
-        state.pdfTask?.cancel(); state.pdfs = []; state.selected = nil; state.error = nil; state.loading = true; state.searched = true; state.papers = []
+        state.pdfTask?.cancel(); state.pdfs = []; state.fetched = nil; state.selected = nil; state.error = nil; state.loading = true; state.searched = true; state.papers = []
         let query = state.query
         state.searchTask = Task { @MainActor in
             defer { state.loading = false }
@@ -81,7 +96,7 @@ struct ReferencePaperSearch: View {
         }
     }
     private func findPDF(_ paper: ReferencePaperLookup.Paper) {
-        state.pdfTask?.cancel(); state.pdfs = []; state.pdfMessage = nil; state.findingPDF = true; state.includePDF = true
+        state.pdfTask?.cancel(); state.pdfs = []; state.fetched = nil; state.pdfMessage = nil; state.findingPDF = true; state.includePDF = true
         let open = RemileWindows.shared.models.compactMap { $0.reader.url } + RemileWindows.shared.models.compactMap { $0.selectedHit.map { URL(fileURLWithPath: $0.path) } }
         let known = model.records.filter { $0.trashed == nil && ReferencePaperLookup.matches(paper.record, fields: $0.fields) }.flatMap(\.attachments).map { model.repository.attachmentURL($0) }
         state.pdfTask = Task { @MainActor in
@@ -89,10 +104,10 @@ struct ReferencePaperSearch: View {
                 let local = try await Task.detached { try ReferencePaperLookup.localPDFs(for: paper.record, candidates: Array((open + known).prefix(20))) }.value
                 try Task.checkCancellation()
                 if !local.isEmpty { guard state.selected == paper.id else { return }; state.pdfs = local; state.findingPDF = false; return }
-                let urls = try await ReferencePaperLookup.openPDFs(doi: paper.record.fields["doi"] ?? ""); try Task.checkCancellation()
-                guard state.selected == paper.id else { return }; state.pdfs = urls; state.findingPDF = false
+                let found = try await ReferencePDFResolver.resolve(paper.record); try Task.checkCancellation()
+                guard state.selected == paper.id else { return }; state.fetched = found; state.pdfs = [found.source]; state.findingPDF = false
             } catch {
-                if !Task.isCancelled && state.selected == paper.id { state.findingPDF = false; state.pdfMessage = target == nil ? "PDF lookup unavailable. Metadata can still be added." : "PDF lookup unavailable. Search by DOI or title, or add a local PDF." }
+                if !Task.isCancelled && state.selected == paper.id { state.findingPDF = false; state.pdfMessage = error.localizedDescription }
             }
         }
     }
@@ -100,6 +115,7 @@ struct ReferencePaperSearch: View {
         guard let paper = chosen, !state.adding else { return }
         state.adding = true; state.error = nil
         let urls = state.includePDF ? state.pdfs : []
+        let fetched = state.includePDF ? state.fetched : nil
         state.addTask = Task { @MainActor in
             do {
                 let pdf: Data?
@@ -109,9 +125,10 @@ struct ReferencePaperSearch: View {
                         let handle = try FileHandle(forReadingFrom: local); defer { try? handle.close() }
                         let data = try handle.read(upToCount: ReferencePaperLookup.pdfLimit + 1) ?? Data()
                         guard data.count <= ReferencePaperLookup.pdfLimit else { throw ReferenceFailure("Choose a PDF smaller than 25 MB.") }
+                        guard try ReferencePDFResolver.validate(data, for: paper.record) else { throw ReferenceFailure("The local PDF could not be matched. Check the file before attaching it.") }
                         return data
                     }.value
-                } else { pdf = urls.isEmpty ? nil : try await ReferencePaperLookup.download(urls) }
+                } else { pdf = fetched?.data }
                 try Task.checkCancellation()
                 if let target {
                     guard let pdf else { throw ReferenceFailure("Choose a PDF before attaching it.") }

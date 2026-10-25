@@ -14,13 +14,15 @@ Search by the details you remember. Click a column heading to sort, then click a
 
 PDFs are saved locally first. While online, remile uses a detected DOI or arXiv ID to fill missing details without AI. The airplane button pauses these lookups.
 
-Double-click a metadata value to edit it. **Read metadata** reviews details extracted from the PDF. **Look up metadata** fills missing fields online by DOI, arXiv ID or an exact title match. Existing values stay unchanged, and no PDF is uploaded. [Metadata lookup details →](details/reference.md#metadata-lookup)
+Double-click a metadata value to edit it. **Read metadata** reviews details extracted from the PDF. **Look up metadata** fills missing fields and available abstracts online by DOI, arXiv ID or an exact title match. Existing values stay unchanged, and no PDF is uploaded. [Metadata lookup details →](details/reference.md#metadata-lookup)
 
 Edited books can list editors instead of authors. **Author / Editor** shows their names with `(ed.)` or `(eds.)`. New citation keys use the first editor's surname when no author is recorded. [Names and keys →](details/reference.md#columns-and-keys)
 
+Missing a PDF? Right-click the reference and choose **Find a paper…**. remile checks local files and public sources. For subscription access, choose **Publisher access…**, sign in on the official website and download the PDF. A confirmed match returns here for attachment. [PDF lookup details →](details/reference.md#publisher-access)
+
 ## Cite while writing
 
-Use the book button to choose a reference and its bibliography destination. In LaTeX and Overleaf, type `\cite{` to search keys, titles, authors and stored abstracts. Arrow keys move through the list. Return or Tab inserts a key, and Escape closes the list.
+Use the book button and **Use for citations** to check one or more libraries for the current document. Then choose a reference and its bibliography destination. In LaTeX and Overleaf, type `\cite{` to search keys, titles, authors and stored abstracts. Arrow keys move through the list. Return or Tab inserts a key, and Escape closes the list.
 
 The preceding sentence helps put related sources first. This works offline without AI calls. An inserted library reference is added to the selected project bibliography. Existing entries are kept, and a conflicting key asks for attention.
 

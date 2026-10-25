@@ -7,8 +7,15 @@ case "$output_directory" in /*) ;; *) print -u2 "Use an absolute output director
 mkdir -p "$output_directory"
 cd "$source_directory"
 version="$(cat VERSION)"
-release_numbers=("${(@s:.:)version}")
-build_number=$(( release_numbers[1] * 10000 + release_numbers[2] * 100 + release_numbers[3] ))
+[[ "$version" =~ '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-beta\.([1-9][0-9]*))?$' ]] || { print -u2 'Use a numeric release version or beta.N.'; exit 1; }
+bundle_version="${version%%-*}"
+release_numbers=("${(@s:.:)bundle_version}")
+build_suffix=999
+if [[ "$version" == *-beta.* ]]; then
+    build_suffix="${version##*-beta.}"
+    (( build_suffix < 999 )) || { print -u2 'Beta build number is too large.'; exit 1; }
+fi
+build_number=$(( (release_numbers[1] * 10000 + release_numbers[2] * 100 + release_numbers[3]) * 1000 + build_suffix ))
 swift build --build-system native --scratch-path "$output_directory/swift-build" -c release --product Remile
 binary_directory="$(swift build --build-system native --scratch-path "$output_directory/swift-build" -c release --show-bin-path)"
 application="$output_directory/remile.app"
@@ -38,7 +45,8 @@ cat > "$application/Contents/Info.plist" <<PLIST
 <key>CFBundleExecutable</key><string>Remile</string>
 <key>CFBundleIconFile</key><string>Remile.icns</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>$version</string>
+<key>CFBundleShortVersionString</key><string>$bundle_version</string>
+<key>RemileDisplayVersion</key><string>$version</string>
 <key>CFBundleVersion</key><string>$build_number</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>

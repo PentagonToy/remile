@@ -249,8 +249,8 @@ struct ReferenceWorkspace: View {
             let overhead = Double(80 + visible.count * 10)
             let titleWidth = state.widths["title"] ?? max(300, geometry.size.width - others - overhead)
             ScrollView(.horizontal) {
-            VStack(spacing: 0) {
-            columns(titleWidth: titleWidth).font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.trailing, ScrollContentSpacing.gutter).padding(.bottom, 8)
+            VStack(alignment: .leading, spacing: 0) {
+            columns(titleWidth: titleWidth).font(RemileType.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.trailing, ScrollContentSpacing.gutter).padding(.bottom, 8)
             Divider()
             if model.items.isEmpty {
                 VStack(spacing: 12) {
@@ -260,7 +260,7 @@ struct ReferenceWorkspace: View {
                 }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { scroll in
-                    ScrollView { LazyVStack(spacing: 2) { ForEach(model.items) { record in row(record, titleWidth: titleWidth).id(record.id) } }.padding(10).scrollContentGutter() }
+                    ScrollView { LazyVStack(alignment: .leading, spacing: 2) { ForEach(model.items) { record in row(record, titleWidth: titleWidth).id(record.id) } }.padding(10).scrollContentGutter() }
                         .onAppear { if let id = model.selected { scroll.scrollTo(id) } }
                 }
             }
@@ -278,7 +278,7 @@ struct ReferenceWorkspace: View {
             HStack(spacing: 10) {
                 ReferenceKindIcon(kind: .classify(record), hasAttachment: !record.attachments.isEmpty).frame(width: 22)
                 columnCells(record, titleWidth: titleWidth)
-            }.font(RemileType.callout).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 9)
+            }.font(RemileType.callout).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).padding(.vertical, 9)
                 .background(model.selectedIDs.contains(record.id) ? RemileStyle.accent.opacity(0.18) : model.duplicates[record.id] != nil ? RemileStyle.accent.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 5))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
@@ -326,16 +326,16 @@ struct ReferenceWorkspace: View {
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: rowTarget(record.id)) { receive($0, target: record, pdfOnly: true) }
     }
     private func columns(titleWidth: Double) -> some View {
-        HStack(spacing: 10) { Color.clear.frame(width: 22, height: 1); columnCells(nil, titleWidth: titleWidth) }
+        HStack(alignment: .firstTextBaseline, spacing: 10) { Color.clear.frame(width: 22, height: 1); columnCells(nil, titleWidth: titleWidth) }
     }
     @ViewBuilder private func columnCells(_ record: ReferenceRecord?, titleWidth: Double) -> some View {
         let columns = ReferenceColumn.visible(columnSource)
         ForEach(columns) { column in
             Group {
-                if let record { Text(column.value(record)).foregroundStyle(column == .title ? RemileStyle.ink : .secondary) }
+                if let record { Text(column.displayedValue(record)).foregroundStyle(column == .title ? RemileStyle.ink : .secondary) }
                 else {
                     Button { model.sort(by: column) } label: {
-                        HStack(spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Text(column.label)
                             if model.sorting.column == column { Image(systemName: model.sorting.ascending ? "chevron.up" : "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(RemileStyle.accent) }
                             Spacer(minLength: 0)
@@ -345,7 +345,7 @@ struct ReferenceWorkspace: View {
                         .accessibilityValue(model.sorting.column == column ? (model.sorting.ascending ? "Ascending" : "Descending") : "Not sorted")
                         .remileHelp("Sort by " + column.label)
                 }
-            }.frame(width: column == .title ? titleWidth : width(column), alignment: .leading)
+            }.frame(width: column == .title ? titleWidth : width(column), alignment: record.map { column.value($0).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } == true ? .center : .leading)
                 .overlay(alignment: .trailing) {
                     if record == nil { resize(column, current: column == .title ? titleWidth : width(column)) }
                 }

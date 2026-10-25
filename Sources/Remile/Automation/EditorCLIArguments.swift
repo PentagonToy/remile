@@ -31,7 +31,7 @@ enum EditorCLIArguments {
         "comments": Rule(values: ["--format", "--output"], paths: 0...1),
         "combine": Rule(values: ["--output"], paths: 2...Int.max),
         "compress": Rule(values: ["--output", "--quality"], flags: ["--grayscale"], paths: 1...1),
-        "reference": Rule(values: ["--id", "--output", "--limit", "--offset", "--query", "--context", "--library", "--source-file", "--expected-revision", "--attachment", "--kind", "--page", "--start", "--length", "--expected-sha256", "--sort", "--order"], flags: ["--trash"], paths: 1...1),
+        "reference": Rule(values: ["--id", "--output", "--limit", "--offset", "--query", "--context", "--library", "--libraries", "--source-file", "--expected-revision", "--attachment", "--kind", "--page", "--start", "--length", "--expected-sha256", "--sort", "--order"], flags: ["--trash"], paths: 1...1),
         "library-search": Rule(flags: ["--no-boost"], paths: 1...Int.max)
     ]
 
@@ -101,7 +101,13 @@ enum EditorCLIArguments {
             case "save-passage":
                 allowed = ["--id", "--attachment", "--page", "--start", "--length", "--expected-sha256"]
                 guard allowed.allSatisfy({ values[$0] != nil }) else { throw Failure("Provide reference, attachment, PDF hash, page and UTF-16 range.") }
-            case "suggest": allowed = ["--query", "--context", "--library", "--limit"]; guard values["--library"] != nil else { throw Failure("Choose --library for citation suggestions.") }
+            case "suggest":
+                allowed = ["--query", "--context", "--library", "--libraries", "--limit"]
+                guard (values["--library"] != nil) != (values["--libraries"] != nil) else { throw Failure("Choose --library or --libraries for citation suggestions.") }
+                if let raw = values["--libraries"] {
+                    let ids = raw.split(separator: ",", omittingEmptySubsequences: false)
+                    guard !ids.isEmpty, ids.count <= 64, ids.allSatisfy({ UUID(uuidString: String($0)) != nil }) else { throw Failure("Use up to 64 library IDs separated by commas.") }
+                }
             case "citation": allowed = ["--id", "--kind"]; guard values["--id"] != nil, ["latex", "markdown"].contains(values["--kind"] ?? "latex") else { throw Failure("Provide --id and --kind latex or markdown.") }
             case "show": allowed = ["--id"]; guard values["--id"] != nil else { throw Failure("Provide --id for reference show.") }
             case "export": allowed = ["--id", "--output", "--library"]

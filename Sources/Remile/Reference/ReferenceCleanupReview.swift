@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ReferenceCleanupReview: View {
     @ObservedObject var model: ReferenceModel
+    @ObservedObject private var network = NetworkAccessState.shared
     var target: ReferenceRecord? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var state = Presentation()
@@ -13,10 +14,13 @@ struct ReferenceCleanupReview: View {
         @Published var loading = true
         @Published var error: String?
         @Published var group: DuplicateGroup?
+        @Published var paper: ReferenceRecord?
+        @Published var progress: String?
         var loaded = false
         var lookupTask: Task<Void, Never>?
     }
     private struct DuplicateGroup: Identifiable { let records: [ReferenceRecord]; var id: UUID { records[0].id } }
+    private var missingPDFs: [ReferenceRecord] { model.libraryRecords.filter { $0.trashed == nil && $0.attachments.isEmpty } }
     private var duplicateGroups: [DuplicateGroup] {
         let visible = Set(model.libraryRecords.filter { $0.trashed == nil }.map(\.id))
         let groups = Set(visible.compactMap { model.duplicates[$0]?.sorted { $0.uuidString < $1.uuidString } })
@@ -32,17 +36,26 @@ struct ReferenceCleanupReview: View {
             if target == nil { Picker("Review", selection: $state.tab) {
                 Text("Metadata · \(state.changes.count)").tag(0)
                 Text("Duplicates · \(duplicateGroups.count)").tag(1)
-            }.pickerStyle(.segmented).labelsHidden() }
-            if state.loading { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+                Text("PDFs · \(missingPDFs.count)").tag(2)
+            }.pickerStyle(.segmented).labelsHidden().disabled(state.loading) }
+            if state.loading { VStack(spacing: 12) { ProgressView(); if let progress = state.progress { Text(progress).font(RemileType.caption).foregroundStyle(.secondary) } }.frame(maxWidth: .infinity, maxHeight: .infinity) }
             else if state.tab == 0 && state.changes.isEmpty { empty("No metadata changes") }
-            else if state.tab != 0 && duplicateGroups.isEmpty { empty("No duplicate candidates") }
+            else if state.tab == 1 && duplicateGroups.isEmpty { empty("No duplicate candidates") }
+            else if state.tab == 2 && missingPDFs.isEmpty { empty("Every reference has a PDF") }
             else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
                         if state.tab == 0 {
                             ForEach(state.changes) { change in metadata(change) }
-                        } else {
+                        } else if state.tab == 1 {
                             ForEach(duplicateGroups) { duplicate($0) }
+                        } else {
+                            ForEach(missingPDFs) { record in
+                                HStack(spacing: 12) {
+                                    Text(record.displayTitle).font(RemileType.callout).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                                    Button("Find PDF…") { state.paper = record }.disabled(model.busy)
+                                }.padding(12).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 7))
+                            }
                         }
                     }.padding(.vertical, 4).scrollContentGutter()
                 }.frame(maxHeight: .infinity)
@@ -50,7 +63,8 @@ struct ReferenceCleanupReview: View {
             if let error = state.error ?? model.error { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning) }
             HStack {
                 Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
-                if target != nil { Button("Look up") { state.lookupTask = Task { await lookup() } }.disabled(state.loading || model.busy).remileHelp("Look up DOI or arXiv metadata without AI") }
+                if state.progress != nil { Button("Stop") { state.lookupTask?.cancel() } }
+                else if state.tab == 0 { Button(target == nil ? "Look up missing" : "Look up") { state.lookupTask = Task { await lookup() } }.disabled(state.loading || model.busy || network.offline).remileHelp("Find missing metadata and abstracts online. Review before applying.") }
                 Spacer()
                 if state.tab == 0 {
                     Button("Apply selected") { model.applyCleanup(state.changes.filter { state.included.contains($0.id) }) { dismiss() } }
@@ -62,6 +76,7 @@ struct ReferenceCleanupReview: View {
             .task { await refresh() }
             .onDisappear { state.lookupTask?.cancel() }
             .sheet(item: $state.group, onDismiss: { Task { await refresh() } }) { group in ReferenceDuplicateReview(model: model, records: group.records) }
+            .sheet(item: $state.paper) { ReferencePaperSearch(model: model, target: $0) }
     }
     private func metadata(_ change: ReferenceCleanup.Change) -> some View {
         HStack(alignment: .top, spacing: 12) {
@@ -103,17 +118,29 @@ struct ReferenceCleanupReview: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     @MainActor private func lookup() async {
-        guard let target else { return }
+        let records = target.map { [$0] } ?? model.libraryRecords.filter(ReferenceCleanup.needsLookup)
+        guard !records.isEmpty else { state.error = "No missing metadata to look up."; return }
         state.loading = true; state.error = nil
-        defer { state.loading = false }
+        state.progress = "Looking up 0 of \(records.count)…"
+        defer { state.loading = false; state.progress = nil }
         do {
-            let local = state.changes.first?.after ?? target
-            let fetched = try await ReferencePaperLookup.metadata(for: local)
-            try Task.checkCancellation()
-            var next = local; next.type = fetched.type
-            next.fields.merge(fetched.fields) { _, verified in verified }
-            state.changes = next.fields == target.fields && next.type == target.type ? [] : [.init(before: target, after: next)]
-            state.included = Set(state.changes.map(\.id))
+            var failed = 0
+            for (index, record) in records.enumerated() {
+                try Task.checkCancellation(); try NetworkAccess.requireOnline()
+                state.progress = "Looking up \(index + 1) of \(records.count)…"
+                do {
+                    let local = state.changes.first(where: { $0.id == record.id })?.after ?? record
+                    let fetched = try await ReferencePaperLookup.metadata(for: local)
+                    try Task.checkCancellation(); try NetworkAccess.requireOnline()
+                    if let change = try ReferenceCleanup.onlineChange(record, local: local, fetched: fetched) {
+                        let existing = state.changes.firstIndex { $0.id == record.id }
+                        if let existing { state.changes[existing] = change }
+                        else { state.changes.append(change); state.included.insert(change.id) }
+                    }
+                } catch is CancellationError { throw CancellationError() }
+                catch { failed += 1 }
+            }
+            if failed > 0 { state.error = "Could not look up \(failed) of \(records.count) references." }
         } catch is CancellationError { }
         catch { state.error = error.localizedDescription }
     }

@@ -47,12 +47,13 @@ struct OverleafBar: View {
                 if let conflict = live.conflict { OverleafLiveReview(conflict: conflict, choose: { text in presentation.review = false; Task { await live.choose(text: text) } }, close: { presentation.review = false }) }
             }
             .onChange(of: liveOffline) { if liveOffline { Task { await live.suspend() } } }
-            .task(id: connection.id) { if connection.liveOnly == true, !liveOffline { await live.start(project: project, library: library, connection: connection) } }
+            .task(id: connection.id) { if OverleafSyncPreference.live(connection.id), !liveOffline { await live.start(project: project, library: library, connection: connection) } }
             .onDisappear { Task { await live.stop() } }
     }
     private func changeMode(_ isLive: Bool) {
         guard isLive != live.enabled, !presentation.switching, !live.connecting else { return }
         guard !isLive || (!library.busy && !project.compiling && !liveOffline) else { return }
+        OverleafSyncPreference.choose(isLive, for: connection.id)
         presentation.switching = true
         Task {
             defer { presentation.switching = false }
@@ -80,14 +81,16 @@ struct OverleafBar: View {
             if live.enabled {
                 if live.connecting { ProgressView().controlSize(.small); Text(live.syncingFiles ? "Syncing files…" : "Connecting…") }
                 else if let issue = live.issue {
-                    Button { presentation.issue = true } label: { Label(compact ? "Paused" : "Paused · " + live.pauseReason, systemImage: "exclamationmark.circle") }
+                    Button {
+                        if live.conflict != nil { presentation.review = true }
+                        else { Task { await live.retry() } }
+                    } label: { Label(compact ? "Paused" : "Paused · " + live.pauseReason, systemImage: "arrow.clockwise") }
                         .foregroundStyle(RemileStyle.warning).remileHelp(issue)
-                        .popover(isPresented: $presentation.issue) { HelpBubbleContent(text: issue) }
+                        .disabled(liveOffline || project.compiling).accessibilityHint("Reconnect and check the latest files")
                     if let recovery = live.recoveryDirectory { Button("Recovery copies") { NSWorkspace.shared.open(recovery) } }
                     if live.conflict != nil { Button("Review edits") { presentation.review = true } }
                     else if live.requiresGitReview && connection.liveOnly == true { Button("Work locally") { Task { await live.stop() } } }
                     else if live.requiresGitReview { Button(compact ? "Review Git" : "Stop live and review Git") { if allowsGit { Task { await live.reviewGit() } } else { presentation.premium = true } }.opacity(allowsGit ? 1 : 0.45).disabled(liveOffline || project.compiling).remileHelp(allowsGit ? "Stop live sync and review project file changes through Git" : OverleafLibrary.premiumHint).popover(isPresented: $presentation.premium) { HelpBubbleContent(text: OverleafLibrary.premiumHint) } }
-                    else { Button("Reconnect") { Task { await live.retry() } }.disabled(liveOffline) }
                 } else if live.connected {
                     if live.pendingDocumentCount > 0 {
                         Label("Confirming · \(live.pendingDocumentCount) \(live.pendingDocumentCount == 1 ? "file" : "files")", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(RemileStyle.accent)
@@ -122,16 +125,16 @@ struct OverleafSyncModePicker: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         HStack(spacing: 2) {
-            mode(localOnly ? "Local" : "Private", live: false, help: localOnly ? "Keep working on this Mac. Choose Live to sync project changes." : (allowsGit ? "Local edits sync through Git. Remote changes wait for review." : "Work locally. Git sync requires Overleaf Premium."))
             mode("Live", live: true, help: "Text edits sync live. File updates sync automatically.")
+            mode(localOnly ? "Local" : "Private", live: false, help: localOnly ? "Keep working on this Mac. Choose Live to sync project changes." : (allowsGit ? "Local edits sync through Git. Remote changes wait for review." : "Work locally. Git sync requires Overleaf Premium."))
         }.padding(3).background(RemileStyle.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9).stroke(RemileStyle.ink.opacity(0.08), lineWidth: 1))
             .fixedSize().accessibilityElement(children: .contain).accessibilityLabel("Sync mode")
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isLive)
             .onMoveCommand { direction in
                 guard !switching else { return }
-                if direction == .left { choose(false) }
-                else if direction == .right && canStart { choose(true) }
+                if direction == .left && canStart { choose(true) }
+                else if direction == .right { choose(false) }
             }
     }
     private func mode(_ title: String, live: Bool, help: String) -> some View {

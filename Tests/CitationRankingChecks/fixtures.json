@@ -1,0 +1,26 @@
+{
+  "description": "Small synthetic regression set. These invented metadata records test retrieval mechanics, not scientific support or general accuracy.",
+  "documents": [
+    {"key":"AAmmonia","title":"Ammonia reactivity and ignition delay","abstract":"Ammonia has weak reactivity. Ignition delay varies with pressure and temperature."},
+    {"key":"BHydrogen","title":"Hydrogen reactivity and flame propagation","abstract":"Hydrogen flame speed and ignition depend on temperature and pressure."},
+    {"key":"CBlend","title":"Ammonia hydrogen blends and laminar burning velocity","abstract":"Measurements of laminar burning velocity in ammonia hydrogen blends at 300 K."},
+    {"key":"DClosure","title":"Large eddy simulation of turbulent combustion closures","abstract":"Filtered density function models and subgrid mixing closures for large eddy simulation."},
+    {"key":"EML","title":"Machine learning for turbulent combustion","abstract":"A review of recent machine learning trends in turbulent combustion."},
+    {"key":"FTool2","title":"OpenFOAM solver and GRI-Mech 2.0","abstract":"Chemical mechanism version 2.0 used in the numerical solver."},
+    {"key":"GTool3","title":"OpenFOAM solver and GRI-Mech 3.0","abstract":"Chemical mechanism version 3.0 used in the numerical solver."},
+    {"key":"HStellar","title":"Stellar mass and distant galaxies","abstract":"Observations of stars and galaxy evolution."},
+    {"key":"INeural","title":"Deep neural networks for chemical kinetics","abstract":"Deep neural networks accelerate chemical kinetics calculations."}
+  ],
+  "cases": [
+    {"context":"Recent ML trends in turbulent combustion are increasingly discussed.","keys":["EML"],"kind":"background"},
+    {"context":"The reactivity of H₂ affects ignition.","keys":["BHydrogen"],"kind":"foundation"},
+    {"context":"The reactivity of NH₃ affects ignition delay.","keys":["AAmmonia"],"kind":"foundation"},
+    {"context":"Laminar burning velocity is measured for NH3/H2 blends at 300 K.","keys":["CBlend"],"kind":"comparison"},
+    {"context":"Large-eddy simulation uses subgrid mixing closures.","keys":["DClosure"],"kind":"method"},
+    {"context":"The OpenFOAM numerical solver uses GRI-Mech 3.0.","keys":["GTool3"],"kind":"method"},
+    {"context":"The OpenFOAM numerical solver uses GRI-Mech 2.0.","keys":["FTool2"],"kind":"method"},
+    {"context":"DNNs accelerate chemical kinetics calculations.","keys":["INeural"],"kind":"method"},
+    {"context":"Observations of stellar mass describe galaxy evolution.","keys":["HStellar"],"kind":"background"},
+    {"context":"Temperature and pressure affect hydrogen and ammonia reactivity.","keys":["AAmmonia","BHydrogen"],"kind":"foundation"}
+  ]
+}

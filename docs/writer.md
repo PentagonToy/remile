@@ -22,7 +22,9 @@ Use Fit to bring the page into view. Lock position keeps an object in place. Tex
 
 ## Save for later
 
-DOCX keeps the document editable in Writer. PDF preserves its page layout. Opening an external Word document may simplify or reject unsupported layouts, so keep the original.
+Save keeps changes in the working DOCX. Export makes a separate PDF or DOCX copy. Use File → Save As… to continue in a new file.
+
+An opened Word document keeps its filename and closes quietly if unchanged. Supported text edits can save to the original. Rich edits may need a separate Writer copy. [Saving and Word compatibility →](details/writer.md#save-and-export)
 
 ## Buttons at a glance
 

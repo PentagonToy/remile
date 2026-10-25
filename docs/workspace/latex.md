@@ -18,6 +18,8 @@ Files holds the project. Outline follows its sections. Drag the divider to give 
 
 Double-click in the PDF to return to the corresponding source. Word context refines the target when it matches clearly. Ambiguous text and figures keep the SyncTeX location. Selecting text alone does not move the source. Type `\cite{` to search your bibliography and Reference while writing. [Read the citation hints →](../reference.md#read-citation-hints)
 
+Inside `\includegraphics{…}`, type part of a filename to see matching project images. `\input{…}` and `\include{…}` suggest TeX files. `\ref{…}` and `\eqref{…}` suggest labels from the project. Completing a supported `\begin{…}` inserts its matching end and places the cursor inside. These suggestions use local project data without a network request.
+
 ## When a build needs attention
 
 Open Errors beside Compile. Start with the highest-priority issue and follow its source link. A green check means the PDF matches the current source.

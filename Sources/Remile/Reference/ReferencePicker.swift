@@ -14,7 +14,7 @@ struct ReferencePicker: View {
         @Published var matches: [ReferenceRecord] = []
         var entries: [ReferenceCitationIndex.Entry] = []
         @Published var libraries: [ReferenceLibrary] = []
-        @Published var library = ReferenceLibrary.primaryID
+        @Published var selected = Set<UUID>()
         @Published var query = ""
         @Published var message: String?
         @Published var loading = true
@@ -26,7 +26,18 @@ struct ReferencePicker: View {
             if state.loading { ProgressView() }
             else if state.libraries.isEmpty { Text("Add a library in Reference to begin.").foregroundStyle(.secondary) }
             else {
-                Picker("Library", selection: $state.library) { ForEach(state.libraries) { Text($0.name).tag($0.id) } }
+                HStack {
+                    Text("Use for citations").font(RemileType.callout)
+                    Menu {
+                        ForEach(state.libraries) { library in
+                            Toggle(library.name, isOn: Binding(get: { state.selected.contains(library.id) }, set: { use in
+                                if use { state.selected.insert(library.id) } else { state.selected.remove(library.id) }
+                            }))
+                        }
+                    } label: { Label(selectionTitle, systemImage: "books.vertical") }
+                    .remileHelp("Choose one or more libraries for this document's citation suggestions.")
+                    Spacer()
+                }
                 if insert != nil, format == .latex, bibliographies.count > 1 {
                     Picker("Bibliography", selection: $state.bibliography) {
                         Text("Choose a .bib file").tag("")
@@ -55,7 +66,7 @@ struct ReferencePicker: View {
             .sheet(item: $state.evidence) { ReferenceEvidenceView(record: $0, format: format) }
             .task {
                 let remembered = ReferenceCitationPreferences.read(context)
-                state.library = remembered.library ?? ReferenceLibrary.primaryID
+                state.selected = remembered.libraries != nil || remembered.library != nil ? remembered.selectedLibraries : [ReferenceLibrary.primaryID]
                 state.bibliography = ReferenceCitationPreferences.destination(bibliographies, preferred: remembered.bibliography) ?? ""
                 do {
                     let worker = Task.detached(priority: .userInitiated) {
@@ -69,26 +80,32 @@ struct ReferencePicker: View {
                     let (libraries, index) = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
                     try Task.checkCancellation()
                     state.libraries = libraries; state.entries = index.entries
-                    if !state.libraries.contains(where: { $0.id == state.library }), let first = state.libraries.first { state.library = first.id }
+                    state.selected.formIntersection(Set(libraries.map(\.id)))
+                    if state.selected.isEmpty, remembered.libraries == nil, let first = libraries.first { state.selected = [first.id] }
                 } catch { if !Task.isCancelled { state.message = error.localizedDescription } }
                 guard !Task.isCancelled else { return }
                 filter()
                 state.loading = false
                 if state.message == nil { remember() }
             }
-            .onChange(of: state.library) { if !state.loading { filter(); remember() } }
+            .onChange(of: state.selected) { if !state.loading { filter(); remember() } }
             .onChange(of: state.query) { filter() }
             .onChange(of: state.bibliography) { if !state.loading { remember() } }
     }
     private func filter() {
         let words = ReferenceCitationIndex.fold(state.query).split(whereSeparator: \.isWhitespace).map(String.init)
         state.matches = state.entries.filter { entry in
-            (entry.record.library == state.library || entry.record.collectionID == state.library) && words.allSatisfy { entry.search.contains($0) }
+            ReferenceCitationPreferences.includes(entry.record, libraries: state.selected) && words.allSatisfy { entry.search.contains($0) }
         }.map(\.record)
     }
     private func remember() {
-        ReferenceCitationPreferences.write(.init(library: state.library, bibliography: state.bibliography.isEmpty ? nil : state.bibliography), context: context)
+        let ids = state.selected.sorted { $0.uuidString < $1.uuidString }
+        ReferenceCitationPreferences.write(.init(library: ids.first, bibliography: state.bibliography.isEmpty ? nil : state.bibliography, libraries: ids), context: context)
         changed()
+    }
+    private var selectionTitle: String {
+        let names = state.libraries.filter { state.selected.contains($0.id) }.map(\.name)
+        return names.isEmpty ? "Choose libraries…" : names.count == 1 ? names[0] : "\(names.count) libraries"
     }
     private func perform(_ action: () throws -> Void) { do { try action() } catch { state.message = error.localizedDescription } }
 }

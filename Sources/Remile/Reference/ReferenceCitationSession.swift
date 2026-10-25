@@ -6,7 +6,7 @@ import Foundation
     private let repository: ReferenceRepository
     private var libraryTask: Task<ReferenceCitationIndex, Error>?
     private var projectTask: Task<ReferenceCitationIndex, Never>?
-    private var selectedLibrary: UUID?
+    private var selectedLibraries = Set<UUID>()
     private var libraryVersion: ReferenceRepository.Version?
     private var bibliographySources: [String: String] = [:]
     private var offered: [UUID: ReferenceRecord] = [:]
@@ -15,15 +15,16 @@ import Foundation
     private(set) var bibliographyPreparations = 0
     init(context: String, repository: ReferenceRepository = ReferenceRepository()) { self.context = context; self.repository = repository }
     deinit { libraryTask?.cancel(); projectTask?.cancel() }
-    func invalidate() { generation = UUID(); libraryTask?.cancel(); libraryTask = nil; selectedLibrary = nil; libraryVersion = nil; offered = [:] }
+    func invalidate() { generation = UUID(); libraryTask?.cancel(); libraryTask = nil; selectedLibraries = []; libraryVersion = nil; offered = [:] }
     func release() { invalidate(); projectTask?.cancel(); projectTask = nil; bibliographySources = [:] }
     func completion(source: String, selection: NSRange, buffers: [String: String]) async -> EditorCompletion.Context? {
         guard let prefix = ReferenceCitationCompletion.prefix(source, selection: selection) else { return nil }
         let choice = ReferenceCitationPreferences.read(context)
         let repository = repository
-        let version = choice.library == nil ? nil : await Task.detached(priority: .userInitiated) { repository.version() }.value
+        let libraries = choice.selectedLibraries
+        let version = libraries.isEmpty ? nil : await Task.detached(priority: .userInitiated) { repository.version() }.value
         guard !Task.isCancelled else { return nil }
-        if selectedLibrary != choice.library || libraryVersion != version { invalidate(); selectedLibrary = choice.library; libraryVersion = version }
+        if selectedLibraries != libraries || libraryVersion != version { invalidate(); selectedLibraries = libraries; libraryVersion = version }
         let generation = generation
         let sources = buffers.filter { $0.key.lowercased().hasSuffix(".bib") }
         if projectTask == nil || sources != bibliographySources {
@@ -41,13 +42,13 @@ import Foundation
                 return ReferenceCitationIndex(records)
             }
         }
-        if libraryTask == nil, let library = choice.library {
+        if libraryTask == nil, !libraries.isEmpty {
             let repository = repository; libraryLoads += 1
             libraryTask = Task.detached(priority: .userInitiated) {
                 let snapshot = try repository.snapshot(), hidden = Set(snapshot.libraries.filter { $0.trashed != nil }.map(\.id))
                 try Task.checkCancellation()
                 return ReferenceCitationIndex(snapshot.records.filter {
-                    $0.trashed == nil && !hidden.contains($0.library) && $0.collectionID.map(hidden.contains) != true && ($0.library == library || $0.collectionID == library)
+                    $0.trashed == nil && !hidden.contains($0.library) && $0.collectionID.map(hidden.contains) != true && ReferenceCitationPreferences.includes($0, libraries: libraries)
                 })
             }
         }

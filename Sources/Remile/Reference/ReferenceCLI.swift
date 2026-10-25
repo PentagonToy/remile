@@ -33,6 +33,13 @@ enum ReferenceCLI {
         func inTrash(_ record: ReferenceRecord) -> Bool { record.trashed != nil || deleted.contains(record.library) || record.collectionID.map(deleted.contains) == true }
         let library = option("--library").flatMap(UUID.init(uuidString:))
         if let library, !libraries.contains(where: { $0.id == library }) { throw ReferenceFailure("Choose an existing library ID.") }
+        var citationLibraries = Set(library.map { [$0] } ?? [])
+        if let raw = option("--libraries") {
+            let values = raw.split(separator: ",", omittingEmptySubsequences: false)
+            let ids = values.compactMap { UUID(uuidString: String($0)) }
+            guard options.first == "suggest", option("--library") == nil, !values.isEmpty, values.count <= 64, ids.count == values.count, ids.allSatisfy({ id in libraries.contains { $0.id == id } }) else { throw ReferenceFailure("Use --libraries with up to 64 existing IDs separated by commas for suggest.") }
+            citationLibraries = Set(ids)
+        }
         func file() throws -> URL {
             guard let path = option("--source-file"), path.hasPrefix("/") else { throw ReferenceFailure("Provide an absolute --source-file path.") }
             return URL(fileURLWithPath: path)
@@ -83,7 +90,7 @@ enum ReferenceCLI {
                 ["collectionID": record.collectionID?.uuidString ?? "", "libraryID": record.library.uuidString, "id": record.id.uuidString, "revision": record.revision.uuidString, "title": String(record.title.prefix(1000)), "authors": String(record.authors.prefix(500)), "editors": String(record.editors.prefix(500)), "contributors": String(record.displayContributors.prefix(500)), "contributorRole": record.usesEditors ? "editor" : "author", "year": String(record.year.prefix(32)), "publication": String(ReferenceColumn.publication.value(record).prefix(500)), "type": record.type, "summaryTruncated": record.title.count > 1000 || record.authors.count > 500 || record.year.count > 32 || ReferenceColumn.publication.value(record).count > 500, "key": record.citationKey, "attachments": record.attachments.count] as [String: Any]
             }]
         case "suggest":
-            let candidates = records.filter { !inTrash($0) && ($0.library == library || $0.collectionID == library) }
+            let candidates = records.filter { !inTrash($0) && ReferenceCitationPreferences.includes($0, libraries: citationLibraries) }
             let suggestions = ReferenceCitationCompletion.suggestions(query: option("--query") ?? "", project: [], library: candidates, limit: Int(option("--limit") ?? "8") ?? 8, context: option("--context") ?? "")
             return ["ok": true, "schema": 1, "suggestions": suggestions.map { suggestion -> [String: Any] in
                 var row: [String: Any] = ["id": suggestion.record.id.uuidString, "revision": suggestion.record.revision.uuidString, "key": suggestion.record.citationKey, "title": suggestion.record.displayTitle, "authors": suggestion.record.displayAuthors, "editors": suggestion.record.displayEditors, "contributors": suggestion.record.displayContributors, "contributorRole": suggestion.record.usesEditors ? "editor" : "author", "year": suggestion.record.year]

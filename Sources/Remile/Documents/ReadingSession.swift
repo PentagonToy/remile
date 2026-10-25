@@ -205,7 +205,7 @@ struct ReadingShell: View {
             home.removeRecent(root); return true
         }) }
         .sheet(isPresented: Binding(get: { overleaf.review != nil }, set: { if !$0 && !overleaf.busy { overleaf.dismissReview() } })) {
-            if let review = overleaf.review { OverleafComparison(library: overleaf, review: review, reload: home.openTeX) }
+            if let review = overleaf.review { OverleafComparison(library: overleaf, review: review, reload: home.refreshReviewedTeX) }
         }
         .sheet(isPresented: Binding(get: { overleaf.commentsProject != nil }, set: { if !$0 { overleaf.commentsProject = nil } })) {
             if let project = overleaf.commentsProject { OverleafComments(library: overleaf, connection: project, close: { overleaf.commentsProject = nil }) }

@@ -335,7 +335,10 @@ import WebKit
         if let error {
             issue = error.localizedDescription
             recoveryDirectory = fileSync?.recovery
-            if error is OverleafLiveFiles.Failure {
+            if let failure = error as? OverleafLiveFiles.Failure, case .stale = failure {
+                pauseReason = "Files changed · reconnect"; requiresGitReview = false
+            }
+            else if error is OverleafLiveFiles.Failure {
                 recoveryDirectory = fileSync?.recovery; pauseReason = "File review required"
                 requiresGitReview = connection.map { library?.allowsGit($0) == true } ?? false
             }

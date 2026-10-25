@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.1.4-beta.1 — 25 October 2026
+
+- Add optional publisher website access with validated PDF capture, a browser fallback and opt-in session storage in this Mac's Keychain. Embedded publisher verification can still fail. No institutional login compatibility is guaranteed.
+- Keep imported DOCX names and original paths. Save supported text edits without replacing unrelated Word package parts. Use a separate copy for unsupported structural changes. Separate Save from Export.
+- Fill available abstracts during metadata lookup. Select several citation libraries and keep lightweight, local topic hints distinct from claim verification.
+- Start Overleaf in Live unless Private was chosen. Retry transient file snapshots, reconnect from Paused and retain the source position after reviewed updates.
+- Complete project image names and reference labels. Pair supported TeX environments and avoid highlighting an uncertain PDF word match.
+- Align Reference headers, centre missing-value marks and distinguish DOCX with a muted rose badge.
 
 - Preserve editors in online book metadata. Show editor-only volumes in Author / Editor and use editors for new citation keys without rewriting existing keys.
 

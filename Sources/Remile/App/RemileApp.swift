@@ -96,7 +96,7 @@ private struct HomeCommands: Commands {
         }
         CommandGroup(replacing: .saveItem) {
             Button("Save") { if model.page == .writer { model.writer?.save() } else if let project = model.texProject { project.save() } else { model.reader.save() } }.keyboardShortcut("s")
-            Button("Save a Copy…") { if model.page == .writer, let writer = model.writer { writer.exportCopy() } else { model.reader.saveCopy() } }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(model.texProject != nil)
+            Button(model.page == .writer ? "Save As…" : "Save a Copy…") { if model.page == .writer, let writer = model.writer { writer.saveAs() } else { model.reader.saveCopy() } }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(model.texProject != nil)
         }
         CommandGroup(after: .saveItem) {
             Button("Close Document") {

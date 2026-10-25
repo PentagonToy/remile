@@ -60,6 +60,7 @@ struct TeXWorkspace: View {
             }
             editor.citationCompletion = { [weak project = project] source, range in
                 guard let project else { return nil }
+                if let local = project.localCompletion.context(source, selection: range, file: project.selected, paths: project.treeFiles, buffers: project.buffers) { return local }
                 return await project.citations.completion(source: source, selection: range, buffers: project.buffers)
             }
             editor.prepareCitation = { [weak project = project] item in
@@ -208,7 +209,6 @@ struct TeXWorkspace: View {
                                     .overlay(Circle().stroke(RemileStyle.editorBar, lineWidth: 1)).offset(y: -7).accessibilityHidden(true)
                             }
                         }
-                        if geometry.size.width >= 1100 { Text("Logs") }
                     }
                 }.remileHelp(logLabel).accessibilityLabel(logLabel)
                 Button { project.showsLog = false; project.showsHistory = false; presentation.pane = "Preview" } label: { Image(systemName: "doc.richtext") }

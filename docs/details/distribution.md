@@ -2,6 +2,8 @@
 
 remile. 0.1.3 targets macOS 14 and later. The published DMG contains an Apple Silicon app and its [CLI](../cli.md).
 
+Version **0.1.4-beta.1** is an optional [prerelease](https://github.com/PentagonToy/remile/releases/tag/v0.1.4-beta.1). Its arm64 DMG is ad hoc signed and is not Apple-notarised. Stable installations do not offer beta releases through Check for updates. A beta installation can still find a later stable version.
+
 ## Install
 
 Download the DMG from [GitHub releases](https://github.com/PentagonToy/remile/releases), open it and drag remile.app to Applications. Alternatively, use the [Homebrew tap](https://github.com/PentagonToy/homebrew-tap):

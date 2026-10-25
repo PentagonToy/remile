@@ -11,10 +11,11 @@ A local workspace for PDF, Markdown and LaTeX documents.
 
 ## Read, write and find
 
+- **Writer** — Write paged documents, edit supported DOCX content and export a PDF copy.
 - **Markdown** — Write in Edit, read the rendered document, or keep both together in Split.
 - **PDF** — Read, annotate and search across your local PDF library, with matching passages beside the page.
 - **LaTeX** — Edit multi-file projects, navigate their outline, compile and preview the PDF.
-- **Overleaf** — Work on a local copy and review changes before synchronising with your online project.
+- **Overleaf** — Start in Live for online editing, or use Private to review local changes before publishing.
 - **Reference** — Organise PDF/BibTeX records, review duplicates and keep citation keys with shared attachments. See [Reference](docs/reference.md).
 - **AI** — Use Apple Intelligence on your Mac or connect ChatGPT for document questions, [manuscript review](docs/manuscript-review.md), grammar suggestions and reviewed LaTeX repairs.
 
@@ -41,6 +42,8 @@ Update with `brew upgrade --cask remile`. The cask installs the app and the `rem
 ### Download
 
 Download [remile. 0.1.3 for Apple Silicon](https://github.com/PentagonToy/remile/releases/download/v0.1.3/remile-0.1.3-arm64.dmg), open the DMG and drag **remile.app** into **Applications**. Checksums are included with the [release](https://github.com/PentagonToy/remile/releases/tag/v0.1.3).
+
+Try [0.1.4-beta.1](https://github.com/PentagonToy/remile/releases/tag/v0.1.4-beta.1) for the latest Reference, Writer and Overleaf changes. This is a preview with known limitations. The stable download above remains available.
 
 ### Requirements
 

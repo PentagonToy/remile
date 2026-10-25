@@ -9,6 +9,14 @@ enum ReferenceCleanup {
         var id: UUID { before.id }
         var fields: [String] { (Set(before.fields.keys).union(after.fields.keys).filter { before.fields[$0] != after.fields[$0] } + (before.type != after.type ? ["@type"] : [])).sorted() }
     }
+    static func needsLookup(_ record: ReferenceRecord) -> Bool {
+        ReferenceRecognition.eligible(record) && (record.contributors.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || record.year.isEmpty || (record.fields["abstract"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+    /// Preview only. Applying keeps the existing revision check and Undo boundary.
+    static func onlineChange(_ before: ReferenceRecord, local: ReferenceRecord, fetched: ReferenceRecord) throws -> Change? {
+        let after = try ReferenceRecognition.merged(local, with: fetched)
+        return after.fields == before.fields && after.type == before.type ? nil : Change(before: before, after: after)
+    }
     static func proposals(_ records: [ReferenceRecord], repository: ReferenceRepository) throws -> [Change] {
         var result: [Change] = [], cached: [UUID: [String: String]] = [:]
         for record in records where record.trashed == nil {

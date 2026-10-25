@@ -17,6 +17,7 @@ struct RecentReadingRow: View {
     private var tint: Color {
         if isTeX { return scheme == .dark ? Color(red: 0.55, green: 0.76, blue: 0.66) : Color(red: 0.16, green: 0.43, blue: 0.33) }
         if tag == "MD" { return scheme == .dark ? Color(red: 0.57, green: 0.70, blue: 0.90) : Color(red: 0.20, green: 0.37, blue: 0.60) }
+        if tag == "DOCX" { return scheme == .dark ? Color(red: 0.82, green: 0.64, blue: 0.74) : Color(red: 0.53, green: 0.33, blue: 0.43) }
         return RemileStyle.accent
     }
     var body: some View {

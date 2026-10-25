@@ -54,8 +54,10 @@ struct HomeWorkspace: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 7) {
                     Image(nsImage: RemileArtwork.image("icon", dark: colorScheme == .dark) ?? NSImage(named: NSImage.applicationIconName) ?? NSImage()).resizable().scaledToFit().frame(width: 32, height: 32)
-                    Text("remile.").font(RemileType.heading)
-                    Text("v" + RemileRelease.current).font(RemileType.small).monospacedDigit().foregroundStyle(.secondary).fixedSize()
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("remile.").font(RemileType.heading).fixedSize()
+                        Text("v" + RemileRelease.current).font(RemileType.small).monospacedDigit().foregroundStyle(.secondary).fixedSize()
+                    }
                 }.padding(.vertical, 22)
                 Label("Home", systemImage: "house").font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).background(RemileStyle.accent.opacity(0.17), in: RoundedRectangle(cornerRadius: 9))
                 Button { navigate(.search) } label: { Label("Search", systemImage: "magnifyingglass").font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("search")

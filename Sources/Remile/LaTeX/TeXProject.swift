@@ -20,6 +20,7 @@ import UniformTypeIdentifiers
     @Published private(set) var treeFiles: [String]
     @Published var treeFolders: [String] = []
     @Published private(set) var fileRevision = 0
+    let localCompletion = TeXLocalCompletion()
     @Published private(set) var editRevision = 0
     @Published var collections: [TeXCollections.Group] = []
     enum NewItemKind { case file(String), folder(String), collection(UUID?), rename(String), renameCollection(UUID, String) }
@@ -197,6 +198,19 @@ import UniformTypeIdentifiers
         build = nil; outputCurrent = false; fileRevision += 1
     }
     var source: Binding<String> { Binding(get: { self.buffers[self.selected] ?? "" }, set: { if self.buffers[self.selected] != nil { self.buffers[self.selected] = $0 } }) }
+    /// Refresh reviewed disk contents without replacing the editor or its document identity.
+    func reloadReviewedFiles() throws {
+        guard !dirty else { throw TeXFileSystem.Failure(errorDescription: "The source changed during review. Your unsaved edits were kept. Check changes again.") }
+        let snapshot = try TeXProject(root, historyEnabled: false, displayName: connectedName)
+        let selectedBefore = selected
+        treeFiles = snapshot.treeFiles; treeFolders = snapshot.treeFolders; files = snapshot.files
+        buffers = snapshot.buffers; original = snapshot.buffers
+        if buffers[main] == nil { main = snapshot.main }
+        if !treeFiles.contains(selectedBefore) { selected = main }
+        backFiles.removeAll { !treeFiles.contains($0) }; forwardFiles.removeAll { !treeFiles.contains($0) }
+        collections = snapshot.collections; citations.invalidate()
+        build = nil; outputCurrent = false; fileRevision += 1
+    }
     @discardableResult func save() -> Bool {
         guard isDraft else { return saveWorkingCopy() }
         let panel = NSSavePanel(); panel.title = "Save LaTeX project"; panel.prompt = "Save"
