@@ -61,7 +61,7 @@ struct TeXProjectSidebar: View {
             Divider()
             EditorSidebarFooter(compact: state.files || state.outline, title: "Settings") { state.settings.toggle() }
                 .accessibilityLabel("LaTeX settings").remileHelp("LaTeX settings")
-                .popover(isPresented: $state.settings, arrowEdge: .trailing) { TeXProjectSettings(project: project).frame(width: 440, height: 540) }
+                .sheet(isPresented: $state.settings) { TeXProjectSettings(project: project).frame(width: 560, height: 560) }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(RemileStyle.sidebar)
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.files)
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.outline)
@@ -134,17 +134,19 @@ struct TeXProjectSidebar: View {
 }
 
 private struct TeXProjectSettings: View {
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var closeFocused: Bool
     @ObservedObject var project: TeXProject
     var body: some View {
         VStack(spacing: 0) {
-            Text("LaTeX settings").font(RemileType.heading).frame(maxWidth: .infinity, alignment: .leading).padding(16)
+            HStack { Text("LaTeX settings").font(RemileType.heading); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction).focused($closeFocused) }.padding(20)
             HStack {
                 Text("Main document")
                 Picker("Main document", selection: $project.main) { ForEach(project.files.filter { $0.hasSuffix(".tex") }, id: \.self) { Text($0).tag($0) } }.labelsHidden()
             }.padding(.horizontal, 16).padding(.bottom, 12)
             Divider()
             TeXSettings(project: project)
-        }.background(RemileStyle.background)
+        }.font(RemileType.control).buttonStyle(RemileActionStyle()).background(RemileStyle.background).defaultFocus($closeFocused, true)
     }
 }
 

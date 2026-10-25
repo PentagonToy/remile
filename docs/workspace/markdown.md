@@ -16,7 +16,7 @@ Keep local images beside the document or in a subfolder. Remote images need a co
 
 ## Settle into the page
 
-Settings controls source size, spelling, line numbers and live preview. [Writing assistance](../assistant.md) is available when you want another look at a passage.
+**Settings → Markdown** controls source size, spelling, line numbers and live preview. The editor’s settings show the same preferences. [Writing assistance](../assistant.md) is available when you want another look at a passage.
 
 ## Buttons at a glance
 

@@ -56,7 +56,7 @@ struct StorageSettings: View {
                     if let previous = state.previous { Button("Show previous copy") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: previous.path) } }
                 }
             }
-        }.formStyle(.grouped).scrollContentBackground(.hidden)
+        }.formStyle(.grouped).scrollContentBackground(.hidden).font(RemileType.control).toggleStyle(.switch)
     }
     private func reveal(_ url: URL, directory: Bool = false) -> some View {
         Button {

@@ -11,6 +11,7 @@ struct HomeWorkspace: View {
     @StateObject private var actions = HomeActions()
     private final class HomeActions: ObservableObject { @Published var clearHistory = false; @Published var settings = false; let tour = WelcomeTourProgress() }
 
+    @AppStorage(AnimationPolicy.preference) private var animations = true
     @AppStorage("home.recentExpanded") private var recentExpanded = true
 
     var body: some View {
@@ -30,7 +31,7 @@ struct HomeWorkspace: View {
             }
         }
         .modifier(WelcomeTour(enabled: (loadOnAppear || tourProgress != nil) && model.page == .home && !actions.settings && !model.guidePresented && !model.overleaf.presented, openGuide: { model.guidePresented = true }, progress: tour))
-        .animation(reduceMotion ? nil : RemileMotion.navigation, value: model.page)
+        .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: model.page)
         .background(RemileStyle.background).tint(RemileStyle.accent)
         .frame(minWidth: 560, minHeight: 450)
         .task { if loadOnAppear { await model.load() } }
@@ -54,13 +55,13 @@ struct HomeWorkspace: View {
                 HStack(spacing: 7) {
                     Image(nsImage: RemileArtwork.image("icon", dark: colorScheme == .dark) ?? NSImage(named: NSImage.applicationIconName) ?? NSImage()).resizable().scaledToFit().frame(width: 32, height: 32)
                     Text("remile.").font(RemileType.heading)
-                    Text("v" + RemileRelease.current).font(.system(size: 10)).monospacedDigit().foregroundStyle(.secondary).fixedSize()
+                    Text("v" + RemileRelease.current).font(RemileType.small).monospacedDigit().foregroundStyle(.secondary).fixedSize()
                 }.padding(.vertical, 22)
-                Label("Home", systemImage: "house").font(.system(size: 16, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).background(RemileStyle.accent.opacity(0.17), in: RoundedRectangle(cornerRadius: 9))
-                Button { navigate(.search) } label: { Label("Search", systemImage: "magnifyingglass").font(.system(size: 16, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("search")
+                Label("Home", systemImage: "house").font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).background(RemileStyle.accent.opacity(0.17), in: RoundedRectangle(cornerRadius: 9))
+                Button { navigate(.search) } label: { Label("Search", systemImage: "magnifyingglass").font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("search")
                 Button { navigate(.reference) } label: {
                     Label { Text("Reference").fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: "books.vertical") }
-                        .font(.system(size: 16, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11)
+                        .font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11)
                 }.buttonStyle(.plain).tourTarget("reference")
                 Spacer()
                 Button { actions.settings = true } label: { Label("Settings", systemImage: "gearshape").frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("settings")
@@ -88,7 +89,7 @@ struct HomeWorkspace: View {
                     if model.processing { ProgressView(model.message ?? "Working…").controlSize(.small) }
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Button { withAnimation(reduceMotion ? nil : RemileMotion.disclosure) { recentExpanded.toggle() } } label: {
+                            Button { withAnimation(reduceMotion || !animations ? nil : RemileMotion.disclosure) { recentExpanded.toggle() } } label: {
                                 HStack(spacing: 7) { Image(systemName: recentExpanded ? "chevron.down" : "chevron.right").font(.system(size: 11, weight: .semibold)); Text("Recently opened").font(RemileType.heading) }
                             }.buttonStyle(.plain).remileHelp(recentExpanded ? "Collapse recent documents" : "Expand recent documents").accessibilityValue(recentExpanded ? "Expanded" : "Collapsed")
                             Spacer()
@@ -99,7 +100,7 @@ struct HomeWorkspace: View {
                             } label: { Image(systemName: "ellipsis").frame(width: 28, height: 26) }.menuStyle(.borderlessButton).fixedSize().remileHelp("Recent items and local history")
                         }
                         if recentExpanded {
-                            if model.recent.isEmpty { Text("No recent documents").foregroundStyle(.secondary).font(RemileType.callout).padding(.vertical, 12) }
+                            if model.recent.isEmpty { Text("Open a document or start with an editor below.").foregroundStyle(.secondary).font(RemileType.callout).padding(.vertical, 12) }
                             else {
                                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: narrow ? 2 : 3), spacing: 6) {
                                     ForEach(Array(model.recent.prefix(narrow && compact ? 4 : 6)), id: \.self) { url in
@@ -117,11 +118,11 @@ struct HomeWorkspace: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Editors").font(RemileType.heading)
                         HomeCardLayout(minimumWidth: 160) {
-                            Button { model.newWriter() } label: { Label("Writer", systemImage: "text.alignleft").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("Letters and short documents")
+                            Button { model.newWriter() } label: { Label("Writer", systemImage: "text.alignleft").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("New Writer document").tourTarget("writer")
                             Button { model.newMarkdown() } label: { Label("Markdown", systemImage: "square.and.pencil").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("New Markdown document").tourTarget("markdown")
-                            Button { model.chooseTeX() } label: { Label("LaTeX", systemImage: "doc.text").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("Open a LaTeX project folder or source ZIP").tourTarget("latex").modifier(ToolFileDrop(model: model, target: .latex))
+                            Button { model.newTeX() } label: { Label("LaTeX", systemImage: "doc.text").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("New LaTeX project. Drop a folder or source ZIP to open it.").tourTarget("latex").modifier(ToolFileDrop(model: model, target: .latex))
                             Button { model.overleaf.openLibrary() } label: { Label { Text("Overleaf") } icon: { OverleafMark() }.frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("Open Overleaf library").tourTarget("overleaf")
-                        }.font(RemileType.body).buttonStyle(RemileEditorButtonStyle()).tourTarget("editors")
+                        }.font(RemileType.callout).labelStyle(HomeEditorLabelStyle()).buttonStyle(RemileEditorButtonStyle()).tourTarget("editors")
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Document tools").font(RemileType.heading)
@@ -135,7 +136,7 @@ struct HomeWorkspace: View {
             }.scrollBounceBehavior(.basedOnSize).smoothScrolling()
                 .onReceive(tour.$step) { step in
                     guard WelcomeTour.steps.indices.contains(step) else { return }
-                    withAnimation(reduceMotion ? nil : RemileMotion.panel) { scroll.scrollTo(WelcomeTour.steps[step].target, anchor: .center) }
+                    withAnimation(reduceMotion || !animations ? nil : RemileMotion.panel) { scroll.scrollTo(WelcomeTour.steps[step].target, anchor: .center) }
                 }
             }
         }
@@ -156,4 +157,15 @@ struct HomeWorkspace: View {
     private func navigate(_ page: HomeModel.Page) { guard model.closeWriter(), model.pdfSearchEditing.confirmLeaving() else { return }; model.page = page }
 
     private func open(_ url: URL) { model.open(url) }
+}
+
+/// Keep each name centred independently of its symbol.
+private struct HomeEditorLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.icon.frame(width: 20)
+            configuration.title.frame(maxWidth: .infinity)
+            Color.clear.frame(width: 20, height: 1).accessibilityHidden(true)
+        }.padding(.horizontal, 12)
+    }
 }

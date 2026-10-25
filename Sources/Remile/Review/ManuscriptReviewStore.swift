@@ -14,8 +14,8 @@ import Combine
     private var generation = UUID()
     private var unreadable = false
     var hasSavedData: Bool { !archive.runs.isEmpty || FileManager.default.fileExists(atPath: file.path) }
-    static func canonical(_ root: URL) -> URL { root.standardizedFileURL.resolvingSymlinksInPath() }
-    static func file(for root: URL, under directory: URL = directory) -> URL { directory.appendingPathComponent(SourceDigest.sha256(canonical(root).path) + ".json") }
+    nonisolated static func canonical(_ root: URL) -> URL { root.standardizedFileURL.resolvingSymlinksInPath() }
+    nonisolated static func file(for root: URL, under directory: URL = directory) -> URL { directory.appendingPathComponent(SourceDigest.sha256(canonical(root).path) + ".json") }
     private var file: URL { Self.file(for: root, under: folder) }
     static func shared(for root: URL, directory: URL = directory) -> ManuscriptReviewStore {
         let key = file(for: root, under: directory).path

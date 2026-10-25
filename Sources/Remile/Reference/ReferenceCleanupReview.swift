@@ -92,7 +92,7 @@ struct ReferenceCleanupReview: View {
                 Image(systemName: "doc.on.doc").foregroundStyle(RemileStyle.accent).frame(width: 22)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(first.displayTitle).font(RemileType.callout.weight(.medium)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                    Text("\(group.records.count) references · " + [ReferenceText.shortAuthors(first.authors), first.year].filter { !$0.isEmpty }.joined(separator: " · ")).font(RemileType.caption).foregroundStyle(.secondary)
+                    Text("\(group.records.count) references · " + [first.shortContributors, first.year].filter { !$0.isEmpty }.joined(separator: " · ")).font(RemileType.caption).foregroundStyle(.secondary)
                 }
                 Image(systemName: "chevron.right").font(RemileType.caption).foregroundStyle(.secondary)
             }.padding(14).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 7))

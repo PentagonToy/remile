@@ -47,6 +47,10 @@ Task { @MainActor in
         check(second["main.tex"] != first["main.tex"] && second["part.tex"] == first["part.tex"], "Review and CLI see the edited version and the unchanged neighbour")
         project.buffers.removeValue(forKey: "part.tex")
         check(project.sourceHashes["part.tex"] == nil, "Deleted files do not retain cached fingerprints")
+        check(!project.save(), "A missing source buffer fails safely before saving any file")
+        check(try String(contentsOf: root.appendingPathComponent("main.tex"), encoding: .utf8) == source, "A missing buffer cannot cause a partial save")
+        // Restore the partial fixture mutation before the autosave task runs.
+        project.buffers["part.tex"] = try String(contentsOf: root.appendingPathComponent("part.tex"), encoding: .utf8)
         let home = HomeModel(index: LibraryIndex(location: output.appendingPathComponent("library.sqlite")), overleaf: OverleafLibrary(directory: output.appendingPathComponent("Overleaf")))
         home.texProject = project
         let transport = output.appendingPathComponent("transport")

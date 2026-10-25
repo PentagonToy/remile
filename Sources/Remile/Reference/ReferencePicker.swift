@@ -37,7 +37,7 @@ struct ReferencePicker: View {
                 List(state.matches) { record in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(record.displayTitle).font(.headline)
-                        Text([record.displayAuthors, record.year].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                        Text([record.displayContributors, record.year].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                         HStack {
                             Text(record.citationKey).font(.caption.monospaced()).textSelection(.enabled)
                             Spacer()

@@ -17,7 +17,7 @@ Search keeps the same PDF preview mounted when Ask opens or closes. The split re
 
 Each named split remembers its manually adjusted width. Portable settings include these widths. Reopen a workspace after importing a settings file to apply its saved split widths.
 
-Disclosure, panel collapse and sidebar artwork use the existing shared 0.36-second timing curve. Markdown, LaTeX, Overleaf, Search and Reference share it. Pointer resizing stays direct so a dragged divider follows the pointer. The app-wide Animations preference and the system Reduce Motion setting disable transitions. Reference library creation and Trash changes use the same disclosure motion. Library drag reordering has been removed.
+Panels and disclosures use a shared short transition. Navigation takes slightly longer. Pointer resizing stays direct. Turn off Animations in General, or use macOS Reduce Motion, to suppress added motion. Decorative clocks stop when their window loses focus or their view closes.
 
 ## Sources
 

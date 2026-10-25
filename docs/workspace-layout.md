@@ -18,6 +18,8 @@ Home brings your recent documents and tools together. Open a file to return to y
 
 Keep your sources in [Reference](reference.md), ready when you need a citation.
 
+Open **User guide** from Home or Help for workspace links. Choose **Take a tour** to walk through Home again.
+
 Not sure about an icon? [Find its meaning in the button guide](buttons.md).
 
 ## Make room

@@ -18,6 +18,17 @@ struct ReferenceRepository: Sendable {
         try catalogueTransaction(historyMove: redo) { try history.apply(to: &$0, redo: redo, root: root) }
     }
     private var catalogue: URL { root.appendingPathComponent("library.json") }
+    struct Version: Equatable, Sendable {
+        let root: URL
+        let modified: Date?
+        let bytes: UInt64
+        let inode: UInt64
+    }
+    /// A single file stat when completion is requested, never a directory scan or timer.
+    func version() -> Version {
+        let values = (try? FileManager.default.attributesOfItem(atPath: catalogue.path)) ?? [:]
+        return Version(root: root, modified: values[.modificationDate] as? Date, bytes: (values[.size] as? NSNumber)?.uint64Value ?? 0, inode: (values[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0)
+    }
     func requireStorage() throws { if configuredRoot == nil { try StoragePaths.requireAvailable(root) } }
     private func readCatalogue() throws -> Catalogue {
         try requireStorage()
@@ -307,7 +318,7 @@ struct ReferenceRepository: Sendable {
                                 for (key, value) in fields where records[index].fields[key]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false { records[index].fields[key] = value }
                                 records[index].revision = UUID(); records[index].modified = Date(); imported.append(records[index])
                             } else {
-                                var record = ReferenceRecord(); record.libraryID = library; record.collectionID = destinationLibrary.parentID == nil ? nil : destinationLibrary.id; record.attachments = [attachment]; record.fields = fields
+                                var record = ReferenceRecord(); record.libraryID = library; record.collectionID = destinationLibrary.parentID == nil ? nil : destinationLibrary.id; record.attachments = [attachment]; record.fields = fields; if fields["entrysubtype"] == "preprint" { record.type = "misc" }
                                 record.key = uniqueKey((keyRule ?? .current).key(for: record), in: records.filter { $0.library == record.library }); records.append(record); imported.append(record)
                             }
                         }

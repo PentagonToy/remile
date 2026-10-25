@@ -6,11 +6,15 @@ import UniformTypeIdentifiers
     let identity = UUID()
     lazy var citations = ReferenceCitationSession(context: root.path)
     lazy var review = ManuscriptReviewStore.shared(for: root)
+    @Published private(set) var isDraft = false
+    private var draftDirectory: URL?
+    private var draftBaseline: [String: String] = [:]
+    var savedDraft: ((URL) -> Void)?
     @Published private(set) var root: URL
     @Published private var connectedName: String?
     @Published private(set) var renamingProject = false
     var renameConnectedProject: ((String) async throws -> Void)?
-    var displayName: String { connectedName ?? root.lastPathComponent }
+    var displayName: String { connectedName ?? (isDraft ? "Untitled" : root.lastPathComponent) }
     var connected: Bool { !historyEnabled }
     @Published private(set) var files: [String]
     @Published private(set) var treeFiles: [String]
@@ -92,7 +96,7 @@ import UniformTypeIdentifiers
     private var diagnosticSource: URL?
     @Published var syncing = false
     struct PDFJump { let id = UUID(); let location: TeXSync.PDFLocation }
-    struct SourceJump { let id = UUID(); let location: TeXSync.SourceLocation }
+    struct SourceJump { let id = UUID(); let location: TeXSync.SourceLocation; var marksLine = true }
     private(set) var build: TeXBuild?
     private var compileID = UUID()
     private var syncTask: Task<Void, Never>?
@@ -108,8 +112,8 @@ import UniformTypeIdentifiers
     private var job: TeXCompileJob?
     private var task: Task<Void, Never>?
     private let historyEnabled: Bool
-    init(_ root: URL, historyEnabled: Bool = true, displayName: String? = nil) throws {
-        self.historyEnabled = historyEnabled; connectedName = displayName
+    init(_ root: URL, historyEnabled: Bool = true, displayName: String? = nil, draft: Bool = false) throws {
+        self.historyEnabled = historyEnabled; connectedName = displayName; isDraft = draft; draftDirectory = draft ? root : nil
         self.root = root.standardizedFileURL
         guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey], options: [.skipsHiddenFiles]) else { throw CocoaError(.fileReadUnknown) }
         var sources: [String: String] = [:], paths: [String] = []
@@ -127,13 +131,15 @@ import UniformTypeIdentifiers
         }
         let saved = (UserDefaults.standard.dictionary(forKey: "latex.mainDocuments") as? [String: String])?[root.standardizedFileURL.path]
         guard let initial = TeXMainDocument.choose(sources: sources, saved: saved) else { throw TeXFileSystem.Failure(errorDescription: "Add a .tex file to open this project.") }
+        draftBaseline = draft ? sources : [:]
         treeFiles = paths.sorted(); files = sources.keys.sorted(); buffers = sources; original = sources; main = initial; selected = initial
         treeFolders = try TeXFileSystem.folders(self.root)
         collections = TeXCollections.read(self.root)
         revisions = historyEnabled ? TeXHistory.read(self.root) : []; outline = TeXOutlineItem.project(sources, main: initial); captureHistory(file: initial)
     }
-    deinit { task?.cancel(); job?.stop(); outlineTask?.cancel(); historyTask?.cancel(); syncTask?.cancel(); TeXCache.discard(cachedBuild) }
-    var dirty: Bool { buffers != original }
+    deinit { task?.cancel(); job?.stop(); outlineTask?.cancel(); historyTask?.cancel(); syncTask?.cancel(); TeXCache.discard(cachedBuild); if let draftDirectory { try? FileManager.default.removeItem(at: draftDirectory) } }
+    var draftChanged: Bool { isDraft && (buffers != draftBaseline || Set(treeFiles) != Set(draftBaseline.keys) || connectedName != nil) }
+    var dirty: Bool { buffers != original || draftChanged }
     /// Live updates touch one known source, with buffer and disk compare-and-swap checks.
     func installLiveSource(_ file: String, expected: String, text: String, expectedDisk: String) throws {
         guard buffers[file] == expected, files.contains(file), treeFiles.contains(file) else { throw OverleafLive.Failure.staleDraft }
@@ -192,22 +198,50 @@ import UniformTypeIdentifiers
     }
     var source: Binding<String> { Binding(get: { self.buffers[self.selected] ?? "" }, set: { if self.buffers[self.selected] != nil { self.buffers[self.selected] = $0 } }) }
     @discardableResult func save() -> Bool {
+        guard isDraft else { return saveWorkingCopy() }
+        let panel = NSSavePanel(); panel.title = "Save LaTeX project"; panel.prompt = "Save"
+        panel.nameFieldStringValue = displayName; panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let destination = panel.url else { return false }
+        return saveDraft(to: destination)
+    }
+    @discardableResult func saveDraft(to destination: URL) -> Bool {
+        guard isDraft, !compiling, !destination.standardizedFileURL.path.hasPrefix(root.path + "/"), saveWorkingCopy() else { return false }
+        let old = root
+        do {
+            try FileManager.default.copyItem(at: old, to: destination)
+            do { try review.relocate(to: destination) }
+            catch { try? FileManager.default.removeItem(at: destination); throw error }
+            citations.release(); citations = ReferenceCitationSession(context: destination.path)
+            root = destination.standardizedFileURL; isDraft = false; draftDirectory = nil; draftBaseline = [:]; connectedName = nil
+            try? FileManager.default.removeItem(at: old)
+            savedDraft?(root); message = nil; return true
+        } catch { message = "Save failed: " + error.localizedDescription; return false }
+    }
+    @discardableResult private func saveWorkingCopy() -> Bool {
         do {
             let changed = files.filter { buffers[$0] != original[$0] }
+            let staged = try changed.map { file -> (String, String) in
+                guard let source = buffers[file] else { throw CocoaError(.fileNoSuchFile) }
+                return (file, source)
+            }
             for file in changed { captureHistory(file: file) }
             for file in changed { guard try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8) == original[file] else { throw CocoaError(.fileWriteFileExists) } }
-            for file in changed { try buffers[file]!.write(to: root.appendingPathComponent(file), atomically: true, encoding: .utf8); original[file] = buffers[file] }
+            for (file, source) in staged { try source.write(to: root.appendingPathComponent(file), atomically: true, encoding: .utf8); original[file] = source }
             message = nil; return true
         } catch { message = "Save failed: " + error.localizedDescription; return false }
     }
     func confirmLeaving() -> Bool {
         for file in pendingHistory { captureHistory(file: file) }; historyTask?.cancel()
-        guard dirty else { syncTask?.cancel(); stop(); return true }
+        guard dirty else { syncTask?.cancel(); stop(); discardDraft(); return true }
         let alert = NSAlert(); alert.messageText = "Save LaTeX project changes?"; alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Don’t Save")
         let response = alert.runModal()
         if response == .alertSecondButtonReturn { return false }
         if response == .alertFirstButtonReturn && !save() { return false }
-        syncTask?.cancel(); stop(); return true
+        syncTask?.cancel(); stop(); discardDraft(); return true
+    }
+    private func discardDraft() {
+        guard let draftDirectory else { return }
+        try? FileManager.default.removeItem(at: draftDirectory); self.draftDirectory = nil
     }
     func compile(output: URL? = nil, scratch: Bool = false, submissionCheck: Bool = false) {
         guard !compiling else { return }
@@ -293,11 +327,11 @@ import UniformTypeIdentifiers
         }
     }
     private func scheduleHistory() {
-        if !historyEnabled {
+        if !historyEnabled || isDraft {
             historyTask?.cancel()
             historyTask = Task { @MainActor [weak self] in
                 do { try await Task.sleep(for: .milliseconds(1000)); try Task.checkCancellation() } catch { return }
-                guard let self, self.dirty else { return }; _ = self.save()
+                guard let self, self.dirty else { return }; _ = self.isDraft ? self.saveWorkingCopy() : self.save()
             }
             return
         }
@@ -310,7 +344,7 @@ import UniformTypeIdentifiers
         }
     }
     func captureHistory(file: String, marker: String? = nil, automatic: Bool = false) {
-        guard historyEnabled else { pendingHistory.remove(file); return }
+        guard historyEnabled, !isDraft else { pendingHistory.remove(file); return }
         guard let source = buffers[file] else { return }
         if automatic, let last = revisions.first(where: { $0.file == file }), !TeXHistory.substantial(last.source, source), Date().timeIntervalSince(last.date) < 900 { return }
         pendingHistory.remove(file)
@@ -474,6 +508,7 @@ import UniformTypeIdentifiers
             return true
         }
         guard !name.contains("/"), name != ".", name != ".." else { return false }
+        if isDraft { connectedName = name; return true }
         if name == root.lastPathComponent { return true }
         let old = root, target = root.deletingLastPathComponent().appendingPathComponent(name)
         do {
@@ -530,13 +565,14 @@ import UniformTypeIdentifiers
         guard build.buffers == buffers, build.main == main else { message = "Recompile to match source and PDF."; return nil }
         return build
     }
-    func syncToPDF(line: Int) {
+    func syncToPDF(line: Int, hint: TeXSync.TextHint? = nil) {
         guard let build = currentBuild(), !syncing else { return }
         let file = selected; syncing = true
         syncTask = Task { @MainActor [weak self] in
             defer { self?.syncing = false }
             do {
-                let location = try await Task.detached { try TeXSync.forward(build, file: file, line: line) }.value
+                var location = try await Task.detached { try TeXSync.forward(build, file: file, line: line) }.value
+                location.hint = hint
                 guard let self, !Task.isCancelled, !self.compiling, self.build?.pdf == build.pdf else { return }
                 guard self.buffers == build.buffers, self.main == build.main else { self.message = "Recompile to match source and PDF."; return }
                 self.message = nil; self.showsLog = false; self.showsHistory = false; self.pdfJump = PDFJump(location: location)
@@ -552,7 +588,7 @@ import UniformTypeIdentifiers
                 let target = try await Task.detached { let near = try TeXSync.reverse(build, location: location); return TeXSync.refine(near, source: build.buffers[near.file] ?? "", hint: location.hint) }.value
                 guard let self, !Task.isCancelled, !self.compiling, self.build?.pdf == build.pdf else { return }
                 guard self.buffers == build.buffers, self.main == build.main else { self.message = "Recompile to match source and PDF."; return }
-                self.message = nil; self.selected = target.file; self.sourceJump = SourceJump(location: target)
+                self.message = nil; self.selected = target.file; self.sourceJump = SourceJump(location: target, marksLine: false)
             } catch { self?.message = error.localizedDescription }
         }
     }

@@ -329,6 +329,17 @@ final class HomeModel: ObservableObject {
         guard texProject?.confirmLeaving() != false else { return false }
         texProject?.releaseWorkspaceResources(); texProject = nil; return true
     }
+    func newTeX() {
+        guard !opening, reader.close(), closeTeX() else { return }
+        do {
+            let root = try TeXDraft.create()
+            do {
+                let project = try TeXProject(root, displayName: nil, draft: true)
+                project.savedDraft = { [weak self] in self?.recordRecent($0) }
+                texProject = project; overleaf.browsing = false; page = .home
+            } catch { try? FileManager.default.removeItem(at: root); throw error }
+        } catch { self.error = "Could not create LaTeX draft: " + error.localizedDescription }
+    }
     func chooseTeX() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = true; panel.title = "Open LaTeX Project"
         if panel.runModal() == .OK, let url = panel.url {

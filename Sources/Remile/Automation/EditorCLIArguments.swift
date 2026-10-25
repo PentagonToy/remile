@@ -11,7 +11,7 @@ enum EditorCLIArguments {
     private static let rules: [String: Rule] = [
         "overleaf": Rule(values: ["--id", "--connection", "--file", "--query", "--target"], paths: 1...1),
         "help": Rule(), "--help": Rule(), "version": Rule(), "--version": Rule(),
-        "documents": Rule(), "doctor": Rule(), "status": Rule(), "diagnostics": Rule(), "save": Rule(), "history": Rule(),
+        "documents": Rule(), "doctor": Rule(), "status": Rule(), "diagnostics": Rule(), "save": Rule(values: ["--output"]), "history": Rule(),
         "read": Rule(values: ["--file"]), "select": Rule(values: ["--file"]),
         "writer-page": Rule(values: ["--header", "--footer", "--top-line", "--bottom-line", "--page-numbers", "--columns", "--expected-sha256", "--target"], flags: ["--clear-header", "--clear-footer"]),
         "writer-object": Rule(values: ["--id", "--wrap", "--lock", "--expected-sha256", "--target"]),
@@ -31,7 +31,7 @@ enum EditorCLIArguments {
         "comments": Rule(values: ["--format", "--output"], paths: 0...1),
         "combine": Rule(values: ["--output"], paths: 2...Int.max),
         "compress": Rule(values: ["--output", "--quality"], flags: ["--grayscale"], paths: 1...1),
-        "reference": Rule(values: ["--id", "--output", "--limit", "--offset", "--query", "--library", "--source-file", "--expected-revision", "--attachment", "--kind", "--page", "--start", "--length", "--expected-sha256", "--sort", "--order"], flags: ["--trash"], paths: 1...1),
+        "reference": Rule(values: ["--id", "--output", "--limit", "--offset", "--query", "--context", "--library", "--source-file", "--expected-revision", "--attachment", "--kind", "--page", "--start", "--length", "--expected-sha256", "--sort", "--order"], flags: ["--trash"], paths: 1...1),
         "library-search": Rule(flags: ["--no-boost"], paths: 1...Int.max)
     ]
 
@@ -101,17 +101,18 @@ enum EditorCLIArguments {
             case "save-passage":
                 allowed = ["--id", "--attachment", "--page", "--start", "--length", "--expected-sha256"]
                 guard allowed.allSatisfy({ values[$0] != nil }) else { throw Failure("Provide reference, attachment, PDF hash, page and UTF-16 range.") }
-            case "suggest": allowed = ["--query", "--library", "--limit"]; guard values["--library"] != nil else { throw Failure("Choose --library for citation suggestions.") }
+            case "suggest": allowed = ["--query", "--context", "--library", "--limit"]; guard values["--library"] != nil else { throw Failure("Choose --library for citation suggestions.") }
             case "citation": allowed = ["--id", "--kind"]; guard values["--id"] != nil, ["latex", "markdown"].contains(values["--kind"] ?? "latex") else { throw Failure("Provide --id and --kind latex or markdown.") }
             case "show": allowed = ["--id"]; guard values["--id"] != nil else { throw Failure("Provide --id for reference show.") }
             case "export": allowed = ["--id", "--output", "--library"]
             case "import", "collect": allowed = ["--library", "--source-file"]; guard values["--library"] != nil && values["--source-file"] != nil else { throw Failure("Import requires --library and --source-file.") }
             case "update", "attach": allowed = ["--id", "--expected-revision", "--source-file"]; guard values["--id"] != nil && values["--expected-revision"] != nil && values["--source-file"] != nil else { throw Failure("Provide --id, --expected-revision and --source-file.") }
-            case "trash", "restore", "regenerate-key": allowed = ["--id", "--expected-revision"]; guard values["--id"] != nil && values["--expected-revision"] != nil else { throw Failure("Provide --id and --expected-revision.") }
+            case "recognise", "trash", "restore", "regenerate-key": allowed = ["--id", "--expected-revision"]; guard values["--id"] != nil && values["--expected-revision"] != nil else { throw Failure("Provide --id and --expected-revision.") }
             case "detach": allowed = ["--id", "--expected-revision", "--attachment"]; guard values["--id"] != nil && values["--expected-revision"] != nil && values["--attachment"] != nil else { throw Failure("Provide --id, --expected-revision and --attachment.") }
             default: throw Failure("Use reference storage, libraries, list, show, export, import, update, attach, detach, trash, restore or regenerate-key.")
             }
             guard seen.isSubset(of: allowed) else { throw Failure("This option is not supported by the reference action.") }
+            if let context = values["--context"], context.utf16.count > 1200 { throw Failure("Use a citation context of up to 1200 characters.") }
             if let id = values["--id"], UUID(uuidString: id) == nil { throw Failure("Use a valid reference ID.") }
             if let id = values["--library"], UUID(uuidString: id) == nil { throw Failure("Use a valid library ID.") }
             if let limit = values["--limit"], Int(limit).map({ (1...200).contains($0) }) != true { throw Failure("Use --limit between 1 and 200.") }

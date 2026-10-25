@@ -11,7 +11,7 @@ struct RemileOption: Equatable {
     var attributedTitle: NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.tabStops = [NSTextTab(textAlignment: .left, location: 28)]
-        return NSAttributedString(string: sample.map { $0 + "\t" + title } ?? title, attributes: [.font: font.flatMap { NSFont(name: $0, size: 13) } ?? NSFont.systemFont(ofSize: 13), .paragraphStyle: paragraph])
+        return NSAttributedString(string: sample.map { $0 + "\t" + title } ?? title, attributes: [.font: font.flatMap { NSFont(name: $0, size: 14) } ?? NSFont.systemFont(ofSize: 14), .paragraphStyle: paragraph])
     }
 }
 
@@ -27,7 +27,7 @@ struct RemileOptionPicker: NSViewRepresentable {
     func makeNSView(context: Context) -> NSPopUpButton {
         let button = NSPopUpButton(frame: .zero, pullsDown: false)
         button.isBordered = false; button.bezelStyle = .rounded; button.controlSize = .small
-        button.font = .systemFont(ofSize: 13); button.contentTintColor = NSColor(RemileStyle.accent)
+        button.font = .systemFont(ofSize: 14); button.contentTintColor = NSColor(RemileStyle.accent)
         button.setContentHuggingPriority(.defaultLow, for: .horizontal)
         button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         button.target = context.coordinator; button.action = #selector(Coordinator.changed(_:))

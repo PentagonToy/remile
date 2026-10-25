@@ -12,6 +12,12 @@ import UniformTypeIdentifiers
     @Published var showingTrash = false { didSet { cachedItems = nil } }
     @Published private(set) var busy = false
     @Published var error: String?
+    @Published private(set) var recognising = false
+    private var recognitionQueue: [ReferenceRecord] = []
+    private var recognitionTask: Task<Void, Never>?
+    private var recognitionGeneration = UUID()
+    private var networkObserver: NSObjectProtocol?
+    private let recognitionLookup: @Sendable (ReferenceRecord) async throws -> ReferenceRecord
     private var reloadRequested = false
     private var pendingEdits: [() -> Void] = []
     private(set) var duplicates: [UUID: [UUID]] = [:]
@@ -24,7 +30,13 @@ import UniformTypeIdentifiers
     private var cachedItems: [ReferenceRecord]?
     func sort(by column: ReferenceColumn) { cachedItems = nil; sorting.select(column) }
     private let history = ReferenceRepository.History()
-    init(repository: ReferenceRepository = ReferenceRepository()) { self.repository = repository.recordingHistory(history) }
+    init(repository: ReferenceRepository = ReferenceRepository(), recognitionLookup: @escaping @Sendable (ReferenceRecord) async throws -> ReferenceRecord = ReferencePaperLookup.metadata) {
+        self.repository = repository.recordingHistory(history); self.recognitionLookup = recognitionLookup
+        networkObserver = NotificationCenter.default.addObserver(forName: NetworkAccessGate.changed, object: NetworkAccess.gate, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { if NetworkAccess.offline { self?.cancelRecognition() } }
+        }
+    }
+    deinit { recognitionTask?.cancel(); if let networkObserver { NotificationCenter.default.removeObserver(networkObserver) } }
     var canUndo: Bool { !busy && history.canUndo }
     var canRedo: Bool { !busy && history.canRedo }
     func undo(redo: Bool = false) { perform { try $0.undo(redo: redo); return nil } }
@@ -92,7 +104,46 @@ import UniformTypeIdentifiers
     }
     func importFiles(_ urls: [URL], target: ReferenceRecord? = nil, libraryID: UUID? = nil, matchingExisting: Bool = false) {
         let library = libraryID ?? selectedLibrary
-        perform { try $0.importFiles(urls, attachingTo: target?.id, expected: target?.revision, libraryID: library, matchingExisting: matchingExisting).first?.id }
+        let receipt = ReferenceRecognition.Receipt()
+        perform(completion: { [weak self] in
+            Task { @MainActor [weak self] in self?.recognise(await receipt.read().filter(ReferenceRecognition.automaticEligible)) }
+        }) { repository in
+            let saved = try repository.importFiles(urls, attachingTo: target?.id, expected: target?.revision, libraryID: library, matchingExisting: matchingExisting)
+            await receipt.store(saved)
+            return saved.first?.id
+        }
+    }
+    func recognise(_ chosen: [ReferenceRecord]) {
+        guard !NetworkAccess.offline else { return }
+        error = nil
+        let queued = Set(recognitionQueue.map(\.id))
+        recognitionQueue.append(contentsOf: chosen.filter { ReferenceRecognition.eligible($0) && !queued.contains($0.id) })
+        guard recognitionTask == nil, !recognitionQueue.isEmpty else { return }
+        recognising = true; recognitionGeneration = UUID()
+        let generation = recognitionGeneration, repository = repository, lookup = recognitionLookup
+        recognitionTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                let batch = self?.takeRecognition() ?? []
+                guard !batch.isEmpty else { break }
+                let receipt = ReferenceRecognition.Receipt()
+                _ = await ReferenceRecognition.enrich(batch, repository: repository, lookup: lookup, onFailure: { await receipt.fail($0) })
+                if let message = await receipt.failure(), !Task.isCancelled { self?.error = message }
+                guard !Task.isCancelled else { break }
+                self?.refreshAfterRecognition()
+            }
+            guard self?.recognitionGeneration == generation else { return }
+            self?.recognising = false; self?.recognitionTask = nil
+        }
+    }
+    func cancelRecognition() {
+        recognitionGeneration = UUID(); recognitionQueue = []
+        recognitionTask?.cancel(); recognitionTask = nil; recognising = false
+    }
+    private func takeRecognition() -> [ReferenceRecord] {
+        let batch = recognitionQueue; recognitionQueue = []; return batch
+    }
+    private func refreshAfterRecognition() {
+        if busy { reloadRequested = true } else { load() }
     }
     func save(_ record: ReferenceRecord, existing: Bool, selectAfterSave: Bool = true, onFailure: @escaping () -> Void = {}, onSaved: @escaping () -> Void = {}) {
         let library = selectedLibrary
@@ -130,7 +181,7 @@ import UniformTypeIdentifiers
             if panel.runModal() == .OK, let url = panel.url { try Data(source.utf8).write(to: url, options: .atomic) }
         } catch { self.error = error.localizedDescription }
     }
-    private func perform(completion: @escaping () -> Void = {}, failure: @escaping () -> Void = {}, queueIfBusy: Bool = false, selectResult: Bool = true, _ operation: @escaping @Sendable (ReferenceRepository) throws -> UUID?) {
+    private func perform(completion: @escaping () -> Void = {}, failure: @escaping () -> Void = {}, queueIfBusy: Bool = false, selectResult: Bool = true, _ operation: @escaping @Sendable (ReferenceRepository) async throws -> UUID?) {
         guard !busy else {
             if queueIfBusy { pendingEdits.append { self.perform(completion: completion, failure: failure, queueIfBusy: true, selectResult: selectResult, operation) } }
             return
@@ -141,7 +192,7 @@ import UniformTypeIdentifiers
             defer { busy = false; if !pendingEdits.isEmpty { pendingEdits.removeFirst()() } else if reloadRequested { reloadRequested = false; load() } }
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
-                    let selection = try operation(repository)
+                    let selection = try await operation(repository)
                     let snapshot = try repository.snapshot()
                     let records = snapshot.records, libraries = snapshot.libraries
                     let hidden = Set(libraries.filter { $0.trashed != nil }.map(\.id))

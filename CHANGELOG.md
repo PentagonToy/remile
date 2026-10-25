@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Preserve editors in online book metadata. Show editor-only volumes in Author / Editor and use editors for new citation keys without rewriting existing keys.
+
+- Rank TeX citation suggestions by local sentence, title and abstract overlap. Show concise source hints without AI calls. Keep manual metadata lookup available beyond missing authors and year, with exact title matching and Crossref abstracts.
+
+- Fill missing PDF reference metadata by DOI or arXiv ID while online, following Work offline. Preserve user fields and distinguish preprints from published papers.
+- Open new LaTeX drafts before choosing a save location. Group numeric setting values beside their arrows and refine source/PDF navigation only for clear text matches.
+
+- Open workspace help directly from User guide. Include Writer in the Home tour and respect the app animation preference during navigation.
+
+- Unify interface type, toolbar spacing, action buttons and short selection controls across workspaces. Keep document font sizes independent. Add focused PDF and Markdown settings and shorten panel transitions while respecting Reduce Motion.
+
+- Simplify Overleaf imports with direct project actions. Keep account preferences and Git tokens in the shared account manager.
+
+- Create a local project from the Home LaTeX button. Keep editor names centred, align account controls and animate Overleaf navigation consistently with Search.
+
+- Manage Overleaf account names and connections in one window. Confirm removal before deleting associated local projects and history. Size the project import window before opening it.
+
+- Add a compact Overleaf email sign-in screen with the official web flow for other providers and additional verification. Preserve existing session storage without saving passwords.
+
 - Copy the selected or clicked PDF table directly as spreadsheet cells, with a cancellable progress message instead of a review window.
 
 - Drag PDF images into native editors and avoid selecting nearby text when opening an image menu. Preserve direct text selection on OCR layers.

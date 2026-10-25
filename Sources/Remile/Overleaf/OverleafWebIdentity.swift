@@ -5,8 +5,10 @@ import CryptoKit
 
 /// Session cookies belong to remile.'s account, never another browser's store.
 @MainActor enum OverleafWebIdentity {
+    private static var revoked = Set<UUID>()
     private static var stores: [UUID: WKWebsiteDataStore] = [:]
     static func dataStore(_ id: UUID) -> WKWebsiteDataStore {
+        if revoked.contains(id) { return .nonPersistent() }
         if let store = stores[id] { return store }
         let store = WKWebsiteDataStore(forIdentifier: id); stores[id] = store; return store
     }
@@ -31,7 +33,9 @@ import CryptoKit
         return ["overleaf.com", "www.overleaf.com"].contains(domain.lowercased()) && (cookie.expiresDate.map { $0 > now } ?? true)
     }
     @discardableResult static func remember(_ id: UUID) async -> Bool {
+        guard !revoked.contains(id) else { return false }
         let cookies = await OverleafWebIdentity.dataStore(id).httpCookieStore.allCookies().filter { isUsable($0) }.sorted { ($0.domain, $0.path, $0.name) < ($1.domain, $1.path, $1.name) }
+        guard !revoked.contains(id) else { return false }
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         guard !cookies.isEmpty, let bytes = try? encoder.encode(cookies.map(Cookie.init)) else { return false }
         let digest = SHA256.hash(data: bytes)
@@ -42,7 +46,16 @@ import CryptoKit
         saveRetryAfter[id] = Date().addingTimeInterval(30)
         return false
     }
+    static func forget(_ id: UUID) async throws {
+        let store = dataStore(id)
+        revoked.insert(id); access.forget(id)
+        let result = SecItemDelete(query(id) as CFDictionary)
+        guard result == errSecSuccess || result == errSecItemNotFound else { revoked.remove(id); throw OverleafWebClient.Failure.sessionLocked }
+        await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
+        stores[id] = nil; savedDigests[id] = nil; saveRetryAfter[id] = nil
+    }
     static func restore(_ id: UUID, interactive: Bool = false) async throws {
+        guard !revoked.contains(id) else { throw OverleafWebClient.Failure.signIn }
         let store = OverleafWebIdentity.dataStore(id).httpCookieStore
         let existing = await store.allCookies()
         // A current signed-in session takes precedence over an older saved session.

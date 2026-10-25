@@ -7,55 +7,60 @@ struct UserGuide: View {
     @StateObject private var state: UserGuidePresentation
     init(presentation: UserGuidePresentation? = nil) { _state = StateObject(wrappedValue: presentation ?? UserGuidePresentation()) }
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .center, spacing: 12) {
-                Text(RemileBrand.tagline).font(.title2.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                Button("Tour") { dismiss(); NotificationCenter.default.post(name: .remileReplayTour, object: nil) }.fixedSize()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction).fixedSize()
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                Text("User guide").font(RemileType.windowTitle)
+                Spacer()
+                Button("Take a tour") { dismiss(); NotificationCenter.default.post(name: .remileReplayTour, object: nil) }
+                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
-            Link(destination: URL(string: "https://pentagontoy.github.io/remile/workspace-layout.html")!) {
-                Label("Online guide", systemImage: "arrow.up.forward.square")
-            }.font(RemileType.caption).remileHelp("Workspace controls and help on the web")
-            GeometryReader { viewport in
+            Text(RemileBrand.tagline).font(RemileType.callout).foregroundStyle(RemileStyle.secondaryInk)
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    card("AI", "apple.intelligence", "Choose AI in Settings. Apple Intelligence runs on this Mac.")
-                    card("Your documents", "lock.shield", "Search stays on this Mac. ChatGPT receives context when you ask.")
-                    card("Library search", "books.vertical", "Add folders in Search → Library, then search by keyword or question.")
-                    DisclosureGroup("More features", isExpanded: $state.more) {
-                    Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 12) {
-                    GridRow {
-                    card("ChatGPT plan", "person.crop.circle", "No separate API bill from remile. Your ChatGPT plan and credit settings apply.")
-                    card("Ask", "text.bubble", "Ask about a document. Follow source links back to the passage.")
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(spacing: 0) {
+                        workspace("PDF", "doc.richtext", "Read, annotate and copy images or tables.", "workspace/pdf.html")
+                        Divider()
+                        workspace("Search", "magnifyingglass", "Find passages across your folders.", "workspace/search.html")
+                        Divider()
+                        workspace("Reference", "books.vertical", "Keep papers, PDFs and citations together.", "reference.html")
+                        Divider()
+                        workspace("Writer", "text.alignleft", "Write and lay out a document.", "writer.html")
+                        Divider()
+                        workspace("Markdown", "square.and.pencil", "Write a note and preview as you go.", "workspace/markdown.html")
+                        Divider()
+                        workspace("LaTeX", "doc.text", "Create a project, compile and follow build errors.", "workspace/latex.html")
+                        Divider()
+                        workspace("Overleaf", "leaf", "Connect projects and review remote changes.", "workspace/overleaf.html")
+                    }.padding(.horizontal, 14).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: RemileRadius.card))
+                    DisclosureGroup("AI, privacy and history", isExpanded: $state.more) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            detail("AI", "Choose AI in Settings. Apple Intelligence runs on this Mac. ChatGPT receives context when you ask.")
+                            detail("ChatGPT plan", "No separate API bill from remile. Your ChatGPT plan and credit settings apply.")
+                            detail("History", "Compare earlier local versions. Connected projects use Overleaf history.")
+                        }.padding(.leading, 16).padding(.top, 12)
                     }
-                    GridRow {
-                    card("Writing", "text.badge.checkmark", "Right-click a word for spelling corrections. Select prose to request proofreading.")
-                    card("Review edits", "eye", "Show or hide edits made by AI or an agent. Undo restores your text.")
-                    }
-                    GridRow {
-                    card("Collections", "square.stack.3d.up", "Group files without moving them. Drag to organise.")
-                    card("Sync", "arrow.triangle.2.circlepath", "Private sync reviews remote changes. Live sync shares text edits as you write.")
-                    }
-                    GridRow {
-                    card("History", "clock.arrow.circlepath", "Compare earlier local versions. Connected projects use Overleaf history.")
-                    card("Build logs", "terminal", "Read compiler output, then edit and compile again.")
-                    }
-                    GridRow {
-                    card("Compile", "play.fill", "Press ⌘Return to build the PDF. Use Suggest fix to review a proposed correction.")
-                    card("Export", "square.and.arrow.up", "Save your PDF, project sources, comments or review questions.")
-                    }
-                    }.padding(.top, 12)
-                    }.font(RemileType.callout).padding(.top, 4)
-                }.frame(width: max(0, viewport.size.width - 28), alignment: .leading).padding(.trailing, 28)
-            }.smoothScrolling().frame(width: viewport.size.width, height: viewport.size.height, alignment: .leading)
-            }
-        }.padding(24).frame(width: 700, height: 620).background(RemileStyle.background)
+                    Link("All controls and shortcuts", destination: URL(string: "https://pentagontoy.github.io/remile/workspace-layout.html")!)
+                }.padding(.trailing, 28)
+            }.smoothScrolling()
+        }.padding(24).font(RemileType.control).buttonStyle(RemileActionStyle()).frame(width: 700, height: 620).background(RemileStyle.background)
     }
-    private func card(_ title: String, _ symbol: String, _ detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: symbol).font(RemileType.heading).foregroundStyle(RemileStyle.accent)
-            Text(detail).font(RemileType.caption).foregroundStyle(RemileStyle.secondaryInk).fixedSize(horizontal: false, vertical: true)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(16).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 9))
+    private func workspace(_ title: String, _ symbol: String, _ summary: String, _ path: String) -> some View {
+        Link(destination: URL(string: "https://pentagontoy.github.io/remile/" + path)!) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol).frame(width: 22).foregroundStyle(RemileStyle.accent).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(RemileType.section).foregroundStyle(RemileStyle.ink)
+                    Text(summary).font(RemileType.small).foregroundStyle(RemileStyle.secondaryInk).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.up.forward").font(RemileType.small).foregroundStyle(RemileStyle.secondaryInk).accessibilityHidden(true)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 11).contentShape(Rectangle())
+        }.buttonStyle(.plain).remileHelp("Open the \(title) guide on the web")
+    }
+    private func detail(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(RemileType.section)
+            Text(text).foregroundStyle(RemileStyle.secondaryInk).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

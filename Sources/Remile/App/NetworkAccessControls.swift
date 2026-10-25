@@ -15,7 +15,7 @@ struct OfflineModeControl: View {
     @ObservedObject private var network = NetworkAccessState.shared
     var body: some View {
         Toggle(isOn: Binding(get: { network.offline }, set: network.setOffline)) { Label("Work offline", systemImage: "airplane") }
-            .remileHelp("Pause ChatGPT, Overleaf sync, search boosting, update checks and package lookups. Local documents and standard search remain available.")
+            .remileHelp("Pause ChatGPT, Overleaf sync, search boosting, update checks, reference lookups and package lookups. Local documents and standard search remain available.")
     }
 }
 struct NetworkAccessScope: ViewModifier {

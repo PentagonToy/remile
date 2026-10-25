@@ -53,7 +53,13 @@ enum OverleafCredential {
         if status == errSecDuplicateItem, SecItemUpdate(query as CFDictionary, attributes as CFDictionary) != errSecSuccess { throw OverleafGit.Failure("Unable to update the Keychain credential.") }
         lock.lock(); tokens[id] = token; denied.remove(id); lock.unlock()
     }
-    static func remove(_ id: UUID) { lock.lock(); tokens.removeValue(forKey: id); lock.unlock(); SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: id.uuidString] as CFDictionary) }
+    static func erase(_ id: UUID) throws {
+        let status = SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: id.uuidString] as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw OverleafGit.Failure("The saved Git token could not be removed. Unlock Keychain and try again.") }
+        lock.lock(); tokens.removeValue(forKey: id); denied.remove(id); lock.unlock()
+    }
+    static func remove(_ id: UUID) { try? erase(id) }
+
 }
 
 enum OverleafGit {

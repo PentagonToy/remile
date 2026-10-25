@@ -16,9 +16,10 @@ struct TeXLogPanel: View {
             }
             if project.pdf != nil && !project.outputCurrent && !project.compiling && !project.log.isEmpty { Text("Previous build · recompile changes").font(RemileType.caption).foregroundStyle(RemileStyle.warning).padding(.top, 8) }
             if project.submissionCheck { Text("LaTeX only · 3 passes · no .bib/.bbl or BibTeX/Biber").font(RemileType.small).foregroundStyle(.secondary).padding(.top, 10) }
-            Picker("Build output", selection: $state.tab) {
-                ForEach(Tab.allCases, id: \.self) { tab in Text(title(tab)).tag(tab) }
-            }.labelsHidden().pickerStyle(.segmented).padding(10)
+            VStack(alignment: .leading, spacing: 6) {
+                RemileSegmentedControl(title: "Build output", selection: $state.tab, options: Tab.allCases, label: { $0 == .all ? "All" : $0.rawValue })
+                if state.tab != .terminal { Text(title(state.tab)).font(RemileType.small).foregroundStyle(.secondary) }
+            }.padding(10)
             Divider()
             if state.tab == .terminal {
                 ScrollView { Text(project.log.isEmpty ? "No compilation yet" : project.log).font(.system(size: 12, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(14) }
@@ -35,7 +36,7 @@ struct TeXLogPanel: View {
                     }.padding(10)
                 }
             }
-        }.background(RemileStyle.sidebar)
+        }.font(RemileType.control).background(RemileStyle.sidebar)
             .onAppear { if project.compileFailed { state.tab = .errors } }
             .onChange(of: project.compileFailed) { if project.compileFailed { state.tab = .errors } }
     }

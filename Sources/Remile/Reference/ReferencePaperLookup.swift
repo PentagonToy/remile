@@ -26,15 +26,17 @@ enum ReferencePaperLookup {
         return result
     }
     static func metadata(for record: ReferenceRecord) async throws -> ReferenceRecord {
-        if let id = ReferencePDFMetadata.arxivID(in: "arXiv:" + (record.fields["eprint"] ?? "") + " " + record.title + " " + (record.fields["url"] ?? "")) {
-            let data = try await request(URL(string: "https://arxiv.org/bibtex/" + encoded(id))!, limit: 100_000, accept: "application/x-bibtex")
-            let entries = try ReferenceBibTeX.parse(String(decoding: data, as: UTF8.self))
-            guard entries.count == 1, entries[0].fields["eprint"]?.replacingOccurrences(of: #"v[0-9]+$"#, with: "", options: .regularExpression) == id.replacingOccurrences(of: #"v[0-9]+$"#, with: "", options: .regularExpression) else { throw ReferenceFailure("The archive record did not match this paper.") }
-            return entries[0]
+        if let id = ReferenceRecognition.archiveID(record) {
+            try await ReferenceArchivePacing.shared.wait()
+            var url = URLComponents(string: "https://export.arxiv.org/api/query")!
+            url.queryItems = [URLQueryItem(name: "id_list", value: id)]
+            let data = try await request(url.url!, limit: 200_000, accept: "application/atom+xml")
+            return try ReferenceArxiv.parse(data, expectedID: id)
         }
         let doi = ReferenceDuplicates.normaliseDOI(record.fields["doi"] ?? "")
         let papers = try await search(doi.hasPrefix("10.") ? doi : record.title)
-        guard let paper = papers.first(where: { matches(record, fields: $0.record.fields) }) else { throw ReferenceFailure("No exact match. Add a DOI or arXiv ID and try again.") }
+        let exact = papers.filter { matches(record, fields: $0.record.fields) }
+        guard exact.count == 1, let paper = exact.first else { throw ReferenceFailure("No unique match. Add a DOI or arXiv ID and try again.") }
         return paper.record
     }
     static func search(_ query: String) async throws -> [Paper] {
@@ -82,14 +84,17 @@ enum ReferencePaperLookup {
             let title = text(raw); guard !title.isEmpty else { return nil }
             var record = ReferenceRecord()
             let kind = item["type"] as? String ?? ""
-            record.type = ["journal-article": "article", "proceedings-article": "inproceedings", "book": "book", "monograph": "book", "book-chapter": "incollection"][kind] ?? "misc"
+            record.type = ["journal-article": "article", "proceedings-article": "inproceedings", "book": "book", "edited-book": "book", "reference-book": "book", "monograph": "book", "book-chapter": "incollection"][kind] ?? "misc"
             record.fields["title"] = title
-            let authors = (item["author"] as? [[String: Any]] ?? []).compactMap { author -> String? in
-                let family = (author["family"] as? String).map(text) ?? "", given = (author["given"] as? String).map(text) ?? ""
-                if !family.isEmpty { return family + (given.isEmpty ? "" : ", " + given) }
-                return (author["name"] as? String).map { "{" + text($0) + "}" }
+            if let abstract = item["abstract"] as? String { record.fields["abstract"] = String(text(abstract).prefix(12_000)) }
+            for role in ["author", "editor"] {
+                let names = (item[role] as? [[String: Any]] ?? []).compactMap { person -> String? in
+                    let family = (person["family"] as? String).map(text) ?? "", given = (person["given"] as? String).map(text) ?? ""
+                    if !family.isEmpty { return family + (given.isEmpty ? "" : ", " + given) }
+                    return (person["name"] as? String).map { "{" + text($0) + "}" }
+                }
+                if !names.isEmpty { record.fields[role] = names.joined(separator: " and ") }
             }
-            if !authors.isEmpty { record.fields["author"] = authors.joined(separator: " and ") }
             if let doi = item["DOI"] as? String { record.fields["doi"] = ReferenceDuplicates.normaliseDOI(doi); record.fields["url"] = "https://doi.org/" + doi }
             for (source, target) in ["publisher": "publisher", "volume": "volume", "issue": "number", "page": "pages"] { if let value = item[source] as? String, !value.isEmpty { record.fields[target] = text(value) } }
             if let venue = (item["container-title"] as? [String])?.first, !venue.isEmpty { record.fields[kind == "proceedings-article" || kind == "book-chapter" ? "booktitle" : "journal"] = text(venue) }

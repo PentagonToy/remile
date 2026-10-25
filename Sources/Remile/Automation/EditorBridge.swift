@@ -84,15 +84,29 @@ enum EditorBridge {
     }
     @MainActor private static func handle(_ request: Request, home: HomeModel) async -> [String: Any] {
         if let target = request.target, home.automationTarget != target { return ["ok": false, "error": "The target document changed. Run documents again."] }
+        if request.operation == "reference-recognise" {
+            do {
+                try NetworkAccess.requireOnline()
+                let repository = home.references.repository
+                guard let id = request.file.flatMap(UUID.init(uuidString:)), let record = try repository.records().first(where: { $0.id == id && $0.trashed == nil }), record.revision.uuidString == request.expectedSHA256 else { throw ReferenceFailure("The reference changed. Read it again before writing.") }
+                guard ReferenceRecognition.eligible(record) else { throw ReferenceFailure("Add a DOI, arXiv ID or a full title first.") }
+                let receipt = ReferenceRecognition.Receipt()
+                let result = await ReferenceRecognition.enrich([record], repository: repository, onFailure: { await receipt.fail($0) }).first ?? record
+                if let message = await receipt.failure() { throw ReferenceFailure(message) }
+                home.references.load()
+                return ["ok": true, "id": result.id.uuidString, "revision": result.revision.uuidString, "recognised": result.fields != record.fields || result.type != record.type]
+            } catch { return ["ok": false, "error": error.localizedDescription] }
+        }
         if request.operation == "diagnostics" { return RuntimeDiagnostics.snapshot(home) }
         if request.operation == "review" { return ManuscriptReviewCommands.handle(request, project: home.texProject) }
         if request.operation == "open" {
             guard let path = request.file, path.hasPrefix("/"), FileManager.default.fileExists(atPath: path) else { return ["ok": false, "error": "Provide an existing absolute path."] }
             home.open(URL(fileURLWithPath: path)); return ["ok": home.error == nil, "message": home.error ?? "", "opening": home.opening]
         }
+        if request.operation == "save", request.output != nil, home.texProject?.isDraft != true { return ["ok": false, "error": "--output is only supported for a new LaTeX draft."] }
         if home.page == .writer, let writer = home.writer, ["status", "read", "replace", "save", "export", "writer-view", "writer-page", "writer-object"].contains(request.operation) { return WriterCommands.handle(request, model: writer) }
         if request.operation == "status" {
-            return ["ok": true, "projectID": home.automationProjectID, "target": home.automationTarget?.uuidString ?? "", "kind": home.texProject == nil ? "document" : "latex-local", "path": home.texProject?.root.path ?? home.reader.url?.path ?? "", "dirty": home.texProject?.dirty ?? home.reader.dirty, "compiling": home.texProject?.compiling ?? false, "selected": home.texProject?.selected ?? "", "pages": home.texProject?.pdf?.pageCount ?? 0, "errors": home.texProject?.diagnostics.filter { $0.severity == .error }.count ?? 0, "warnings": home.texProject?.diagnostics.filter { $0.severity == .warning }.count ?? 0, "historyMinutes": TeXHistory.intervalMinutes, "aiSuggestions": UserDefaults.standard.bool(forKey: "editor.aiSuggestions"), "compileCurrent": home.texProject?.outputCurrent ?? false]
+            return ["ok": true, "projectID": home.automationProjectID, "target": home.automationTarget?.uuidString ?? "", "kind": home.texProject == nil ? "document" : "latex-local", "path": home.texProject?.root.path ?? home.reader.url?.path ?? "", "dirty": home.texProject?.dirty ?? home.reader.dirty, "compiling": home.texProject?.compiling ?? false, "selected": home.texProject?.selected ?? "", "pages": home.texProject?.pdf?.pageCount ?? 0, "errors": home.texProject?.diagnostics.filter { $0.severity == .error }.count ?? 0, "warnings": home.texProject?.diagnostics.filter { $0.severity == .warning }.count ?? 0, "historyMinutes": TeXHistory.intervalMinutes, "aiSuggestions": UserDefaults.standard.bool(forKey: "editor.aiSuggestions"), "draft": home.texProject?.isDraft ?? false, "compileCurrent": home.texProject?.outputCurrent ?? false]
         }
         if request.operation == "library-search" {
             do {
@@ -147,7 +161,14 @@ enum EditorBridge {
             guard project.applyTool(file: file, before: current, after: source, name: "CLI edit", feedback: false) else { return ["ok": false, "error": project.message ?? "Could not apply edit."] }
             project.markExternalEdit(file: file, before: current, after: source)
             return ["ok": true, "file": file, "sha256": digest(source), "saved": false]
-        case "save": return ["ok": project.save(), "message": project.message ?? ""]
+        case "save":
+            if project.isDraft {
+                guard let output = request.output, output.hasPrefix("/") else { return ["ok": false, "error": "Save this draft with --output /absolute/new-project-directory."] }
+                let saved = project.saveDraft(to: URL(fileURLWithPath: output))
+                return ["ok": saved, "draft": project.isDraft, "path": project.root.path, "message": project.message ?? ""]
+            }
+            guard request.output == nil else { return ["ok": false, "error": "--output is only supported when saving a new LaTeX draft."] }
+            return ["ok": project.save(), "message": project.message ?? ""]
         case "compile", "submission-check":
             guard !project.compiling else { return ["ok": false, "error": "Compilation is already running."] }
             let check = request.operation == "submission-check" || request.submissionCheck == true

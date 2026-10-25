@@ -13,6 +13,16 @@ enum TeXSync {
     struct PDFLocation: Equatable, Sendable { let page: Int; let x: Double; let y: Double; var hint: TextHint? = nil }
     struct SourceLocation: Equatable, Sendable { let file: String; let line: Int; var range: NSRange? = nil }
     struct Failure: LocalizedError { let errorDescription: String? }
+    static func hint(in source: String, offset: Int) -> TextHint? {
+        let text = source as NSString
+        guard offset >= 0, offset < text.length else { return nil }
+        let start = max(0, offset - 180), count = min(360, text.length - start)
+        let window = text.substring(with: NSRange(location: start, length: count)) as NSString
+        let cleaned = NSMutableString(string: window)
+        let commands = try! NSRegularExpression(pattern: #"\\[A-Za-z@]+\*?|(?<!\\)%[^\n]*"#)
+        for match in commands.matches(in: window as String, range: NSRange(location: 0, length: window.length)).reversed() { cleaned.replaceCharacters(in: match.range, with: String(repeating: " ", count: match.range.length)) }
+        return TextHint(text: cleaned as String, offset: offset - start)
+    }
     static func forward(_ build: TeXBuild, file: String, line: Int) throws -> PDFLocation {
         let output = try run(build, arguments: ["view", "-i", "\(line + 1):0:\(build.source.appendingPathComponent(file).path)", "-o", build.pdf.path])
         let values = fields(output)

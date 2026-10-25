@@ -46,6 +46,7 @@ Reference writes use the same transaction service as the native workspace:
 | --- | --- |
 | `reference collect --library UUID --source-file /path/document.pdf` | Save a PDF through the same deduplicating operation as Search |
 | `reference import --library UUID --source-file /path/records.bib` | Import BibTeX or a PDF into an explicit library or collection |
+| `reference recognise --id UUID --expected-revision UUID` | Fill missing metadata by DOI, arXiv ID or exact title through the running app. Respects Work offline and preserves existing fields |
 | `reference update --id UUID --expected-revision UUID --source-file /path/record.bib` | Replace metadata from one BibTeX entry, preserving the citation key and an omitted abstract |
 | `reference attach --id UUID --expected-revision UUID --source-file /path/paper.pdf` | Attach a managed PDF |
 | `reference detach --id UUID --expected-revision UUID --attachment UUID` | Remove an attachment link. Shared bytes remain until unused-file cleanup |
@@ -91,7 +92,7 @@ Run `documents` to discover open document sessions, then pass `--target UUID` to
 | `pdf-read [/path/document.pdf] [--page N] [--find text] [--render /path/new.png]` | Read PDF page text, annotation data and search bounds. Optionally render a page image |
 | `read [--file relative.tex]` | Read the buffer, SHA-256 and CLI edit ranges |
 | `replace --source-file /path/source --expected-sha256 HASH [--file relative.tex]` | Apply an undoable buffer edit |
-| `save` | Save the current document or project |
+| `save [--output /path/new-project]` | Save the current document. New LaTeX drafts require a new project directory in `--output` |
 | `export --kind pdf --output /path/new.pdf` | Export PDF |
 | `export --kind source --output /path/new.md` | Export the Markdown buffer |
 | `export --kind source --output /path/new.zip` | Export a LaTeX project snapshot |
@@ -139,7 +140,7 @@ Without a document path, `pdf-read` reads the current reader page, including uns
 Library search uses B0 for keywords and optionally B-guided for questions. `--no-boost`, Work offline and Manual mode keep the request on B0. The response identifies the engine and accepted expansion phrases. It does not change the search field or document selection. Start the app before issuing this live command. Allow up to 60 seconds for the initial resident index and model preparation.
 
 
-Reference list summaries include publication/type and a summaryTruncated flag. Title is limited to 1,000 characters, authors/publication to 500 and year to 32. Use show with an explicit ID for the complete stored fields. Each response reads records and library identities from one catalogue snapshot.
+Reference list summaries include publication/type and a summaryTruncated flag. Lists and suggestions retain separate `authors` and `editors` fields, with `contributors` for display and `contributorRole` identifying the fallback used. Sorting by `author` uses editors when no author is recorded. Title is limited to 1,000 characters, authors/publication to 500 and year to 32. Use show with an explicit ID for the complete stored fields. Each response reads records and library identities from one catalogue snapshot.
 
 `REMILE_CHECK_PYTHON=/path/to/python3.12 zsh tools/check_automation_targets.sh /absolute/external/check-directory` runs isolated ZIP and multi-document targeting checks. Fixtures cover retained assets, unsafe paths, existing destinations, nested Finder archives and unfinished LaTeX source. No user document or account is used.
 
@@ -147,7 +148,21 @@ Reference list summaries include publication/type and a summaryTruncated flag. T
 
 `remile reference citation --id UUID --kind latex` returns a citation, BibTeX entry and reference revision without changing files. Use `--kind markdown` for `[@key]` syntax. Discover IDs through `reference list`. An agent can inspect the destination bibliography with `read`, then use the existing hash-checked `replace` workflow to append the entry. Check existing keys before writing and preserve the original source. No citation command deletes entries or automatically changes bibliography configuration.
 
-`remile reference suggest --library UUID --query text --limit 8` returns local library suggestions using the same citation matcher as the editor. Query matches citation keys, titles and authors. Pass a returned ID to `reference citation` for the citation and BibTeX payload. This read-only command uses the explicitly chosen library, not an active editor window or its project bibliography.
+`remile reference suggest --library UUID --query text --limit 8` uses the editor's citation matcher. Search keys, titles, authors and stored abstracts. Add `--context "sentence before the citation"` to rank by local topic overlap. This read-only command uses the selected library, without an active editor or project bibliography. Context is limited to 1,200 UTF-16 units.
+
+With useful context, each suggestion includes a `relevance` object:
+
+| Field | Meaning |
+| --- | --- |
+| `label` | Topic match, Limited overlap or No clear match. [Label guide](reference.md#read-citation-hints) |
+| `basis` | Title only, or Title and abstract. |
+| `purposes` | Overlapping English cue groups: `background`, `foundation`, `method`, `comparison` or `unclear`. |
+| `matchedTerms` | Normalised terms shared by the sentence and source text. Numeric tokens retain a `#` prefix. |
+| `excerpt` | A bounded excerpt from the stored abstract, or an empty string. |
+| `note` | A short reminder about source checks. |
+| `verified` | Always `false`. Retrieval does not establish support for a claim. |
+
+Without enough useful context, `relevance` is omitted. Pass a returned ID to `reference citation` for the citation and BibTeX payload. Suggestions never modify the library or manuscript.
 
 ### Read a reference source
 
@@ -168,3 +183,5 @@ Use `reference show --id UUID` to discover attachment IDs. Then run `remile refe
 Use `pdf-regions /absolute/paper.pdf --page 4` to list embedded image regions. Add `--tables` to recognise tables on that page on this Mac (macOS 26 or later). Table results include `needsReview: true`. Check values against `pdf-read` and the original page.
 
 Export a region with `--region image-1 --output /absolute/new.png --expected-sha256 HASH`. Use the hash returned by inspection. Tables require `--tables` and a `.tsv` or `.md` output. Existing files are never overwritten. Region bounds use PDF page points before rotation, with a bottom-left origin. Images are page-region renders up to 2,200 pixels on the longest edge.
+
+Reference CLI import and collect keep their local-only behaviour. Use `reference recognise` afterwards for explicit online enrichment. `status` reports whether the active LaTeX project is a draft.

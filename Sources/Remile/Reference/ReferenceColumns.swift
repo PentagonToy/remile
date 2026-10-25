@@ -11,12 +11,12 @@ enum ReferenceColumn: String, CaseIterable, Identifiable {
         store.set(true, forKey: migration)
     }
     var id: String { rawValue }
-    var label: String { switch self { case .title: "Title"; case .author: "Author"; case .year: "Year"; case .publisher: "Publisher"; case .publication: "Journal / Publisher"; case .key: "Citation key"; case .type: "Type"; case .added: "Date added" } }
+    var label: String { switch self { case .title: "Title"; case .author: "Author / Editor"; case .year: "Year"; case .publisher: "Publisher"; case .publication: "Journal / Publisher"; case .key: "Citation key"; case .type: "Type"; case .added: "Date added" } }
     var width: Double { switch self { case .year: 48; case .author: 112; case .publication: 150; case .added: 98; case .type: 110; default: 130 } }
     func value(_ record: ReferenceRecord) -> String {
         switch self {
         case .title: record.displayTitle
-        case .author: ReferenceText.shortAuthors(record.authors)
+        case .author: record.shortContributors
         case .year: record.year
         case .publisher: ReferenceText.display(record.fields["publisher"] ?? "")
         case .publication: ["journal", "booktitle", "publisher"].compactMap { record.fields[$0] }.map(ReferenceText.display).first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
@@ -44,7 +44,7 @@ struct ReferenceSort {
     }
     func sorted(_ records: [ReferenceRecord]) -> [ReferenceRecord] {
         let prepared = records.enumerated().map { index, record in
-            (record: record, index: index, text: (column == .author ? ReferenceText.display(record.authors) : column.value(record)).trimmingCharacters(in: .whitespacesAndNewlines), title: record.displayTitle)
+            (record: record, index: index, text: (column == .author ? ReferenceText.display(record.contributors) : column.value(record)).trimmingCharacters(in: .whitespacesAndNewlines), title: record.displayTitle)
         }
         return prepared.sorted { left, right in
             // Missing values stay below populated values in both directions.

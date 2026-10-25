@@ -18,6 +18,7 @@ import Network
     @Published private(set) var projects: [OverleafConnection] = []
     @Published private(set) var tags: [UUID: [OverleafWebClient.Tag]] = [:]
     @Published private(set) var unavailableTags = Set<UUID>()
+    @Published var importSize = CGSize(width: 986, height: 600)
     @Published var presented = false
     @Published var browsing = false
     @Published private(set) var tagSignInProfile: UUID?
@@ -42,6 +43,7 @@ import Network
     let directory: URL
     init(directory: URL? = nil) {
         self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app/Overleaf")
+        do { try OverleafAccountEdit.recover(under: self.directory) } catch { self.error = error.localizedDescription }
         if let data = try? Data(contentsOf: self.directory.appendingPathComponent("projects.json")), let saved = try? JSONDecoder().decode([OverleafConnection].self, from: data) { projects = saved }
         if let data = try? Data(contentsOf: self.directory.appendingPathComponent("accounts.json")), let saved = try? JSONDecoder().decode([Account].self, from: data) { accounts = saved }
         if let data = try? Data(contentsOf: self.directory.appendingPathComponent("project-tags.json")), let saved = try? JSONDecoder().decode([UUID: [OverleafWebClient.Tag]].self, from: data) { tags = saved }
@@ -96,7 +98,12 @@ import Network
     func connection(for root: URL) -> OverleafConnection? { projects.first { self.root($0).standardizedFileURL.path == root.standardizedFileURL.path } }
     func savedAccount(_ label: String) -> OverleafConnection? { projects.first { $0.account == label.trimmingCharacters(in: .whitespacesAndNewlines) } }
     func account(_ label: String) -> Account? { accounts.first { $0.name == label.trimmingCharacters(in: .whitespacesAndNewlines) } }
-    func openLibrary(add: Bool = false) { adding = add; if add { presented = true } else { presented = false; browsing = true }; error = nil }
+    func openLibrary(add: Bool = false, from window: NSWindow? = nil) {
+        if add, let window = window ?? NSApp.keyWindow ?? NSApp.mainWindow {
+            let parent = window.sheetParent ?? window
+            importSize = OverleafImportSizing.fit(parent: parent.contentLayoutRect.size, screen: parent.screen?.visibleFrame.size ?? parent.frame.size)
+        }
+        adding = add; if add { presented = true } else { presented = false; browsing = true }; error = nil }
     @discardableResult func moveProject(_ id: UUID, before target: UUID?) -> Bool {
         guard id != target, let project = projects.first(where: { $0.id == id }), target == nil || projects.contains(where: { $0.id == target }) else { return false }
         var updated = projects.filter { $0.id != id }
@@ -144,6 +151,45 @@ import Network
             try JSONEncoder().encode(updated).write(to: directory.appendingPathComponent("accounts.json"), options: .atomic)
             accounts = updated; error = nil; return account
         } catch { self.error = error.localizedDescription; return nil }
+    }
+    @discardableResult func renameAccount(_ id: UUID, to value: String) -> Bool {
+        let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !busy, let index = accounts.firstIndex(where: { $0.id == id }) else { return false }
+        guard !name.isEmpty else { error = "Name this account."; return false }
+        guard !accounts.contains(where: { $0.id != id && $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }) else { error = "An account already uses this name."; return false }
+        var updatedAccounts = accounts; updatedAccounts[index].name = name
+        let updatedProjects = projects.map { project -> OverleafConnection in
+            var value = project; if value.profileID == id { value.account = name }; return value
+        }
+        do {
+            try OverleafAccountEdit.apply(.init(accounts: JSONEncoder().encode(updatedAccounts), projects: JSONEncoder().encode(updatedProjects), removedProjects: [], removedProfile: nil), under: directory)
+            accounts = updatedAccounts; projects = updatedProjects; error = nil; return true
+        } catch { self.error = error.localizedDescription; return false }
+    }
+    func removeAccount(_ id: UUID, prepare: (URL) -> Bool) async -> Bool {
+        guard !busy, accounts.contains(where: { $0.id == id }) else { return false }
+        let owned = projects.filter { $0.profileID == id }
+        guard !owned.contains(where: { liveOwned.contains($0.id) }) else { error = "Close this account's open projects before removing it."; return false }
+        guard owned.allSatisfy({ prepare(root($0)) }) else { return false }
+        busy = true; defer { busy = false }; error = nil
+        do {
+            let leases = try owned.map { try writerLease($0) }
+            defer { withExtendedLifetime(leases) {} }
+            let updatedAccounts = accounts.filter { $0.id != id }, updatedProjects = projects.filter { $0.profileID != id }
+            let change = OverleafAccountEdit.Change(accounts: try JSONEncoder().encode(updatedAccounts), projects: try JSONEncoder().encode(updatedProjects), removedProjects: owned, removedProfile: id)
+            try await OverleafWebIdentity.forget(id)
+            try OverleafCredential.erase(id)
+            let folder = directory
+            try await Task.detached { try OverleafAccountEdit.apply(change, under: folder) }.value
+            accounts = updatedAccounts; projects = updatedProjects
+            for project in owned {
+                tags[project.id] = nil; comments[project.id] = nil; statuses[project.id] = nil; syncedAt[project.id] = nil
+                automaticPaused.remove(project.id); pendingFiles.remove(project.id); unavailableTags.remove(project.id)
+                UserDefaults.standard.removeObject(forKey: "overleaf.synced." + project.id.uuidString)
+            }
+            if let data = try? JSONEncoder().encode(tags) { try? data.write(to: directory.appendingPathComponent("project-tags.json"), options: .atomic) }
+            return true
+        } catch { self.error = error.localizedDescription; return false }
     }
     private func persist(_ updated: [OverleafConnection]) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])

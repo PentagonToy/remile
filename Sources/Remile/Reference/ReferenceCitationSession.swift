@@ -7,6 +7,7 @@ import Foundation
     private var libraryTask: Task<ReferenceCitationIndex, Error>?
     private var projectTask: Task<ReferenceCitationIndex, Never>?
     private var selectedLibrary: UUID?
+    private var libraryVersion: ReferenceRepository.Version?
     private var bibliographySources: [String: String] = [:]
     private var offered: [UUID: ReferenceRecord] = [:]
     private var generation = UUID()
@@ -14,12 +15,15 @@ import Foundation
     private(set) var bibliographyPreparations = 0
     init(context: String, repository: ReferenceRepository = ReferenceRepository()) { self.context = context; self.repository = repository }
     deinit { libraryTask?.cancel(); projectTask?.cancel() }
-    func invalidate() { generation = UUID(); libraryTask?.cancel(); libraryTask = nil; selectedLibrary = nil; offered = [:] }
+    func invalidate() { generation = UUID(); libraryTask?.cancel(); libraryTask = nil; selectedLibrary = nil; libraryVersion = nil; offered = [:] }
     func release() { invalidate(); projectTask?.cancel(); projectTask = nil; bibliographySources = [:] }
     func completion(source: String, selection: NSRange, buffers: [String: String]) async -> EditorCompletion.Context? {
         guard let prefix = ReferenceCitationCompletion.prefix(source, selection: selection) else { return nil }
         let choice = ReferenceCitationPreferences.read(context)
-        if selectedLibrary != choice.library { invalidate(); selectedLibrary = choice.library }
+        let repository = repository
+        let version = choice.library == nil ? nil : await Task.detached(priority: .userInitiated) { repository.version() }.value
+        guard !Task.isCancelled else { return nil }
+        if selectedLibrary != choice.library || libraryVersion != version { invalidate(); selectedLibrary = choice.library; libraryVersion = version }
         let generation = generation
         let sources = buffers.filter { $0.key.lowercased().hasSuffix(".bib") }
         if projectTask == nil || sources != bibliographySources {
@@ -30,7 +34,7 @@ import Foundation
                     guard !Task.isCancelled else { return ReferenceCitationIndex() }
                     records += ((try? ReferenceBibTeX.parse(sources[path]!)) ?? []).map { record in
                         var copy = record
-                        copy.fields = record.fields.filter { ["title", "author", "year", "abstract"].contains($0.key) }; copy.originalCitation = ""
+                        copy.fields = record.fields.filter { ["title", "author", "editor", "year", "abstract", "doi", "eprint", "url"].contains($0.key) }; copy.originalCitation = ""
                         return copy
                     }
                 }
@@ -50,12 +54,19 @@ import Foundation
         let projectIndex = await projectTask?.value ?? ReferenceCitationIndex()
         let libraryIndex = (try? await libraryTask?.value) ?? ReferenceCitationIndex()
         guard !Task.isCancelled, self.generation == generation else { return nil }
-        let suggestions = ReferenceCitationCompletion.suggestions(query: prefix.query, project: projectIndex, library: libraryIndex)
+        let sentence = ReferenceRelevance.sentence(source, before: selection.location)
+        let ranking = Task.detached(priority: .userInitiated) {
+            ReferenceCitationCompletion.suggestions(query: prefix.query, project: projectIndex, library: libraryIndex, context: sentence)
+        }
+        let suggestions = await withTaskCancellationHandler { await ranking.value } onCancel: { ranking.cancel() }
+        guard !Task.isCancelled, self.generation == generation else { return nil }
         offered = Dictionary(uniqueKeysWithValues: suggestions.filter { !$0.project }.map { ($0.record.id, $0.record) })
         guard !suggestions.isEmpty else { return nil }
         return EditorCompletion.Context(range: prefix.range, items: suggestions.map {
             .init(label: $0.record.citationKey, insertion: $0.record.citationKey + prefix.closing, referenceID: $0.project ? nil : $0.record.id,
-                  detail: $0.record.displayTitle + "\n" + [$0.record.displayAuthors, $0.record.year, $0.project ? "Project" : "Library"].filter { !$0.isEmpty }.joined(separator: " · "))
+                  detail: [$0.record.displayTitle, [$0.record.displayContributors, $0.record.year, $0.project ? "Project" : "Library"].filter { !$0.isEmpty }.joined(separator: " · "),
+                           $0.relevance.map { $0.basis + " · " + $0.intents.map(\.title).joined(separator: " / ") + "\n" + $0.note }, $0.relevance.flatMap { $0.excerpt.isEmpty ? nil : $0.excerpt }].compactMap { $0 }.joined(separator: "\n"),
+                  annotation: $0.relevance?.label)
         })
     }
     func prepare(_ item: EditorCompletion.Item, project: TeXProject) throws {

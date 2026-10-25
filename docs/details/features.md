@@ -8,7 +8,7 @@ File → New Window (⇧⌘N) opens an independent workspace. Save follows the a
 
 Navigation sidebars share a responsive starting width across Home, Search, PDF, Markdown, LaTeX and the Overleaf library. Drag a grip to adjust a panel. Narrow windows prioritise the document. LaTeX retains its centred initial source/PDF boundary.
 
-A skippable tour appears on first launch. Replay it with Tour in User guide, available from Home and Help. General settings controls appearance, animations, Work offline and update checks. Reduce Motion suppresses added motion. Decorative motion stops when its window loses focus or its view closes. Slow lighthouse beams update at most 12 times per second. See [installation and updates](../distribution.md).
+A skippable tour appears on first launch. Replay it with Take a tour in User guide, available from Home and Help. General settings controls appearance, animations, Work offline and update checks. Reduce Motion suppresses added motion. Decorative motion stops when its window loses focus or its view closes. Slow lighthouse beams update at most 12 times per second. See [installation and updates](../distribution.md).
 
 ## PDF
 
@@ -32,7 +32,7 @@ Markdown settings control line numbers, source size, spelling and live preview. 
 
 ## LaTeX
 
-LaTeX source ZIPs can be dropped onto the Home LaTeX card or selected through it. Choose a parent folder before extraction. remile. creates a new project folder, preserves assets and leaves the ZIP unchanged. Save writes to the extracted project. Source export creates a new ZIP. Unfinished source remains editable when compilation fails.
+Choose LaTeX on Home to open an untitled draft. Save asks for a project folder. Unchanged drafts close without a save question. Drop a source folder or ZIP onto the card to open an existing project. Choose a parent folder before extraction. remile. creates a new project folder, preserves assets and leaves the ZIP unchanged. Save writes to the extracted project. Source export creates a new ZIP. Unfinished source remains editable when compilation fails.
 
 Open a project folder, choose its main document and compile with a local TeX installation. LaTeX settings select the engine, binary directory, editor theme and history interval. Settings → LaTeX sets a shared compilation limit of 90, 180, 300 or 600 seconds. The default is 180 seconds.
 
@@ -48,7 +48,7 @@ Compile options includes a fresh rebuild and submission comparison. The comparis
 
 ## Overleaf
 
-Home → Overleaf opens your project library. Find projects by name, account or tag. Drag to reorder them. Add projects connects an account and imports a project with a Git token.
+Home → Overleaf opens your project library. Find projects by name, account or tag. Drag to reorder them. Add projects lists available projects. Press + beside one to keep it locally. Account settings hold the plan, sign-in and Git token.
 
 Create a token in Overleaf → Account → Account settings → Git integration. Hover over Git token for this path. Web sign-in supports browsing, comments and project renaming. remile. reuses its own account session. It does not read another browser’s cookies. Some sign-in providers require a browser.
 

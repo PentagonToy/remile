@@ -21,13 +21,15 @@ final class WelcomeTourProgress: ObservableObject { @Published var step = 0; @Pu
         Step(target: "open", title: "Your documents, close at hand", detail: "Open a document. Read, highlight and ask."),
         Step(target: "search", title: "Search your library", detail: "Add folders to your library. Find the matching page."),
         Step(target: "reference", title: "Keep your references together", detail: "Drop PDFs or BibTeX. Organise references, review duplicates and copy citations."),
+        Step(target: "writer", title: "Start with a blank page", detail: "Write a document. Adjust its page layout as you go."),
         Step(target: "markdown", title: "Write in Markdown", detail: "Write a note. Switch to reading when you’re ready."),
         Step(target: "latex", title: "Work with LaTeX", detail: "Edit your source. Compile a PDF. Follow errors to the line."),
         Step(target: "overleaf", title: "Keep Overleaf within reach", detail: "Connect a project. Local edits sync automatically. Remote changes wait for review."),
         Step(target: "tools", title: "A few useful tools", detail: "Convert, compress or combine your documents."),
-        Step(target: "settings", title: "Make it yours", detail: "Choose your appearance, AI and search preferences."),
+        Step(target: "settings", title: "Make it yours", detail: "Choose your appearance, storage and workspace preferences."),
         Step(target: "guide", title: RemileBrand.tagline, detail: "Return here whenever you need a hand.")
     ]
+    @AppStorage(AnimationPolicy.preference) private var animations = true
     @AppStorage("welcome.tourCompleted.v1") private var completed = false
     @StateObject private var state: WelcomeTourProgress
     init(enabled: Bool, openGuide: @escaping () -> Void, progress: WelcomeTourProgress? = nil) { self.enabled = enabled; self.openGuide = openGuide; _state = StateObject(wrappedValue: progress ?? WelcomeTourProgress()) }
@@ -59,9 +61,9 @@ final class WelcomeTourProgress: ObservableObject { @Published var step = 0; @Pu
                                     Button(state.step == Self.steps.count - 1 ? "Done" : "Next") { if state.step == Self.steps.count - 1 { finish() } else { state.step += 1 } }.keyboardShortcut(.defaultAction).accessibilityIdentifier("tour.next")
                                     if state.step == Self.steps.count - 1 { Button("User guide") { finish(); openGuide() } }
                                 }
-                            }.padding(20).frame(width: width).background(RemileStyle.background, in: RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(RemileStyle.accent.opacity(0.35))).shadow(color: .black.opacity(0.25), radius: 20, y: 8).position(x: x, y: y)
+                            }.font(RemileType.control).buttonStyle(RemileActionStyle()).padding(20).frame(width: width).background(RemileStyle.background, in: RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(RemileStyle.accent.opacity(0.35))).shadow(color: .black.opacity(0.25), radius: 20, y: 8).position(x: x, y: y)
                         }.accessibilityElement(children: .contain).accessibilityAddTraits(.isModal)
-                        .animation(reduceMotion ? nil : .timingCurve(0.22, 0.7, 0.25, 1, duration: 0.58), value: state.step)
+                        .animation(reduceMotion || !animations ? nil : RemileMotion.panel, value: state.step)
                     }
                 }
             }

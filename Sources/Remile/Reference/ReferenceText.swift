@@ -79,4 +79,8 @@ enum ReferenceText {
 extension ReferenceRecord {
     var displayTitle: String { ReferenceText.display(title) }
     var displayAuthors: String { ReferenceText.authors(authors).map(ReferenceText.display).joined(separator: "; ") }
+    var displayEditors: String { ReferenceText.authors(editors).map(ReferenceText.display).joined(separator: "; ") }
+    var contributorSuffix: String { usesEditors ? (ReferenceText.authors(editors).count > 1 ? " (eds.)" : " (ed.)") : "" }
+    var displayContributors: String { (usesEditors ? displayEditors : displayAuthors) + contributorSuffix }
+    var shortContributors: String { ReferenceText.shortAuthors(contributors) + contributorSuffix }
 }

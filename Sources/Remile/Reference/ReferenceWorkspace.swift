@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ReferenceWorkspace: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
+    @ObservedObject private var network = NetworkAccessState.shared
     @ObservedObject var model: ReferenceModel
     let goHome: () -> Void
     var openPDF: (URL, Int) -> Void = { _, _ in }
@@ -45,8 +46,8 @@ struct ReferenceWorkspace: View {
     private struct DuplicateGroup: Identifiable { let id = UUID(); let records: [ReferenceRecord] }
     private var toolbar: some View {
         HStack(spacing: 14) {
-            Button(action: goHome) { Image(systemName: "chevron.left") }.buttonStyle(.plain).accessibilityLabel("Back to Home").remileHelp("Back to Home")
-            Text("Reference").font(.title2.weight(.semibold))
+            Button(action: goHome) { Image(systemName: "chevron.left") }.buttonStyle(RemileToolStyle()).accessibilityLabel("Back to Home").remileHelp("Back to Home")
+            Text("Reference").font(RemileType.heading)
             Spacer()
             Menu {
                 Button("Find a paper…") { model.error = nil; state.paperTarget = nil; state.paperSearch = true }
@@ -57,9 +58,9 @@ struct ReferenceWorkspace: View {
             Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward") }.disabled(!model.canUndo).accessibilityLabel("Undo").remileHelp("Undo the last Reference change")
             Button { model.undo(redo: true) } label: { Image(systemName: "arrow.uturn.forward") }.disabled(!model.canRedo).accessibilityLabel("Redo").remileHelp("Redo the last Reference change")
             Button { model.error = nil; state.cleanup = true } label: { Label("Clean up", systemImage: "wand.and.stars") }.disabled(model.libraryRecords.filter { $0.trashed == nil }.isEmpty || model.showingTrash || model.busy)
-            Button { state.repair = model.selection } label: { Label { Text("GPT") } icon: { GPTMark() } }.disabled(model.selection == nil || model.showingTrash)
-            Button { state.regenerate = true } label: { Label("Key", systemImage: "key") }.disabled(model.libraryRecords.allSatisfy { $0.trashed != nil }).remileHelp("Regenerate library citation keys")
-        }.padding(18).disabled(model.busy)
+            Button { state.repair = model.selection } label: { Label { Text("Review") } icon: { GPTMark() } }.disabled(model.selection == nil || model.showingTrash)
+            Button { state.regenerate = true } label: { Label("Keys", systemImage: "key") }.disabled(model.libraryRecords.allSatisfy { $0.trashed != nil }).remileHelp("Regenerate library citation keys")
+        }.font(RemileType.control).buttonStyle(RemileToolStyle()).padding(.horizontal, 16).padding(.vertical, 6).disabled(model.busy)
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -80,11 +81,19 @@ struct ReferenceWorkspace: View {
                     }
                 })
             }
+            if model.recognising {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Looking up reference details…").font(RemileType.caption)
+                    Spacer()
+                    Button("Cancel") { model.cancelRecognition() }
+                }.padding(8).background(RemileStyle.editorBar)
+            }
             if model.busy { ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(8) }
             if let error = model.error {
                 HStack { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).textSelection(.enabled); Spacer(); Button { model.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss message") }.padding(10).background(RemileStyle.editorBar)
             }
-        }.background(RemileStyle.background).tint(RemileStyle.accent)
+        }.font(RemileType.control).background(RemileStyle.background).tint(RemileStyle.accent)
             .overlay(Color.black.opacity(draggingFiles ? 0.10 : 0).allowsHitTesting(false))
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: draggingFiles)
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: $state.windowTarget) { receive($0) }
@@ -284,6 +293,8 @@ struct ReferenceWorkspace: View {
             Divider()
             if record.trashed != nil { Button("Restore", systemImage: "arrow.uturn.backward") { if let library = model.libraries.first(where: { ($0.id == record.library || $0.id == record.collectionID) && $0.trashed != nil }) { model.restoreLibrary(library.id) } else { model.trash(record, restore: true) } } }
             else {
+                Button("Look up metadata", systemImage: "arrow.triangle.2.circlepath") { model.recognise(model.contextRecords(record)) }.disabled(network.offline || model.busy || !model.contextRecords(record).contains(where: ReferenceRecognition.eligible))
+                    .remileHelp(network.offline ? "Turn off Work offline to look up metadata." : "Fill missing fields by DOI, arXiv ID or exact title. Keep existing values.")
                 Button("Read metadata…", systemImage: "doc.text.viewfinder") { state.metadata = record }
                 Button("Find a paper…", systemImage: "doc.text.magnifyingglass") { model.error = nil; state.paperTarget = record; state.paperSearch = true }
                 Button("View source", systemImage: "doc.text.magnifyingglass") { state.evidence = record }.disabled(model.showingTrash)

@@ -891,3 +891,144 @@ try FileManager.default.createDirectory(at: partialParent, withIntermediateDirec
 try pdfBytes.write(to: partialMove.appendingPathComponent("unsynced.pdf"))
 rejects("Missing catalogue with existing files cannot be moved as an empty library") { _ = try StoragePaths.relocate(from: partialMove, into: partialParent, defaults: defaults) }
 print("Passed \(checks) Reference checks including empty and partial cloud folders")
+
+
+// Retrieval must not turn topic overlap into a scientific support verdict.
+let trendPaper = ReferenceRecord(key: "TrendML", fields: ["title": "Machine learning in turbulent combustion", "abstract": "Machine learning is increasingly used in turbulent combustion modelling. This review surveys neural networks."])
+let chemistryPaper = ReferenceRecord(key: "Hydrogen", fields: ["title": "Ammonia and hydrogen ignition", "abstract": "Ammonia reactivity and hydrogen ignition delays depend on pressure and temperature."])
+let toolPaper = ReferenceRecord(key: "Tool", fields: ["title": "OpenFOAM chemical solver with GRI-Mech 3.0", "abstract": "Implementation of a chemical mechanism in OpenFOAM."])
+let otherVersion = ReferenceRecord(key: "EarlierTool", fields: ["title": "OpenFOAM chemical solver with GRI-Mech 2.0"])
+let unrelatedPaper = ReferenceRecord(key: "Astro", fields: ["title": "Stellar mass in distant galaxies", "abstract": "An astronomical observation of galaxies."])
+let relevanceIndex = ReferenceCitationIndex([unrelatedPaper, chemistryPaper, trendPaper, toolPaper, otherVersion])
+let trendContext = "Recent research increasingly uses ML in turbulent combustion."
+let trendRank = ReferenceCitationCompletion.suggestions(query: "", project: ReferenceCitationIndex(), library: relevanceIndex, context: trendContext)
+try check(trendRank.first?.record.key == "TrendML", "ML expansion and context rank relevant research above alphabetical keys")
+try check(trendRank.first?.relevance?.label == "Topic match", "Substantial title and abstract overlap is labelled as topic match")
+try check(trendRank.first?.relevance?.intents.contains(.background) == true, "Trend cues retain a background purpose")
+try check(trendRank.first?.relevance?.intents.contains(.method) == true, "One citation context may have overlapping purposes")
+try check(trendRank.first?.relevance?.note.contains("version") == true, "Method purpose asks for source and version checks")
+try check(trendRank.first(where: { $0.record.key == "Astro" })?.relevance?.label == "No clear match", "Unrelated papers stay available without a false positive")
+try check(trendRank.first?.relevance?.excerpt.contains("combustion") == true, "Displayed excerpt comes from the stored abstract")
+let factContext = "Ammonia has weak reactivity and hydrogen ignition depends on pressure and temperature."
+let factRank = ReferenceCitationCompletion.suggestions(query: "", project: ReferenceCitationIndex(), library: relevanceIndex, context: factContext)
+try check(factRank.first?.record.key == "Hydrogen", "A physical context prefers chemistry over broad machine-learning research")
+try check(factRank.first?.relevance?.intents.contains(.foundation) == true && factRank.first?.relevance?.note.contains("conditions") == true, "Physical claims require original source conditions")
+let methodRank = ReferenceCitationCompletion.suggestions(query: "", project: ReferenceCitationIndex(), library: relevanceIndex, context: "We implemented the chemical solver using OpenFOAM and GRI-Mech 3.0.")
+try check(methodRank.first?.record.key == "Tool", "Exact tool version tokens help distinguish nearby methods")
+let compareContext = ReferenceRelevance.Context("The measured flame speed agrees with the benchmark within 3% error.")
+try check(compareContext.intents.contains(.comparison), "Benchmarks and error comparisons are recognised")
+try check(ReferenceRelevance.assess(relevanceIndex.entries[0].document, context: compareContext)?.note.contains("units") == true, "Comparisons ask for values, units and conditions rather than verifying a number")
+let explicitKey = ReferenceCitationCompletion.suggestions(query: "Astro", project: ReferenceCitationIndex(), library: relevanceIndex, context: factContext)
+try check(explicitKey.first?.record.key == "Astro" && explicitKey.first?.relevance?.label == "No clear match", "Context ranking never hides an explicitly typed key")
+try check(ReferenceCitationCompletion.suggestions(query: "", project: ReferenceCitationIndex(), library: relevanceIndex).allSatisfy { $0.relevance == nil }, "Absent context adds no invented assessment")
+try check(ReferenceRelevance.Context("We report our study.").terms.count < 2, "Generic prose cannot create a topical recommendation")
+let titleOnlyAssessment = ReferenceRelevance.assess(ReferenceRelevance.Document(title: "Hydrogen ammonia ignition", abstract: ""), context: ReferenceRelevance.Context(factContext))
+try check(titleOnlyAssessment?.basis == "Title only", "Title-only evidence is disclosed even when related")
+let wrappedCite = "Unrelated astronomical background.\n\nAmmonia ignition depends on pressure\nand temperature \\cite{Old, "
+let currentSentence = ReferenceRelevance.sentence(wrappedCite, before: wrappedCite.utf16.count)
+try check(currentSentence.contains("Ammonia") && !currentSentence.contains("astronomical") && !currentSentence.contains("Old"), "Citation context crosses wrapped lines but excludes earlier paragraphs and citation keys")
+try check(ReferenceRelevance.sentence("x", before: Int.max).isEmpty, "Invalid caret bounds return no context")
+let cappedDocument = ReferenceRelevance.Document(title: "Bounded input", abstract: String(repeating: "a", count: 30_000))
+try check(cappedDocument.abstract.count == 12_000, "Abstract indexing has a fixed text budget")
+var completeMetadata = chemistryPaper; completeMetadata.fields["doi"] = "10.1234/example"; completeMetadata.fields["author"] = "Example, A"; completeMetadata.fields["year"] = "2025"
+try check(ReferenceRecognition.eligible(completeMetadata), "Manual lookup remains available when authors and year exist and no PDF is attached")
+try check(!ReferenceRecognition.automaticEligible(completeMetadata), "Manual availability does not trigger automatic import lookups")
+var titleLookup = chemistryPaper; titleLookup.fields.removeValue(forKey: "abstract"); titleLookup.fields["title"] = "Ammonia and hydrogen ignition properties"
+try check(ReferenceRecognition.eligible(titleLookup), "Manual lookup can use a full title without a DOI")
+var fetchedTitle = titleLookup; fetchedTitle.fields["abstract"] = "New abstract"; fetchedTitle.fields["doi"] = "10.1234/filled"
+let titleMerged = try ReferenceRecognition.merged(titleLookup, with: fetchedTitle)
+try check(titleMerged.fields["abstract"] == "New abstract" && titleMerged.id == titleLookup.id, "Exact title enrichment fills missing fields and preserves reference identity")
+var wrongTitle = fetchedTitle; wrongTitle.fields["title"] = "Different study"
+rejects("Title enrichment refuses an unrelated response") { _ = try ReferenceRecognition.merged(titleLookup, with: wrongTitle) }
+var discarded = completeMetadata; discarded.trashed = Date()
+try check(!ReferenceRecognition.eligible(discarded), "Trash does not permit metadata lookup")
+try EditorCLIArguments.validate(command: "reference", options: ["suggest", "--library", ReferenceLibrary.primaryID.uuidString, "--context", factContext])
+rejects("Citation CLI bounds the sentence context") { try EditorCLIArguments.validate(command: "reference", options: ["suggest", "--library", ReferenceLibrary.primaryID.uuidString, "--context", String(repeating: "x", count: 1201)]) }
+let onlineAbstract = try ReferencePaperLookup.parseCrossref(Data(#"{"message":{"title":["Test paper"],"abstract":"<jats:p>Ammonia &amp; hydrogen.</jats:p>"}}"#.utf8), single: true)
+try check(onlineAbstract.first?.fields["abstract"] == "Ammonia & hydrogen.", "Crossref abstracts are retained as plain text for local retrieval")
+print("Passed \(checks) Reference checks including local citation relevance")
+
+let relevanceRepository = ReferenceRepository(root: output.appendingPathComponent("relevance-cli"))
+let emptyVersion = relevanceRepository.version()
+let insertedRelevance = try relevanceRepository.add([trendPaper, chemistryPaper, unrelatedPaper])
+try check(relevanceRepository.version() != emptyVersion, "Catalogue changes invalidate prepared citation snapshots without scanning PDFs")
+let cliRank = try ReferenceCLI.response(["suggest", "--library", ReferenceLibrary.primaryID.uuidString, "--context", factContext], repository: relevanceRepository)
+let cliFirst = (cliRank["suggestions"] as? [[String: Any]])?.first
+try check(cliFirst?["title"] as? String == chemistryPaper.title, "CLI uses the same contextual ordering as the editor")
+let cliAssessment = cliFirst?["relevance"] as? [String: Any]
+try check(cliAssessment?["verified"] as? Bool == false && cliAssessment?["basis"] as? String == "Title and abstract", "CLI exposes source basis without claiming verification")
+let longAbstract = String(repeating: "Hydrogen pressure. ", count: 1500)
+let unmodifiedSource = ReferenceRecord(key: "Unmodified", fields: ["title": "Hydrogen pressure", "abstract": longAbstract])
+try check(ReferenceCitationIndex([unmodifiedSource]).entries[0].record.fields["abstract"] == longAbstract, "Index budgets never truncate the record later inserted into a bibliography")
+try check(ReferenceRelevance.tokens("3% error with pressure").contains("pressure"), "Percentages in metadata do not swallow later text")
+let performanceRecords = (0..<1000).map { n in ReferenceRecord(key: "Bench\(n)", fields: ["title": n.isMultiple(of: 5) ? "Hydrogen ignition and pressure" : "Unrelated galaxies", "abstract": "Synthetic data for local retrieval timing."]) }
+let prepareStart = Date()
+let performanceIndex = ReferenceCitationIndex(performanceRecords)
+let preparedIn = Date().timeIntervalSince(prepareStart)
+let queryStart = Date()
+for _ in 0..<20 { _ = ReferenceCitationCompletion.suggestions(query: "", project: ReferenceCitationIndex(), library: performanceIndex, context: factContext) }
+print("Local relevance timing, 1000 synthetic records: prepare \(preparedIn)s, mean request \(Date().timeIntervalSince(queryStart) / 20)s")
+print("Passed \(checks) Reference checks including CLI and index preservation")
+
+for command in ["cite", "citep", "citet", "parencite", "textcite", "autocite", "footcite", "smartcite", "nocite"] {
+    let text = "Hydrogen ignition depends on pressure \\" + command + "{NotContext"
+    let value = ReferenceRelevance.sentence(text, before: text.utf16.count)
+    try check(!value.contains("NotContext") && value.contains("Hydrogen"), "All supported citation commands exclude their key query from context")
+}
+print("Passed \(checks) Reference checks including supported citation syntax")
+
+var sharedSource = trendPaper
+sharedSource.fields["doi"] = "10.1234/shared"
+sharedSource.fields["author"] = "Example, Author"; sharedSource.fields["year"] = "2025"
+var sparseProject = sharedSource; sparseProject.fields.removeValue(forKey: "abstract")
+let enrichedProject = ReferenceCitationCompletion.suggestions(query: "", project: [sparseProject], library: [sharedSource], context: trendContext)
+try check(enrichedProject.count == 1 && enrichedProject[0].project && enrichedProject[0].relevance?.basis == "Title and abstract", "An identified project source can use its selected-library abstract without adding another bibliography entry")
+try check(enrichedProject[0].record.fields["abstract"] == nil, "Using a library abstract for ranking does not rewrite project metadata")
+let abstractQuery = ReferenceCitationCompletion.suggestions(query: "neural networks", project: [sparseProject], library: [sharedSource], context: trendContext)
+try check(abstractQuery.first?.project == true, "Abstract queries still select the existing project entry")
+var keyCollision = sharedSource; keyCollision.fields["doi"] = "10.1234/different"; keyCollision.fields["title"] = "Different scientific study"
+let refusedBorrow = ReferenceCitationCompletion.suggestions(query: "", project: [sparseProject], library: [keyCollision], context: trendContext)
+try check(refusedBorrow[0].relevance?.basis == "Title only", "A matching citation key cannot attach an unrelated abstract")
+var bibliographicMatch = sharedSource; bibliographicMatch.fields.removeValue(forKey: "doi")
+var bibliographicProject = sparseProject; bibliographicProject.fields.removeValue(forKey: "doi")
+try check(ReferenceRelevance.sameSource(bibliographicMatch, bibliographicProject), "Exact title, authors and year can link metadata without identifiers")
+bibliographicMatch.fields["author"] = "Someone else"
+try check(!ReferenceRelevance.sameSource(bibliographicMatch, bibliographicProject), "A title alone cannot link another paper's abstract")
+print("Passed \(checks) Reference checks including project/library identity")
+
+
+// Edited volumes retain their contributor roles in parsing, display and keys.
+let editedBookJSON = #"{"message":{"type":"edited-book","title":["Data-Driven Fluid Mechanics: Combining First Principles and Machine Learning"],"editor":[{"family":"Mendez","given":"Miguel A."},{"family":"Ianiro","given":"Andrea"},{"family":"Noack","given":"Bernd R."},{"family":"Brunton","given":"Steven L."}],"DOI":"10.1017/9781108896214","publisher":"Cambridge University Press","published-print":{"date-parts":[[2023,1,12]]},"ISBN":["9781108896214"]}}"#
+let editedVolume = try ReferencePaperLookup.parseCrossref(Data(editedBookJSON.utf8), single: true)[0]
+try check(editedVolume.type == "book" && editedVolume.authors.isEmpty && ReferenceText.authors(editedVolume.editors).count == 4, "Crossref edited volumes preserve editors without inventing authors")
+try check(ReferenceKeyRule.surnameYearWord.key(for: editedVolume) == "Mendez_2023_Data", "Editor-only volumes use the first editor's surname for new citation keys")
+try check(ReferenceColumn.author.label == "Author / Editor" && ReferenceColumn.author.value(editedVolume) == "Mendez et al. (eds.)", "Contributor column identifies an edited volume and does not stay empty")
+try check(editedVolume.displayContributors.contains("(eds.)") && editedVolume.displayContributors.contains("Brunton"), "Citation metadata identifies all editors with their role")
+let editedRows = ReferenceMetadata.rows(editedVolume)
+try check(editedRows.contains { $0.label == "Editor" } && !editedRows.contains { $0.label == "Author" }, "Metadata inspector keeps editor and author fields separate")
+let volumeBib = try ReferenceBibTeX.export([editedVolume])
+try check(volumeBib.contains("editor =") && !volumeBib.contains("author ="), "Edited book export keeps the editor field rather than relabelling it")
+var authoredVolume = editedVolume; authoredVolume.fields["author"] = "Writer, Actual"
+try check(ReferenceKeyRule.surnameYearWord.key(for: authoredVolume) == "Writer_2023_Data" && !authoredVolume.displayContributors.contains("(eds.)"), "A real author takes precedence when both roles exist")
+var singleEditor = editedVolume; singleEditor.fields["editor"] = "Mendez, Miguel A."
+try check(singleEditor.shortContributors == "Mendez (ed.)", "Single-editor display uses the singular role")
+var missingAuthor = editedVolume; missingAuthor.fields["author"] = "  "
+try check(missingAuthor.usesEditors && ReferenceKeyRule.surnameYearWord.key(for: missingAuthor) == "Mendez_2023_Data", "Whitespace-only authors fall back to editors")
+var unidentifiableVolume = editedVolume; unidentifiableVolume.fields.removeValue(forKey: "editor")
+try check(ReferenceKeyRule.surnameYearWord.key(for: unidentifiableVolume) == "Reference_2023_Data", "A genuinely unknown contributor remains explicit")
+let editedCandidates = ReferenceCitationCompletion.suggestions(query: "Ianiro", project: [], library: [editedVolume])
+try check(editedCandidates.count == 1, "Editors are searchable in citation completion")
+var editedProject = editedVolume; editedProject.fields.removeValue(forKey: "doi")
+var editedLibrary = editedProject; editedLibrary.fields["abstract"] = "Turbulent combustion and machine learning."
+try check(ReferenceRelevance.sameSource(editedProject, editedLibrary), "Matching title, editors and year can link a project source to its abstract")
+var incorrectRole = editedProject; incorrectRole.fields["author"] = incorrectRole.fields.removeValue(forKey: "editor")
+try check(!ReferenceRelevance.sameSource(editedProject, incorrectRole), "Equal names in different contributor roles are not treated as a bibliographic identity")
+let keyPreservingBook = try ReferenceRecognition.merged(ReferenceRecord(key: "Reference_2023_Data", type: "book", fields: ["title": editedVolume.title, "doi": editedVolume.fields["doi"]!]), with: editedVolume)
+try check(keyPreservingBook.key == "Reference_2023_Data" && !keyPreservingBook.editors.isEmpty, "Metadata enrichment preserves existing manuscript keys while adding editors")
+let editorRepository = ReferenceRepository(root: output.appendingPathComponent("edited-books"), keyRule: .surnameYearWord)
+let savedVolume = try editorRepository.add([editedVolume])[0]
+try check(savedVolume.citationKey == "Mendez_2023_Data", "New library imports generate contributor-aware keys")
+let editorCLI = try ReferenceCLI.response(["suggest", "--library", savedVolume.library.uuidString, "--query", "Mendez"], repository: editorRepository)
+let editorPayload = (editorCLI["suggestions"] as? [[String: Any]])?.first
+try check(editorPayload?["authors"] as? String == "" && (editorPayload?["editors"] as? String)?.contains("Mendez") == true && editorPayload?["contributorRole"] as? String == "editor", "CLI exposes editors separately from authors")
+print("Passed \(checks) Reference checks including edited books")

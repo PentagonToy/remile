@@ -12,6 +12,10 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
     var externalRanges: [NSRange] = [] { didSet { if oldValue != externalRanges { scheduleStyle() } } }
     var showExternalEdits = false { didSet { if oldValue != showExternalEdits { scheduleStyle() } } }
     var syncToPreview: ((Int) -> Void)?
+    var sourceSyncHint: TeXSync.TextHint? {
+        guard let view = textView else { return nil }
+        return TeXSync.hint(in: view.string, offset: view.selectedRange().location)
+    }
     var inspectCitation: ((String) -> Void)?
     var citationCompletion: ((String, NSRange) async -> EditorCompletion.Context?)?
     var prepareCitation: ((EditorCompletion.Item) throws -> Void)?
@@ -241,6 +245,7 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         return (view.string as NSString).substring(to: min(view.selectedRange().location, (view.string as NSString).length)).filter { $0 == "\n" }.count
     }
     func reveal(line: Int, text selected: String = "") {
+        clearFlash()
         guard let view = textView else { pendingLocation = (line, selected); return }
         let text = view.string as NSString; var index = 0
         for _ in 0..<line { guard index < text.length else { break }; index = NSMaxRange(text.lineRange(for: NSRange(location: index, length: 0))) }

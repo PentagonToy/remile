@@ -79,13 +79,13 @@ Task { @MainActor in
  try! "\\documentclass{article}\n\\usepackage{remile-absent-spec}\n\\begin{document}Test\\end{document}".write(to:dependencyRoot.appendingPathComponent("main.tex"),atomically:true,encoding:.utf8)
  let dependencyProject = try! TeXProject(dependencyRoot,historyEnabled:false)
  dependencyProject.compile(output:URL(fileURLWithPath:CommandLine.arguments[1]).appendingPathComponent("missing-package-build"))
- guard await settle({!dependencyProject.compiling}), dependencyProject.compileFailed, dependencyProject.setupNeeded, dependencyProject.setupIssue?.files == ["remile-absent-spec.sty"] else { print("FAILED missing package does not open setup guide",dependencyProject.log);exit(1) }
- print("Passed missing package opens contextual setup guide")
+ guard await settle({!dependencyProject.compiling}), dependencyProject.compileFailed, !dependencyProject.setupNeeded, dependencyProject.showsLog, dependencyProject.setupIssue?.files == ["remile-absent-spec.sty"] else { print("FAILED missing package does not retain setup details in the build log",dependencyProject.log);exit(1) }
+ print("Passed missing package retains contextual setup details without opening a popover")
  dependencyProject.setupNeeded = false
  guard dependencyProject.compileFailed else { print("FAILED dismissed guidance lost failure state"); exit(1) }
  dependencyProject.buffers["main.tex"] = "\\documentclass{article}\n\\begin{document}\\remileUndefinedCommand\\end{document}"
  dependencyProject.compile(output:URL(fileURLWithPath:CommandLine.arguments[1]).appendingPathComponent("syntax-error-build"))
- guard await settle({!dependencyProject.compiling}), dependencyProject.compileFailed, dependencyProject.setupNeeded, dependencyProject.setupIssue == nil, TeXDiagnostics.primaryError(dependencyProject.diagnostics)?.message.contains("Undefined control sequence") == true else { print("FAILED source error does not open diagnostic guidance",dependencyProject.log);exit(1) }
+ guard await settle({!dependencyProject.compiling}), dependencyProject.compileFailed, !dependencyProject.setupNeeded, dependencyProject.showsLog, dependencyProject.setupIssue == nil, TeXDiagnostics.primaryError(dependencyProject.diagnostics)?.message.contains("Undefined control sequence") == true else { print("FAILED source error does not retain diagnostic guidance",dependencyProject.log);exit(1) }
  await render(TeXCompileGuidance(project:dependencyProject,showDiagnostics:{}),name:"source-error-guidance",size:NSSize(width:490,height:240),dark:true)
  dependencyProject.buffers["main.tex"] = "\\documentclass{article}\n\\begin{document}Test\\end{document}"
  dependencyProject.compile(output:URL(fileURLWithPath:CommandLine.arguments[1]).appendingPathComponent("recovery-build"))
@@ -132,8 +132,9 @@ Task { @MainActor in
  try! ("\\documentclass{article}\n\\begin{document}\n" + (1...100).map { "\\section{Long project heading \($0) to exercise scrolling and layout}" }.joined(separator:"\n") + "\n\\end{document}").write(to:sidebarRoot.appendingPathComponent("main.tex"),atomically:true,encoding:.utf8)
  let sidebarProject = try! TeXProject(sidebarRoot,historyEnabled:false), sidebarState = TeXSidebarState()
  let sidebarHost = NSHostingView(rootView:TeXProjectSidebar(project:sidebarProject,state:sidebarState).foregroundStyle(RemileStyle.ink).tint(RemileStyle.accent))
+ sidebarHost.sizingOptions = []
  let sidebarWindow = NSWindow(contentRect:NSRect(x:0,y:0,width:280,height:700),styleMask:[.titled,.resizable],backing:.buffered,defer:false)
- sidebarWindow.contentView=sidebarHost;sidebarWindow.orderFront(nil)
+ sidebarWindow.contentView=sidebarHost;sidebarWindow.setContentSize(NSSize(width:280,height:700));sidebarHost.frame=NSRect(x:0,y:0,width:280,height:700);sidebarWindow.orderFront(nil)
  for _ in 0..<3 { for (files,outline) in [(false,true),(true,false),(false,false),(true,true)] {
      sidebarState.files=files;sidebarState.outline=outline
      await Task.yield();sidebarHost.layoutSubtreeIfNeeded()
