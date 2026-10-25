@@ -102,6 +102,48 @@ Task { @MainActor in
         try await until { !signIn.checking }
         require(!signIn.signedIn && !signIn.checking && signIn.issue != nil, "Offline session verification stops with a retryable issue")
         signIn.stop()
+        require(!signIn.submitting && !signIn.preparing, "Offline sign-in has no hidden credential submission")
+        let editDirectory = output.appendingPathComponent("account-actions")
+        let edits = OverleafLibrary(directory: editDirectory)
+        let personal = edits.saveAccount(name: "Personal", token: "", plan: .free)!
+        let work = edits.saveAccount(name: "Work", token: "", plan: .free)!
+        let localProject = OverleafConnection(id: UUID(), profileID: personal.id, projectID: "6ad72e207e5cd74f01fe6b18", name: "Local draft", account: personal.name, branch: "master")
+        let otherProject = OverleafConnection(id: UUID(), profileID: work.id, projectID: "6ad72e207e5cd74f01fe6b19", name: "Keep this", account: work.name, branch: "master")
+        try JSONEncoder().encode([localProject, otherProject]).write(to: editDirectory.appendingPathComponent("projects.json"))
+        let editable = OverleafLibrary(directory: editDirectory)
+        for project in editable.projects {
+            let folder = editable.root(project); try FileManager.default.createDirectory(at: folder.appendingPathComponent(".git"), withIntermediateDirectories: true)
+            try Data("Local history".utf8).write(to: folder.appendingPathComponent(".git/fixture-history"))
+        }
+        require(editable.renameAccount(personal.id, to: "Research"), "Account labels can be renamed")
+        require(editable.accounts.first(where: { $0.id == personal.id })?.id == personal.id && editable.projects.first(where: { $0.id == localProject.id })?.account == "Research", "Renaming keeps session identity and updates project labels")
+        require(!editable.renameAccount(personal.id, to: " work "), "Duplicate account labels are rejected")
+        editable.liveOwned.insert(localProject.id)
+        require(!(await editable.removeAccount(personal.id, prepare: { _ in true })), "An open Live project blocks destructive account removal")
+        editable.liveOwned.remove(localProject.id)
+        do {
+            let heldWriter = try editable.writerLease(localProject)
+            require(!(await editable.removeAccount(personal.id, prepare: { _ in true })), "A writer in another session blocks removal")
+            require(!FileManager.default.fileExists(atPath: editDirectory.appendingPathComponent("account-edit.json").path), "A rejected removal leaves no deferred deletion")
+            withExtendedLifetime(heldWriter) { }
+        }
+        let baseline = OverleafSourceArchive.baseline(localProject.id, under: editDirectory)
+        try FileManager.default.createDirectory(at: baseline.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("fixture".utf8).write(to: baseline)
+        require(await editable.removeAccount(personal.id, prepare: { _ in true }), "Account removal completes after all writers close")
+        require(!FileManager.default.fileExists(atPath: editable.root(localProject).path) && !FileManager.default.fileExists(atPath: baseline.path), "Local files, Git history and Live source baseline are deleted")
+        let reopenedAccounts = OverleafLibrary(directory: editDirectory)
+        require(!reopenedAccounts.accounts.contains(where: { $0.id == personal.id }) && !reopenedAccounts.projects.contains(where: { $0.profileID == personal.id }), "Removed accounts do not reappear on reopening")
+        // A separate zero-project account exercises account-only removal without a writer.
+        let spare = editable.saveAccount(name: "Spare", token: "", plan: .free)!
+        require(await editable.removeAccount(spare.id, prepare: { _ in true }), "Unused account removal completes")
+        require(FileManager.default.fileExists(atPath: editable.root(otherProject).appendingPathComponent(".git/fixture-history").path), "Another account's files are preserved")
+        let resized = OverleafLibrary(directory: output.appendingPathComponent("sizing-model"))
+        let parent = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 850), styleMask: [.titled], backing: .buffered, defer: false)
+        resized.openLibrary(add: true, from: parent)
+        let initialSize = OverleafImportSizing.fit(parent: parent.contentLayoutRect.size, screen: parent.screen?.visibleFrame.size ?? parent.frame.size)
+        require(resized.importSize == initialSize, "Import size is resolved before the presentation flag opens its sheet")
+        parent.orderOut(nil)
         let validProjects = Data(#"{"projects":[]}"#.utf8)
         var fetches = 0, saves = 0
         let reused = OverleafSignInSession(profile: UUID(), fetchProjects: { _ in fetches += 1; return validProjects }, saveSession: { _ in saves += 1; return true })

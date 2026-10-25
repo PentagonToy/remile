@@ -18,7 +18,7 @@ struct ReaderPageControl: View {
                 .onSubmit(commit)
                 .onExitCommand { state.text = String(current); editing = false }
             Text("/ \(total)").fixedSize()
-        }.font(RemileType.callout).monospacedDigit().disabled(total == 0)
+        }.font(RemileType.control).monospacedDigit().disabled(total == 0)
             .onAppear { state.text = String(current) }
             .onChange(of: current) { if !editing { state.text = String(current) } }
             .onChange(of: editing) { if !editing { state.text = String(current) } }

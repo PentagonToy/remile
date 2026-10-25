@@ -2,7 +2,7 @@ import AppKit
 
 /// Local, deterministic completion shared by Markdown mathematics and TeX projects.
 enum EditorCompletion {
-    struct Item: Equatable { let label: String; let insertion: String; var caret: Int? = nil; var referenceID: UUID? = nil; var detail: String? = nil }
+    struct Item: Equatable { let label: String; let insertion: String; var caret: Int? = nil; var referenceID: UUID? = nil; var detail: String? = nil; var annotation: String? = nil }
     struct Context { let range: NSRange; let items: [Item] }
     static let environments = ["align", "align*", "aligned", "equation", "equation*", "gather", "gather*", "itemize", "enumerate", "description", "figure", "table", "tabular", "cases", "matrix", "pmatrix", "bmatrix", "split", "document", "abstract"]
     static func context(_ source: String, selection: NSRange, tex: Bool) -> Context? {
@@ -76,21 +76,32 @@ enum EditorCompletion {
         buttons = context.items.enumerated().map { number, item in
             let button = NSButton(title: item.label, target: self, action: #selector(choose(_:))); button.tag = number; button.isBordered = false; button.alignment = .left; button.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
             button.heightAnchor.constraint(equalToConstant: 27).isActive = true; button.widthAnchor.constraint(equalToConstant: width - 10).isActive = true
-            button.toolTip = [item.label, item.detail].compactMap { $0 }.joined(separator: "\n"); button.setAccessibilityLabel("Complete " + item.label); stack.addArrangedSubview(button); return button
+            if let annotation = item.annotation {
+                button.title = ""
+                let label = CompletionRowLabel(labelWithString: item.label), badge = CompletionRowLabel(labelWithString: annotation)
+                label.font = button.font; label.lineBreakMode = .byTruncatingMiddle
+                badge.font = .systemFont(ofSize: 11); badge.textColor = .secondaryLabelColor
+                for field in [label, badge] { field.translatesAutoresizingMaskIntoConstraints = false; field.setAccessibilityElement(false); button.addSubview(field) }
+                NSLayoutConstraint.activate([label.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 6), label.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+                    label.trailingAnchor.constraint(lessThanOrEqualTo: badge.leadingAnchor, constant: -10), badge.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -6),
+                    badge.centerYAnchor.constraint(equalTo: button.centerYAnchor), badge.widthAnchor.constraint(equalToConstant: 92)])
+            }
+            button.toolTip = [item.label, item.annotation, item.detail].compactMap { $0 }.joined(separator: "\n"); button.setAccessibilityLabel("Complete " + item.label); button.setAccessibilityValue(item.annotation); stack.addArrangedSubview(button); return button
         }
+        let detailHeight: CGFloat = context.items.contains { $0.annotation != nil } ? 104 : 54
         detail = nil
         if context.items.contains(where: { $0.detail != nil }) {
             let separator = NSBox(); separator.boxType = .separator; stack.addArrangedSubview(separator)
             let field = NSTextField(wrappingLabelWithString: ""); field.font = .systemFont(ofSize: 12); field.textColor = .secondaryLabelColor
-            field.maximumNumberOfLines = 3; field.widthAnchor.constraint(equalToConstant: width - 18).isActive = true
-            field.heightAnchor.constraint(equalToConstant: 54).isActive = true
+            field.maximumNumberOfLines = detailHeight > 54 ? 6 : 3; field.widthAnchor.constraint(equalToConstant: width - 18).isActive = true
+            field.heightAnchor.constraint(equalToConstant: detailHeight).isActive = true
             stack.addArrangedSubview(field); detail = field
         }
         let background = NSVisualEffectView(); background.material = .popover; background.state = .active; background.wantsLayer = true; background.layer?.cornerRadius = 7
         background.addSubview(stack); stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: background.leadingAnchor), stack.trailingAnchor.constraint(equalTo: background.trailingAnchor), stack.topAnchor.constraint(equalTo: background.topAnchor), stack.bottomAnchor.constraint(equalTo: background.bottomAnchor)])
         panel.contentView = background
-        let rect = view.firstRect(forCharacterRange: caret, actualRange: nil), height = CGFloat(context.items.count * 27 + 10 + (detail == nil ? 0 : 55))
+        let rect = view.firstRect(forCharacterRange: caret, actualRange: nil), height = CGFloat(context.items.count * 27 + 10) + (detail == nil ? 0 : detailHeight + 1)
         let screen = window.screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         panel.setFrame(NSRect(x: min(max(screen.minX, rect.minX), screen.maxX - width), y: max(screen.minY, rect.minY - height - 3), width: width, height: height), display: false)
         if self.panel !== panel { window.addChildWindow(panel, ordered: .above); self.panel = panel }
@@ -121,4 +132,9 @@ enum EditorCompletion {
         view.setSelectedRange(NSRange(location: context.range.location + (item.caret ?? (item.insertion as NSString).length), length: 0)); view.undoManager?.setActionName("Complete TeX"); view.breakUndoCoalescing()
     }
     func dismiss() { panel?.orderOut(nil); if let panel { panel.parent?.removeChildWindow(panel) }; panel = nil; context = nil; prepare = nil; failure = nil; buttons = []; detail = nil }
+}
+
+/// Labels keep the whole completion row clickable.
+private final class CompletionRowLabel: NSTextField {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

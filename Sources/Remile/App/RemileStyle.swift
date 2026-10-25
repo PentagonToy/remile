@@ -17,6 +17,7 @@ enum RemileStyle {
     static let ink = adaptive(light: NSColor(srgbRed: 41/255, green: 57/255, blue: 68/255, alpha: 1), dark: ivory)
     static let secondaryInk = adaptive(light: NSColor(srgbRed: 90/255, green: 100/255, blue: 107/255, alpha: 1), dark: NSColor(srgbRed: 188/255, green: 190/255, blue: 187/255, alpha: 1))
     static let accent = adaptive(light: gold, dark: amber)
+    static let onAccent = adaptive(light: .white, dark: slate)
     static let brand = accent
     static let sourceLinked = accent
     static let sourceUnverified = ink.opacity(0.5)
@@ -46,7 +47,8 @@ struct ReaderAppearanceModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func body(content: Content) -> some View {
         content.preferredColorScheme((ReaderAppearance(rawValue: appearance) ?? .system).scheme)
-            .tint(RemileStyle.accent).foregroundStyle(RemileStyle.ink).font(RemileType.body)
+            .tint(RemileStyle.accent).foregroundStyle(RemileStyle.ink).font(RemileType.control)
+            .buttonStyle(RemileActionStyle()).controlSize(.regular)
             .transaction { transaction in
                 if !animations || reduceMotion { transaction.animation = nil; transaction.disablesAnimations = true }
             }
@@ -80,6 +82,9 @@ enum RemileArtwork {
 
 
 enum RemileType {
+    static let control = Font.system(size: 14)
+    static let section = Font.system(size: 14, weight: .semibold)
+    static let windowTitle = Font.system(size: 20, weight: .semibold)
     static let body = Font.system(size: 16)
     static let caption = Font.system(size: 14)
     static let small = Font.system(size: 13)
@@ -94,9 +99,9 @@ enum RemileRadius {
 }
 
 enum RemileMotion {
-    static let disclosure = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.36)
-    static let panel = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.36)
-    static let navigation = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.4)
+    static let disclosure = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.24)
+    static let panel = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.24)
+    static let navigation = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.3)
 }
 
 struct RemilePressStyle: ButtonStyle {
@@ -118,7 +123,7 @@ struct RemileToolStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.frame(minWidth: 32, minHeight: 32).background(Color.primary.opacity(0.001)).contentShape(.interaction, Rectangle())
+        configuration.label.font(RemileType.control).imageScale(.medium).frame(minWidth: 32, minHeight: 32).background(Color.primary.opacity(0.001)).contentShape(.interaction, Rectangle())
             .background(configuration.isPressed ? RemileStyle.ink.opacity(0.09) : Color.clear, in: RoundedRectangle(cornerRadius: RemileRadius.control))
             .opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
@@ -129,7 +134,7 @@ struct RemileToolStyle: ButtonStyle {
 struct RemileCompactToolStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.frame(minWidth: 28, minHeight: 28).contentShape(Rectangle())
+        configuration.label.font(RemileType.control).imageScale(.medium).frame(minWidth: 28, minHeight: 28).contentShape(Rectangle())
             .background(configuration.isPressed ? RemileStyle.ink.opacity(0.09) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
             .opacity(enabled ? 1 : 0.4)
     }

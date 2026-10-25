@@ -1,7 +1,7 @@
 import Foundation
 
 enum ReferenceKind: String, CaseIterable {
-    case article, book, newspaper, webpage, conference, other
+    case article, book, newspaper, webpage, conference, preprint, other
     var label: String {
         switch self {
         case .article: return "Journal article"
@@ -9,6 +9,7 @@ enum ReferenceKind: String, CaseIterable {
         case .newspaper: return "Newspaper article"
         case .webpage: return "Web page"
         case .conference: return "Conference paper"
+        case .preprint: return "Preprint"
         case .other: return "Other"
         }
     }
@@ -18,10 +19,11 @@ enum ReferenceKind: String, CaseIterable {
         case .book: return "book"
         case .webpage: return "online"
         case .conference: return "inproceedings"
-        case .other: return "misc"
+        case .preprint, .other: return "misc"
         }
     }
     static func classify(_ record: ReferenceRecord) -> Self {
+        if record.fields["entrysubtype"]?.lowercased() == "preprint" { return .preprint }
         let type = record.type.lowercased()
         if type == "article" { return record.fields["entrysubtype"]?.lowercased() == "newspaper" ? .newspaper : .article }
         if ["book", "inbook", "incollection", "booklet"].contains(type) { return .book }
@@ -32,8 +34,9 @@ enum ReferenceKind: String, CaseIterable {
     func applying(to record: ReferenceRecord, customType: String = "") -> ReferenceRecord {
         var result = record
         result.type = self == .other ? (customType.isEmpty ? "misc" : customType) : bibType
-        if self == .newspaper { result.fields["entrysubtype"] = "newspaper" }
-        else if result.fields["entrysubtype"] == "newspaper" { result.fields.removeValue(forKey: "entrysubtype") }
+        if self == .preprint { result.fields["entrysubtype"] = "preprint" }
+        else if self == .newspaper { result.fields["entrysubtype"] = "newspaper" }
+        else if ["newspaper", "preprint"].contains(result.fields["entrysubtype"] ?? "") { result.fields.removeValue(forKey: "entrysubtype") }
         return result
     }
 }

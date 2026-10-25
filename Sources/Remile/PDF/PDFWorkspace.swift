@@ -76,7 +76,7 @@ struct PDFWorkspace: View {
             } else if session.document?.isLocked == true {
                 VStack(spacing: 16) {
                     Image(systemName: "lock.doc").font(.largeTitle).foregroundStyle(.secondary)
-                    Text("Unlock this PDF").font(.title2)
+                    Text("Unlock this PDF").font(RemileType.heading)
                     SecureField("Password", text: $session.password)
                         .textFieldStyle(.roundedBorder).frame(width: 260).onSubmit { session.unlock() }
                     if let error = session.passwordError { Text(error).foregroundStyle(.red).font(RemileType.callout) }
@@ -115,7 +115,7 @@ struct PDFWorkspace: View {
                             Text(error).font(RemileType.callout)
                             Spacer()
                             Button { session.dismissEditingError() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).remileHelp("Dismiss message")
-                        }.padding(.horizontal, 16).padding(.vertical, 10)
+                        }.padding(.horizontal, 16).padding(.vertical, 6)
                     }
                     Divider()
                 }.background(RemileStyle.editorBar)
@@ -127,11 +127,11 @@ struct PDFWorkspace: View {
     private var readingControls: some View {
         GeometryReader { geometry in
             readingControlRow(compact: geometry.size.width < 1000)
-        }.frame(height: 32).padding(.horizontal, 16).padding(.vertical, 10)
+        }.frame(height: 32).padding(.horizontal, 16).padding(.vertical, 6)
     }
     private func readingControlRow(compact: Bool) -> some View {
         HStack(spacing: compact ? 6 : 12) {
-            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.showsSidebar.toggle() } } label: { Image(systemName: "sidebar.left") }.remileHelp("Pages, outline, search and comments").accessibilityLabel("Toggle document sidebar")
+            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.showsSidebar.toggle() } } label: { Image(systemName: "sidebar.left") }.remileHelp("Pages, outline, search and comments").accessibilityLabel("Document sidebar").accessibilityValue(session.showsSidebar ? "Shown" : "Hidden")
             HStack(spacing: 6) {
                 if !compact { Button { session.previousPage() } label: { Image(systemName: "chevron.up") }.remileHelp("Previous page").disabled(session.showsOverview || session.currentPage <= 1) }
                 ReaderPageControl(current: session.currentPage, total: session.document?.pageCount ?? 0, go: session.goToPage)
@@ -146,10 +146,16 @@ struct PDFWorkspace: View {
                     }
                 }
             } label: { Image(systemName: session.showsOverview ? "doc.text" : "square.grid.2x2") }
-                .remileHelp(session.showsOverview ? "Read document" : "Page overview").accessibilityLabel(session.showsOverview ? "Read document" : "Page overview")
+                .remileHelp(session.showsOverview ? "Read document" : "Page overview").accessibilityLabel(session.showsOverview ? "Read document" : "Page overview").accessibilityValue(session.showsOverview ? "Overview" : "Reading")
                 .disabled(session.document?.isLocked != false)
-            if !compact { Button { session.firstPageAlone = false; session.twoPage.toggle() } label: { Image(systemName: session.twoPage ? "book" : "doc") }
-                .remileHelp(session.twoPage ? "Switch to single page" : "Switch to two pages").accessibilityLabel("Page layout").accessibilityValue(session.twoPage ? "Two pages" : "Single page") }
+            if !compact {
+                Menu {
+                    Picker("Page layout", selection: Binding(get: { session.twoPage }, set: { session.firstPageAlone = false; session.twoPage = $0 })) {
+                        Text("Single page").tag(false); Text("Two pages").tag(true)
+                    }
+                } label: { Label("Layout", systemImage: session.twoPage ? "rectangle.split.2x1" : "rectangle") }
+                    .menuStyle(.borderlessButton).fixedSize().remileHelp("Choose a page layout").accessibilityLabel("Page layout").accessibilityValue(session.twoPage ? "Two pages" : "Single page")
+            }
             Spacer(minLength: 12)
             PDFProtectionButton(protection: session.protection, unlock: session.requestEditingUnlock)
             Button { presentation.ocr = true } label: { controlLabel("Scan & OCR", symbol: "text.viewfinder", compact: compact) }.remileHelp("Recognise text throughout this PDF with Apple Vision").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
@@ -171,7 +177,7 @@ struct PDFWorkspace: View {
                     .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).accessibilityLabel("View options")
             } else { ReaderZoomControls(zoom: zoom).disabled(session.showsOverview) }
             Button { session.sidebar = .search; session.showsSidebar = true; searchFocused = true } label: { Image(systemName: "magnifyingglass") }.remileHelp("Find in document").keyboardShortcut("f")
-        }.buttonStyle(RemileToolStyle()).font(RemileType.callout).labelStyle(.titleAndIcon)
+        }.buttonStyle(RemileToolStyle()).font(RemileType.control).labelStyle(.titleAndIcon)
     }
     private func controlLabel(_ title: String, symbol: String, compact: Bool) -> some View {
         Group {
@@ -202,11 +208,11 @@ struct PDFWorkspace: View {
     private var editingStrip: some View {
         GeometryReader { geometry in
             editingControlRow(compact: geometry.size.width < 800)
-        }.frame(height: 32).padding(.horizontal, 16).padding(.vertical, 10)
+        }.frame(height: 32).padding(.horizontal, 16).padding(.vertical, 6)
     }
     private func editingControlRow(compact: Bool) -> some View {
         HStack(spacing: compact ? 8 : 16) {
-            if !compact { Text(session.showsOverview ? "Pages" : "Edit PDF").font(RemileType.heading) }
+            if !compact { Text(session.showsOverview ? "Pages" : "Edit PDF").font(RemileType.section) }
             Button { session.choosePDFs() } label: { Image(systemName: "doc.badge.plus") }
                 .disabled(!session.canArrangePages).remileHelp("Add PDFs").accessibilityLabel("Add PDFs")
             PDFPageSizeControl(session: session, compact: compact).disabled(!session.canArrangePages)
@@ -229,8 +235,8 @@ struct PDFWorkspace: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: session.drawingTool?.symbol ?? "pencil.tip")
-                        .font(.system(size: 18.72)).offset(y: -1.5).frame(width: 22, height: 28)
-                    if !compact { Text(session.drawingTool?.rawValue ?? "Draw").font(RemileType.body) }
+                        .font(RemileType.control).frame(width: 20, height: 28)
+                    if !compact { Text(session.drawingTool?.rawValue ?? "Draw").font(RemileType.control) }
                     Image(systemName: "chevron.down").font(.system(size: 10, weight: .medium))
                 }.foregroundStyle(RemileStyle.accent).contentShape(Rectangle())
                     .accessibilityElement(children: .ignore).accessibilityLabel("Draw or add shapes")
@@ -240,11 +246,11 @@ struct PDFWorkspace: View {
                 .remileHelp("Draw or add shapes. Escape returns to text selection.")
             }
             Divider().frame(height: 20)
-            Button { session.rotateVisiblePages(clockwise: false) } label: { Image(systemName: "rotate.left").font(.system(size: 18)).offset(y: -1.5).frame(width: 28, height: 28).contentShape(Rectangle()) }
-                .buttonStyle(.plain)
+            Button { session.rotateVisiblePages(clockwise: false) } label: { Image(systemName: "rotate.left").font(RemileType.control).frame(width: 28, height: 28).contentShape(Rectangle()) }
+                .buttonStyle(RemileCompactToolStyle())
                 .disabled(!session.canArrangePages).remileHelp(session.showsOverview ? "Rotate selected pages left" : "Rotate current page left")
-            Button { session.rotateVisiblePages(clockwise: true) } label: { Image(systemName: "rotate.right").font(.system(size: 18)).offset(y: -1.5).frame(width: 28, height: 28).contentShape(Rectangle()) }
-                .buttonStyle(.plain)
+            Button { session.rotateVisiblePages(clockwise: true) } label: { Image(systemName: "rotate.right").font(RemileType.control).frame(width: 28, height: 28).contentShape(Rectangle()) }
+                .buttonStyle(RemileCompactToolStyle())
                 .disabled(!session.canArrangePages).remileHelp(session.showsOverview ? "Rotate selected pages right" : "Rotate current page right")
             Spacer(minLength: 12)
         }

@@ -18,7 +18,7 @@ struct ChatGPTSettings: View {
     private var canConnect: Bool { usage.online && !network.offline }
     var body: some View {
         if showsHeading {
-            ScrollView { content.padding(24) }.scrollContentBackground(.hidden).smoothScrolling()
+            ScrollView { content.padding(24) }.font(RemileType.control).buttonStyle(RemileActionStyle()).toggleStyle(.switch).scrollContentBackground(.hidden).smoothScrolling()
                 .frame(width: 490, height: 600).background(RemileStyle.background).presentationBackground(RemileStyle.background).modifier(NetworkAccessScope())
         } else { content }
     }
@@ -45,7 +45,7 @@ struct ChatGPTSettings: View {
                         Toggle("Grammar suggestions", isOn: $grammar)
                         Toggle("Inline completion on this Mac", isOn: $completion).disabled(!deviceReady || (provider == "ChatGPT" && !fallback))
                         SettingsHint("Apple Intelligence completion · Tab to accept.")
-                    }.padding(.top, 10).padding(.leading, 18).disabled(!writing)
+                    }.toggleStyle(.checkbox).padding(.top, 10).padding(.leading, 18).disabled(!writing)
                 }
             }
             if provider == "ChatGPT" {

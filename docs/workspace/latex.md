@@ -4,9 +4,11 @@ Stay close to the source, with the finished page beside it.
 
 ## Open and compile
 
-1. Choose LaTeX from Home and open a project folder or source ZIP.
+1. Choose **LaTeX** from Home to open an untitled draft. To open an existing project, drop its folder or source ZIP onto the LaTeX button.
 2. Choose the main document if asked.
 3. Select Compile to build the PDF with your local TeX installation.
+
+Save chooses a folder for a new draft. An unchanged draft closes quietly. Edited drafts ask whether to save, discard or stay. Working copies remain in remile’s private draft folder until saved or discarded.
 
 A source ZIP opens into a new project folder. The ZIP stays unchanged. Source remains editable if compilation fails.
 
@@ -14,7 +16,7 @@ A source ZIP opens into a new project folder. The ZIP stays unchanged. Source re
 
 Files holds the project. Outline follows its sections. Drag the divider to give either the source or PDF more room.
 
-Double-click in the PDF to return to the corresponding source. Type `\cite{` to search your bibliography and [Reference](../reference.md) while writing.
+Double-click in the PDF to return to the corresponding source. Word context refines the target when it matches clearly. Ambiguous text and figures keep the SyncTeX location. Selecting text alone does not move the source. Type `\cite{` to search your bibliography and Reference while writing. [Read the citation hints →](../reference.md#read-citation-hints)
 
 ## When a build needs attention
 

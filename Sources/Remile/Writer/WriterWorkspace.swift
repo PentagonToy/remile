@@ -34,7 +34,7 @@ struct WriterWorkspace: View {
                 Button { model.open() } label: { Image(systemName: "folder") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent).remileHelp("Open a DOCX document").accessibilityLabel("Open document")
                 Button { model.save() } label: { Label("Save", systemImage: "square.and.arrow.down") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent)
                 Button { model.exportCopy() } label: { Label("Export", systemImage: "square.and.arrow.up") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent)
-            }.font(RemileType.caption).padding(.horizontal, 18).padding(.vertical, 10).background(RemileStyle.background)
+            }.font(RemileType.control).padding(.horizontal, 16).padding(.vertical, 6).background(RemileStyle.background)
             Divider()
             GeometryReader { geometry in
                 ReaderSplit(isPresented: state.tools, initial: min(320, max(250, geometry.size.width * 0.22)), minimum: 250, maximum: 340, minimumContent: 380, label: "writer tools", pane: { tools }, content: { document })
@@ -46,7 +46,7 @@ struct WriterWorkspace: View {
                 if let error = model.error { Text(error).foregroundStyle(RemileStyle.warning).fixedSize(horizontal: false, vertical: true); Button { model.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss message") }
                 ReaderThemeButton()
             }.font(RemileType.caption).padding(.horizontal, 12).frame(minHeight: 32).background(RemileStyle.editorBar)
-        }.background(RemileStyle.background).tint(RemileStyle.accent)
+        }.font(RemileType.control).background(RemileStyle.background).tint(RemileStyle.accent)
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.tools)
             .sheet(isPresented: $state.formula) { formula }
     }
@@ -76,7 +76,7 @@ struct WriterWorkspace: View {
             Divider()
             EditorSidebarFooter(compact: true, title: "Settings") { state.settings.toggle() }
 
-        }.font(RemileType.caption).controlSize(.small).foregroundStyle(RemileStyle.ink).background(RemileStyle.sidebar)
+        }.font(RemileType.control).controlSize(.regular).foregroundStyle(RemileStyle.ink).background(RemileStyle.sidebar)
     }
     private var selectionTitle: String {
         switch model.selectedObject?.kind {

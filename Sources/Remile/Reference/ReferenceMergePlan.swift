@@ -43,7 +43,7 @@ enum ReferenceMergePlan {
         let populated = ["title", "author", "year", "journal", "booktitle", "publisher", "volume", "number", "pages", "doi", "isbn", "issn", "url"].filter { record.fields[$0]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }.count
         return (published(record) ? 10_000 : preprint(record) ? 0 : 5_000) + (record.fields["doi"]?.hasPrefix("10.") == true ? 500 : 0) + (record.attachments.isEmpty ? 0 : 200) + populated
     }
-    private static func published(_ record: ReferenceRecord) -> Bool {
+    static func published(_ record: ReferenceRecord) -> Bool {
         if record.fields["entrysubtype"] == "preprint" { return false }
         if record.type == "article", let journal = record.fields["journal"], !journal.isEmpty { return !isArchive(journal) }
         return ["inproceedings", "conference", "book", "inbook", "incollection"].contains(record.type) && !preprint(record) && ["publisher", "booktitle"].contains { record.fields[$0]?.isEmpty == false }

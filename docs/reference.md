@@ -12,13 +12,40 @@ Create libraries and collections from the sidebar context menu. Drop a PDF onto 
 
 Search by the details you remember. Click a column heading to sort, then click again to reverse the order. Drag a heading's edge to adjust its width.
 
-Double-click a metadata value to edit it. **Read metadata** reviews information from the PDF. **Look up** can retrieve official DOI or arXiv details without sending the PDF to AI.
+PDFs are saved locally first. While online, remile uses a detected DOI or arXiv ID to fill missing details without AI. The airplane button pauses these lookups.
+
+Double-click a metadata value to edit it. **Read metadata** reviews details extracted from the PDF. **Look up metadata** fills missing fields online by DOI, arXiv ID or an exact title match. Existing values stay unchanged, and no PDF is uploaded. [Metadata lookup details →](details/reference.md#metadata-lookup)
+
+Edited books can list editors instead of authors. **Author / Editor** shows their names with `(ed.)` or `(eds.)`. New citation keys use the first editor's surname when no author is recorded. [Names and keys →](details/reference.md#columns-and-keys)
 
 ## Cite while writing
 
-Use the book button in an editor to open the reference picker. In LaTeX, type `\cite{` to search keys, titles, authors and stored abstracts.
+Use the book button to choose a reference and its bibliography destination. In LaTeX and Overleaf, type `\cite{` to search keys, titles, authors and stored abstracts. Arrow keys move through the list. Return or Tab inserts a key, and Escape closes the list.
 
-Choose a reference to insert its key and add its BibTeX entry to the selected project bibliography. Existing entries are kept. A conflicting key asks for attention rather than being replaced.
+The preceding sentence helps put related sources first. This works offline without AI calls. An inserted library reference is added to the selected project bibliography. Existing entries are kept, and a conflicting key asks for attention.
+
+## Read citation hints
+
+Labels describe topic overlap with the available title and abstract. They do not rate paper quality or confirm that a source supports your claim.
+
+| Label | Meaning | What to do |
+| --- | --- | --- |
+| **Topic match** | Several useful terms overlap with your sentence. | Read the relevant passage before citing. |
+| **Limited overlap** | Some terms match, but the overlap is small. | Check the abstract or consider another source. |
+| **No clear match** | No recognised terms overlap with the available text. | Check the paper. Different wording may still be relevant. |
+
+When there is too little useful sentence context, no label appears. Ordinary key and metadata search still works. A key you type explicitly remains available even when its topic overlap is low.
+
+The selected candidate also shows what was compared:
+
+| Source basis | Meaning |
+| --- | --- |
+| **Title only** | No stored abstract is available for comparison. |
+| **Title and abstract** | Both the title and stored abstract are available. |
+
+An excerpt, when shown, comes from the stored abstract. It is not an AI summary or a verified quotation from an attached PDF. Use **Look up metadata** to try filling a missing abstract while online.
+
+Background, fact, method and comparison hints describe possible uses of your sentence. They can overlap. [What each purpose asks you to check →](details/reference.md#citation-purpose-hints)
 
 ## Review before tidying
 
@@ -39,8 +66,8 @@ Save supported preferences to a preset and load it on another Mac. Accounts and 
 | Button | What it does |
 | --- | --- |
 | <img class="remile-guide-symbol" src="../others/symbols/guide/cleanup.svg" alt="" width="24" height="24"> **Clean up** | Review metadata and duplicate candidates. |
-| <img class="remile-guide-symbol" src="../others/symbols/guide/chat.svg" alt="" width="24" height="24"> **GPT** | Request an optional citation correction. |
-| <img class="remile-guide-symbol" src="../others/symbols/guide/key.svg" alt="" width="24" height="24"> **Key** | Regenerate citation keys after confirmation. |
+| <img class="remile-guide-symbol" src="../others/symbols/guide/chat.svg" alt="" width="24" height="24"> **Review** | Review extracted metadata or request an optional AI correction. |
+| <img class="remile-guide-symbol" src="../others/symbols/guide/key.svg" alt="" width="24" height="24"> **Keys** | Regenerate citation keys after confirmation. |
 | <img class="remile-guide-symbol" src="../others/symbols/guide/folder.svg" alt="" width="24" height="24"> **Library** | Organise references into libraries and collections. |
 | <img class="remile-guide-symbol" src="../others/symbols/guide/pdf.svg" alt="" width="24" height="24"> **PDF preview** | Read the selected attachment. |
 

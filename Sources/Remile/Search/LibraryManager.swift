@@ -7,9 +7,9 @@ struct LibraryManager: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Label("Library", systemImage: "folder").font(.title2.weight(.semibold))
+                Label("Library", systemImage: "folder").font(RemileType.heading)
                 Spacer()
-                Button("Done") { model.libraryPresented = false }.keyboardShortcut(.defaultAction)
+                Button("Close") { model.libraryPresented = false }.keyboardShortcut(.cancelAction)
             }
             HStack {
                 Button(action: model.addFolder) { Label("Add to Library…", systemImage: "folder.badge.plus") }.disabled(model.indexing)
@@ -27,7 +27,7 @@ struct LibraryManager: View {
                     HStack(spacing: 12) {
                         Image(systemName: "folder").foregroundStyle(RemileStyle.accent)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(folder.name).font(RemileType.heading)
+                            Text(folder.name).font(RemileType.section)
                             Text(folder.path).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         }
                         Spacer()
@@ -61,7 +61,7 @@ struct LibraryManager: View {
         }.alert("Unable to update Library", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
-        .padding(24).frame(width: 620, height: 420).background(RemileStyle.background).foregroundStyle(RemileStyle.ink).tint(RemileStyle.accent)
+        .font(RemileType.control).buttonStyle(RemileActionStyle()).padding(24).frame(width: 620, height: 420).background(RemileStyle.background).foregroundStyle(RemileStyle.ink).tint(RemileStyle.accent)
             .task(id: model.libraryRevision) {
                 do { state.documents = try await model.index.indexedDocuments(); state.loadError = nil }
                 catch { state.loadError = "Could not read document status. Update the index and try again." }

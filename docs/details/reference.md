@@ -6,7 +6,21 @@ Reference keeps citations and PDFs together. Open it from Home. Libraries and co
 
 Use Add to import PDF or BibTeX files, enter details or find a paper. Drop files into Harbour to import them into the selected library. Drop a PDF on a record or its preview to attach it to that record. Imports copy PDFs into managed storage and retain the originals.
 
-PDF metadata and first-page text provide initial bibliographic details without AI. Read metadata in a row's context menu reviews local corrections. Look up can retrieve official DOI or arXiv metadata. It does not upload the PDF. Review proposals before applying them. Unknown fields remain unknown, and scanned PDFs may require manual details.
+PDF metadata and first-page text provide initial details without AI. The PDF appears before background lookup finishes. Cancelling lookup or a failed request keeps the saved PDF and local record.
+
+### Metadata lookup
+
+| Action | Source | How changes are applied |
+| --- | --- | --- |
+| **Automatic PDF import lookup** | A detected DOI or arXiv ID, while online and authors or year are missing. | Fill empty fields. Keep the saved PDF, citation key and existing values. |
+| **Look up metadata** | A DOI, arXiv ID or one exact title candidate. No PDF is required. | Fill empty fields even when authors and year already exist. Keep existing values. |
+| **Read metadata…** | Metadata and text from the attached PDF. | Review proposed corrections before applying them. |
+
+Manual lookup remains available for a usable identifier or a full title. Work offline, an ongoing catalogue operation, or insufficient identifying information can disable it. A disabled action does not mean the metadata is complete. A successful lookup may find nothing additional to fill.
+
+Title lookup sends the title to the bibliographic service. Automatic lookup sends identifiers. Neither uploads the PDF. Ambiguous title matches ask for a DOI or arXiv ID. Unknown fields remain unknown, and scanned PDFs may need manual details.
+
+Lookups follow Work offline, cancel active requests and reuse results within a batch. arXiv uses the original submission date for the preprint year and retains the requested version ID. Published journal or conference details are not replaced with a preprint's publication fields.
 
 Find a paper starts from a record's DOI or title. It checks matching PDFs open in remile, managed attachments and public Crossref/OpenAlex results. Review the result before choosing Attach PDF. Add local PDF remains available when no public copy is found. The existing record and citation key are retained.
 
@@ -16,9 +30,13 @@ Command-click selects several rows and Shift-click selects a range. Row context 
 
 ## Columns and keys
 
-Title, Author, Journal / Publisher, Year and Type are visible by default. Click a heading to sort ascending, then again to reverse. Text uses natural alphabetical order and years use numeric order. Empty values stay last. Drag a heading's right edge to resize it. Widths and visible columns are remembered and included in presets. Title stays visible and starts widest.
+Title, Author / Editor, Journal / Publisher, Year and Type are visible by default. Click a heading to sort ascending, then again to reverse. Text uses natural alphabetical order and years use numeric order. Empty values stay last. Drag a heading's right edge to resize it. Widths and visible columns are remembered and included in presets. Title stays visible and starts widest.
 
-Settings below the sidebar artwork controls columns, citation keys and abstract export. Keys use the first author's surname, year and one or two title words. Missing authors use `Reference`, missing years use `nd`, and collisions receive numeric suffixes. Changing the rule affects new records. Regenerating stored keys can require changes to manuscript citations.
+Settings below the sidebar artwork controls columns, citation keys and abstract export. Keys use the first author's surname, or the first editor's surname when no author is recorded, followed by the year and one or two title words. Missing contributors use `Reference`, missing years use `nd`, and collisions receive numeric suffixes. Changing the rule affects new records. Regenerating stored keys can require changes to manuscript citations.
+
+Edited volumes may have editors rather than a single author. Author / Editor shows the editor with `(ed.)` or `(eds.)` when no author is recorded. The metadata inspector and BibTeX export keep the two roles separate. An edited book's empty author field is not necessarily missing information.
+
+Existing keys remain unchanged when metadata is enriched. Use Regenerate citation key explicitly if you want an editor-based key, then update any manuscript citations that use the old key.
 
 Double-click a metadata value to edit it. Return saves and Escape cancels. BibTeX exports omit abstracts unless enabled in Reference settings. Uncommon imported types and fields remain stored.
 
@@ -52,7 +70,38 @@ Loading requires confirmation. Accounts, credentials, network permissions, docum
 
 The book button in LaTeX, Overleaf, Markdown and Search opens the reference picker. Copy citation returns `\cite{key}` for TeX or `[@key]` for Markdown. Markdown rendering depends on the export tool.
 
-In TeX, type `\cite{` to search keys, titles, authors, years and stored abstracts. Project bibliography entries appear before library entries. Arrow keys select a suggestion, Return or Tab inserts the key, and Escape dismisses. No AI request or PDF analysis runs while typing.
+In TeX, type `\cite{` to search keys, titles, authors, years and stored abstracts. Without a useful sentence context, project bibliography entries appear before library entries. With context, related sources can appear first. Explicit key prefixes retain priority. Arrow keys select a suggestion, Return or Tab inserts the key, and Escape dismisses. No AI request or PDF analysis runs while typing.
+
+See [Read citation hints](../reference.md#read-citation-hints) for the meaning of Topic match, Limited overlap, No clear match and the source-basis labels. Strong topic overlap is not proof of support, and missing overlap is not proof of irrelevance.
+
+### Citation purpose hints
+
+The engine looks for English cues in the sentence. These are possible, overlapping uses, not a complete classification of scientific citations or a judgement about the source.
+
+| Hint | Possible use | Check in the original source |
+| --- | --- | --- |
+| **Background** | Introduce a field or describe a trend. | Whether the cited work shows the trend you describe. |
+| **Fact or mechanism** | Establish a fact, mechanism or premise. | The actual claim and its physical or experimental conditions. |
+| **Method or tool** | Name an algorithm, model or software. | The original method, relevant implementation and version. |
+| **Comparison** | Compare results with measurements or benchmarks. | Values, units, uncertainty and matching conditions. |
+| **Context** | No clear purpose cue was found. | The passage relevant to your sentence. |
+
+For example, an ML paper may be useful background without supporting a claim about hydrogen ignition. A paper mentioning the right fuels can still use different pressures, temperatures or mechanisms. The hints help you choose what to read. They do not settle those differences.
+
+### What matching uses
+
+A short excerpt comes from the stored abstract, not a generated summary. If a project entry omits its abstract, the selected library can supply one after an identifier match or an exact match of title, contributor names and roles, and year. A key alone is insufficient. This does not rewrite the project entry.
+
+<details>
+<summary>Matching limits and resource use</summary>
+
+The engine uses local word overlap, limited abbreviation expansion and exact numeric tokens. It does not resolve contradictions, convert units, verify historical trends across papers or infer experimental agreement. A matching number is not a validated result.
+
+Indexes are reused while writing and refreshed after a catalogue change. Retrieval reads up to 2,000 title characters and 12,000 abstract characters per record. Stored metadata and inserted bibliography entries retain their full text. No model, vector database, network request or PDF scan is required while typing.
+
+Markdown retains the reference picker and citation copying. It does not display these inline recommendation labels.
+
+</details>
 
 Inserting a library citation adds its BibTeX entry to the chosen project bibliography. Choose a destination if several bibliographies exist. A project without one receives `remile-references.bib`, which must be connected through its bibliography configuration. Existing entries are reused. Conflicting keys stop insertion. Removing a citation does not remove its bibliography entry.
 

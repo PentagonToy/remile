@@ -25,7 +25,7 @@ struct LibrarySearchView: View {
                     SearchWaitingView(startedAt: model.searchStartedAt).frame(width: geometry.size.width, height: geometry.size.height)
                 } else if geometry.size.width < 780 {
                     VStack(spacing: 0) {
-                        Picker("Search pane", selection: $citationState.compactPreview) { Text("Results").tag(false); Text("Preview").tag(true) }.labelsHidden().pickerStyle(.segmented).padding(10)
+                        RemileSegmentedControl(title: "Search pane", selection: $citationState.compactPreview, options: [false, true], label: { $0 ? "Preview" : "Results" }).padding(10)
                         if citationState.compactPreview { previewAndAsk } else { sidebar }
                     }
                 } else { ReaderSplit(sizing: .results, minimum: 260, maximum: 520, minimumContent: model.askPresented ? 600 : 420, label: "search results", pane: { sidebar }, content: { previewAndAsk }) }
@@ -47,12 +47,12 @@ struct LibrarySearchView: View {
             .onChange(of: model.results.map(\.id)) { assistant.cancel(); citationState.focus = nil }
             .onChange(of: model.selectedHit?.path) { citationState.selectedPassages = [] }
             .onChange(of: model.selectedHit?.id) { if citationState.focus?.location.id != model.selectedHit?.id { citationState.focus = nil } }
-            .background(RemileStyle.background).tint(RemileStyle.accent).frame(minWidth: 560, minHeight: 450)
+            .font(RemileType.control).background(RemileStyle.background).tint(RemileStyle.accent).frame(minWidth: 560, minHeight: 450)
     }
 
     private var searchSettings: some View {
         VStack(spacing: 0) {
-            HStack { Text("Search settings").font(.title2.weight(.semibold)); Spacer(); Button("Done") { citationState.settingsPresented = false }.keyboardShortcut(.cancelAction) }.padding(22)
+            HStack { Text("Search settings").font(RemileType.heading); Spacer(); Button("Done") { citationState.settingsPresented = false }.keyboardShortcut(.cancelAction) }.padding(22)
             Divider()
             LibrarySearchSettings()
         }.frame(width: 540, height: 600).background(RemileStyle.background).tint(RemileStyle.accent)
@@ -79,16 +79,16 @@ struct LibrarySearchView: View {
 
     private var header: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 14) { homeButton; Text("Search").font(.title2.weight(.semibold)); queryField; aiActions; libraryButton }
+            HStack(spacing: 14) { homeButton; Text("Search").font(RemileType.heading); queryField; aiActions; libraryButton }
             VStack(spacing: 10) {
-                HStack { homeButton; Text("Search").font(.title2.weight(.semibold)); Spacer(); libraryButton }
+                HStack { homeButton; Text("Search").font(RemileType.heading); Spacer(); libraryButton }
                 HStack(spacing: 10) { queryField; aiActions.labelStyle(.iconOnly) }
             }
-        }.padding(18)
+        }.font(RemileType.control).buttonStyle(RemileToolStyle()).padding(.horizontal, 16).padding(.vertical, 6)
     }
     @ViewBuilder private var homeButton: some View {
             if let goHome {
-                Button(action: goHome) { Label("Home", systemImage: "chevron.left") }.buttonStyle(RemilePressStyle()).remileHelp("Back to Home")
+                Button(action: goHome) { Label("Home", systemImage: "chevron.left") }.buttonStyle(RemileToolStyle()).remileHelp("Back to Home")
             }
     }
     private var queryField: some View {
@@ -98,7 +98,7 @@ struct LibrarySearchView: View {
                     .onChange(of: model.query) { model.editSearch() }.onSubmit { model.search(immediate: true) }
                 if model.searching || model.exploring { ProgressView().controlSize(.small) }
                 if !model.query.isEmpty { Button { model.query = ""; model.invalidateSearch() } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).remileHelp("Clear search") }
-            }.padding(11).frame(minWidth: 180).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 9))
+            }.font(RemileType.control).padding(.horizontal, 10).frame(minWidth: 180, minHeight: 32).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 9))
     }
     private var aiActions: some View {
             AIToolGroup {

@@ -24,6 +24,9 @@ struct ReferenceRecord: Codable, Identifiable, Equatable, Sendable {
     var trashed: Date?
     var title: String { fields["title"].flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled reference" }
     var authors: String { fields["author"] ?? "" }
+    var editors: String { fields["editor"] ?? "" }
+    var usesEditors: Bool { authors.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !editors.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var contributors: String { usesEditors ? editors : authors }
     var year: String { fields["year"] ?? "" }
     var citationKey: String { key.isEmpty ? "ref" + id.uuidString.replacingOccurrences(of: "-", with: "").prefix(12) : key }
     var searchText: String { ([citationKey, displayTitle, displayAuthors] + Array(fields.values)).joined(separator: " ") }

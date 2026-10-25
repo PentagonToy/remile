@@ -42,24 +42,7 @@ struct MarkdownWorkspace: View {
     private var previewView: some View { MarkdownPreview(source: source, scale: zoom.scale, wide: zoom.wide, fileURL: fileURL, serif: serif, model: preview) }
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Text("Markdown").font(RemileType.heading)
-                Spacer()
-                if presentation.mode == .split {
-                    Button { preview.revealSource() } label: { Image(systemName: "arrow.left") }.remileHelp("Show preview selection in source")
-                    Button { preview.reveal(line: editor.selectedLine) } label: { Image(systemName: "arrow.right") }.remileHelp("Show source in preview")
-                }
-                Button { presentation.references = true } label: { Image(systemName: "books.vertical") }.remileHelp("Reference library").accessibilityLabel("Reference library")
-                AIToolGroup {
-                AIProviderButton()
-                Button { presentation.ask.toggle() } label: { Image(systemName: "text.bubble") }.remileHelp("Ask about document").accessibilityLabel("Ask about document")
-                EditorWritingReviewButton(review: writing, editor: editor)
-                }
-
-                Button { showExternalEdits.toggle() } label: { Image(systemName: showExternalEdits ? "eye" : "eye.slash") }.remileHelp(RemileHints.edits(showExternalEdits)).accessibilityLabel("Show AI and CLI edits")
-                Menu { Toggle("Focus paragraph", isOn: $focusMode); Button("Settings…") { presentation.settings = true } } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize().remileHelp("Focus mode and Markdown settings")
-                Button { render() } label: { Label("Render", systemImage: "arrow.clockwise") }.keyboardShortcut(.return, modifiers: [.command])
-            }.font(RemileType.callout).buttonStyle(RemileToolStyle()).padding(.horizontal, 16).padding(.vertical, 6).background(RemileStyle.editorBar)
+            ViewThatFits(in: .horizontal) { editorToolbar(compact: false); editorToolbar(compact: true) }
             Divider()
             Group {
                 if presentation.outline {
@@ -72,7 +55,6 @@ struct MarkdownWorkspace: View {
                 Spacer()
                 if presentation.printing { ProgressView().controlSize(.small); Text("Preparing print…") }
                 Text("\(preview.wordCount) words")
-                Text("UTF-8").monospaced()
                 ReaderThemeButton()
             }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 12).frame(height: 32).background(RemileStyle.editorBar)
         }
@@ -83,13 +65,14 @@ struct MarkdownWorkspace: View {
                 editor.apply(.init(range: range, text: text, selection: NSRange(location: range.location + (text as NSString).length, length: 0)), name: "Insert citation")
             }, context: fileURL?.path ?? "markdown-draft")
         }
-        .sheet(isPresented: $presentation.settings) { VStack(alignment: .trailing, spacing: 0) { MarkdownSettings(); Button("Done") { presentation.settings = false }.keyboardShortcut(.defaultAction).padding([.horizontal, .bottom], 20) }.background(RemileStyle.background) }
+        .sheet(isPresented: $presentation.settings) { VStack(alignment: .trailing, spacing: 0) { MarkdownSettings(); Button("Close") { presentation.settings = false }.buttonStyle(RemileActionStyle()).keyboardShortcut(.cancelAction).padding([.horizontal, .bottom], 20) }.background(RemileStyle.background) }
         .sheet(isPresented: Binding(get: { presentation.table != nil }, set: { if !$0 { presentation.table = nil } })) {
             if let state = presentation.table { MarkdownTableEditor(state: state, apply: { editor.applyTable($0, expected: state.source) }, close: { presentation.table = nil }) }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.exportMarkdownPDF"))) { event in if event.object as? ReadingSession === session { exportPDF() } }
-        .tint(DocumentTone.accent(pdf: false))
+        .font(RemileType.control).tint(DocumentTone.accent(pdf: false))
         .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.outline)
+        .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.ask)
         .task(id: source + String(spellcheck) + language) { await writing.check(source, enabled: spellcheck, language: language, editor: editor) }
         .task(id: source) { if livePreview || preview.html == nil { await preview.render(source, url: previewURL) } }
         .onChange(of: livePreview) { if livePreview { render() } }
@@ -144,12 +127,39 @@ struct MarkdownWorkspace: View {
                 } label: { Label("Find", systemImage: "magnifyingglass") }.keyboardShortcut("f")
             }
             ToolbarItem(placement: .primaryAction) {
-                Picker("Document mode", selection: $presentation.mode) {
-                    ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
-                }.pickerStyle(.segmented).frame(width: 225)
+                RemileSegmentedControl(title: "Document mode", selection: $presentation.mode, options: Mode.allCases, label: { $0.rawValue }).frame(width: 225)
             }
             ToolbarItem(placement: .primaryAction) { OfflineModeButton() }
         }
+    }
+    private func editorToolbar(compact: Bool) -> some View {
+        HStack(spacing: compact ? 8 : 12) {
+                Text("Markdown").font(RemileType.heading)
+                Spacer()
+                if presentation.mode == .split && !compact {
+                    Button { preview.revealSource() } label: { Image(systemName: "arrow.left") }.remileHelp("Show preview selection in source")
+                    Button { preview.reveal(line: editor.selectedLine) } label: { Image(systemName: "arrow.right") }.remileHelp("Show source in preview")
+                }
+                Button { presentation.references = true } label: { Image(systemName: "books.vertical") }.remileHelp("Reference library").accessibilityLabel("Reference library")
+                AIToolGroup {
+                AIProviderButton()
+                Button { presentation.ask.toggle() } label: { Image(systemName: "text.bubble") }.remileHelp("Ask about document").accessibilityLabel("Ask about document")
+                EditorWritingReviewButton(review: writing, editor: editor)
+                }
+
+                if !compact { Button { showExternalEdits.toggle() } label: { Image(systemName: showExternalEdits ? "eye" : "eye.slash") }.remileHelp(RemileHints.edits(showExternalEdits)).accessibilityLabel("Show AI and CLI edits").accessibilityValue(showExternalEdits ? "On" : "Off") }
+                Menu {
+                    Toggle("Focus paragraph", isOn: $focusMode)
+                    Toggle("Show AI and CLI edits", isOn: $showExternalEdits)
+                    if compact && presentation.mode == .split {
+                        Button("Show preview selection in source") { preview.revealSource() }
+                        Button("Show source in preview") { preview.reveal(line: editor.selectedLine) }
+                    }
+                    Divider()
+                    Button("Settings…") { presentation.settings = true }
+                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize().remileHelp("Focus mode and Markdown settings")
+                Button { render() } label: { if compact { Image(systemName: "arrow.clockwise") } else { Label(livePreview ? "Refresh" : "Render", systemImage: "arrow.clockwise") } }.accessibilityLabel("Refresh preview").keyboardShortcut(.return, modifiers: [.command])
+            }.font(RemileType.control).buttonStyle(RemileToolStyle()).padding(.horizontal, 16).padding(.vertical, 6).background(RemileStyle.editorBar)
     }
     private var outlinePanel: some View {
         VStack(spacing: 0) {

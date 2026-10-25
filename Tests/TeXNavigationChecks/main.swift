@@ -35,8 +35,8 @@ Task { @MainActor in
     let bounds = selected.bounds(for: page)
     let point = view.convert(CGPoint(x: bounds.midX, y: bounds.midY), from: page)
     let location = view.convert(point, to: nil)
-    func event(_ point: CGPoint, count: Int = 2, number: Int? = nil) -> NSEvent {
-        NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [], timestamp: 0, windowNumber: number ?? window.windowNumber, context: nil, eventNumber: 0, clickCount: count, pressure: 1)!
+    func event(_ point: CGPoint, count: Int = 2, number: Int? = nil, type: NSEvent.EventType = .leftMouseDown) -> NSEvent {
+        NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0, windowNumber: number ?? window.windowNumber, context: nil, eventNumber: 0, clickCount: count, pressure: 1)!
     }
     var jumps = [TeXSync.PDFLocation]()
     navigation.reverse = { jumps.append($0) }
@@ -49,6 +49,15 @@ Task { @MainActor in
     let other = NSWindow(contentRect: media, styleMask: [.titled], backing: .buffered, defer: false)
     other.isReleasedWhenClosed = false; other.orderBack(nil)
     expect(!navigation.handleDoubleClick(event(location, number: other.windowNumber)), "A different window cannot trigger source navigation")
+    let previousJumps = jumps.count
+    navigation.observeSelectionGesture(event(location))
+    expect(jumps.count == previousJumps, "Word selection finishes before source navigation starts")
+    navigation.observeSelectionGesture(event(location, type: .leftMouseUp))
+    expect(jumps.count == previousJumps + 1, "A completed double-click navigates once")
+    navigation.observeSelectionGesture(event(location))
+    navigation.observeSelectionGesture(event(location, type: .leftMouseDragged))
+    navigation.observeSelectionGesture(event(location, type: .leftMouseUp))
+    expect(jumps.count == previousJumps + 1, "Dragging selected words never triggers source navigation")
     navigation.detach()
     expect(!navigation.handleDoubleClick(event(location)), "Dismantling the preview removes its navigation target")
     other.close(); window.close()

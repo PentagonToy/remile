@@ -26,7 +26,7 @@ struct ReferenceEvidenceView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { Text("Reference").font(.title2.weight(.semibold)); Spacer(); Button("Done") { assistant.cancel(); dismiss() }.keyboardShortcut(.cancelAction) }
             Text(record.displayTitle).font(.headline).textSelection(.enabled)
-            Text([record.displayAuthors, record.year, record.citationKey].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            Text([record.displayContributors, record.year, record.citationKey].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             if record.attachments.isEmpty { Text("No verified PDF attached to this entry.").foregroundStyle(.secondary) }
             else {
                 HStack {

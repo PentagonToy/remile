@@ -39,7 +39,7 @@ struct ReferencePaperSearch: View {
                         Button { state.selected = paper.id; findPDF(paper) } label: {
                             VStack(alignment: .leading, spacing: 7) {
                                 Text(paper.record.displayTitle).font(RemileType.callout.weight(.medium)).lineLimit(2)
-                                Text([ReferenceText.shortAuthors(paper.record.authors), paper.record.year, ReferenceColumn.publication.value(paper.record)].filter { !$0.isEmpty }.joined(separator: " · ")).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(2)
+                                Text([paper.record.shortContributors, paper.record.year, ReferenceColumn.publication.value(paper.record)].filter { !$0.isEmpty }.joined(separator: " · ")).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(2)
                             }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
                                 .background(state.selected == paper.id ? RemileStyle.accent.opacity(0.14) : RemileStyle.surface, in: RoundedRectangle(cornerRadius: 6))
                         }.buttonStyle(.plain).disabled(state.adding)

@@ -7,6 +7,7 @@ import PDFKit
     @Published private(set) var pages = 0
     private var pageObserver: NSObjectProtocol?
     private var clickMonitor: Any?
+    private var pendingClick: NSEvent?
     private var pendingJump: TeXProject.PDFJump?
     var reverse: (TeXSync.PDFLocation) -> Void = { _ in }
     private var lastJump: UUID?
@@ -22,15 +23,15 @@ import PDFKit
         updatePage()
         // PDFKit's internal text view owns selection gestures. Observe its event
         // without competing with or consuming the native word-selection gesture.
-        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            MainActor.assumeIsolated { _ = self?.handleDoubleClick(event) }
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]) { [weak self] event in
+            MainActor.assumeIsolated { self?.observeSelectionGesture(event) }
             return event
         }
     }
     func detach() {
         if let pageObserver { NotificationCenter.default.removeObserver(pageObserver); self.pageObserver = nil }
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor); self.clickMonitor = nil }
-        highlight?.cancel(); pendingJump = nil; view = nil
+        highlight?.cancel(); pendingJump = nil; pendingClick = nil; view = nil
     }
     deinit {
         if let pageObserver { NotificationCenter.default.removeObserver(pageObserver) }
@@ -46,6 +47,15 @@ import PDFKit
     func go(_ number: Int) {
         guard number > 0, let target = view?.document?.page(at: number - 1) else { return }
         view?.go(to: target); updatePage()
+    }
+    func observeSelectionGesture(_ event: NSEvent) {
+        if event.type == .leftMouseDragged { pendingClick = nil; return }
+        guard event.window === view?.window else { return }
+        if event.type == .leftMouseDown { pendingClick = event.clickCount == 2 ? event : nil }
+        else if event.type == .leftMouseUp {
+            defer { pendingClick = nil }
+            if let pendingClick { _ = handleDoubleClick(pendingClick) }
+        }
     }
     @discardableResult func handleDoubleClick(_ event: NSEvent) -> Bool {
         guard event.type == .leftMouseDown, event.clickCount == 2, let view,
@@ -64,7 +74,7 @@ import PDFKit
         let local = view.convert(point, to: page), box = page.bounds(for: .mediaBox)
         var result = TeXSync.PDFLocation(page: document.index(for: page) + 1, x: max(0, local.x - box.minX), y: max(0, box.maxY - local.y))
         let offset = page.characterIndex(at: local)
-        if offset >= 0, let text = page.string as NSString?, text.length <= 100_000, offset < text.length {
+        if offset >= 0, page.characterBounds(at: offset).insetBy(dx: -2, dy: -2).contains(local), let text = page.string as NSString?, text.length <= 100_000, offset < text.length {
             let start = max(0, offset - 180), count = min(360, text.length - start)
             result.hint = .init(text: text.substring(with: NSRange(location: start, length: count)), offset: offset - start)
         }
@@ -74,7 +84,7 @@ import PDFKit
         guard let view else { return nil }
         if let selection = view.currentSelection, let page = selection.pages.first, let document = view.document {
             let bounds = selection.bounds(for: page), box = page.bounds(for: .mediaBox)
-            return .init(page: document.index(for: page) + 1, x: bounds.midX - box.minX, y: box.maxY - bounds.midY)
+            return location(at: view.convert(NSPoint(x: bounds.midX, y: bounds.midY), from: page))
         }
         return location(at: NSPoint(x: view.bounds.midX, y: view.bounds.midY))
     }
@@ -91,7 +101,14 @@ import PDFKit
         let box = page.bounds(for: .mediaBox), point = NSPoint(x: box.minX + jump.location.x, y: box.maxY - jump.location.y)
         let rect = NSRect(x: max(box.minX, point.x - 6), y: point.y - 12, width: min(460, box.width - max(0, point.x - box.minX)), height: 28)
         view.go(to: rect, on: page)
-        if let selection = page.selection(for: rect) {
+        highlight?.cancel(); highlight = nil
+        view.clearSelection(); view.highlightedSelections = nil
+        if let hint = jump.location.hint, let text = page.string, text.utf16.count <= 16_000,
+           let range = TeXSync.refine(.init(file: "", line: 0), source: text, hint: hint).range,
+           let selection = page.selection(for: range),
+           abs(selection.bounds(for: page).midY - point.y) < 140,
+           abs(selection.bounds(for: page).midX - point.x) < 300 {
+            view.go(to: selection.bounds(for: page).insetBy(dx: -12, dy: -20), on: page)
             selection.color = NSColor(RemileStyle.accent).withAlphaComponent(0.35); view.highlightedSelections = [selection]
             highlight?.cancel(); highlight = Task { @MainActor [weak view] in
                 do { try await Task.sleep(for: .seconds(5)) } catch { return }

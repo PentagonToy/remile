@@ -119,3 +119,8 @@ rejects("pdf-regions", ["relative.pdf"])
 rejects("pdf-regions", ["/tmp/paper.pdf", "--page", "0"])
 rejects("pdf-regions", ["/tmp/paper.pdf", "--target", target])
 print("Passed \(passed) CLI argument checks including PDF regions.")
+
+try accepts("reference", ["recognise", "--id", UUID().uuidString, "--expected-revision", UUID().uuidString])
+rejects("reference", ["recognise", "--id", UUID().uuidString])
+try accepts("save", ["--output", "/tmp/new-project"])
+print("Passed \(passed) CLI argument checks including recognition and draft saving.")

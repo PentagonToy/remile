@@ -11,6 +11,7 @@ struct OverleafLibraryWorkspace: View {
         @Published var selectedTag = "all"
         @Published var accountID: UUID?
         @Published var refreshing = false
+        @Published var managingAccounts = false
         @Published var signIn = false
         @Published var removing: OverleafConnection?
     }
@@ -38,11 +39,13 @@ struct OverleafLibraryWorkspace: View {
             ViewThatFits(in: .horizontal) {
                 header(compact: false)
                 header(compact: true)
-            }.padding(16)
+            }.padding(.horizontal, 16).padding(.vertical, 6)
             Divider()
             ReaderSplit(sizing: .sidebar, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: 320, label: "Overleaf tags", pane: { tagList }, content: { projectList })
-        }.frame(maxWidth: .infinity, maxHeight: .infinity).background(RemileStyle.background)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity).font(RemileType.control).background(RemileStyle.background)
             .navigationTitle("Overleaf library")
+            .sheet(isPresented: $state.managingAccounts) { OverleafAccountManager(library: library, selected: state.accountID, prepareRemoval: prepareRemoval) { state.managingAccounts = false } }
+            .onChange(of: library.accounts.map(\.id)) { if !library.accounts.contains(where: { $0.id == state.accountID }) { state.accountID = nil } }
             .sheet(isPresented: $state.signIn, onDismiss: { Task { await refresh() } }) {
                 if let profile = library.tagSignInProfile { OverleafSignIn(profile: profile) { state.signIn = false } }
             }
@@ -74,10 +77,14 @@ struct OverleafLibraryWorkspace: View {
         VStack(spacing: 0) {
             ScrollView {
               VStack(alignment: .leading, spacing: 6) {
-                Picker("Account", selection: $state.accountID) {
-                    Text("All accounts").tag(UUID?.none)
-                    ForEach(library.accounts) { Text($0.name).tag(Optional($0.id)) }
-                }.padding(.bottom, 10)
+                Menu {
+                        Button("All accounts") { state.accountID = nil }
+                        ForEach(library.accounts) { account in Button(account.name) { state.accountID = account.id } }
+                        Divider()
+                        Button("Manage accounts…") { state.managingAccounts = true }
+                    } label: { Text(library.accounts.first(where: { $0.id == state.accountID })?.name ?? "Accounts").lineLimit(1) }
+                    .menuStyle(.borderlessButton).font(RemileType.small).fixedSize()
+                    .padding(.horizontal, 10).padding(.bottom, 10).accessibilityLabel("Account filter and management")
                 tagButton("All projects", id: "all", count: accountProjects.count)
                 Text("Tags").font(RemileType.caption.weight(.semibold)).foregroundStyle(RemileStyle.secondaryInk).padding(.top, 18).padding(.horizontal, 10)
                 ForEach(tags) { tag in

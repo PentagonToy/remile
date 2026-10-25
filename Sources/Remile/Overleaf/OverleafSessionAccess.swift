@@ -6,6 +6,7 @@ import Foundation
     private struct Attempt { let id: UUID; let interactive: Bool; let task: Task<Void, Error> }
     private var restoring: [UUID: Attempt] = [:]
     private var retryAfter: [UUID: Date] = [:]
+    func forget(_ profile: UUID) { restoring[profile]?.task.cancel(); restoring[profile] = nil; retryAfter[profile] = nil }
     func restore(_ profile: UUID, interactive: Bool = false, now: Date = Date(), operation: @escaping @MainActor () async throws -> Void) async throws {
         if let pending = restoring[profile] {
             // An explicit retry waits for a silent attempt, then asks once itself.

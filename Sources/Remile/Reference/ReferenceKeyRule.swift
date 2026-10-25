@@ -17,7 +17,7 @@ enum ReferenceKeyRule: String, Codable, CaseIterable, Sendable {
         return key(for: reference)
     }
     func key(for record: ReferenceRecord) -> String {
-        let author = record.authors.components(separatedBy: " and ").first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let author = ReferenceText.authors(record.contributors).first ?? ""
         let family = author.contains(",") ? author.components(separatedBy: ",")[0] : author.split(whereSeparator: \.isWhitespace).last.map(String.init) ?? ""
         let surname = Self.parts(family).joined()
         let year = Self.parts(record.year).joined()

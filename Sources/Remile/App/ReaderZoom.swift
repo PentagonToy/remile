@@ -79,7 +79,7 @@ struct ReaderZoomControls: View {
             Button { zoom.step(1) } label: { Image(systemName: "plus").frame(width: 32, height: 32).contentShape(Rectangle()) }
                 .remileHelp("Zoom in 10 percentage points (⌘+: fine)").accessibilityLabel("Zoom in")
             Button { zoom.fit(width: text) } label: { Text("Fit").frame(width: 42, height: 32).contentShape(Rectangle()) }.remileHelp(text ? "Fit reading width" : "Fit the whole page (⌘0)").keyboardShortcut("0")
-        }.buttonStyle(RemileToolStyle()).font(.system(size: 15)).tint(.primary).fixedSize()
+        }.buttonStyle(RemileToolStyle()).font(RemileType.control).tint(.primary).fixedSize()
             .accessibilityElement(children: .contain)
             .background {
                 Group {

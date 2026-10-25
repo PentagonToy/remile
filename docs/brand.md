@@ -31,7 +31,7 @@ Use native system type for controls, monospaced type for source and a native ser
 >
 > — remile.
 
-Preserve the supplied artwork. The Home banner animates its lighthouse beam and a brief offline/online flight. Section transitions last about 0.36 seconds. General → Animations and system Reduce Motion control added motion.
+Preserve the supplied artwork. The Home banner animates its lighthouse beam and a brief offline/online flight. Keep section transitions brief and use the shared motion styles. General → Animations and system Reduce Motion control added motion.
 
 
 `others/brand/scenes` groups the supplied Harbour and lighthouse Light/Dark illustrations. Harbour uses the original artwork and theme-specific colours, without template tinting. Bundle names stay stable when source folders move.

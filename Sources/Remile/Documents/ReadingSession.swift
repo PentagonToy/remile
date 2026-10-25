@@ -159,7 +159,7 @@ struct ReadingShell: View {
                 OverleafLibraryWorkspace(library: overleaf, open: home.openTeX, prepareRemoval: { root in
                     if home.texProject?.root == root, !home.closeTeX() { return false }
                     home.removeRecent(root); return true
-                })
+                }).transition(.opacity.combined(with: .offset(x: 16)))
             } else if let project = home.texProject {
                 VStack(spacing: 0) {
                     if let connection = overleaf.connection(for: project.root) { OverleafBar(library: overleaf, project: project, connection: connection).id(project.identity) }
@@ -186,6 +186,7 @@ struct ReadingShell: View {
             } else { HomeWorkspace(model: home).transition(.opacity) }
         }
         .animation(reduceMotion ? nil : RemileMotion.navigation, value: reader.url)
+        .animation(reduceMotion ? nil : RemileMotion.navigation, value: overleaf.browsing)
         .frame(minWidth: 560, minHeight: 450)
         .overlay { if home.opening { ProgressView("Opening document…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
         .toolbar {
