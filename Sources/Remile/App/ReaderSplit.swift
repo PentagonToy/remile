@@ -29,7 +29,7 @@ struct ReaderSplit<Pane: View, Content: View>: View {
         var origin: CGFloat?
         @Published var collapsed = 0
     }
-    static var handleWidth: CGFloat { 14 }
+    static var handleWidth: CGFloat { 24 }
     static func constrained(_ width: CGFloat, available: CGFloat, minimum: CGFloat, maximum: CGFloat, content: CGFloat) -> CGFloat {
         min(max(minimum, available - handleWidth - content), max(minimum, min(maximum, width)))
     }
@@ -77,8 +77,8 @@ struct ReaderSplit<Pane: View, Content: View>: View {
             Rectangle().fill(RemileStyle.accent.opacity(0.16)).frame(width: 1).allowsHitTesting(false)
             if state.collapsed != 0 || available < minimum + minimumContent + Self.handleWidth {
                 Button { state.collapsed = state.collapsed == 0 ? (preferPaneWhenNarrow ? -1 : 1) : 0 } label: {
-                    Image(systemName: (state.collapsed < 0) == (side == .leading) ? "chevron.right" : "chevron.left").font(.system(size: 10, weight: .semibold)).frame(width: 14, height: 40).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
-                }.buttonStyle(.plain).remileHelp("Restore split view").accessibilityLabel("Restore " + label)
+                    Image(systemName: (state.collapsed < 0 || (state.collapsed == 0 && !preferPaneWhenNarrow)) == (side == .leading) ? "chevron.right" : "chevron.left").font(.system(size: 10, weight: .semibold)).frame(width: 14, height: 40).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
+                }.buttonStyle(.plain).frame(width: Self.handleWidth, height: 44).contentShape(Rectangle()).remileHelp("Restore split view").accessibilityLabel("Restore " + label)
             } else {
             HStack(spacing: 2) {
                 ForEach(0..<3) { _ in Capsule().fill(RemileStyle.accent.opacity(0.85)).frame(width: 1, height: 11) }

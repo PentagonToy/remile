@@ -148,14 +148,13 @@ struct PDFWorkspace: View {
             } label: { Image(systemName: session.showsOverview ? "doc.text" : "square.grid.2x2") }
                 .remileHelp(session.showsOverview ? "Read document" : "Page overview").accessibilityLabel(session.showsOverview ? "Read document" : "Page overview").accessibilityValue(session.showsOverview ? "Overview" : "Reading")
                 .disabled(session.document?.isLocked != false)
-            if !compact {
-                Menu {
-                    Picker("Page layout", selection: Binding(get: { session.twoPage }, set: { session.firstPageAlone = false; session.twoPage = $0 })) {
-                        Text("Single page").tag(false); Text("Two pages").tag(true)
-                    }
-                } label: { Label("Layout", systemImage: session.twoPage ? "rectangle.split.2x1" : "rectangle") }
-                    .menuStyle(.borderlessButton).fixedSize().remileHelp("Choose a page layout").accessibilityLabel("Page layout").accessibilityValue(session.twoPage ? "Two pages" : "Single page")
-            }
+            Button { session.firstPageAlone = false; session.twoPage.toggle() } label: {
+                Image(systemName: session.twoPage ? "rectangle.split.2x1" : "rectangle")
+                    .frame(width: 22)
+            }.remileHelp(session.twoPage ? "Show one page" : "Show two pages")
+                .accessibilityLabel("Page layout").accessibilityValue(session.twoPage ? "Two pages" : "Single page")
+                .disabled(session.document == nil || session.showsOverview)
+
             Spacer(minLength: 12)
             PDFProtectionButton(protection: session.protection, unlock: session.requestEditingUnlock)
             Button { presentation.ocr = true } label: { controlLabel("Scan & OCR", symbol: "text.viewfinder", compact: compact) }.remileHelp("Recognise text throughout this PDF with Apple Vision").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
@@ -171,8 +170,6 @@ struct PDFWorkspace: View {
                     Button("Zoom out") { zoom.step(-1) }.disabled(session.showsOverview)
                     Button("Fit page") { zoom.fit(width: false) }.disabled(session.showsOverview)
                     Button("Fit width") { zoom.fit(width: true) }.disabled(session.showsOverview)
-                    Divider()
-                    Button(session.twoPage ? "Single page" : "Two pages") { session.firstPageAlone = false; session.twoPage.toggle() }
                 } label: { Image(systemName: "ellipsis").frame(width: 32, height: 32) }
                     .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).accessibilityLabel("View options")
             } else { ReaderZoomControls(zoom: zoom).disabled(session.showsOverview) }

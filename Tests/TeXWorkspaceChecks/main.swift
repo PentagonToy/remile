@@ -6,7 +6,18 @@ let text = "\\section{Heading} % comment\nPrice \\% escaped\n\\\\% comment after
 let tokens = TeXSyntax.tokens(text, range: NSRange(location: 0, length: (text as NSString).length))
 expect(tokens.filter { $0.kind == .comment }.count == 2, "Escaped percent is not a comment; even backslashes allow a comment")
 expect(tokens.contains { $0.kind == .command && (text as NSString).substring(with: $0.range) == "\\section" }, "TeX commands receive syntax attributes")
-expect(TeXEditorTheme.allCases.count == 5, "Five editor palettes")
+expect(TeXEditorTheme.allCases.count == 2, "Source background has only Default and Paper")
+func brightness(_ colour: NSColor, appearance: NSAppearance.Name) -> CGFloat {
+    var value: CGFloat = 0
+    NSAppearance(named: appearance)!.performAsCurrentDrawingAppearance {
+        let rgb = colour.usingColorSpace(.sRGB)!
+        value = (rgb.redComponent + rgb.greenComponent + rgb.blueComponent) / 3
+    }
+    return value
+}
+expect(brightness(TeXEditorTheme.remile.palette.background, appearance: .aqua) > 0.8, "Default source follows the light appearance")
+expect(brightness(TeXEditorTheme.remile.palette.background, appearance: .darkAqua) < 0.3, "Default source follows the dark appearance")
+expect(brightness(TeXEditorTheme.paper.palette.background, appearance: .darkAqua) > 0.9, "Paper stays softly white in dark appearance")
 let log = "./setup/setting.tex:9: LaTeX Error: Option clash for package biblatex.\n\nLaTeX Warning: Citation undefined on input line 23.\n\nLaTeX Warning: Citation undefined on input line 23.\n"
 let diagnostics = TeXDiagnostics.parse(log)
 expect(TeXDiagnostics.logSeverity([]) == nil, "Clean build has no terminal dot")
@@ -62,3 +73,18 @@ print("Passed \(checks) TeX workspace checks including bounded text refinement")
 let farAway = String(repeating: "padding ", count: 4000) + preciseSource
 expect(TeXSync.refine(.init(file: "main.tex", line: 0), source: farAway, hint: .init(text: hintText, offset: wordOffset)).range == nil, "Refinement does not search distant document text beyond its fixed window")
 print("Passed \(checks) TeX workspace checks including refinement bounds")
+
+func luminance(_ color: NSColor) -> Double {
+    let rgb = color.usingColorSpace(.sRGB)!
+    let values = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent].map { value in value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4) }
+    return 0.2126 * values[0] + 0.7152 * values[1] + 0.0722 * values[2]
+}
+for name in [NSAppearance.Name.aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua] {
+    NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
+        let foreground = luminance(NSColor(RemileStyle.onAccent)), background = luminance(NSColor(RemileStyle.brand))
+        let ratio = (max(foreground, background) + 0.05) / (min(foreground, background) + 0.05)
+        expect(ratio >= 4.5, "Accent text meets AA in \(name.rawValue)")
+        print("Accent contrast \(name.rawValue): \(ratio)")
+    }
+}
+print("Passed \(checks) TeX workspace checks including light/dark and increased-contrast accent text")

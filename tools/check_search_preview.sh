@@ -31,6 +31,7 @@ cat "$project_directory/Sources/Remile/Assistant/AssistantPassage.swift" \
     "$project_directory/Sources/Remile/PDF/PDFHighlightStore.swift" \
     "$project_directory/Sources/Remile/PDF/PDFEditProtection.swift" \
     "$project_directory/Sources/Remile/PDF/PDFDrawing.swift" \
+    "$project_directory/Sources/Remile/PDF/PageNavigationPDFView.swift" \
     "$project_directory/Sources/Remile/PDF/PDFSelectionActions.swift" \
     "$project_directory/Sources/Remile/PDF/PDFSelectionPassages.swift" \
     "$project_directory/Sources/Remile/PDF/SelectionTranslation.swift" \

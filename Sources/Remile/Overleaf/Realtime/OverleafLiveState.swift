@@ -17,6 +17,11 @@ enum OverleafLive {
     static func validate(_ text: String) throws {
         guard text.utf8.count <= textLimit, !text.unicodeScalars.contains(where: { $0.value < 32 && ![9, 10, 13].contains($0.value) }) else { throw Failure.invalidText }
     }
+    static func validateSources(_ sources: [String]?) throws {
+        guard let sources else { return }
+        guard !sources.isEmpty, sources.count <= 32, Set(sources).count == sources.count,
+              sources.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 256 && !$0.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) }) else { throw Failure.invalidCheckpoint }
+    }
     struct Snapshot: Codable, Equatable, Sendable {
         let version: Int
         let text: String
@@ -47,6 +52,8 @@ enum OverleafLive {
         let baseVersion: Int
         let edit: Edit
         let after: String
+        var rejecting: Bool? = nil
+        var sources: [String]? = nil
     }
     struct Receipt: Sendable {
         let id: UUID
@@ -64,6 +71,7 @@ enum OverleafLive {
             guard schemaVersion == 1 else { throw Failure.invalidCheckpoint }
             try key.validate(); try base.validate(); try OverleafLive.validate(local)
             if let inFlight {
+                try OverleafLive.validateSources(inFlight.sources)
                 guard inFlight.key == key, inFlight.baseVersion == base.version,
                       inFlight.edit == (try Edit.between(base.text, inFlight.after)) else { throw Failure.invalidCheckpoint }
             }
@@ -102,12 +110,26 @@ enum OverleafLive {
             } else { review = remote }
             connected = true
         }
-        mutating func submission() throws -> Submission? {
+        mutating func submission(rejecting: Bool = false, source: String? = nil) throws -> Submission? {
             guard connected else { return nil }
             guard review == nil else { throw Failure.reviewRequired }
             guard inFlight == nil, local != base.text else { return nil }
-            let value = Submission(id: UUID(), epoch: epoch, key: key, baseVersion: base.version, edit: try Edit.between(base.text, local), after: local)
+            let value = Submission(id: UUID(), epoch: epoch, key: key, baseVersion: base.version, edit: try Edit.between(base.text, local), after: local, rejecting: rejecting ? true : nil, sources: source.map { [$0] })
+            try OverleafLive.validateSources(value.sources)
             inFlight = value; return value
+        }
+        /// Reuse the original operation and version. The server deduplicates earlier sources.
+        mutating func replay(_ remote: Snapshot, source: String) throws -> Submission {
+            try remote.validate()
+            guard let pending = inFlight, let previous = pending.sources, !previous.isEmpty,
+                  remote.version >= base.version,
+                  remote.version != base.version || remote.text == base.text else { throw Failure.reviewRequired }
+            var sources = previous
+            if !sources.contains(source) { sources.append(source) }
+            try OverleafLive.validateSources(sources)
+            let operation = Submission(id: pending.id, epoch: epoch, key: key, baseVersion: pending.baseVersion, edit: pending.edit, after: pending.after, rejecting: pending.rejecting, sources: sources)
+            inFlight = operation; connected = true; review = nil
+            return operation
         }
         @discardableResult mutating func acknowledge(_ receipt: Receipt) -> Bool {
             guard connected, review == nil, let pending = inFlight, receipt.key == key,

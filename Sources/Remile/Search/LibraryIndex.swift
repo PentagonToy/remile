@@ -42,6 +42,11 @@ struct LibraryHit: Identifiable, Sendable {
     var location: String { isMarkdown ? (sectionTitle ?? "Section \(page)") : "Page \(page)" }
 }
 
+struct LibrarySearchPage: Sendable {
+    let hits: [LibraryHit]
+    let hasMore: Bool
+}
+
 struct LibraryProgress: Sendable {
     let completed: Int
     let total: Int
@@ -364,9 +369,16 @@ actor LibraryIndex {
 
     /// Native B0 over the complete current library; no FTS candidate truncation before ranking.
     func rankedSearch(_ query: String, expansions: [String] = []) throws -> [LibraryHit] {
+        try rankedPage(query, expansions: expansions).hits
+    }
+    func rankedPage(_ query: String, expansions: [String] = [], offset: Int = 0, limit: Int = 200) throws -> LibrarySearchPage {
+        guard offset >= 0, limit > 0, offset <= Int.max - limit - 1 else { throw CocoaError(.coderInvalidValue) }
         try Task.checkCancellation()
         _ = try Self.queryTerms(query)
-        if SearchLexicon.terms(query).isEmpty { return try search(query, interpretQuestions: false) }
+        if SearchLexicon.terms(query).isEmpty {
+            let hits = try search(query, interpretQuestions: false, offset: offset, limit: limit + 1)
+            return LibrarySearchPage(hits: Array(hits.prefix(limit)), hasMore: hits.count > limit)
+        }
         try connect()
         let versionRow = try statement("PRAGMA data_version")
         let version = sqlite3_step(versionRow) == SQLITE_ROW ? sqlite3_column_int(versionRow, 0) : -1
@@ -394,11 +406,11 @@ actor LibraryIndex {
             allowed = []
             while sqlite3_step(rows) == SQLITE_ROW { allowed!.insert(sqlite3_column_int64(rows, 0)) }
         }
-        let ranked = try sparseRanker!.search(query, expansions: expansions, allowed: allowed)
+        let ranked = try sparseRanker!.search(query, expansions: expansions, allowed: allowed, offset: offset, limit: limit + 1)
         var hits: [LibraryHit] = [], seen = Set<String>()
         let rows = try statement("SELECT pages.path,page,body,folder,heading FROM pages JOIN documents ON documents.path=pages.path WHERE pages.rowid=? AND documents.error IS NULL")
         defer { sqlite3_finalize(rows) }
-        for match in ranked {
+        for match in ranked.prefix(limit) {
             try Task.checkCancellation()
             sqlite3_reset(rows); sqlite3_clear_bindings(rows); sqlite3_bind_int64(rows, 1, match.rowID)
             guard sqlite3_step(rows) == SQLITE_ROW else { continue }
@@ -408,17 +420,17 @@ actor LibraryIndex {
             let excerpt = SearchText.context(body, query: matched.isEmpty ? query : matched).excerpt
             hits.append(LibraryHit(path: path, folderID: text(rows, 3), page: Int(sqlite3_column_int(rows, 1)), excerpt: excerpt, score: -match.score, sectionTitle: URL(fileURLWithPath: path).pathExtension.lowercased() == "pdf" ? nil : text(rows, 4), matchQuery: matched.isEmpty ? query : matched))
         }
-        return hits
+        return LibrarySearchPage(hits: hits, hasMore: ranked.count > limit)
     }
 
-    func search(_ query: String, interpretQuestions: Bool = true) throws -> [LibraryHit] {
+    func search(_ query: String, interpretQuestions: Bool = true, offset: Int = 0, limit: Int = 200) throws -> [LibraryHit] {
         // Release temporary Foundation text objects between successive searches.
         return try autoreleasepool {
             try connect()
             let literal = try Self.expression(query)
             let question = interpretQuestions ? SearchQuestion(query) : nil
             let expression = question?.expression ?? literal
-            let row = try statement("SELECT path,page,body,bm25(pages,0,0,4,1),(SELECT folder FROM documents WHERE documents.path=pages.path),heading FROM pages WHERE pages MATCH ? AND path IN (SELECT path FROM documents WHERE error IS NULL) ORDER BY bm25(pages,0,0,4,1),path,CAST(page AS INTEGER) LIMIT 200", [expression])
+            let row = try statement("SELECT path,page,body,bm25(pages,0,0,4,1),(SELECT folder FROM documents WHERE documents.path=pages.path),heading FROM pages WHERE pages MATCH ? AND path IN (SELECT path FROM documents WHERE error IS NULL) ORDER BY bm25(pages,0,0,4,1),path,CAST(page AS INTEGER) LIMIT ? OFFSET ?", [expression, String(limit), String(offset)])
             defer { sqlite3_finalize(row) }
             var results: [LibraryHit] = []
             var status = sqlite3_step(row)

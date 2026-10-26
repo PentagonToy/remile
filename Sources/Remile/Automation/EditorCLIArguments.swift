@@ -9,7 +9,7 @@ enum EditorCLIArguments {
     }
 
     private static let rules: [String: Rule] = [
-        "overleaf": Rule(values: ["--id", "--connection", "--file", "--query", "--target"], paths: 1...1),
+        "overleaf": Rule(values: ["--id", "--connection", "--file", "--query", "--target", "--format", "--output"], paths: 1...1),
         "help": Rule(), "--help": Rule(), "version": Rule(), "--version": Rule(),
         "documents": Rule(), "doctor": Rule(), "status": Rule(), "diagnostics": Rule(), "save": Rule(values: ["--output"]), "history": Rule(),
         "read": Rule(values: ["--file"]), "select": Rule(values: ["--file"]),
@@ -32,7 +32,7 @@ enum EditorCLIArguments {
         "combine": Rule(values: ["--output"], paths: 2...Int.max),
         "compress": Rule(values: ["--output", "--quality"], flags: ["--grayscale"], paths: 1...1),
         "reference": Rule(values: ["--id", "--output", "--limit", "--offset", "--query", "--context", "--library", "--libraries", "--source-file", "--expected-revision", "--attachment", "--kind", "--page", "--start", "--length", "--expected-sha256", "--sort", "--order"], flags: ["--trash"], paths: 1...1),
-        "library-search": Rule(flags: ["--no-boost"], paths: 1...Int.max)
+        "library-search": Rule(values: ["--offset"], flags: ["--no-boost"], paths: 1...Int.max)
     ]
 
     static func validate(command: String, options: [String]) throws {
@@ -60,6 +60,7 @@ enum EditorCLIArguments {
         guard rule.paths.contains(positionals.count) else { throw Failure("Provide the expected input path or query. Use --cli help.") }
         if command != "library-search", command != "reference", command != "overleaf", positionals.contains(where: { !$0.hasPrefix("/") }) { throw Failure("Provide absolute input paths.") }
         if command != "overleaf", values["--target"] != nil, !positionals.isEmpty { throw Failure("Choose a document path or --target, not both.") }
+        if command == "library-search", let value = values["--offset"], Int(value).map({ $0 >= 0 && $0 <= Int.max - 201 }) != true { throw Failure("Use a non-negative search offset.") }
         if command == "writer-page" || command == "writer-object" {
             if let value = values["--columns"], !["1", "2"].contains(value) { throw Failure("Choose 1 or 2 columns.") }
             for key in ["--top-line", "--bottom-line", "--page-numbers", "--wrap", "--lock"] {
@@ -81,11 +82,17 @@ enum EditorCLIArguments {
             case "list": allowed = ["--query"]
             case "show", "open": allowed = ["--id", "--connection", "--target"]
             case "read": allowed = ["--id", "--connection", "--target", "--file"]
-            default: throw Failure("Use overleaf list, show, open or read.")
+            case "review": allowed = ["--id", "--connection", "--target", "--format", "--output"]
+            default: throw Failure("Use overleaf list, show, open, read or review.")
             }
             guard seen.isSubset(of: allowed) else { throw Failure("This option is not supported by the Overleaf action.") }
             if positionals.first != "list", values["--id"].flatMap(OverleafProjectID.parse) == nil { throw Failure("Provide --id overleaf:PROJECT_ID from Copy project ID.") }
             if positionals.first == "read", values["--file"] == nil { throw Failure("Provide a project-relative --file.") }
+            if positionals.first == "review" {
+                if let format = values["--format"], !["json", "markdown", "bundle"].contains(format) { throw Failure("Use json, markdown or bundle for review export.") }
+                if let output = values["--output"], !output.hasPrefix("/") { throw Failure("Use an absolute output path.") }
+                if values["--format"] == "bundle", values["--output"] == nil { throw Failure("Provide --output /absolute/new-review.zip.") }
+            }
             if let connection = values["--connection"], UUID(uuidString: connection) == nil { throw Failure("Use a connection UUID from overleaf list.") }
         }
         if command == "reference" {

@@ -136,9 +136,7 @@ struct ReferenceRepository: Sendable {
             guard versions[preferred] != nil, indices.count >= 2, indices.count == snapshots.count, indices.allSatisfy({ records[$0].trashed == nil && records[$0].revision == versions[records[$0].id] }),
                   let master = records.first(where: { $0.id == preferred }), let group = ReferenceDuplicates.lookup(records)[preferred], Set(versions.keys).isSubset(of: Set(group)) else { throw ReferenceFailure("The duplicate references changed. Review them again.") }
             let resolved = resolvedFields ?? ReferenceMergePlan.fields(snapshots, preferred: preferred)
-            let recovery = root.appendingPathComponent("Recovery/" + UUID().uuidString + ".json")
-            try FileManager.default.createDirectory(at: recovery.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(snapshots).write(to: recovery, options: .atomic)
+            var discarded = Set<UUID>()
             let attachments = Dictionary(indices.flatMap { records[$0].attachments }.map { ($0.sha256, $0) }, uniquingKeysWith: { first, _ in first }).values.sorted { $0.id.uuidString < $1.id.uuidString }
             for (_, group) in Dictionary(grouping: indices, by: { records[$0].collectionID ?? records[$0].library }) {
                 let library = records[group[0]].library
@@ -153,10 +151,11 @@ struct ReferenceRepository: Sendable {
                 let key = uniqueKey(master.citationKey, in: records.filter { $0.library == library && $0.id != before.id })
                 records[keep].key = key; records[keep].attachments = Array(attachments); records[keep].revision = UUID(); records[keep].modified = Date()
                 var mapping: [String: String] = [:]
-                for index in group { mapping[records[index].key] = key; if index != keep { records[index].trashed = Date(); records[index].revision = UUID(); records[index].modified = Date() } }
+                for index in group { mapping[records[index].key] = key; if index != keep { discarded.insert(records[index].id) } }
                 mapping[before.key] = key
                 try rewriteRelations(&records, indices: records.indices.filter { records[$0].library == library && records[$0].trashed == nil }, mapping: mapping)
             }
+            records.removeAll { discarded.contains($0.id) }
         }
     }
     func applyCleanup(_ changes: [ReferenceCleanup.Change]) throws {

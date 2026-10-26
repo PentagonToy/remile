@@ -9,7 +9,7 @@ remile. is a native macOS document workspace. The Swift package has one executab
 | Connected projects | `OverleafLibrary` | Account/project metadata, worktrees, review and publication lifecycle |
 | Web account access | `OverleafWebIdentity`, `OverleafWebClient`, `OverleafSignInSession` | Per-profile remile. session, read-only JSON endpoints and bounded login surface |
 | Current source synchronisation | `OverleafGit`, `OverleafAutoPublisher`, `OverleafAutoSync` | Versioned Git transport, worktree fingerprints, isolated review copies and normal pushes |
-| Opt-in live text synchronisation | `OverleafLiveWorkspace`, socket, wire, text and journal helpers | One project writer, native editor transport and preserved drafts. Real-server validation pending |
+| Live text and file synchronisation | `OverleafLiveWorkspace`, socket, wire, text and journal helpers | One project writer, native editor transport and preserved drafts. Real-server validation pending |
 | Network policy | `NetworkAccessGate` | Reject and cancel app-owned network operations. No operating-system firewall claim |
 | Local automation | `EditorCLI`, `EditorBridge` | Structured responses, explicit document identity and expected hashes for edits |
 
@@ -29,9 +29,9 @@ A web session lists projects and reads comments. A Git token authorises the Git 
 
 Git review stages live outside active source buffers. Compare both the expected worktree fingerprint and remote head before applying or publishing. Use normal pushes, never force pushes. Local-only edits may publish automatically while an Online project is open. New remote revisions pause automatic publication for explicit review. This protects authors’ drafts. It is not live collaborative editing.
 
-### Prepare real-time transport separately
+### Keep one owner for Live and Private
 
-The opt-in live workspace and Git lifecycle share one project writer lease. Live mode blocks Git publication until it stops. Stopping leaves automatic Git publication paused for review. The native legacy editor adapter uses the app-owned web session, applied acknowledgements and fresh snapshots. Do not open an editor socket as an incidental effect of account login. Existing text documents are supported. Structural changes and overlapping edits require review. See [live synchronisation](overleaf-realtime.md) for recovery, bounds and remaining real-server validation.
+Live is the default connected workspace. Its text/file lifecycle and Private Git review share one project writer lease. Live mode blocks Git publication until it stops. Stopping leaves automatic Git publication paused for review. The native legacy editor adapter uses the app-owned web session, applied acknowledgements and fresh snapshots. Do not open an editor socket as an incidental effect of account login. Live reconciles text and file changes. Overlapping or uncertain edits require review. See [live synchronisation](overleaf-realtime.md) for recovery, bounds and remaining real-server validation.
 
 ### Make PDF protection explicit
 

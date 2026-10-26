@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Combine
 
 @MainActor protocol OverleafFileRemote: AnyObject {
     func snapshot(_ tree: OverleafLiveFiles.Tree?) async throws -> OverleafFileSnapshot
@@ -65,12 +66,13 @@ struct OverleafFileSnapshot: Sendable { let tree: OverleafLiveFiles.Tree; let fi
     func changed(_ project: TeXProject) async throws -> Bool {
         guard let assetFingerprint else { return false }
         let root = project.root
-        let current = try await Task.detached(priority: .utility) { try OverleafLiveFiles.fingerprint(OverleafLiveFiles.scan(root), assetsOnly: true) }.value
+        let scan = Task.detached(priority: .utility) { try OverleafLiveFiles.fingerprintAssets(at: root) }
+        let current = try await withTaskCancellationHandler { try await scan.value } onCancel: { scan.cancel() }
         return current != assetFingerprint
     }
     func reconcile(project: TeXProject, library: OverleafLibrary, connection: OverleafConnection, tree: OverleafLiveFiles.Tree, textBases: [String: String], check: () throws -> Void) async throws -> Result {
         try check()
-        guard !project.compiling, project.save() else { throw OverleafLiveFiles.Failure.stale }
+        guard project.save() else { throw OverleafLiveFiles.Failure.stale }
         let local = try OverleafLiveFiles.scan(project.root, buffers: project.buffers)
         let baseline = Self.baseline(connection, library: library.directory)
         var base = try initialBase(connection, library: library.directory, root: project.root, file: baseline)
@@ -103,6 +105,15 @@ struct OverleafFileSnapshot: Sendable { let tree: OverleafLiveFiles.Tree; let fi
             try OverleafLiveFiles.save(before.files, to: baseline)
             assetFingerprint = OverleafLiveFiles.fingerprint(local, assetsOnly: true)
             return Result(reconnect: before.tree != tree, bases: bases)
+        }
+        // A preview compiles a private source snapshot. An unchanged manifest
+        // can join Live immediately. Wait only before changing actual files.
+        if project.compiling {
+            for await compiling in project.$compiling.values {
+                try check()
+                if !compiling { break }
+            }
+            try check()
         }
         try preserve(local: local, remote: before.files, connection: connection, library: library)
         if library.allowsGit(connection) { try await gitRecovery(connection: connection, root: project.root) }
@@ -189,7 +200,7 @@ struct OverleafFileSnapshot: Sendable { let tree: OverleafLiveFiles.Tree; let fi
         for entry in parked { confirmed[entry.path] = nil }
         try OverleafLiveFiles.save(confirmed, to: baseline)
         for path in plan.downloads + plan.uploads where OverleafLiveFiles.source(path) { bases[path] = confirmed[path].flatMap { String(data: $0, encoding: .utf8) } }
-        assetFingerprint = OverleafLiveFiles.fingerprint(try OverleafLiveFiles.scan(project.root), assetsOnly: true)
+        assetFingerprint = try OverleafLiveFiles.fingerprintAssets(at: project.root)
         for entry in parked { try check(); try await remote.delete(entry) }
         if FileManager.default.fileExists(atPath: intentFile.path) { try FileManager.default.removeItem(at: intentFile) }
         if let recovery { try Data("Confirmed. Recovery copies are retained locally.\n".utf8).write(to: recovery.appendingPathComponent("confirmed.txt"), options: .atomic) }

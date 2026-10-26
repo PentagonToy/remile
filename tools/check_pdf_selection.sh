@@ -11,6 +11,7 @@ cat "$project_directory/Sources/Remile/PDF/HighlightPalette.swift" \
     "$project_directory/Sources/Remile/PDF/PDFTableRegions.swift" \
     "$project_directory/Sources/Remile/PDF/PDFImageDrag.swift" \
     "$project_directory/Sources/Remile/PDF/PDFContentMenu.swift" \
+    "$project_directory/Sources/Remile/PDF/PageNavigationPDFView.swift" \
     "$project_directory/Sources/Remile/PDF/PDFSelectionActions.swift" \
     "$project_directory/Tests/PDFRegionChecks/Fixture.swift" \
     "$project_directory/Tests/PDFSelectionChecks/main.swift" > "$check_directory/pdf-selection-checks.swift"

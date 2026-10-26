@@ -5,8 +5,8 @@ import WebKit
 /// No editor page or collaboration socket is opened.
 @MainActor enum OverleafWebClient {
     private static var webTransport = Set<UUID>()
-    private static func webRequest(_ url: URL, profile: UUID) async throws -> Data {
-        let bytes = try await OverleafJSONRequest(url: url, profile: profile).load()
+    private static func webRequest(_ url: URL, profile: UUID, document: Bool = false) async throws -> Data {
+        let bytes = try await OverleafJSONRequest(url: url, profile: profile, document: document).load()
         await OverleafWebIdentity.remember(profile)
         return bytes
     }
@@ -53,23 +53,23 @@ import WebKit
     private final class RedirectPolicy: NSObject, URLSessionTaskDelegate {
         func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
     }
-    static func request(_ path: String, profile: UUID) async throws -> Data {
+    static func request(_ path: String, profile: UUID, document: Bool = false) async throws -> Data {
         try NetworkAccess.requireOnline()
         do { try await OverleafWebIdentity.restore(profile) }
         catch Failure.sessionLocked {
             // WebKit may still hold a valid session even when the saved backup needs approval.
-            do { return try await webRequest(URL(string: "https://www.overleaf.com" + path)!, profile: profile) }
+            do { return try await webRequest(URL(string: "https://www.overleaf.com" + path)!, profile: profile, document: document) }
             catch Failure.signIn { throw Failure.sessionLocked }
         }
         let store = OverleafWebIdentity.dataStore(profile).httpCookieStore
         let cookies = await store.allCookies()
         let url = URL(string: "https://www.overleaf.com" + path)!
-        if webTransport.contains(profile) { return try await webRequest(url, profile: profile) }
+        if webTransport.contains(profile) { return try await webRequest(url, profile: profile, document: document) }
         let allowed = cookies.filter { cookie in
             let domain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
             return ["overleaf.com", "www.overleaf.com"].contains(domain) && (cookie.expiresDate.map { $0 > Date() } ?? true) && url.path.hasPrefix(cookie.path)
         }
-        guard !allowed.isEmpty else { return try await webRequest(url, profile: profile) }
+        guard !allowed.isEmpty else { return try await webRequest(url, profile: profile, document: document) }
         var request = URLRequest(url: url); request.timeoutInterval = 30
         for (key, value) in HTTPCookie.requestHeaderFields(with: allowed) { request.setValue(value, forHTTPHeaderField: key) }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -82,16 +82,24 @@ import WebKit
         let bytes: Data, response: URLResponse
         do { (bytes, response) = try await session.data(for: request) }
         catch let error as URLError where error.code == .badServerResponse {
-            webTransport.insert(profile); return try await webRequest(url, profile: profile)
+            webTransport.insert(profile); return try await webRequest(url, profile: profile, document: document)
         }
         guard let http = response as? HTTPURLResponse else { throw Failure.response }
-        if http.statusCode == 403 || responseFailure(http) == .signIn { webTransport.insert(profile); return try await webRequest(url, profile: profile) }
+        if http.statusCode == 403 || responseFailure(http) == .signIn { webTransport.insert(profile); return try await webRequest(url, profile: profile, document: document) }
+        if document, http.statusCode == 200 {
+            return try documentPayload(bytes, response: http)
+        }
         if let failure = responseFailure(http) { throw failure }
         guard bytes.count <= 8_000_000 else { throw Failure.response }
         let headers = http.allHeaderFields.reduce(into: [String: String]()) { result, field in if let key = field.key as? String, let value = field.value as? String { result[key] = value } }
         for cookie in HTTPCookie.cookies(withResponseHeaderFields: headers, for: url) { await store.setCookie(cookie) }
         await OverleafWebIdentity.remember(profile)
         return bytes
+    }
+    nonisolated static func documentPayload(_ bytes: Data, response: HTTPURLResponse) throws -> Data {
+        guard bytes.count <= 8_000_000, ["text/plain", "application/x-tex", "application/octet-stream"].contains(response.mimeType?.lowercased() ?? ""),
+              let text = String(data: bytes, encoding: .utf8) else { throw Failure.response }
+        return try JSONSerialization.data(withJSONObject: ["text": text, "disposition": response.value(forHTTPHeaderField: "Content-Disposition") ?? ""])
     }
     static func projects(_ profile: UUID) async throws -> [Project] {
         let projects = try parseProjects(await request("/user/projects", profile: profile))

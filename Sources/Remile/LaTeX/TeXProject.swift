@@ -4,6 +4,13 @@ import UniformTypeIdentifiers
 
 @MainActor final class TeXProject: ObservableObject {
     let identity = UUID()
+    lazy var liveWorkspace = OverleafLiveWorkspace()
+    lazy var sourceEditor = MarkdownEditorController()
+    var lastPreviewLocation: TeXSync.PDFLocation?
+    @Published var overleafReview: OverleafReviewSnapshot?
+    @Published var showsAssistant = false
+    @Published var canReviewChanges = false
+    var decideReviewChange: ((OverleafReviewSnapshot.Change, Bool) async throws -> Void)?
     lazy var citations = ReferenceCitationSession(context: root.path)
     lazy var review = ManuscriptReviewStore.shared(for: root)
     @Published private(set) var isDraft = false
@@ -97,7 +104,7 @@ import UniformTypeIdentifiers
     private var diagnosticSource: URL?
     @Published var syncing = false
     struct PDFJump { let id = UUID(); let location: TeXSync.PDFLocation }
-    struct SourceJump { let id = UUID(); let location: TeXSync.SourceLocation; var marksLine = true }
+    struct SourceJump { enum Highlight { case comment, change }; let id = UUID(); let location: TeXSync.SourceLocation; var marksLine = true; var highlight: Highlight? = nil }
     private(set) var build: TeXBuild?
     private var compileID = UUID()
     private var syncTask: Task<Void, Never>?
@@ -151,7 +158,7 @@ import UniformTypeIdentifiers
         let disk = try String(contentsOf: url, encoding: .utf8)
         guard disk == expectedDisk || disk == expected else { throw OverleafLive.Failure.staleDraft }
         try OverleafLive.validate(text)
-        try text.write(to: url, atomically: true, encoding: .utf8)
+        if disk != text { try text.write(to: url, atomically: true, encoding: .utf8) }
         if expected != text { buffers[file] = text }
         original[file] = text
     }
@@ -314,6 +321,7 @@ import UniformTypeIdentifiers
     }
     /// Closing a workspace must release previews even if a presentation temporarily retains its model.
     func releaseWorkspaceResources() {
+        sourceEditor.suspend()
         compileID = UUID(); task?.cancel(); job?.stop(); submission.stop()
         outlineTask?.cancel(); historyTask?.cancel(); syncTask?.cancel()
         citations.release(); pdf = nil; build = nil; diagnosticSource = nil
@@ -336,7 +344,8 @@ import UniformTypeIdentifiers
         outlineTask = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
             guard let self else { return }; let main = self.main, sources = self.buffers
-            let outline = await Task.detached { TeXOutlineItem.project(sources, main: main) }.value
+            let worker = Task.detached { TeXOutlineItem.project(sources, main: main) }
+            let outline = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
             guard !Task.isCancelled, self.main == main, self.buffers == sources else { return }; self.outline = outline
         }
     }
@@ -594,15 +603,18 @@ import UniformTypeIdentifiers
         }
     }
     func syncToSource(_ location: TeXSync.PDFLocation) {
-        guard let build = currentBuild(), !syncing else { return }
+        guard let build, !syncing, !compiling else { return }
         syncing = true
         syncTask = Task { @MainActor [weak self] in
             defer { self?.syncing = false }
             do {
                 let target = try await Task.detached { let near = try TeXSync.reverse(build, location: location); return TeXSync.refine(near, source: build.buffers[near.file] ?? "", hint: location.hint) }.value
                 guard let self, !Task.isCancelled, !self.compiling, self.build?.pdf == build.pdf else { return }
-                guard self.buffers == build.buffers, self.main == build.main else { self.message = "Recompile to match source and PDF."; return }
-                self.message = nil; self.selected = target.file; self.sourceJump = SourceJump(location: target, marksLine: false)
+                guard let current = self.buffers[target.file], let previous = build.buffers[target.file] else { return }
+                let destination = TeXSync.relocate(target, from: previous, to: current)
+                self.message = current == previous ? nil : "Approximate position · PDF is from the previous build."
+                self.showsLog = false; self.showsHistory = false
+                self.selected = destination.file; self.sourceJump = SourceJump(location: destination, marksLine: destination.range == nil)
             } catch { self?.message = error.localizedDescription }
         }
     }

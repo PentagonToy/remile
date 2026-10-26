@@ -40,23 +40,11 @@ An advertised PDF link may return a sign-in page, another paper or a chapter. re
 
 Lookup runs only on request, with up to eight candidate URLs, a 90-second search budget and a 25 MB file limit. Downloads use temporary storage and are discarded when they fail. The waiting state can be cancelled, and the airplane control blocks online retrieval. No GPT request runs. Source and the repository's reported version appear beside Include PDF during review. A version label from an index is not an independent check of the edition.
 
-### Publisher access
+### PDF access
 
-Subscription access is optional. In Find a paper, choose **Publisher access…** to open the source's official website in a separate connection window. Use the website's normal account, institutional or other sign-in option. For example, choose Aalto on ScienceDirect if your institution provides access. Then download the article PDF. remile receives it in temporary storage, checks the selected reference and returns a matching PDF to Include PDF. Choose Attach PDF to keep it. Signing in alone does not attach anything.
+Find a paper checks local files and public PDF sources. Subscription-only papers must be downloaded in your browser and added with **Add local PDF…** or dropped onto the reference. Publisher sign-in, embedded browsing and remembered publisher sessions are not available. Existing managed attachments are unchanged.
 
-| Action | Result |
-| --- | --- |
-| **Publisher access…** | Start an optional publisher web session. No account is required to use the rest of Reference. |
-| Sign in on the official website | Use the publisher or institution's own form. remile does not collect the password or import Safari cookies. |
-| Download the article PDF | Receive and check a PDF up to 25 MB. Other files and uncertain matches stay unattached. |
-| **Done**, close the window or Work offline | Stop the session and downloads. Partial files are removed. |
-| **Remember sign-in** | Save this window's session cookies in this Mac's Keychain. Turn off to remove the saved copy. |
-| **Open in browser** | Open the article in your normal browser when embedded verification cannot finish. Download it there, then use Add local PDF. |
-| **Add local PDF…** | Attach a copy you have checked if the website or automatic match is unavailable. |
-
-This window shares neither Safari nor Overleaf sign-in. Remember sign-in is off by default. When enabled, only cookies from remile's own publisher session are stored in this Mac's Keychain, without the password. Saved cookies may restore a session for up to fourteen days, subject to the site's own expiry and verification. Turning the option off removes the saved copy while the current window stays signed in until closed. The saved session does not travel with presets or the reference library.
-
-Publisher and institutional redirects use official web pages, including sign-in popups. Sites that reject embedded browsers or require unsupported verification may still need Open in browser and Add local PDF. Saving cookies does not guarantee that a CAPTCHA will finish. Cloudflare documents [limited support for embedded browsers](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/). No institutional login compatibility is promised without checking that institution's flow. Some scanned PDFs and incomplete metadata cannot be matched automatically.
+### Libraries and selection
 
 Right-click the sidebar to create a library or a collection. A collection belongs to one parent library. Move to collection keeps the record's identity. Add to library creates independent metadata while sharing identical PDF bytes.
 
@@ -66,27 +54,29 @@ Command-click selects several rows and Shift-click selects a range. Row context 
 
 Title, Author / Editor, Journal / Publisher, Year and Type are visible by default. Click a heading to sort ascending, then again to reverse. Text uses natural alphabetical order and years use numeric order. Empty values stay last. Drag a heading's right edge to resize it. Widths and visible columns are remembered and included in presets. Title stays visible and starts widest.
 
+Automatic columns share the available space while keeping your manual widths. Double-click a column boundary to return that column to automatic sizing. Reference settings → Reset widths restores automatic sizing for every column.
+
 Settings below the sidebar artwork controls columns, citation keys and abstract export. Keys use the first author's surname, or the first editor's surname when no author is recorded, followed by the year and one or two title words. Missing contributors use `Reference`, missing years use `nd`, and collisions receive numeric suffixes. Changing the rule affects new records. Regenerating stored keys can require changes to manuscript citations.
 
 Edited volumes may have editors rather than a single author. Author / Editor shows the editor with `(ed.)` or `(eds.)` when no author is recorded. The metadata inspector and BibTeX export keep the two roles separate. An edited book's empty author field is not necessarily missing information.
 
 Existing keys remain unchanged when metadata is enriched. Use Regenerate citation key explicitly if you want an editor-based key, then update any manuscript citations that use the old key.
 
-Double-click a metadata value to edit it. Return saves and Escape cancels. BibTeX exports omit abstracts unless enabled in Reference settings. Uncommon imported types and fields remain stored.
+Double-click a metadata value to edit it. Return saves and Escape cancels. Stored abstracts appear last, below the dates, in an Abstract section that starts collapsed. Expand it to read or copy the text. Use Edit reference to change the abstract. BibTeX exports omit abstracts unless enabled in Reference settings. Uncommon imported types and fields remain stored.
 
 ## Review and Undo
 
-Clean up reviews local metadata proposals and duplicate candidates. Merge selected is available for related records. Review the base record and conflicting fields before merging. Distinct PDFs are retained and extra records move to Trash. Manuscript citations are not rewritten.
+Clean up reviews local metadata proposals and duplicate candidates. Merge selected is available for related records. Review the base record and conflicting fields before merging. Distinct PDFs are retained and extra records are removed without going to Trash. Manuscript citations are not rewritten.
 
 Undo and Redo retain up to 30 session changes within an 8 MB metadata limit. PDF bytes are not copied into Undo. External catalogue changes clear incompatible history. Empty Trash clears Undo.
 
-GPT review is optional and separate from local extraction and public metadata lookup. Suggest correction sends the displayed citation through the configured ChatGPT connection, without its PDF. Applying a suggestion requires review and a current source revision. Your ChatGPT plan and credit settings apply.
+Reference metadata uses local parsing and verified bibliographic responses. Look up metadata fills missing fields without guessing unknown facts. Read metadata reviews local PDF evidence. Neither action uses a language model.
 
 ## Complete a library
 
-Clean up library keeps three views together: Metadata, Duplicates and PDFs. Opening the window makes no online lookup. **Look up missing** checks records missing contributors, a year or an abstract, one at a time. Stop keeps completed proposals for review. **Apply selected** writes only the checked metadata changes with the existing revision checks and Undo.
+Clean up library has Metadata and Duplicates views. Opening it makes no online lookup. **Look up missing** checks records missing contributors, a year or an abstract, with up to three requests in progress. Provider pacing still applies. Stop cancels pending requests and keeps completed proposals for review. **Apply selected** writes only checked changes with revision checks and Undo.
 
-The PDFs view lists records without attachments. **Find PDF…** opens the same bounded lookup and attachment review used by the record's context menu. It holds one result at a time rather than downloading a whole library into memory. Neither opening Clean up nor switching its tabs attaches files automatically.
+Add PDFs through Add PDF or by dropping them onto a reference. Clean up does not manage missing attachments.
 
 ## Storage and other Macs
 

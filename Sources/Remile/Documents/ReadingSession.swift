@@ -157,13 +157,15 @@ struct ReadingShell: View {
         ZStack {
             if overleaf.browsing {
                 OverleafLibraryWorkspace(library: overleaf, open: home.openTeX, prepareRemoval: { root in
-                    if home.texProject?.root == root, !home.closeTeX() { return false }
+                    if home.texProject?.root == root, !home.closeTeX(retainConnection: false) { return false }
                     home.removeRecent(root); return true
                 }).transition(.opacity.combined(with: .offset(x: 16)))
             } else if let project = home.texProject {
                 VStack(spacing: 0) {
                     if let connection = overleaf.connection(for: project.root) { OverleafBar(library: overleaf, project: project, connection: connection).id(project.identity) }
-                    TeXWorkspace(project: project, close: { home.closeTeX() }, title: overleaf.title(for: project.root), projectTags: overleaf.connection(for: project.root).flatMap { overleaf.tags[$0.id] } ?? [], freeOverleaf: overleaf.connection(for: project.root).map { overleaf.isFreeLimited($0) } ?? false).id(project.identity)
+                    TeXWorkspace(project: project, close: { home.closeTeX() }, title: overleaf.title(for: project.root), projectTags: overleaf.connection(for: project.root).flatMap { overleaf.tags[$0.id] } ?? [], freeOverleaf: overleaf.connection(for: project.root).map { overleaf.isFreeLimited($0) } ?? false, overleafConnection: overleaf.connection(for: project.root), reviewArchiveChanged: { archive in
+                        if let connection = overleaf.connection(for: project.root), archive.projectID == connection.projectID { overleaf.comments[connection.id] = archive }
+                    }).id(project.identity)
                 }
             } else if let url = reader.url {
                 DocumentWorkspace(document: $reader.document, fileURL: url, session: reader)
@@ -201,15 +203,13 @@ struct ReadingShell: View {
         .sheet(isPresented: $home.compressPresented) { CompressWorkspace(model: home.compression) }
         .sheet(isPresented: $home.combinePresented) { CombineWorkspace(model: home.combination, open: home.open) }
         .sheet(isPresented: $overleaf.presented) { OverleafProjects(library: overleaf, open: home.openTeX, prepareRemoval: { root in
-            if home.texProject?.root == root, !home.closeTeX() { return false }
+            if home.texProject?.root == root, !home.closeTeX(retainConnection: false) { return false }
             home.removeRecent(root); return true
         }) }
         .sheet(isPresented: Binding(get: { overleaf.review != nil }, set: { if !$0 && !overleaf.busy { overleaf.dismissReview() } })) {
             if let review = overleaf.review { OverleafComparison(library: overleaf, review: review, reload: home.refreshReviewedTeX) }
         }
-        .sheet(isPresented: Binding(get: { overleaf.commentsProject != nil }, set: { if !$0 { overleaf.commentsProject = nil } })) {
-            if let project = overleaf.commentsProject { OverleafComments(library: overleaf, connection: project, close: { overleaf.commentsProject = nil }) }
-        }
+
         .alert("Overleaf", isPresented: Binding(get: { overleaf.error != nil && !overleaf.presented && overleaf.review == nil }, set: { if !$0 { overleaf.error = nil } })) { Button("OK") { overleaf.error = nil } } message: { Text(overleaf.error ?? "") }
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
             HomeFileDrop.receive(providers) { home.handleDrop($0, target: .open) }; return true
@@ -241,7 +241,7 @@ private struct WindowCloseGuard: NSViewRepresentable {
         weak var previous: NSWindowDelegate?
         var titlebarDrag: TitlebarDrag?
         init(reader: ReadingSession, home: HomeModel) { self.reader = reader; self.home = home }
-        func windowShouldClose(_ sender: NSWindow) -> Bool { (previous?.windowShouldClose?(sender) ?? true) && home.writer?.confirmLeaving() != false && home.closeTeX() && reader.close() }
+        func windowShouldClose(_ sender: NSWindow) -> Bool { (previous?.windowShouldClose?(sender) ?? true) && home.writer?.confirmLeaving() != false && home.closeTeX(retainConnection: false) && reader.close() }
         func windowDidBecomeKey(_ notification: Notification) {
             if let window = notification.object as? NSWindow { RemileWindows.shared.register(home, window: window) }
             previous?.windowDidBecomeKey?(notification)

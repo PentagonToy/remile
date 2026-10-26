@@ -27,7 +27,6 @@ import Network
     @Published var error: String?
     @Published var review: OverleafGit.Review?
     @Published var offlineMode = false
-    @Published var commentsProject: OverleafConnection?
     @Published var comments: [UUID: OverleafThreadArchive] = [:]
     var automaticPaused = Set<UUID>()
     @Published var pendingFiles = Set<UUID>()
@@ -38,6 +37,8 @@ import Network
     @Published private(set) var hasNetwork = true
     private let network = NWPathMonitor()
     private var policyObserver: NSObjectProtocol?
+    var warmProject: TeXProject?
+    var warmExpiry: Task<Void, Never>?
     private var probing = false
     var syncRevision = 0
     let directory: URL
@@ -169,6 +170,7 @@ import Network
     func removeAccount(_ id: UUID, prepare: (URL) -> Bool) async -> Bool {
         guard !busy, accounts.contains(where: { $0.id == id }) else { return false }
         let owned = projects.filter { $0.profileID == id }
+        if let warmProject, owned.contains(where: { root($0).path == warmProject.root.path }) { await discardWarmProject() }
         guard !owned.contains(where: { liveOwned.contains($0.id) }) else { error = "Close this account's open projects before removing it."; return false }
         guard owned.allSatisfy({ prepare(root($0)) }) else { return false }
         busy = true; defer { busy = false }; error = nil
@@ -265,6 +267,10 @@ import Network
         if let data = try? JSONEncoder().encode(tags) { try? data.write(to: directory.appendingPathComponent("project-tags.json"), options: .atomic) }
     }
     func remove(_ project: OverleafConnection) {
+        if warmProject?.root.path == root(project).path {
+            Task { await discardWarmProject(); remove(project) }
+            return
+        }
         guard !busy, !liveOwned.contains(project.id) else { return }
         do {
             let writer = try writerLease(project); defer { withExtendedLifetime(writer) {} }

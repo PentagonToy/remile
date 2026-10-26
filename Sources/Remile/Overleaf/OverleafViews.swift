@@ -4,7 +4,10 @@ struct OverleafBar: View {
     @ObservedObject var library: OverleafLibrary
     @ObservedObject var project: TeXProject
     let connection: OverleafConnection
-    @StateObject private var live = OverleafLiveWorkspace()
+    @ObservedObject private var live: OverleafLiveWorkspace
+    init(library: OverleafLibrary, project: TeXProject, connection: OverleafConnection) {
+        self.library = library; self.project = project; self.connection = connection; self.live = project.liveWorkspace
+    }
     @StateObject private var presentation = LivePresentation()
     private final class LivePresentation: ObservableObject { @Published var connection = false; @Published var review = false; @Published var issue = false; @Published var settings = false; @Published var switching = false; @Published var premium = false }
     private var allowsGit: Bool { library.allowsGit(connection) }
@@ -27,10 +30,8 @@ struct OverleafBar: View {
             }
             Divider().frame(height: 18).padding(.horizontal, 2)
             HStack(spacing: 4) {
-                Button { library.commentsProject = connection } label: { Image(systemName: "text.bubble") }
-                    .accessibilityLabel("Comments").remileHelp("Overleaf comments").disabled(liveOffline || library.busy)
-                Button { library.openLibrary() } label: { Image(systemName: "books.vertical") }
-                    .accessibilityLabel("Overleaf library").remileHelp("Overleaf library").disabled(library.busy)
+                Button { library.openLibrary() } label: { Image(systemName: "folder") }
+                    .accessibilityLabel("Overleaf projects").remileHelp("Overleaf projects").disabled(library.busy)
                 Button { presentation.settings.toggle() } label: {
                     if !live.enabled && allowsGit && OverleafCredential.locked(connection.profileID) {
                         if geometry.size.width < 760 { Image(systemName: "lock") }
@@ -46,12 +47,23 @@ struct OverleafBar: View {
             .sheet(isPresented: $presentation.review) {
                 if let conflict = live.conflict { OverleafLiveReview(conflict: conflict, choose: { text in presentation.review = false; Task { await live.choose(text: text) } }, close: { presentation.review = false }) }
             }
-            .onChange(of: liveOffline) { if liveOffline { Task { await live.suspend() } } }
-            .task(id: connection.id) { if OverleafSyncPreference.live(connection.id), !liveOffline { await live.start(project: project, library: library, connection: connection) } }
-            .onDisappear { Task { await live.stop() } }
+            .onAppear {
+                project.canReviewChanges = live.connected && !live.connecting && !live.syncingFiles && live.pendingDocumentCount == 0 && live.issue == nil && !project.compiling && !library.busy
+                project.decideReviewChange = { [weak live] change, accept in
+                    guard let live else { throw OverleafGit.Failure("Reconnect Live sync to review changes.") }
+                    try await live.decideReviewChange(change, accept: accept)
+                }
+            }
+            .onChange(of: live.connected && !live.connecting && !live.syncingFiles && live.pendingDocumentCount == 0 && live.issue == nil && !project.compiling && !library.busy) { project.canReviewChanges = $0 }
+            .onChange(of: liveOffline) { _ in Task { await live.networkChanged() } }
+            .onAppear {
+                live.setVisible(true)
+                if OverleafSyncPreference.live(connection.id), !liveOffline { live.connectVisible(project: project, library: library, connection: connection) }
+            }
+            .onDisappear { project.canReviewChanges = false; project.decideReviewChange = nil; live.setVisible(false) }
     }
     private func changeMode(_ isLive: Bool) {
-        guard isLive != live.enabled, !presentation.switching, !live.connecting else { return }
+        guard isLive != live.enabled, (!presentation.switching && !live.connecting) || (!isLive && live.connecting) else { return }
         guard !isLive || (!library.busy && !project.compiling && !liveOffline) else { return }
         OverleafSyncPreference.choose(isLive, for: connection.id)
         presentation.switching = true
@@ -79,7 +91,8 @@ struct OverleafBar: View {
     }
     @ViewBuilder private func syncStatus(compact: Bool) -> some View {
             if live.enabled {
-                if live.connecting { ProgressView().controlSize(.small); Text(live.syncingFiles ? "Syncing files…" : "Connecting…") }
+                if liveOffline { Label("Saved locally · offline", systemImage: "icloud.slash").foregroundStyle(RemileStyle.secondaryInk) }
+                else if live.connecting || live.reconnecting { ProgressView().controlSize(.small); Text(live.syncingFiles ? "Checking files…" : live.reconnecting ? "Reconnecting…" : "Connecting…") }
                 else if let issue = live.issue {
                     Button {
                         if live.conflict != nil { presentation.review = true }
@@ -132,8 +145,7 @@ struct OverleafSyncModePicker: View {
             .fixedSize().accessibilityElement(children: .contain).accessibilityLabel("Sync mode")
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isLive)
             .onMoveCommand { direction in
-                guard !switching else { return }
-                if direction == .left && canStart { choose(true) }
+                if direction == .left && canStart && !switching { choose(true) }
                 else if direction == .right { choose(false) }
             }
     }
@@ -143,7 +155,7 @@ struct OverleafSyncModePicker: View {
                 .foregroundStyle(isLive == live ? RemileStyle.ink : RemileStyle.secondaryInk)
                 .frame(width: 76, height: 28).contentShape(Rectangle())
                 .background(isLive == live ? RemileStyle.ink.opacity(0.11) : .clear, in: RoundedRectangle(cornerRadius: 6))
-        }.buttonStyle(.plain).disabled(switching || (live && !isLive && !canStart))
+        }.buttonStyle(.plain).disabled((switching && (live || !isLive)) || (live && !isLive && !canStart))
             .accessibilityLabel(title + " sync").accessibilityAddTraits(isLive == live ? .isSelected : [])
             .remileHelp(help)
     }

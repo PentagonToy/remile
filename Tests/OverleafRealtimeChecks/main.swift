@@ -28,6 +28,15 @@ refuses("Binary/control text is not silently treated as source") { _ = try ready
 refuses("Large text is rejected before diffing") { _ = try ready(local: String(repeating: "x", count: OverleafLive.textLimit + 1)) }
 refuses("Invalid IDs cannot bind a session") { _ = try OverleafLive.State(key: .init(profile: key.profile, project: "../bad", document: key.document), base: base) }
 refuses("Trailing newline in an ID is rejected") { _ = try OverleafLive.State(key: .init(profile: key.profile, project: key.project + "\n", document: key.document), base: base) }
+var rejection = try ready(local: "Restored source")
+let rejectionOp = try rejection.submission(rejecting: true)!
+let rejectionWire = OverleafLiveWire.update(rejectionOp)
+require(rejectionWire["op"].array!.allSatisfy { $0["u"] == .bool(true) }, "Review inverse edits use Overleaf's undo/rejection marker")
+let rejectionSaved = try JSONDecoder().decode(OverleafLive.Checkpoint.self, from: JSONEncoder().encode(rejection.checkpoint))
+try rejectionSaved.validate()
+require(rejectionSaved.inFlight?.rejecting == true, "Rejection intent survives a durable checkpoint round trip")
+let normalOp = try ready(local: "Ordinary edit").checkpoint
+require(try JSONDecoder().decode(OverleafLive.Checkpoint.self, from: JSONEncoder().encode(normalOp)).inFlight == nil, "Older checkpoints without rejection metadata still decode")
 var state = try ready(local: "First edit")
 let first = try state.submission()!
 require(try state.submission() == nil, "Only one operation may await acknowledgement")
@@ -156,6 +165,28 @@ require(try OverleafLiveWire.documents(projectTree,expectedID:key.project) == [.
 refuses("A different project's tree is refused") { _ = try OverleafLiveWire.documents(projectTree,expectedID:key.document) }
 let traversal: OverleafLiveWire.JSON = .object(["_id": .string(key.project), "rootFolder": .array([.object(["docs": .array([.object(["_id":.string(key.document),"name":.string("../main.tex")])])])])])
 refuses("Remote filenames cannot traverse local folders") { _ = try OverleafLiveWire.documents(traversal,expectedID:key.project) }
+var replayState = try ready(local: "Original 🧭 text!\n")
+let originalReplay = try replayState.submission(source: "session-one")!
+let replaySaved = replayState.checkpoint
+var resumedReplay = try OverleafLive.State(checkpoint: replaySaved)
+try resumedReplay.edited(base.text) // Undo while the first upload is unconfirmed.
+let replayed = try resumedReplay.replay(base, source: "session-two")
+require(replayed.id == originalReplay.id && replayed.baseVersion == originalReplay.baseVersion && replayed.edit == originalReplay.edit, "Recovery replays the original operation and version rather than inventing another edit")
+require(replayed.sources == ["session-one", "session-two"] && resumedReplay.local == base.text, "Recovery retains prior session IDs and a newer local Undo")
+require(OverleafLiveWire.update(replayed)["dupIfSource"].array?.count == 2, "The wire asks the server to deduplicate every earlier source")
+let recoveredCheckpoint = try JSONDecoder().decode(OverleafLive.Checkpoint.self, from: JSONEncoder().encode(resumedReplay.checkpoint))
+require(recoveredCheckpoint.inFlight?.sources == replayed.sources, "Deduplication intent survives a journal round trip")
+let actual: OverleafLiveWire.JSON = .object(["v": .int(base.version), "op": OverleafLiveWire.update(originalReplay)["op"], "meta": .object(["source": .string("session-one")])])
+let recoveredHistory = OverleafLiveWire.CatchUp(snapshot: .init(version: base.version + 1, text: originalReplay.after), operations: [actual])
+require(try recoveredHistory.contains(originalReplay, base: base), "Complete server history identifies an applied operation even when its ACK was lost")
+refuses("History gaps cannot clear uncertain intent") { _ = try OverleafLiveWire.CatchUp(snapshot: .init(version: base.version + 2, text: originalReplay.after), operations: [actual]).contains(originalReplay, base: base) }
+refuses("History text must reconstruct the returned snapshot") { _ = try OverleafLiveWire.CatchUp(snapshot: .init(version: base.version + 1, text: "wrong"), operations: [actual]).contains(originalReplay, base: base) }
+var legacyPending = try OverleafLive.State(checkpoint: replaySaved)
+refuses("Unversioned stale snapshots cannot be replayed") { _ = try legacyPending.replay(.init(version: base.version - 1, text: base.text), source: "session-two") }
+
+require(try OverleafLiveText.applying([.object(["p": .int(1), "c": .string("🧭"), "t": .string("thread")])], to: "a🧭b") == "a🧭b", "A comment anchor advances history without changing source text")
+refuses("A comment anchor must match the current source") { _ = try OverleafLiveText.applying([.object(["p": .int(0), "c": .string("wrong")])], to: "a🧭b") }
+
 let semaphore = DispatchSemaphore(value: 0)
 Task.detached {
     do {

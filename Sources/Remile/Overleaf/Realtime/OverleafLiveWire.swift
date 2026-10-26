@@ -137,12 +137,38 @@ enum OverleafLiveWire {
         }.joined(separator: "\n")
         let snapshot = OverleafLive.Snapshot(version: version, text: text); try snapshot.validate(); return snapshot
     }
+    struct CatchUp: Sendable {
+        let snapshot: OverleafLive.Snapshot
+        let operations: [JSON]
+        /// Only a complete, contiguous history can establish that a prior source was applied.
+        func contains(_ submission: OverleafLive.Submission, base: OverleafLive.Snapshot) throws -> Bool {
+            guard let sources = submission.sources, snapshot.version >= base.version,
+                  snapshot.version - base.version == operations.count, operations.count <= 1_000 else { throw Failure.uncertain }
+            var text = base.text, matched = false
+            for (index, operation) in operations.enumerated() {
+                guard operation["v"].integer == base.version + index, let components = operation["op"].array else { throw Failure.uncertain }
+                text = try OverleafLiveText.applying(components, to: text)
+                if let source = operation["meta"]["source"].string, sources.contains(source) { matched = true }
+            }
+            guard text == snapshot.text else { throw Failure.uncertain }
+            return matched
+        }
+    }
     static func update(_ operation: OverleafLive.Submission) -> JSON {
         let edit = operation.edit
         var ops: [JSON] = []
         if !edit.deleted.isEmpty { ops.append(.object(["p": .int(edit.offset), "d": .string(edit.deleted)])) }
         if !edit.inserted.isEmpty { ops.append(.object(["p": .int(edit.offset), "i": .string(edit.inserted)])) }
+        if operation.rejecting == true {
+            ops = ops.map { value in
+                guard case .object(var fields) = value else { return value }
+                fields["u"] = .bool(true)
+                return .object(fields)
+            }
+        }
         let digest = Insecure.SHA1.hash(data: Data(("blob \(operation.after.utf16.count)\0" + operation.after).utf8)).map { String(format: "%02x", $0) }.joined()
-        return .object(["doc": .string(operation.key.document), "op": .array(ops), "v": .int(operation.baseVersion), "lastV": .int(operation.baseVersion), "hash": .string(digest)])
+        var value: [String: JSON] = ["doc": .string(operation.key.document), "op": .array(ops), "v": .int(operation.baseVersion), "lastV": .int(operation.baseVersion), "hash": .string(digest)]
+        if let sources = operation.sources { value["dupIfSource"] = .array(sources.map(JSON.string)) }
+        return .object(value)
     }
 }

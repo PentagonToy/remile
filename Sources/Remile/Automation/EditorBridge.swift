@@ -16,6 +16,7 @@ enum EditorBridge {
         var apply: Bool?
         var scratch: Bool?
         var submissionCheck: Bool?
+        var offset: Int?
         var start: Int?
         var length: Int?
         var zoom: Double?
@@ -111,8 +112,10 @@ enum EditorBridge {
         if request.operation == "library-search" {
             do {
                 guard let query = request.source else { return ["ok": false, "error": "Provide a search question or keywords."] }
-                let response = try await home.librarySearch(query, boost: request.apply != false)
-                return ["ok": true, "engine": response.phrases.isEmpty ? "B0" : "B-guided", "expansionPhrases": response.phrases, "hits": response.hits.map { hit in
+                let offset = request.offset ?? 0
+                guard offset >= 0, offset <= Int.max - 201 else { return ["ok": false, "error": "Use a non-negative search offset."] }
+                let response = try await home.librarySearch(query, boost: request.apply != false, offset: offset)
+                return ["ok": true, "engine": response.phrases.isEmpty ? "B0" : "B-guided", "expansionPhrases": response.phrases, "offset": offset, "hasMore": response.hasMore, "nextOffset": response.hasMore ? offset + 200 as Any : NSNull(), "hits": response.hits.map { hit in
                     ["path": hit.path, "page": hit.page, "excerpt": hit.excerpt, "score": hit.score, "matchQuery": hit.matchQuery ?? query] as [String: Any]
                 }]
             } catch { return ["ok": false, "error": error.localizedDescription] }
@@ -128,7 +131,7 @@ enum EditorBridge {
         if request.operation == "comments" {
             do {
                 if let root = home.texProject?.root, let project = home.overleaf.connection(for: root) {
-                    guard let archive = home.overleaf.comments[project.id] else { return ["ok": false, "error": "Open Online review and read this project's comments first."] }
+                    guard let archive = home.overleaf.comments[project.id] else { return ["ok": false, "error": "Open Review and read this project's comments first."] }
                     return try archive.response(format: PDFCommentExport.format(named: request.kind, output: request.output), output: request.output)
                 }
                 guard home.texProject == nil, case .pdf = home.reader.document.content, let export = home.reader.commentsExport else { return ["ok": false, "error": "Open a PDF to read its comments."] }

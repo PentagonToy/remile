@@ -169,7 +169,7 @@ enum ReferencePDFTransfer {
         request.setValue("remile/0.1.3 Reference", forHTTPHeaderField: "User-Agent")
         let (stream, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        if [401, 403].contains(http.statusCode) { throw ReferenceFailure("This source requires sign-in. Use Publisher access or add a local PDF.") }
+        if [401, 403].contains(http.statusCode) { throw ReferenceFailure("This source requires sign-in. Download the PDF in your browser and add the local file.") }
         // Do not retry a throttled host during this search, including its alternate links.
         if [429, 503].contains(http.statusCode) { throw Busy(host: response.url?.host ?? url.host ?? "") }
         guard http.statusCode == 200 else { throw ReferenceFailure("No accessible PDF found. You can add a local PDF.") }

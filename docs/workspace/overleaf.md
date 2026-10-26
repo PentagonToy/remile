@@ -14,7 +14,11 @@ Create a token in **Overleaf → Account settings → Git integration**. Compili
 
 Projects start in Live when online. Text edits sync with Overleaf while you work. remile remembers an explicit switch to Private or Local on this Mac. Work offline pauses remote access.
 
+After a brief connection loss, Live keeps your edits locally and reconnects automatically. Conflicting edits or account problems still need your attention. You can choose Private or Local while a connection is starting.
+
 ## Work, then review
+
+Private is the review path when you need to reconcile changes deliberately. A Live connection problem does not silently switch modes or start a second Git writer.
 
 In Private mode, saved local changes sync through Git while the project is open. New remote changes wait in **Check changes** for your review.
 
@@ -22,9 +26,17 @@ Resolve conflicts before updating or publishing. After review, remile keeps your
 
 Use `\cite{` in the source editor for local citation suggestions. [Read the citation hints →](../reference.md#read-citation-hints)
 
+## Read review notes
+
+Choose **Review** beside Files to read Overleaf comments and tracked additions or deletions. Click a file and line to reveal its source. Refresh after remote changes. Navigation waits if the local source differs from the review snapshot. Accept or reject a single change after Live sync is confirmed. Grouped changes with a shared server ID remain in Overleaf. Reject restores the source through the same Live connection. Replies and comment resolution remain in Overleaf. Export includes every comment and change, including resolved threads, as Markdown or JSON.
+
+The speech bubble opens **Ask**, with review actions just above the message field. **Review manuscript** reuses the saved manuscript criteria. **Attach Overleaf feedback** prepares Overleaf notes and source excerpts for a question without replacing text you have already typed. Questions use the assistant selected in remile. Preparing feedback does not send it to a model.
+
+Export all review notes as Markdown or JSON, or choose **Review package with sources…** for a ZIP. The package includes text sources, IDs, hashes and the exact review snapshots needed to interpret changed local files. Figures and PDFs are omitted. An agent can fetch the review through [the project-ID CLI](../cli.md#overleaf-projects).
+
 ## Choose a mode
 
-Live mode shares existing text edits and pauses Git publication. File changes or overlapping edits can need review. Read the [live sync details](../overleaf-realtime.md) before using it for a shared session.
+Live mode shares existing text edits and pauses Git publication. A quick return within 45 seconds reuses the most recent Live project and PDF. One project is retained, with its hidden file-check timer stopped. File changes or overlapping edits can need review. Read the [live sync details](../overleaf-realtime.md) before using it for a shared session.
 
 ## Hand a project to an agent
 
@@ -37,7 +49,7 @@ The agent can [read the project through the CLI](../cli.md#overleaf-projects), i
 | Button | What it does |
 | --- | --- |
 | <img class="remile-guide-symbol" src="../../others/symbols/guide/refresh.svg" alt="" width="24" height="24"> **Sync / Check changes** | Inspect remote changes before applying them. |
-| <img class="remile-guide-symbol" src="../../others/symbols/guide/chat.svg" alt="" width="24" height="24"> **Comments** | Read project comments and replies. |
+| <img class="remile-guide-symbol" src="../../others/symbols/guide/chat.svg" alt="" width="24" height="24"> **Ask** | Ask about the project using your chosen assistant. |
 | <img class="remile-guide-symbol" src="../../others/symbols/guide/history.svg" alt="" width="24" height="24"> **History** | Open the relevant project or source history. |
 
 [Shared buttons and status marks](../buttons.md)

@@ -72,6 +72,35 @@ struct ReferenceSort {
 
 enum ReferenceColumnWidths {
     static let preference = "reference.columnWidths"
+    /// Fit automatic columns first. Explicit user widths retain horizontal scrolling.
+    static func fitted(available: Double, columns: [ReferenceColumn], saved: [String: Double]) -> [String: Double] {
+        let overhead = Double(80 + columns.count * 10)
+        let floors: [ReferenceColumn: Double] = [.title: 180, .author: 88, .publication: 120, .year: 44, .publisher: 100, .key: 100, .type: 72, .added: 88]
+        let others = columns.filter { $0 != .title }
+        let titleMinimum = saved["title"] ?? 180
+        let fixed = others.filter { saved[$0.rawValue] != nil }.reduce(0.0) { $0 + saved[$1.rawValue]! }
+        let automatic = others.filter { saved[$0.rawValue] == nil }
+        let preferred = automatic.reduce(0.0) { $0 + $1.width }
+        let minimum = automatic.reduce(0.0) { $0 + (floors[$1] ?? 80) }
+        let budget = max(minimum, available - overhead - titleMinimum - fixed)
+        let fraction = preferred > minimum ? min(1, max(0, (budget - minimum) / (preferred - minimum))) : 1
+        var result = saved
+        for column in automatic {
+            let floor = floors[column] ?? 80
+            result[column.rawValue] = floor + (column.width - floor) * fraction
+        }
+        let occupied = others.reduce(0.0) { $0 + (result[$1.rawValue] ?? $1.width) }
+        result["title"] = saved["title"] ?? max(180, available - overhead - occupied)
+        let spare = max(0, available - overhead - occupied - result["title"]!)
+        if spare > 0 {
+            let growers = automatic.filter { [.author, .publication, .publisher].contains($0) }
+            let weights = growers.reduce(0.0) { $0 + ($1 == .author ? 1 : 2) }
+            if weights > 0 {
+                for column in growers { result[column.rawValue, default: column.width] += spare * (column == .author ? 1 : 2) / weights }
+            } else { result["title", default: 180] += spare }
+        }
+        return result
+    }
     static func clamp(_ value: Double, column: ReferenceColumn) -> Double { min(column == .title ? 1200 : 600, max(column == .title ? 180 : 44, value)) }
     static func decode(_ source: String) -> [String: Double] {
         guard source.utf8.count <= 4096, let data = source.data(using: .utf8), let values = try? JSONDecoder().decode([String: Double].self, from: data) else { return [:] }

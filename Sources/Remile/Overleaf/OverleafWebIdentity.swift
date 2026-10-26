@@ -85,9 +85,12 @@ import CryptoKit
 @MainActor final class OverleafJSONRequest: NSObject, WKNavigationDelegate {
     private let web: WKWebView
     private let url: URL
+    private let document: Bool
+    private var navigationURL: URL { document ? URL(string: "https://www.overleaf.com/project")! : url }
     private var result: CheckedContinuation<Data, Error>?
     private var timer: Task<Void, Never>?
-    init(url: URL, profile: UUID) {
+    init(url: URL, profile: UUID, document: Bool = false) {
+        self.document = document
         self.url = url
         let config = WKWebViewConfiguration(); config.websiteDataStore = OverleafWebIdentity.dataStore(profile)
         web = WKWebView(frame: .zero, configuration: config)
@@ -104,14 +107,14 @@ import CryptoKit
             return try await withCheckedThrowingContinuation { result in
                 self.result = result
                 timer = Task { [weak self] in do { try await Task.sleep(for: .seconds(30)); self?.finish(.failure(OverleafWebClient.Failure.response)) } catch { } }
-                web.load(URLRequest(url: url))
+                web.load(URLRequest(url: navigationURL))
             }
         } onCancel: { Task { @MainActor [weak self] in self?.finish(.failure(CancellationError())) } }
     }
     private func finish(_ value: Result<Data, Error>) { guard let result else { return }; self.result = nil; result.resume(with: value) }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard !NetworkAccess.offline else { decisionHandler(.cancel); finish(.failure(NetworkAccessGate.Offline())); return }
-        guard action.request.url == url else {
+        guard action.request.url == navigationURL else {
             decisionHandler(.cancel)
             let failure: OverleafWebClient.Failure = action.request.url.map(OverleafWebClient.isLoginURL) == true ? .signIn : .response
             finish(.failure(failure)); return
@@ -120,10 +123,39 @@ import CryptoKit
     }
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         guard let http = response.response as? HTTPURLResponse else { decisionHandler(.cancel); finish(.failure(OverleafWebClient.Failure.response)); return }
-        if let failure = OverleafWebClient.responseFailure(http) { decisionHandler(.cancel); finish(.failure(failure)); return }
+        if document {
+            guard http.statusCode == 200, http.mimeType?.lowercased() == "text/html" else { decisionHandler(.cancel); finish(.failure(OverleafWebClient.Failure.response)); return }
+        } else if let failure = OverleafWebClient.responseFailure(http) { decisionHandler(.cancel); finish(.failure(failure)); return }
         decisionHandler(.allow)
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if document {
+            web.callAsyncJavaScript("""
+                const response = await fetch(path, {credentials: 'same-origin', redirect: 'error'});
+                const type = (response.headers.get('content-type') || '').split(';')[0].toLowerCase();
+                if (response.status !== 200 || !['text/plain', 'application/x-tex', 'application/octet-stream'].includes(type)) return {status: response.status};
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder('utf-8', {fatal: true});
+                let text = '', count = 0;
+                while (true) {
+                    const {value, done} = await reader.read();
+                    if (done) break;
+                    count += value.byteLength;
+                    if (count > 8000000) { await reader.cancel(); throw new Error('Document too large'); }
+                    text += decoder.decode(value, {stream: true});
+                }
+                text += decoder.decode();
+                return {status: 200, text, disposition: response.headers.get('content-disposition') || ''};
+                """, arguments: ["path": url.path], in: nil, in: .defaultClient) { [weak self] result in
+                    guard let self else { return }
+                    guard case .success(let raw) = result, let value = raw as? [String: Any], let status = value["status"] as? Int else { self.finish(.failure(OverleafWebClient.Failure.response)); return }
+                    guard status == 200, value["text"] is String, let data = try? JSONSerialization.data(withJSONObject: value) else {
+                        self.finish(.failure(status == 401 ? OverleafWebClient.Failure.signIn : status == 403 ? .permission : .response)); return
+                    }
+                    self.finish(.success(data))
+                }
+            return
+        }
         web.evaluateJavaScript("document.body.textContent") { [weak self] text, _ in
             guard let self else { return }
             guard let text = text as? String, text.utf8.count <= 8_000_000, let data = text.data(using: .utf8) else { self.finish(.failure(OverleafWebClient.Failure.response)); return }

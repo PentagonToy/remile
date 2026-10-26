@@ -4,11 +4,12 @@ import SwiftUI
 struct SearchPreviewSplit<Assistant: View, Preview: View>: View {
     var askPresented: Bool
     var label = "Ask panel"
+    var revealToken = ""
     @ViewBuilder var assistant: () -> Assistant
     @ViewBuilder var preview: () -> Preview
 
     var body: some View {
-        ReaderSplit(side: .trailing, isPresented: askPresented, initial: 320, minimum: 260, maximum: 440, minimumContent: 280, label: label, pane: {
+        ReaderSplit(side: .trailing, isPresented: askPresented, initial: 320, minimum: 260, maximum: 440, minimumContent: 280, label: label, revealToken: revealToken, pane: {
             if askPresented { assistant() }
         }, content: {
             preview().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

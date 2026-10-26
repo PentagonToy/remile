@@ -31,6 +31,7 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
     private let assistance = EditorAssistance()
     private var flashTask: Task<Void, Never>?
     private var flashRange = NSRange(location: 0, length: 0)
+    private var flashColour = RemileStyle.amber
     private var pendingLocation: (Int, String)?
     var changed: (String) -> Void = { _ in }
     private var styling: Task<Void, Never>?
@@ -42,7 +43,7 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
     private var spellingExcluded: [NSRange] = []
     func makeView() -> NSScrollView {
         if let scroll { scroll.removeFromSuperview(); return scroll }
-        let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
+        let scroll = NSScrollView(); scroll.borderType = .noBorder; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
         let view = MarkdownSourceTextView(frame: .zero)
         view.isRichText = false; view.allowsUndo = true; view.usesFindBar = true; view.isIncrementalSearchingEnabled = true
         view.isAutomaticQuoteSubstitutionEnabled = false; view.isAutomaticDashSubstitutionEnabled = false
@@ -111,7 +112,13 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         let theme = texTheme?.rawValue ?? "Markdown"
         if appliedTheme != theme {
             appliedTheme = theme; needsStyle = true
-            view.backgroundColor = palette?.background ?? NSColor(RemileStyle.surface)
+            let background = palette?.background ?? NSColor(RemileStyle.surface)
+            let appearance = texTheme == .paper ? NSAppearance(named: .aqua) : nil
+            scroll?.appearance = appearance; view.appearance = appearance
+            scroll?.drawsBackground = true; scroll?.backgroundColor = background
+            scroll?.contentView.drawsBackground = true; scroll?.contentView.backgroundColor = background
+            view.drawsBackground = true; view.backgroundColor = background
+            scroll?.needsDisplay = true; scroll?.contentView.needsDisplay = true; view.needsDisplay = true
             view.textColor = palette?.ink ?? NSColor(RemileStyle.ink)
         }
         let font = serif ? NSFont.systemFont(ofSize: size).withDesign(.serif) : NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
@@ -282,14 +289,15 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         guard let view = textView, let change = EditorSourceEditing.toggleComment(view.string, selection: view.selectedRange()) else { return }
         apply(change, name: "Toggle Comment")
     }
-    @discardableResult func reveal(range: NSRange) -> Bool {
+    @discardableResult func reveal(range: NSRange, colour: NSColor = RemileStyle.amber, select: Bool = true) -> Bool {
         guard let view = textView, let layout = view.layoutManager, range.location >= 0, range.length > 0, NSMaxRange(range) <= (view.string as NSString).length else { return false }
-        clearFlash(); flashRange = range
-        view.setSelectedRange(range); view.scrollRangeToVisible(range); view.window?.makeFirstResponder(view)
-        layout.addTemporaryAttribute(.backgroundColor, value: RemileStyle.amber.withAlphaComponent(0.3), forCharacterRange: range)
+        clearFlash(); flashRange = range; flashColour = colour
+        view.setSelectedRange(select ? range : NSRange(location: range.location, length: 0)); view.scrollRangeToVisible(range); view.window?.makeFirstResponder(view)
+        layout.addTemporaryAttribute(.backgroundColor, value: flashColour.withAlphaComponent(0.3), forCharacterRange: range)
         return true
     }
-    func flash(line: Int) {
+    func flash(line: Int, colour: NSColor = RemileStyle.amber) {
+        flashColour = colour
         guard let view = textView, let layout = view.layoutManager else { return }
         flashTask?.cancel()
         let text = view.string as NSString
@@ -298,7 +306,7 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         for _ in 0..<line { guard index < text.length else { break }; index = NSMaxRange(text.lineRange(for: NSRange(location: index, length: 0))) }
         guard index < text.length else { return }
         let range = text.lineRange(for: NSRange(location: index, length: 0)); flashRange = range
-        layout.addTemporaryAttribute(.backgroundColor, value: RemileStyle.amber.withAlphaComponent(0.3), forCharacterRange: range)
+        layout.addTemporaryAttribute(.backgroundColor, value: flashColour.withAlphaComponent(0.3), forCharacterRange: range)
     }
     private func clearFlash() {
         flashTask?.cancel(); flashTask = nil
@@ -314,7 +322,7 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
                 do { try await Task.sleep(for: .milliseconds(20)) } catch { return }
                 guard let self, let view = self.textView else { return }
                 let safe = NSIntersectionRange(range, NSRange(location: 0, length: (view.string as NSString).length))
-                view.layoutManager?.addTemporaryAttribute(.backgroundColor, value: RemileStyle.amber.withAlphaComponent(0.3 * (1 - Double(step) / 18)), forCharacterRange: safe)
+                view.layoutManager?.addTemporaryAttribute(.backgroundColor, value: self.flashColour.withAlphaComponent(0.3 * (1 - Double(step) / 18)), forCharacterRange: safe)
             }
             self?.clearFlash()
         }

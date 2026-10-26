@@ -19,6 +19,9 @@ enum KeychainAccess {
             return (status, item as? Data)
         }
     }
+    static func remove(matching query: [String: Any]) -> OSStatus {
+        perform(interactive: false) { (SecItemDelete(query as CFDictionary), nil) }.status
+    }
     static func store(_ data: Data, matching query: [String: Any], attributes: [String: Any]) -> OSStatus {
         perform(interactive: false) {
             let values = attributes.merging([kSecValueData as String: data]) { _, new in new }

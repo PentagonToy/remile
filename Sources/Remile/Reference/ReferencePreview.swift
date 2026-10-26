@@ -12,11 +12,13 @@ struct ReferencePreview: View {
     private final class Presentation: ObservableObject {
         @Published var attachmentID: UUID?
         @Published var document: PDFDocument?
+        @Published var thumbnail: NSImage?
         @Published var page = 0
         @Published var loading = false
         @Published var error: String?
         @Published var editingField: String?
         @Published var draft = ""
+        @Published var abstractExpanded = false
         var saving = false
         var snapshot: ReferenceRecord?
         var generation = UUID()
@@ -26,6 +28,8 @@ struct ReferencePreview: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
+                titleHeading
+
                 if record.attachments.count > 1 {
                     Picker("PDF", selection: Binding(get: { attachment?.id }, set: { state.attachmentID = $0; model.previewAttachments[record.id] = $0 })) {
                         ForEach(record.attachments) { Text($0.name).tag(Optional($0.id)) }
@@ -36,7 +40,7 @@ struct ReferencePreview: View {
                     HStack(spacing: 12) {
                         Button { move(-1) } label: { Image(systemName: "chevron.left").frame(width: 24, height: 30) }.disabled(state.page == 0).accessibilityLabel("Previous preview page")
                         Button { model.readingAttachment = attachment.id; openPDF(model.repository.attachmentURL(attachment), state.page) } label: {
-                            if let image = document.page(at: state.page)?.thumbnail(of: NSSize(width: 150, height: 160), for: .cropBox) {
+                            if let image = state.thumbnail {
                                 Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: 150, maxHeight: 160).shadow(color: .black.opacity(0.15), radius: 3, y: 2)
                             }
                         }.buttonStyle(.plain).accessibilityLabel("Open PDF").remileHelp("Open PDF")
@@ -52,23 +56,30 @@ struct ReferencePreview: View {
                 }
                 Divider()
                 VStack(spacing: 0) {
-                    ForEach(Array(ReferenceMetadata.rows(record).enumerated()), id: \.element.id) { index, row in
-                        HStack(alignment: .top, spacing: 12) {
-                            Text(row.label).foregroundStyle(.secondary).frame(width: 78, alignment: .trailing)
-                            if state.editingField == row.id {
-                                TextField(row.label, text: $state.draft).textFieldStyle(.roundedBorder)
-                                    .focused($editingFocus, equals: row.id).disabled(model.busy)
-                                    .onAppear { editingFocus = row.id }
-                                    .onSubmit { commit() }
-                                    .onExitCommand { state.editingField = nil; state.snapshot = nil }
-                                    .background(InlineEditBoundary(cancel: { state.editingField = nil; state.snapshot = nil }) { commit() })
-                                    .remileHelp("Return or click elsewhere to save · Esc cancels")
-                            } else {
-                                Text(row.value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle()).highPriorityGesture(TapGesture(count: 2).onEnded { edit(row) })
-                                    .accessibilityAction(named: "Edit value") { edit(row) }
-                            }
-                        }.font(RemileType.caption).padding(.vertical, 7).padding(.horizontal, 2).frame(maxWidth: .infinity, alignment: .leading)
+                    ForEach(ReferenceMetadata.rows(record).filter { $0.id != "title" }) { row in
+                        if row.id == "abstract" {
+                            DisclosureGroup("Abstract", isExpanded: $state.abstractExpanded) {
+                                Text(row.value).font(RemileType.caption).textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading).lineSpacing(3).padding(.top, 6)
+                            }.font(RemileType.caption).padding(.vertical, 10)
+                        } else {
+                            HStack(alignment: .top, spacing: 12) {
+                                Text(row.label).foregroundStyle(.secondary).frame(width: 78, alignment: .trailing)
+                                if state.editingField == row.id {
+                                    TextField(row.label, text: $state.draft).textFieldStyle(.roundedBorder)
+                                        .focused($editingFocus, equals: row.id).disabled(model.busy)
+                                        .onAppear { editingFocus = row.id }
+                                        .onSubmit { commit() }
+                                        .onExitCommand { state.editingField = nil; state.snapshot = nil }
+                                        .background(InlineEditBoundary(cancel: { state.editingField = nil; state.snapshot = nil }) { commit() })
+                                        .remileHelp("Return or click elsewhere to save · Esc cancels")
+                                } else {
+                                    Text(row.value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle()).highPriorityGesture(TapGesture(count: 2).onEnded { edit(row) })
+                                        .accessibilityAction(named: "Edit value") { edit(row) }
+                                }
+                            }.font(RemileType.caption).padding(.vertical, 7).padding(.horizontal, 2).frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                 }.contextMenu {
                     Button("Copy BibTeX", systemImage: "doc.on.clipboard") { model.copy([record]) }
@@ -77,7 +88,26 @@ struct ReferencePreview: View {
                     }
                 }
             }.padding(14).scrollContentGutter()
-        }.onDisappear { commit() }.background(RemileStyle.sidebar).task(id: attachment?.id) { await load() }
+        }.onDisappear { commit() }.background(RemileStyle.sidebar).task(id: attachment.map { $0.id.uuidString + ":" + $0.sha256 }) { await load() }
+    }
+    private var titleHeading: some View {
+                Group {
+                    if state.editingField == "title" {
+                        TextField("Title", text: $state.draft, axis: .vertical).textFieldStyle(.roundedBorder)
+                            .focused($editingFocus, equals: "title").disabled(model.busy)
+                            .onAppear { editingFocus = "title" }.onSubmit { commit() }
+                            .onExitCommand { state.editingField = nil; state.snapshot = nil }
+                            .background(InlineEditBoundary(cancel: { state.editingField = nil; state.snapshot = nil }) { commit() })
+                    } else {
+                        Text(record.displayTitle).textSelection(.enabled)
+                            .contentShape(Rectangle()).highPriorityGesture(TapGesture(count: 2).onEnded { editTitle() })
+                            .accessibilityAction(named: "Edit title") { editTitle() }
+                    }
+                }.font(RemileType.heading).frame(maxWidth: .infinity, alignment: .leading)
+
+    }
+    private func editTitle() {
+        if let row = ReferenceMetadata.rows(record).first(where: { $0.id == "title" }) { edit(row) }
     }
     private func edit(_ row: ReferenceMetadataRow) {
         guard record.trashed == nil, !model.showingTrash, !model.busy, !state.saving, record.fields[row.id] != nil else { return }
@@ -101,10 +131,14 @@ struct ReferencePreview: View {
         guard let document = state.document, let attachment else { return }
         state.page = min(max(0, state.page + offset), document.pageCount - 1)
         model.previewPages[attachment.id] = state.page
+        refreshThumbnail()
+    }
+    private func refreshThumbnail() {
+        state.thumbnail = state.document?.page(at: state.page)?.thumbnail(of: NSSize(width: 150, height: 160), for: .cropBox)
     }
     private func load() async {
         let generation = UUID(); state.generation = generation
-        state.document = nil; state.error = nil
+        state.document = nil; state.thumbnail = nil; state.error = nil
         guard let attachment else { state.loading = false; return }
         let url = model.repository.attachmentURL(attachment); state.loading = true
         defer { if state.generation == generation { state.loading = false } }
@@ -118,6 +152,7 @@ struct ReferencePreview: View {
             let loaded = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
             try Task.checkCancellation(); guard state.generation == generation else { return }
             state.document = loaded.document; state.page = min(model.previewPages[attachment.id] ?? 0, loaded.document.pageCount - 1)
+            refreshThumbnail()
         } catch is CancellationError { }
         catch { if !Task.isCancelled { state.error = "This PDF is unavailable. Add another copy to keep reading." } }
     }

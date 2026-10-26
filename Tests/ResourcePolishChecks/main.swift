@@ -18,6 +18,51 @@ Task { @MainActor in
         let fm = FileManager.default; try fm.createDirectory(at: output, withIntermediateDirectories: true)
         check(SourceDigest.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "SHA-256 preserves the automation protocol vector")
         check(SourceDigest.sha256("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "Empty-source SHA-256 stays compatible")
+        let markdown = MarkdownPreviewModel(), markdownURL = output.appendingPathComponent("source.md")
+        var htmlUpdates = 0
+        let htmlObserver = markdown.$html.dropFirst().sink { _ in htmlUpdates += 1 }
+        await markdown.render("# Stable preview\nSame content.", url: markdownURL)
+        let stableHTML = markdown.html
+        await markdown.render("# Stable preview\nSame content.", url: markdownURL)
+        check(markdown.html == stableHTML && htmlUpdates == 1, "Unchanged Markdown reuses its successful preview without republishing HTML")
+        await markdown.render("# Stable preview\nSame content.", url: output.appendingPathComponent("other/source.md"))
+        check(htmlUpdates == 2, "A different Markdown base URL still rerenders relative resources")
+        htmlObserver.cancel()
+        let outlineSources = ["main.tex": "\\section{Main}\n%\\input{absent}\n\\input{part}\n", "part.tex": "\\subsection{Detail}\n"]
+        check(TeXOutlineItem.project(outlineSources, main: "main.tex").map(\.title) == ["Main", "Detail"], "Reused outline patterns preserve include order and ignored comments")
+        let cancelledOutline = Task.detached {
+            do { try await Task.sleep(for: .seconds(30)) } catch { }
+            return TeXOutlineItem.project(outlineSources, main: "main.tex")
+        }
+        cancelledOutline.cancel()
+        check(await cancelledOutline.value.isEmpty, "Cancelled LaTeX outline work stops without publishing stale headings")
+        let thumbDocument = PDFDocument()
+        for number in 1...4 {
+            let image = NSImage(size: NSSize(width: 240, height: 320))
+            image.lockFocus(); NSColor.white.setFill(); NSRect(x: 0, y: 0, width: 240, height: 320).fill()
+            ("A page to read\n\nSection \(number)\n\nA quiet space for notes." as NSString).draw(in: NSRect(x: 20, y: 30, width: 200, height: 260), withAttributes: [.foregroundColor: NSColor.black, .font: NSFont.systemFont(ofSize: 14)])
+            image.unlockFocus()
+            thumbDocument.insert(PDFPage(image: image)!, at: number - 1)
+        }
+        for dark in [false, true] {
+            let panel = NSHostingView(rootView: PDFPagesPanel(document: thumbDocument, currentPage: 2, select: { _ in }).environment(\.colorScheme, dark ? .dark : .light).foregroundStyle(RemileStyle.ink).background(RemileStyle.sidebar).frame(width: 240, height: 720))
+            panel.frame = NSRect(x: 0, y: 0, width: 240, height: 720); panel.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(180))
+            if let bitmap = panel.bitmapImageRepForCachingDisplay(in: panel.bounds) {
+                panel.cacheDisplay(in: panel.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent("pdf-pages-" + (dark ? "dark" : "light") + ".png"))
+            }
+        }
+        let reference = ReferenceRecord(fields: ["title": "A concise reference", "author": "Writer, Example", "year": "2026", "abstract": "This abstract remains visible while BibTeX export omits it. It explains the method and its limits without a generated summary."])
+        let referenceModel = ReferenceModel(repository: ReferenceRepository(root: output.appendingPathComponent("reference-preview")))
+        for dark in [false, true] {
+            let preview = NSHostingView(rootView: ReferencePreview(record: reference, model: referenceModel, openPDF: { _, _ in }, addFiles: {}).environment(\.colorScheme, dark ? .dark : .light).foregroundStyle(RemileStyle.ink).frame(width: 320, height: 720))
+            preview.frame = NSRect(x: 0, y: 0, width: 320, height: 720); preview.layoutSubtreeIfNeeded()
+            if let bitmap = preview.bitmapImageRepForCachingDisplay(in: preview.bounds) {
+                preview.cacheDisplay(in: preview.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent(dark ? "reference-abstract-dark.png" : "reference-abstract-light.png"))
+            }
+        }
         let watched = output.appendingPathComponent("mailbox"); try fm.createDirectory(at: watched, withIntermediateDirectories: true)
         let changes = try DirectoryChanges(watched); var events = 0
         let reader = Task { @MainActor in for await _ in changes.events { events += 1 } }

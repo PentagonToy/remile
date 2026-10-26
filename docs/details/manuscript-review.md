@@ -1,6 +1,6 @@
 # Manuscript review
 
-Open **Review** in a LaTeX or Overleaf project to ask for source-linked questions an attentive reviewer might raise. Files and Outline remain available in the same sidebar. Choose the AI provider inside Review, then select **Review file**. Review does not edit the manuscript.
+Open **Ask → Review manuscript** in a local LaTeX or Overleaf project for source-linked questions an attentive reviewer might raise. Files and Outline remain in the project sidebar. Choose the AI provider in manuscript review, then select **Review file**. Review does not edit the manuscript.
 
 The criteria cover numerical consistency, the scope of claims, fair comparisons, methodological rationale, repeated explanations and the basis for literature claims. They are prompts for scrutiny, not a representation of academic consensus. The bundled scenarios are independently constructed examples from other domains. They retain no reviewer identities, manuscript identifiers, original measurements or quoted review text.
 

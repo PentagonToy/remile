@@ -10,6 +10,7 @@ struct AssistantPanel: View {
     let select: (AssistantEvidence) -> Void
     let close: () -> Void
     var retrieve: (@MainActor (String) async throws -> [AssistantPassage])? = nil
+    var composerActions: AnyView? = nil
     var selection: String? = nil
     var clearSelection: (() -> Void)? = nil
     @Environment(\.scenePhase) private var phase
@@ -26,9 +27,8 @@ struct AssistantPanel: View {
                 Button { assistant.cancel(); close() } label: { Image(systemName: "xmark") }
                     .remileHelp("Close Ask").accessibilityLabel("Close Ask")
             }.buttonStyle(.plain).padding(.horizontal, 14).padding(.vertical, 13)
-            if assistant.availability != "On-device" {
-                Text(assistant.availability).font(RemileType.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.bottom, 10)
-            }
+            Text(assistant.availability.hasPrefix("On-device") ? "Apple Intelligence · " + assistant.availability : assistant.availability.isEmpty ? provider : assistant.availability)
+                .font(RemileType.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.bottom, 10)
             Divider()
             ScrollViewReader { proxy in
                 ScrollView {
@@ -62,12 +62,15 @@ struct AssistantPanel: View {
                     Text(selection).lineLimit(3).foregroundStyle(.secondary)
                 }.font(RemileType.caption).padding(10).background(RemileStyle.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 5)).padding(.horizontal, 12)
             }
+            if let composerActions {
+                composerActions.padding(.horizontal, 12).padding(.top, 10)
+            }
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("Message Ask", text: $assistant.question, axis: .vertical)
                     .lineLimit(1...5).textFieldStyle(.plain).padding(.vertical, 7).padding(.leading, 12)
                     .onSubmit { ask() }.accessibilityIdentifier("ask.message")
                 Button { ask() } label: {
-                    Image(systemName: "arrow.up").font(.body.bold()).foregroundStyle(.white)
+                    Image(systemName: "arrow.up").font(.body.bold()).foregroundStyle(RemileStyle.onAccent)
                         .frame(width: 28, height: 28).background(RemileStyle.brand, in: Circle())
                 }.buttonStyle(.plain).padding(4)
                     .disabled(assistant.working || (passages.isEmpty && retrieve == nil))
@@ -90,7 +93,7 @@ struct AssistantPanel: View {
             HStack {
                 Spacer(minLength: 30)
                 Text(turn.question).textSelection(.enabled).padding(.horizontal, 13).padding(.vertical, 10)
-                    .foregroundStyle(.white).background(RemileStyle.brand, in: RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(RemileStyle.onAccent).background(RemileStyle.brand, in: RoundedRectangle(cornerRadius: 8))
                     .accessibilityIdentifier("ask.question")
                     .contextMenu { Button("Copy") { copy(turn.question) } }
             }

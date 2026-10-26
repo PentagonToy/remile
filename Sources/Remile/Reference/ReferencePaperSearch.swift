@@ -19,7 +19,6 @@ struct ReferencePaperSearch: View {
         @Published var searched = false
         @Published var error: String?
         @Published var pdfMessage: String?
-        @Published var publisher: ReferenceRecord?
         var searchTask: Task<Void, Never>?
         var pdfTask: Task<Void, Never>?
         var addTask: Task<Void, Never>?
@@ -60,22 +59,9 @@ struct ReferencePaperSearch: View {
                 Button("Cancel") { state.searchTask?.cancel(); state.pdfTask?.cancel(); state.addTask?.cancel(); dismiss() }.keyboardShortcut(.cancelAction).disabled(model.busy)
                 if let target { Button("Add local PDF…") { model.chooseFiles(target: target); dismiss() }.disabled(state.adding || model.busy) }
                 Spacer()
-                if let paper = chosen, ReferencePublisherPolicy.source(paper.record) != nil {
-                    Button("Publisher access…") {
-                        state.pdfTask?.cancel(); state.findingPDF = false
-                        state.publisher = paper.record
-                    }.disabled(state.adding || model.busy || network.offline)
-                        .remileHelp("Optionally sign in on the publisher’s website and download its PDF here.")
-                }
                 Button(state.adding ? "Adding…" : target == nil ? "Add" : "Attach PDF") { add() }.disabled(chosen == nil || state.adding || state.findingPDF || model.busy || (target != nil && (!state.includePDF || state.pdfs.isEmpty))).keyboardShortcut(.defaultAction)
             }
         }.padding(24).frame(width: 600, height: 510).background(RemileStyle.background).tint(RemileStyle.accent)
-            .sheet(item: $state.publisher) { record in
-                ReferencePublisherAccess(record: record) { found in
-                    guard state.selected == record.id else { return }
-                    state.fetched = found; state.pdfs = [found.source]; state.includePDF = true; state.pdfMessage = nil; state.error = nil
-                }
-            }
             .onAppear {
                 if let target { state.query = target.fields["doi"].flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } ?? target.title; state.papers = [.init(record: target)]; state.selected = target.id; findPDF(.init(record: target)) }
             }

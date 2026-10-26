@@ -52,8 +52,19 @@ import WebKit
     func send(_ frame: String) async throws {
         try NetworkAccess.requireOnline(); try Task.checkCancellation()
         guard active else { throw OverleafLiveWire.Failure.disconnected }
-        _ = try await web.callAsyncJavaScript("if (!window.__remileLiveSocket || window.__remileLiveSocket.readyState !== WebSocket.OPEN) throw new Error('closed'); window.__remileLiveSocket.send(frame);", arguments: ["frame": frame], in: nil, contentWorld: .page)
+        let sent = try await web.callAsyncJavaScript(Self.sendScript, arguments: ["frame": frame], in: nil, contentWorld: .page)
+        guard let sent = sent as? Bool else { throw OverleafLiveWire.Failure.protocolMismatch }
+        guard sent else { throw OverleafLiveWire.Failure.disconnected }
     }
+    static let sendScript = """
+    const socket = window.__remileLiveSocket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    try { socket.send(frame); return true; }
+    catch (error) {
+      if (error.name === 'InvalidStateError' && socket.readyState !== WebSocket.OPEN) return false;
+      throw error;
+    }
+    """
     func stop() { finish(CancellationError()) }
     private func finish(_ error: Error) {
         guard active else { return }; active = false
@@ -123,7 +134,7 @@ import WebKit
     window.__remileLiveSocket = socket;
     socket.onopen = () => post({type: 'open'});
     socket.onmessage = event => { if (typeof event.data !== 'string' || event.data.length > 8000000) { socket.close(); post({type: 'invalid'}); } else post({type: 'frame', frame: event.data}); };
-    socket.onerror = () => { post({type: 'stage', stage: 'wire'}); post({type: 'invalid'}); };
+    socket.onerror = () => { post({type: 'stage', stage: 'wire'}); post({type: 'closed', code: 1006}); };
     socket.onclose = event => post({type: 'closed', code: event.code});
     """
     deinit { if let lease { NetworkAccess.gate.release(lease) }; output.finish() }

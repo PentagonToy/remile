@@ -14,7 +14,9 @@ Use quotation marks for an exact phrase. Results keep the page context beside th
 
 Use Update Index after files change. Index coverage points out files that could not be read or have no searchable text.
 
-Apple Intelligence can expand a natural-language question on a supported Mac. Standard search remains available offline and needs no AI account.
+Keyword results appear first. Apple Intelligence can then refine a natural-language question on a supported Mac. Standard search remains available offline and needs no AI account.
+
+Use the arrows beside the result sort menu to browse further matches. Each page holds up to 200 matches. Sorting and document filters apply to the current page.
 
 ## Buttons at a glance
 

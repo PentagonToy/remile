@@ -36,6 +36,8 @@ final class HomeModel: ObservableObject {
     @Published var libraryPresented = false
     @Published var guidePresented = false
     @Published var askPresented = false
+    @Published private(set) var searchOffset = 0
+    @Published private(set) var searchHasMore = false
     @Published var boosting = false
     @Published var boostApplied = false
     private let searchBoost = SearchBoost()
@@ -89,7 +91,7 @@ final class HomeModel: ObservableObject {
         guard !pdfSearchEditing.hasPendingEdits else { return }
         cancelExploration(); previousSearch = nil
         results = []; selectedHit = nil; searchDuration = nil; queryError = nil
-        spellingSuggestions = []; exploredQueries = []; boostApplied = false
+        spellingSuggestions = []; exploredQueries = []; boostApplied = false; searchOffset = 0; searchHasMore = false
     }
     /// Returning from a document reuses completed results, selection, order and timing.
     func resumeSearch() {
@@ -152,9 +154,10 @@ final class HomeModel: ObservableObject {
     private func showProgress(_ value: LibraryProgress) { progress = value }
     func cancelIndexing() { indexTask?.cancel() }
 
-    func search(immediate: Bool = false) {
+    func search(immediate: Bool = false, offset: Int = 0) {
+        guard offset >= 0, offset <= Int.max - 201 else { return }
         guard pdfSearchEditing.confirmLeaving() else { return }
-        previousSearch = currentSearch
+        previousSearch = currentSearch; searchOffset = offset; searchHasMore = false
         searchTask?.cancel()
         let generation = UUID(); searchGeneration = generation
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -167,14 +170,20 @@ final class HomeModel: ObservableObject {
         let offerCorrections = UserDefaults.standard.object(forKey: SearchQuestion.spellingPreference) as? Bool ?? true
         searchTask = Task {
             do {
-                let response = try await librarySearch(text)
+                let response = try await librarySearch(text, offset: offset) { [weak self] base in
+                    guard let self, generation == self.searchGeneration else { return }
+                    self.results = base.hits; self.searchHasMore = base.hasMore; self.searching = false
+                    self.searchDuration = ProcessInfo.processInfo.systemUptime - started
+                    self.selectResult(self.visibleHits.first)
+                }
                 let hits = response.hits
                 let suggestions = offerCorrections && hits.isEmpty ? try await index.spellingSuggestions(text) : []
                 try Task.checkCancellation()
                 guard generation == searchGeneration else { return }
                 searchDuration = ProcessInfo.processInfo.systemUptime - started
-                results = hits; spellingSuggestions = suggestions; searching = false; boosting = false; boostApplied = !response.phrases.isEmpty; expandedDocuments = []
-                selectResult(visibleHits.first)
+                results = hits; searchHasMore = response.hasMore; spellingSuggestions = suggestions; searching = false; boosting = false; boostApplied = !response.phrases.isEmpty; expandedDocuments = []
+                if let selected = selectedHit, let retained = hits.first(where: { $0.id == selected.id }) { selectResult(retained) }
+                else { selectResult(visibleHits.first) }
             } catch is CancellationError { }
             catch {
                 guard generation == searchGeneration else { return }
@@ -185,21 +194,26 @@ final class HomeModel: ObservableObject {
     }
 
     /// The CLI and UI share one engine and policy; a failed or paused boost returns B0.
-    func librarySearch(_ text: String, boost: Bool = true) async throws -> (hits: [LibraryHit], phrases: [String]) {
-        let original = try await index.rankedSearch(text)
-        guard boost, SearchBoostPolicy.canUse(query: text) else { return (original, []) }
+    func librarySearch(_ text: String, boost: Bool = true, offset: Int = 0, onBase: ((LibrarySearchPage) -> Void)? = nil) async throws -> (hits: [LibraryHit], phrases: [String], hasMore: Bool) {
+        let original = try await index.rankedPage(text, offset: offset)
+        try Task.checkCancellation(); onBase?(original)
+        guard boost, SearchBoostPolicy.canUse(query: text) else { return (original.hits, [], original.hasMore) }
         do {
             let phrases = try await searchBoost.phrases(for: text)
             try Task.checkCancellation()
-            guard !phrases.isEmpty, SearchBoostPolicy.canUse(query: text) else { return (original, []) }
-            let hits = try await index.rankedSearch(text, expansions: phrases)
+            guard !phrases.isEmpty, SearchBoostPolicy.canUse(query: text) else { return (original.hits, [], original.hasMore) }
+            let page = try await index.rankedPage(text, expansions: phrases, offset: offset)
             try Task.checkCancellation()
-            guard SearchBoostPolicy.canUse(query: text) else { return (original, []) }
-            return (hits, phrases)
+            guard SearchBoostPolicy.canUse(query: text) else { return (original.hits, [], original.hasMore) }
+            return (page.hits, phrases, page.hasMore)
         } catch {
             try Task.checkCancellation()
-            return (original, [])
+            return (original.hits, [], original.hasMore)
         }
+    }
+    func changeSearchPage(_ forward: Bool) {
+        guard !searching, !boosting, !exploring, hasSubmittedSearch, forward ? searchHasMore : searchOffset > 0 else { return }
+        search(immediate: true, offset: max(0, searchOffset + (forward ? 200 : -200)))
     }
 
     func explore() {
@@ -209,7 +223,7 @@ final class HomeModel: ObservableObject {
         guard !text.isEmpty, !exploring else { return }
         let engine = AssistantEngine.selected, state = engine.status()
         guard state.ready else { queryError = state.message; return }
-        previousSearch = currentSearch
+        previousSearch = currentSearch; searchOffset = 0; searchHasMore = false
         searchTask?.cancel(); let generation = UUID(); searchGeneration = generation
         let started = ProcessInfo.processInfo.systemUptime
         searchStartedAt = Date(); searchDuration = nil
@@ -323,11 +337,17 @@ final class HomeModel: ObservableObject {
         return Array(urls.filter { $0.isFileURL && seen.insert($0.standardizedFileURL.path).inserted }.prefix(20))
     }
 
-    @discardableResult func closeTeX() -> Bool {
+    @discardableResult func closeTeX(retainConnection: Bool = true) -> Bool {
         guard closeWriter() else { return false }
         guard pdfSearchEditing.confirmLeaving() else { return false }
         guard texProject?.confirmLeaving() != false else { return false }
-        texProject?.releaseWorkspaceResources(); texProject = nil; return true
+        if let project = texProject {
+            if !retainConnection || !overleaf.retainWarmProject(project) {
+                Task { await project.liveWorkspace.stop() }; project.releaseWorkspaceResources()
+            }
+        }
+        if !retainConnection { Task { await overleaf.discardWarmProject() } }
+        texProject = nil; return true
     }
     func newTeX() {
         guard !opening, reader.close(), closeTeX() else { return }
@@ -348,6 +368,11 @@ final class HomeModel: ObservableObject {
         }
     }
     func openTeX(_ root: URL) {
+        if let current = texProject, current.root.path == root.standardizedFileURL.path { overleaf.browsing = false; return }
+        if let warm = overleaf.takeWarmProject(root) {
+            guard reader.close(), closeTeX() else { _ = overleaf.retainWarmProject(warm); return }
+            texProject = warm; overleaf.browsing = false; recordRecent(warm.root); return
+        }
         do { let connection = overleaf.connection(for: root); let project = try TeXProject(root, historyEnabled: connection == nil, displayName: connection?.name); guard reader.close(), closeTeX() else { return }; texProject = project
             if let connection { project.renameConnectedProject = { [weak library = overleaf] name in
                 guard let library else { throw OverleafProjectRename.Failure.unavailable }

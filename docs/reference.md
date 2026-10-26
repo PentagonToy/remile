@@ -14,11 +14,11 @@ Search by the details you remember. Click a column heading to sort, then click a
 
 PDFs are saved locally first. While online, remile uses a detected DOI or arXiv ID to fill missing details without AI. The airplane button pauses these lookups.
 
-Double-click a metadata value to edit it. **Read metadata** reviews details extracted from the PDF. **Look up metadata** fills missing fields and available abstracts online by DOI, arXiv ID or an exact title match. Existing values stay unchanged, and no PDF is uploaded. [Metadata lookup details →](details/reference.md#metadata-lookup)
+Double-click a metadata value to edit it. **Read metadata** reviews details extracted from the PDF. **Look up metadata** fills missing fields and available abstracts online by DOI, arXiv ID or an exact title match. Existing values stay unchanged, and no PDF is uploaded. Available abstracts appear below the dates in a collapsed Abstract section. [Metadata lookup details →](details/reference.md#metadata-lookup)
 
 Edited books can list editors instead of authors. **Author / Editor** shows their names with `(ed.)` or `(eds.)`. New citation keys use the first editor's surname when no author is recorded. [Names and keys →](details/reference.md#columns-and-keys)
 
-Missing a PDF? Right-click the reference and choose **Find a paper…**. remile checks local files and public sources. For subscription access, choose **Publisher access…**, sign in on the official website and download the PDF. A confirmed match returns here for attachment. [PDF lookup details →](details/reference.md#publisher-access)
+Missing a PDF? Right-click the reference and choose **Find a paper…**. remile checks local files and public sources. For subscription-only papers, download the PDF in your browser and add the local file. remile does not manage publisher sign-ins. [PDF lookup details →](details/reference.md#pdf-access)
 
 ## Cite while writing
 
@@ -51,7 +51,7 @@ Background, fact, method and comparison hints describe possible uses of your sen
 
 ## Review before tidying
 
-Clean up reviews metadata and duplicate candidates. Merge selected lets you choose the base record and keep distinct PDFs. Extra entries move to Trash.
+Clean up reviews metadata and duplicate candidates. Merge selected lets you choose the base record and keep distinct PDFs. Merged entries are removed without going to Trash.
 
 Undo and Redo cover recent changes. Empty Trash permanently removes discarded records and unshared files after confirmation.
 
@@ -68,7 +68,6 @@ Save supported preferences to a preset and load it on another Mac. Accounts and 
 | Button | What it does |
 | --- | --- |
 | <img class="remile-guide-symbol" src="../others/symbols/guide/cleanup.svg" alt="" width="24" height="24"> **Clean up** | Review metadata and duplicate candidates. |
-| <img class="remile-guide-symbol" src="../others/symbols/guide/chat.svg" alt="" width="24" height="24"> **Review** | Review extracted metadata or request an optional AI correction. |
 | <img class="remile-guide-symbol" src="../others/symbols/guide/key.svg" alt="" width="24" height="24"> **Keys** | Regenerate citation keys after confirmation. |
 | <img class="remile-guide-symbol" src="../others/symbols/guide/folder.svg" alt="" width="24" height="24"> **Library** | Organise references into libraries and collections. |
 | <img class="remile-guide-symbol" src="../others/symbols/guide/pdf.svg" alt="" width="24" height="24"> **PDF preview** | Read the selected attachment. |
@@ -76,3 +75,5 @@ Save supported preferences to a preset and load it on another Mac. Accounts and 
 [Shared buttons and status marks](buttons.md)
 
 [Keys, metadata, attachments and saved passages](details/reference.md) · [AI review](assistant.md)
+
+The preview starts with the selected title. Double-click it to edit. Abstract appears last and stays folded until opened.

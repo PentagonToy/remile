@@ -45,7 +45,7 @@ struct PDFSelectionActions {
 
 /// Reader and Search use the same explicit native menu, without swizzling PDFKit.
 @MainActor
-final class PDFSelectionView: PDFView {
+final class PDFSelectionView: PageNavigationPDFView {
     private lazy var imageDrag = PDFImageDrag(view: self)
     private lazy var contentMenu = PDFContentMenu(view: self)
     override var document: PDFDocument? {
@@ -156,6 +156,7 @@ final class PDFSelectionView: PDFView {
         if drawingTool != nil, event.keyCode == 53 { cancelDrawing(); finishDrawing?(); return }
         super.keyDown(with: event)
     }
+    override func prepareForKeyboardPageChange() { cancelDrawing(); imageDrag.cancel() }
     func cancelDrawing() {
         previewLayer?.removeFromSuperlayer(); previewLayer = nil; previewPath = nil
         drawingPage = nil; drawingPoints = []

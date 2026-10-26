@@ -10,7 +10,7 @@ struct LibrarySearchView: View {
     var goHome: (() -> Void)? = nil
     private var assistant: DocumentAssistant { model.assistant }
     @StateObject private var citationState = CitationState()
-    private final class CitationState: ObservableObject { @Published var references = false; @Published var focus: AssistantCitation?; @Published var selectedPassages: [AssistantPassage] = []; @Published var compactPreview = false; @Published var settingsPresented = false }
+    private final class CitationState: ObservableObject { @Published var paneReset = UUID(); @Published var references = false; @Published var focus: AssistantCitation?; @Published var selectedPassages: [AssistantPassage] = []; @Published var compactPreview = false; @Published var settingsPresented = false }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var selection: Binding<String?> {
@@ -28,9 +28,10 @@ struct LibrarySearchView: View {
                         RemileSegmentedControl(title: "Search pane", selection: $citationState.compactPreview, options: [false, true], label: { $0 ? "Preview" : "Results" }).padding(10)
                         if citationState.compactPreview { previewAndAsk } else { sidebar }
                     }
-                } else { ReaderSplit(sizing: .results, minimum: 260, maximum: 520, minimumContent: model.askPresented ? 600 : 420, label: "search results", pane: { sidebar }, content: { previewAndAsk }) }
+                } else { ReaderSplit(sizing: .results, minimum: 260, maximum: 520, minimumContent: model.askPresented ? 600 : 420, label: "search results", revealToken: citationState.paneReset.uuidString, pane: { sidebar }, content: { previewAndAsk }) }
             }
-        }.sheet(isPresented: $model.libraryPresented) { LibraryManager(model: model) }
+        }.focusedSceneValue(\.workspaceActions, WorkspaceActions(ask: toggleAssistant, references: { citationState.references = true }, restorePanes: { citationState.paneReset = UUID() }))
+        .sheet(isPresented: $model.libraryPresented) { LibraryManager(model: model) }
             .sheet(isPresented: $citationState.references) { ReferencePicker(format: .markdown) }
             .sheet(isPresented: $citationState.settingsPresented) { searchSettings }
             .onChange(of: boostingEnabled) { model.invalidateSearch() }
@@ -59,7 +60,7 @@ struct LibrarySearchView: View {
     }
 
     private var previewAndAsk: some View {
-        SearchPreviewSplit(askPresented: model.askPresented, assistant: { searchAssistant }, preview: { preview })
+        SearchPreviewSplit(askPresented: model.askPresented, revealToken: citationState.paneReset.uuidString, assistant: { searchAssistant }, preview: { preview })
     }
     private var searchAssistant: some View {
         AssistantPanel(assistant: assistant, passages: citationState.selectedPassages + assistantHits.map(\.assistantPassage).filter { passage in !citationState.selectedPassages.contains { $0.id == passage.id } }, topic: model.query, select: { source in
@@ -101,12 +102,14 @@ struct LibrarySearchView: View {
             }.font(RemileType.control).padding(.horizontal, 10).frame(minWidth: 180, minHeight: 32).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 9))
     }
     private var aiActions: some View {
+            HStack(spacing: 10) {
             AIToolGroup {
             if model.exploring { Button("Stop", action: model.cancelExploration) }
             else { Button { model.explore() } label: { Label("Explore", systemImage: "sparkle.magnifyingglass") }.disabled(model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.summary.folders.isEmpty || assistantProvider == "Off" || network.offline).remileHelp("Find related concepts · " + assistantProvider) }
-            Button { citationState.references = true } label: { Image(systemName: "books.vertical") }.remileHelp("Reference library").accessibilityLabel("Reference library")
             AIProviderButton()
-            Button { toggleAssistant() } label: { Label("Ask", systemImage: "text.bubble") }.remileHelp("Ask about search results · " + assistantProvider)
+            }
+            WorkspaceAskButton(isPresented: model.askPresented, action: toggleAssistant)
+            WorkspaceReferenceButton { citationState.references = true }
             }
     }
     private var libraryButton: some View {
@@ -173,7 +176,12 @@ struct LibrarySearchView: View {
                         ForEach(SearchResultOrder.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }.labelsHidden().fixedSize().remileHelp("Sort matches")
                     Spacer(minLength: 4)
-                    if model.results.count == 200 { Text("Top 200 matches").lineLimit(1).remileHelp("Showing the top 200 matches. Refine your search to find more specific passages.") }
+                    if model.boosting { ProgressView().controlSize(.mini).accessibilityLabel("Refining search") }
+                    if model.searchOffset > 0 || model.searchHasMore {
+                        Button { model.changeSearchPage(false) } label: { Image(systemName: "chevron.left") }.disabled(model.searchOffset == 0 || model.boosting).accessibilityLabel("Previous results")
+                        Text("Page \(model.searchOffset / 200 + 1)").monospacedDigit().lineLimit(1)
+                        Button { model.changeSearchPage(true) } label: { Image(systemName: "chevron.right") }.disabled(!model.searchHasMore || model.boosting).accessibilityLabel("Next results")
+                    }
                 }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 14)
                 if model.resultGroups.isEmpty {
                     ContentUnavailableView("No matching documents", systemImage: "line.3.horizontal.decrease.circle")
@@ -296,7 +304,7 @@ struct LibrarySearchView: View {
 
     private func toggleAssistant() {
         if model.askPresented { assistant.cancel() }
-        else if model.selectedHit != nil { citationState.compactPreview = true }
+        else { citationState.compactPreview = true }
         withAnimation(reduceMotion ? nil : RemileMotion.panel) { model.askPresented.toggle() }
     }
 

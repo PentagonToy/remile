@@ -2,9 +2,11 @@
 
 Make room for the questions a careful reader might ask.
 
+Local LaTeX and Overleaf projects share **Ask → Review manuscript** for questions based on your saved criteria. Connected projects also show [Overleaf comments and tracked changes](workspace/overleaf.md#read-review-notes) in the left Review tab.
+
 ## Review a draft
 
-1. Open Review in a LaTeX or Overleaf project.
+1. Open **Ask → Review manuscript** in a LaTeX or Overleaf project.
 2. Choose the provider and the file.
 3. Select **Review file**.
 

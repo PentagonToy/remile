@@ -7,9 +7,9 @@ enum OverleafLiveText {
         var value = text
         for op in ops {
             guard let offset = op["p"].integer, offset >= 0, offset <= value.utf16.count else { throw OverleafLiveWire.Failure.protocolMismatch }
-            let deleted = op["d"].string, inserted = op["i"].string
-            guard (deleted != nil) != (inserted != nil) else { throw OverleafLiveWire.Failure.protocolMismatch }
-            let length = deleted?.utf16.count ?? 0
+            let deleted = op["d"].string, inserted = op["i"].string, comment = op["c"].string
+            guard [deleted, inserted, comment].compactMap({ $0 }).count == 1 else { throw OverleafLiveWire.Failure.protocolMismatch }
+            let length = (deleted ?? comment)?.utf16.count ?? 0
             let units = Array(value.utf16)
             func boundary(_ index: Int) -> Bool {
                 index == 0 || index == units.count || !((0xD800...0xDBFF).contains(units[index - 1]) && (0xDC00...0xDFFF).contains(units[index]))
@@ -17,7 +17,8 @@ enum OverleafLiveText {
             guard length <= value.utf16.count - offset,
                   boundary(offset), boundary(offset + length),
                   let range = Range(NSRange(location: offset, length: length), in: value) else { throw OverleafLiveWire.Failure.protocolMismatch }
-            if let deleted, String(value[range]) != deleted { throw OverleafLiveWire.Failure.protocolMismatch }
+            if let expected = deleted ?? comment, String(value[range]) != expected { throw OverleafLiveWire.Failure.protocolMismatch }
+            if comment != nil { continue }
             value.replaceSubrange(range, with: inserted ?? "")
             try OverleafLive.validate(value)
         }

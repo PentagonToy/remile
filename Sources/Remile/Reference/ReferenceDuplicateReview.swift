@@ -41,7 +41,7 @@ struct ReferenceDuplicateReview: View {
                 }.padding(.vertical, 4).scrollContentGutter()
             }
             if Set(records.map(\.library)).count > 1 { Toggle("Align metadata across libraries", isOn: $state.align) }
-            Text("Extra entries move to Trash. Citation keys may change.").font(RemileType.caption).foregroundStyle(.secondary)
+            Text("Extra entries are removed. PDFs are kept. Citation keys may change.").font(RemileType.caption).foregroundStyle(.secondary)
             if let error = model.error { Text(error).foregroundStyle(RemileStyle.warning).font(RemileType.caption) }
             HStack {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)

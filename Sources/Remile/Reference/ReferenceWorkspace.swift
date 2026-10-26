@@ -11,8 +11,8 @@ struct ReferenceWorkspace: View {
     var openPDF: (URL, Int) -> Void = { _, _ in }
     @StateObject private var state = Presentation()
     private final class Presentation: ObservableObject {
+        @Published var paneReset = UUID()
         @Published var editor: Entry?
-        @Published var repair: ReferenceRecord?
         @Published var cleanup = false
         @Published var metadata: ReferenceRecord?
         @Published var paperSearch = false
@@ -53,12 +53,11 @@ struct ReferenceWorkspace: View {
                 Button("Find a paper…") { model.error = nil; state.paperTarget = nil; state.paperSearch = true }
                 Button("Import files…") { model.chooseFiles() }
                 Button("Add manually…") { model.error = nil; state.editor = Entry() }
-                Button("Paste citation…") { model.error = nil; state.editor = Entry(citation: NSPasteboard.general.string(forType: .string) ?? "") }
+                Button("Paste BibTeX…") { model.error = nil; state.editor = Entry(citation: NSPasteboard.general.string(forType: .string) ?? "") }
             } label: { Label("Add", systemImage: "plus") }.fixedSize()
             Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward") }.disabled(!model.canUndo).accessibilityLabel("Undo").remileHelp("Undo the last Reference change")
             Button { model.undo(redo: true) } label: { Image(systemName: "arrow.uturn.forward") }.disabled(!model.canRedo).accessibilityLabel("Redo").remileHelp("Redo the last Reference change")
             Button { model.error = nil; state.cleanup = true } label: { Label("Clean up", systemImage: "wand.and.stars") }.disabled(model.libraryRecords.filter { $0.trashed == nil }.isEmpty || model.showingTrash || model.busy)
-            Button { state.repair = model.selection } label: { Label { Text("Review") } icon: { GPTMark() } }.disabled(model.selection == nil || model.showingTrash)
             Button { state.regenerate = true } label: { Label("Keys", systemImage: "key") }.disabled(model.libraryRecords.allSatisfy { $0.trashed != nil }).remileHelp("Regenerate library citation keys")
         }.font(RemileType.control).buttonStyle(RemileToolStyle()).padding(.horizontal, 16).padding(.vertical, 6).disabled(model.busy)
     }
@@ -71,12 +70,12 @@ struct ReferenceWorkspace: View {
             Divider()
             GeometryReader { window in
                 let side = WorkspaceLayout.referenceSide(window.size.width)
-                ReaderSplit(initial: side, minimum: 180, maximum: 380, minimumContent: 480, label: "reference libraries", pane: { sidebar }, content: {
+                ReaderSplit(initial: side, minimum: 180, maximum: 380, minimumContent: 480, label: "reference libraries", revealToken: state.paneReset.uuidString, pane: { sidebar }, content: {
                     GeometryReader { geometry in
                         if geometry.size.width < 700 {
                             VStack(spacing: 0) { list; Divider(); preview.frame(height: geometry.size.height * 0.48) }
                         } else {
-                            ReaderSplit(side: .trailing, initial: side, minimum: 180, maximum: 420, minimumContent: 380, label: "reference preview", pane: { preview }, content: { list })
+                            ReaderSplit(side: .trailing, initial: side, minimum: 180, maximum: 420, minimumContent: 380, label: "reference preview", revealToken: state.paneReset.uuidString, pane: { preview }, content: { list })
                         }
                     }
                 })
@@ -93,7 +92,8 @@ struct ReferenceWorkspace: View {
             if let error = model.error {
                 HStack { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).textSelection(.enabled); Spacer(); Button { model.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss message") }.padding(10).background(RemileStyle.editorBar)
             }
-        }.font(RemileType.control).background(RemileStyle.background).tint(RemileStyle.accent)
+        }.focusedSceneValue(\.workspaceActions, WorkspaceActions(restorePanes: { state.paneReset = UUID() }))
+        .font(RemileType.control).background(RemileStyle.background).tint(RemileStyle.accent)
             .overlay(Color.black.opacity(draggingFiles ? 0.10 : 0).allowsHitTesting(false))
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: draggingFiles)
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: $state.windowTarget) { receive($0) }
@@ -125,12 +125,6 @@ struct ReferenceWorkspace: View {
             .sheet(isPresented: $state.cleanup) { ReferenceCleanupReview(model: model) }
             .sheet(item: $state.editor) { entry in ReferenceEditor(model: model, record: entry.record, citation: entry.citation) }
             .sheet(item: $state.duplicateReview) { group in ReferenceDuplicateReview(model: model, records: group.records) }
-            .sheet(item: $state.repair) { record in
-                ReferenceRepair(source: (try? ReferenceExport.bibtex([record])) ?? "") { correction in
-                    var updated = record; updated.fields = correction.fields; if updated.fields["abstract"] == nil { updated.fields["abstract"] = record.fields["abstract"] }; updated.key = correction.key; updated.type = correction.type
-                    model.save(updated, existing: true)
-                }
-            }
     }
     private func addLibrary(parent: UUID? = nil) { state.libraryName = ""; state.parentLibrary = parent; state.addingLibrary = true; libraryExpanded = true }
     private var draggingFiles: Bool { !model.showingTrash && (state.windowTarget || state.dropTarget || state.hoveredRecord != nil || state.harbourTarget || state.previewTarget) }
@@ -245,12 +239,13 @@ struct ReferenceWorkspace: View {
             TextField("Find a reference", text: $model.query).textFieldStyle(.roundedBorder).padding(14)
             GeometryReader { geometry in
             let visible = ReferenceColumn.visible(columnSource)
-            let others = visible.filter { $0 != .title }.reduce(0.0) { $0 + width($1) }
+            let fitted = ReferenceColumnWidths.fitted(available: geometry.size.width, columns: visible, saved: state.widths)
+            let others = visible.filter { $0 != .title }.reduce(0.0) { $0 + (fitted[$1.rawValue] ?? $1.width) }
             let overhead = Double(80 + visible.count * 10)
-            let titleWidth = state.widths["title"] ?? max(300, geometry.size.width - others - overhead)
+            let titleWidth = fitted["title"] ?? 180
             ScrollView(.horizontal) {
             VStack(alignment: .leading, spacing: 0) {
-            columns(titleWidth: titleWidth).font(RemileType.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.trailing, ScrollContentSpacing.gutter).padding(.bottom, 8)
+            columns(widths: fitted).font(RemileType.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.trailing, ScrollContentSpacing.gutter).padding(.bottom, 8)
             Divider()
             if model.items.isEmpty {
                 VStack(spacing: 12) {
@@ -260,24 +255,24 @@ struct ReferenceWorkspace: View {
                 }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { scroll in
-                    ScrollView { LazyVStack(alignment: .leading, spacing: 2) { ForEach(model.items) { record in row(record, titleWidth: titleWidth).id(record.id) } }.padding(10).scrollContentGutter() }
+                    ScrollView { LazyVStack(alignment: .leading, spacing: 2) { ForEach(model.items) { record in row(record, widths: fitted).id(record.id) } }.padding(10).scrollContentGutter() }
                         .onAppear { if let id = model.selected { scroll.scrollTo(id) } }
                 }
             }
             }.frame(width: max(geometry.size.width, titleWidth + others + overhead), height: geometry.size.height)
             }
-            }
+            }.coordinateSpace(name: "reference.columns")
         }.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
             .overlay(Rectangle().strokeBorder(RemileStyle.accent.opacity(state.dropTarget ? 0.6 : 0), lineWidth: 2).allowsHitTesting(false))
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: $state.dropTarget) { providers in
                 receive(providers)
             }
     }
-    private func row(_ record: ReferenceRecord, titleWidth: Double) -> some View {
+    private func row(_ record: ReferenceRecord, widths: [String: Double]) -> some View {
         Button { let flags = NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags; model.select(record.id, extending: flags.contains(.command), range: flags.contains(.shift)) } label: {
             HStack(spacing: 10) {
                 ReferenceKindIcon(kind: .classify(record), hasAttachment: !record.attachments.isEmpty).frame(width: 22)
-                columnCells(record, titleWidth: titleWidth)
+                columnCells(record, widths: widths)
             }.font(RemileType.callout).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).padding(.vertical, 9)
                 .background(model.selectedIDs.contains(record.id) ? RemileStyle.accent.opacity(0.18) : model.duplicates[record.id] != nil ? RemileStyle.accent.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 5))
                 .contentShape(Rectangle())
@@ -325,18 +320,19 @@ struct ReferenceWorkspace: View {
         }.disabled(model.busy)
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: rowTarget(record.id)) { receive($0, target: record, pdfOnly: true) }
     }
-    private func columns(titleWidth: Double) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) { Color.clear.frame(width: 22, height: 1); columnCells(nil, titleWidth: titleWidth) }
+    private func columns(widths: [String: Double]) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) { Color.clear.frame(width: 22, height: 1); columnCells(nil, widths: widths) }
     }
-    @ViewBuilder private func columnCells(_ record: ReferenceRecord?, titleWidth: Double) -> some View {
+    @ViewBuilder private func columnCells(_ record: ReferenceRecord?, widths: [String: Double]) -> some View {
         let columns = ReferenceColumn.visible(columnSource)
         ForEach(columns) { column in
+            let fitted = widths[column.rawValue] ?? column.width
             Group {
                 if let record { Text(column.displayedValue(record)).foregroundStyle(column == .title ? RemileStyle.ink : .secondary) }
                 else {
                     Button { model.sort(by: column) } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(column.label)
+                            Text(column == .author && fitted < 110 ? "Author" : column == .publication && fitted < 145 ? "Publication" : column.label)
                             if model.sorting.column == column { Image(systemName: model.sorting.ascending ? "chevron.up" : "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(RemileStyle.accent) }
                             Spacer(minLength: 0)
                         }.contentShape(Rectangle())
@@ -345,24 +341,24 @@ struct ReferenceWorkspace: View {
                         .accessibilityValue(model.sorting.column == column ? (model.sorting.ascending ? "Ascending" : "Descending") : "Not sorted")
                         .remileHelp("Sort by " + column.label)
                 }
-            }.frame(width: column == .title ? titleWidth : width(column), alignment: record.map { column.value($0).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } == true ? .center : .leading)
+            }.frame(width: fitted, alignment: record.map { column.value($0).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } == true ? .center : .leading)
                 .overlay(alignment: .trailing) {
-                    if record == nil { resize(column, current: column == .title ? titleWidth : width(column)) }
+                    if record == nil { resize(column, current: fitted) }
                 }
         }
     }
 
-    private func width(_ column: ReferenceColumn) -> Double { state.widths[column.rawValue] ?? column.width }
     private func resize(_ column: ReferenceColumn, current: Double) -> some View {
-        Color.clear.frame(width: 8, height: 22).contentShape(Rectangle())
+        Color.clear.frame(width: 12, height: 28).contentShape(Rectangle())
             .overlay(Rectangle().fill(RemileStyle.ink.opacity(0.15)).frame(width: 1, height: 12))
             .background(ResizeCursorRegion())
-            .gesture(DragGesture(minimumDistance: 2).onChanged { event in
+            .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .named("reference.columns")).onChanged { event in
                 if state.widthStarts[column.rawValue] == nil { state.widthStarts[column.rawValue] = current }
                 state.widths[column.rawValue] = ReferenceColumnWidths.clamp((state.widthStarts[column.rawValue] ?? current) + event.translation.width, column: column)
             }.onEnded { _ in
                 state.widthStarts[column.rawValue] = nil; savedWidths = ReferenceColumnWidths.encode(state.widths)
             })
+            .onTapGesture(count: 2) { state.widths[column.rawValue] = nil; savedWidths = ReferenceColumnWidths.encode(state.widths) }
             .accessibilityElement().accessibilityLabel("Resize " + column.label).accessibilityValue("\(Int(current)) points")
             .accessibilityAdjustableAction { direction in
                 state.widths[column.rawValue] = ReferenceColumnWidths.clamp(current + (direction == .increment ? 20 : -20), column: column)

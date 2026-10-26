@@ -6,7 +6,7 @@ Your documents stay in the folders you choose. Reading, editing and standard loc
 
 Reference stores its catalogue and copied PDFs together. Its default folder is `~/Library/Application Support/local.remile.app/Reference`. Settings → Storage shows the active location. macOS manages preferences in `~/Library/Preferences/local.remile.app.plist`.
 
-Presets carry supported preferences. They exclude credentials, accounts, document paths and the library location. Search indexes and device caches stay local.
+Presets carry supported preferences. They exclude credentials, accounts, document paths and the library location. Search indexes and device caches stay local. Downloaded Markdown images can remain in `~/Library/Caches/local.remile.app/MarkdownImages`, with a 256 MiB HTTP cache capacity. The cache respects source response policies and is not copied into the document or shared Reference storage.
 
 ## When you connect
 

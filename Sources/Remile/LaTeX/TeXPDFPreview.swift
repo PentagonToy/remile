@@ -49,7 +49,10 @@ import PDFKit
         view?.go(to: target); updatePage()
     }
     func observeSelectionGesture(_ event: NSEvent) {
-        if event.type == .leftMouseDragged { pendingClick = nil; return }
+        if event.type == .leftMouseDragged {
+            if let down = pendingClick, hypot(event.locationInWindow.x - down.locationInWindow.x, event.locationInWindow.y - down.locationInWindow.y) > 5 { pendingClick = nil }
+            return
+        }
         guard event.window === view?.window else { return }
         if event.type == .leftMouseDown { pendingClick = event.clickCount == 2 ? event : nil }
         else if event.type == .leftMouseUp {
@@ -140,7 +143,7 @@ import PDFKit
     }
 }
 
-@MainActor final class TeXPreviewPDFView: PDFView {
+@MainActor final class TeXPreviewPDFView: PageNavigationPDFView {
     weak var navigation: TeXPDFController?
     override func layout() { super.layout(); navigation?.showPendingJump() }
     override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); navigation?.showPendingJump() }

@@ -2,6 +2,10 @@
 
 A small symbol can point the way. Hover over a button in remile to see its name. In narrow windows, extra controls may move into More (…).
 
+## Keyboard access
+
+In Markdown, Search and LaTeX workspaces, use **Workspace → Show or Hide Ask** (⇧⌘A) or **Reference Library…** (⇧⌘R). **Restore Panes** reveals collapsed split panes without resetting saved widths. LaTeX also offers **Show Logs or PDF**.
+
 ## Shared controls
 
 | Button | What it means |
