@@ -18,7 +18,11 @@ Task { @MainActor in
  let suite="remile.remote-image-check."+UUID().uuidString
  let defaults=UserDefaults(suiteName:suite)!
  defer { defaults.removePersistentDomain(forName:suite) }
- let gate=NetworkAccessGate(defaults:defaults),handler=MarkdownRemoteImages(gate:gate)
+ let gate=NetworkAccessGate(defaults:defaults)
+ let cacheFolder=FileManager.default.temporaryDirectory.appendingPathComponent("remile-image-cache-"+UUID().uuidString)
+ let responseCache=URLCache(memoryCapacity:0,diskCapacity:32*1024*1024,directory:cacheFolder)
+ defer { responseCache.removeAllCachedResponses();try? FileManager.default.removeItem(at:cacheFolder) }
+ let handler=MarkdownRemoteImages(gate:gate,responseCache:responseCache)
  let view=WKWebView()
  func remote(_ path:String)->URL { URL(string:"http://127.0.0.1:"+port+path)! }
  @MainActor func begin(_ path:String)->FakeImageTask {
@@ -39,6 +43,17 @@ Task { @MainActor in
  verify(URLComponents(url:encoded,resolvingAgainstBaseURL:false)!.queryItems!.first!.value=="https://example.invalid/a.png?x=1&y=two%20words#part","URL encoding retains query and fragment")
  let first=begin("/image");await wait([first]);verify(first.finished && first.bytes.count>0 && first.response?.mimeType=="image/png","Valid image delivered")
  let cached=begin("/image");await wait([cached]);verify(cached.finished && count("/image")==1,"Identical image uses memory cache")
+ let persistent=begin("/cacheable");await wait([persistent]);verify(persistent.finished,"Cacheable image downloads successfully")
+ try? await Task.sleep(for:.milliseconds(100))
+ let reopenedCache=URLCache(memoryCapacity:0,diskCapacity:32*1024*1024,directory:cacheFolder)
+ let other=MarkdownRemoteImages(gate:gate,responseCache:reopenedCache)
+ let reused=FakeImageTask(MarkdownRemoteImages.sourceURL(for:remote("/cacheable"))!)
+ other.webView(view,start:reused);await wait([reused])
+ verify(reused.finished && count("/cacheable")==1,"A new preview reuses the shared disk cache without downloading again")
+ let noStore=begin("/no-store");await wait([noStore])
+ let uncached=FakeImageTask(MarkdownRemoteImages.sourceURL(for:remote("/no-store"))!)
+ other.webView(view,start:uncached);await wait([uncached])
+ verify(uncached.finished && count("/no-store")==2,"Origin no-store policy prevents persistent reuse")
  let a=begin("/slow-shared"),b=begin("/slow-shared");await wait([a,b]);verify(a.finished && b.finished && count("/slow-shared")==1,"Duplicate live image requests coalesce")
  let bad=begin("/html");await wait([bad]);verify(bad.error != nil && bad.bytes.isEmpty,"Reject non-image response")
  let badAgain=begin("/html");await wait([badAgain]);verify(badAgain.error != nil && count("/html")==1,"Failure cache prevents repeated requests")

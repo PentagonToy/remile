@@ -114,10 +114,6 @@ try check(try ReferenceBibTeX.parse(String(contentsOf: exported, encoding: .utf8
 rejects("Export refuses overwrite") { _ = try ReferenceCLI.response(["export", "--output", exported.path], repository: repository) }
 rejects("CLI invalid limit") { _ = try ReferenceCLI.response(["list", "--limit", "oops"], repository: repository) }
 rejects("CLI invalid UUID") { _ = try ReferenceCLI.response(["show", "--id", "wrong"], repository: repository) }
-let correction = try ReferenceCorrection.parse("```bibtex\n@article{repaired,title={Fixed title}}\n```")
-try check(correction.title == "Fixed title", "GPT response parser accepts one fenced entry")
-rejects("GPT multi-entry response") { _ = try ReferenceCorrection.parse(bib) }
-rejects("GPT prose response") { _ = try ReferenceCorrection.parse("Here is a guess: @article{a,title={x}}") }
 let catalogue = root.appendingPathComponent("library.json"), safeBytes = try Data(contentsOf: root.appendingPathComponent("library.json"))
 try Data("broken catalogue".utf8).write(to: catalogue)
 rejects("Corrupt catalogue") { _ = try repository.add([ReferenceRecord()]) }
@@ -177,7 +173,7 @@ try check(try repository.records().contains { $0.id == copy.id && $0.trashed == 
 let currentGroup = ReferenceDuplicates.lookup(try repository.records())[samePDF.id]!
 let currentSnapshots = try repository.records().filter { currentGroup.contains($0.id) }
 try repository.merge(currentSnapshots, preferred: attached.id, alignMetadata: true)
-try check(try repository.records().filter { $0.library == library.id && $0.trashed == nil }.count == 1, "Merge moves same-library extras to Trash")
+try check(try repository.records().filter { $0.library == library.id }.count == 1, "Merge removes same-library extras without adding Trash entries")
 try check(ReferenceMetadata.rows(copy).contains { $0.label == "Date added" }, "Metadata table includes date added")
 var rare = ReferenceRecord(); rare.type = "phdthesis"
 try check(ReferenceKind.classify(rare) == .other, "Uncommon imported types use Other")
@@ -381,6 +377,17 @@ let resolved = ReferenceMergePlan.fields([formalAdded, complementAdded], preferr
 try mergeRepo.merge([formalAdded, complementAdded], preferred: formalAdded.id, alignMetadata: false, resolvedFields: resolved)
 let kept = try mergeRepo.records().first { $0.id == formalAdded.id }!
 try check(kept.fields["publisher"] == "Example Press" && kept.attachments.count == 1 && kept.key == formalAdded.key, "Reviewed merge keeps the preferred key, fills metadata and retains the other PDF")
+try check(try !mergeRepo.records().contains { $0.id == complementAdded.id }, "Merged duplicate is removed from the catalogue")
+try check(FileManager.default.fileExists(atPath: mergeRepo.attachmentURL(kept.attachments[0]).path), "Merged PDF remains available")
+try check(!FileManager.default.fileExists(atPath: mergeRepo.root.appendingPathComponent("Recovery").path), "Merge does not create a persistent duplicate recovery copy")
+let mergeHistory = ReferenceRepository.History()
+let undoMergeRepo = mergeRepo.recordingHistory(mergeHistory)
+let mergeCopy = try undoMergeRepo.duplicate(kept.id, to: ReferenceLibrary.primaryID)
+try undoMergeRepo.merge([kept, mergeCopy], preferred: kept.id, alignMetadata: false)
+try undoMergeRepo.undo()
+try check(try undoMergeRepo.records().contains { $0.id == mergeCopy.id && $0.trashed == nil }, "Session Undo restores a merged duplicate")
+try undoMergeRepo.undo(redo: true)
+try check(try !undoMergeRepo.records().contains { $0.id == mergeCopy.id }, "Redo removes the duplicate without Trash")
 let atomicBefore = try mergeRepo.records()
 rejects("Invalid fetched PDF") { _ = try mergeRepo.addFetched(formal, pdf: Data("HTML paywall".utf8), libraryID: ReferenceLibrary.primaryID) }
 try check(try mergeRepo.records() == atomicBefore, "A failed PDF import leaves no partial reference")
@@ -808,7 +815,6 @@ try check(ReferencePDFMetadata.placeholderTitle("arXiv:1706.03762v7 [cs.CL] 2 Au
 try check(ReferencePDFMetadata.arxivID(in: "arXiv:1706.03762v7 [cs.CL] 2 Aug 2023") == "1706.03762v7", "Local PDF extraction recognises versioned arXiv identifiers")
 try check(ReferencePDFMetadata.arxivID(in: "arXiv:1706.03762 https://arxiv.org/abs/1706.03762v7") != nil, "Versioned and unversioned forms identify the same paper")
 try check(ReferencePDFMetadata.arxivID(in: "arXiv:1706.03762 arXiv:2301.00001") == nil, "Conflicting archive identifiers stay ambiguous")
-do { _ = try ReferenceCorrection.parse("@article{x,author={Jane Doe}}") } catch { try check(!error.localizedDescription.contains("one reference at a time") && error.localizedDescription.contains("title"), "Missing-title suggestions report the actual response problem") }
 try check(ReferenceColumnWidths.decode("{\"title\":99999,\"year\":1}")["title"] == 1200, "Column widths clamp unusually large persisted values")
 try check(ReferenceColumnWidths.decode("{\"year\":1}")["year"] == 44, "Small columns retain a usable minimum")
 try check(ReferenceColumnWidths.decode("not JSON").isEmpty, "Invalid stored widths fall back to defaults")
@@ -998,6 +1004,14 @@ print("Passed \(checks) Reference checks including project/library identity")
 
 
 // Edited volumes retain their contributor roles in parsing, display and keys.
+let compactColumns = ReferenceColumn.visible(ReferenceColumn.defaults)
+let compactWidths = ReferenceColumnWidths.fitted(available: 666, columns: compactColumns, saved: [:])
+try check(compactColumns.reduce(130.0) { $0 + (compactWidths[$1.rawValue] ?? 0) } <= 666.01, "Default columns fit a normal three-pane Reference workspace")
+let manualWidths = ReferenceColumnWidths.fitted(available: 500, columns: compactColumns, saved: ["title": 430, "publication": 240])
+try check(manualWidths["title"] == 430 && manualWidths["publication"] == 240, "Compact layout preserves explicit user column widths")
+let wideWidths = ReferenceColumnWidths.fitted(available: 1200, columns: compactColumns, saved: [:])
+try check(wideWidths["publication"] == ReferenceColumn.publication.width && wideWidths["title"]! > compactWidths["title"]!, "Wide layouts restore full automatic column widths")
+
 let editedBookJSON = #"{"message":{"type":"edited-book","title":["Data-Driven Fluid Mechanics: Combining First Principles and Machine Learning"],"editor":[{"family":"Mendez","given":"Miguel A."},{"family":"Ianiro","given":"Andrea"},{"family":"Noack","given":"Bernd R."},{"family":"Brunton","given":"Steven L."}],"DOI":"10.1017/9781108896214","publisher":"Cambridge University Press","published-print":{"date-parts":[[2023,1,12]]},"ISBN":["9781108896214"]}}"#
 let editedVolume = try ReferencePaperLookup.parseCrossref(Data(editedBookJSON.utf8), single: true)[0]
 try check(editedVolume.type == "book" && editedVolume.authors.isEmpty && ReferenceText.authors(editedVolume.editors).count == 4, "Crossref edited volumes preserve editors without inventing authors")
@@ -1032,3 +1046,6 @@ let editorCLI = try ReferenceCLI.response(["suggest", "--library", savedVolume.l
 let editorPayload = (editorCLI["suggestions"] as? [[String: Any]])?.first
 try check(editorPayload?["authors"] as? String == "" && (editorPayload?["editors"] as? String)?.contains("Mendez") == true && editorPayload?["contributorRole"] as? String == "editor", "CLI exposes editors separately from authors")
 print("Passed \(checks) Reference checks including edited books")
+
+let expandedColumns = ReferenceColumnWidths.fitted(available: 1800, columns: compactColumns, saved: ["title": 300])
+try check(abs(compactColumns.reduce(130.0) { $0 + (expandedColumns[$1.rawValue] ?? 0) } - 1800) < 0.01 && expandedColumns["publication"]! > 150, "A manual Title width leaves remaining space to automatic metadata columns")

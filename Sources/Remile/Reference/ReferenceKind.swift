@@ -59,6 +59,9 @@ enum ReferenceMetadata {
         }
         result.append(ReferenceMetadataRow(id: "created", label: "Date added", value: record.created.formatted(date: .abbreviated, time: .omitted)))
         result.append(ReferenceMetadataRow(id: "modified", label: "Modified", value: record.modified.formatted(date: .abbreviated, time: .shortened)))
+        if let value = record.fields["abstract"], !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            result.append(ReferenceMetadataRow(id: "abstract", label: "Abstract", value: value))
+        }
         return result
     }
 }

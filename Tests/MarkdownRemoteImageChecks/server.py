@@ -15,6 +15,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
    if path=='/hold':time.sleep(2)
    payload=(b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>' if path=='/svg' else b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>' if path=='/svg-active' else png)
    self.send_response(404 if path=='/missing' else 200)
+   self.send_header('Cache-Control','public, max-age=3600' if path=='/cacheable' else 'no-store')
    self.send_header('Content-Type','text/html' if path=='/html' else 'image/svg+xml' if path.startswith('/svg') else 'image/png')
    if path=='/header-large':self.send_header('Content-Length',str(9*1024*1024))
    elif path!='/stream-large':self.send_header('Content-Length',str(len(payload)))

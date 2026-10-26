@@ -14,7 +14,7 @@ copyright = "© 2026 PentagonToy · Your files, your pace."
 nav = [
   { "Home" = "index.md" },
   { "Start" = [ { "Get started" = "getting-started.md" }, { "Install and update" = "distribution.md" } ] },
-  { "Workspace" = [ { "Overview" = "workspace-layout.md" }, { "PDF" = "workspace/pdf.md" }, { "Search" = "workspace/search.md" }, { "Reference" = "reference.md" }, { "Markdown" = "workspace/markdown.md" }, { "LaTeX" = "workspace/latex.md" }, { "Writer" = "writer.md" }, { "Overleaf" = "workspace/overleaf.md" } ] },
+  { "Workspace" = [ { "Overview" = "workspace-layout.md" }, { "PDF" = "workspace/pdf.md" }, { "Search" = "workspace/search.md" }, { "Reference" = "reference.md" }, { "Writer" = "writer.md" }, { "Markdown" = "workspace/markdown.md" }, { "LaTeX" = "workspace/latex.md" }, { "Overleaf" = "workspace/overleaf.md" } ] },
   { "Guide" = [ { "Buttons and status" = "buttons.md" }, { "Presets and storage" = "storage.md" }, { "AI and writing" = "assistant.md" }, { "Manuscript review" = "manuscript-review.md" } ] },
   { "More" = [ { "A closer look" = "details/index.md" }, { "Detailed guides" = [ { "All controls" = "details/features.md" }, { "Reference" = "details/reference.md" }, { "Writer" = "details/writer.md" }, { "AI and context" = "details/assistant.md" }, { "Manuscript review" = "details/manuscript-review.md" }, { "Layout and motion" = "details/workspace-layout.md" }, { "Build and package" = "details/distribution.md" } ] }, { "CLI" = "cli.md" }, { "Privacy" = "privacy.md" }, { "Changelog" = "changelog.md" }, { "Source code" = "https://github.com/PentagonToy/remile" } ] },
 ]

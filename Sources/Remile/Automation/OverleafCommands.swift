@@ -32,11 +32,15 @@ import Foundation
                 destination.overleaf.browsing = false
                 home = destination
             }
+            if request.action == "review" {
+                return await OverleafReviewCommands.handle(connection: connection, root: root, project: home?.texProject, format: request.kind, output: request.output, library: library)
+            }
             var result = metadata(connection, library: library)
             result["ok"] = true
             result["observedAt"] = Date().timeIntervalSince1970
             result["remoteFreshness"] = "not-checked"
             result["open"] = home != nil
+            result["live"] = home?.texProject?.liveWorkspace.automationStatus as Any? ?? NSNull()
             if let project = home?.texProject {
                 result["target"] = project.identity.uuidString
                 result["dirty"] = project.dirty

@@ -8,6 +8,12 @@ Keep the page in view, and leave a few useful marks for later.
 2. Use the page field, thumbnails or outline to move through it.
 3. Open the sidebar to find text, highlights or comments.
 
+Use the single-rectangle or split-rectangle button to switch between one and two pages. New reading sessions start with one page.
+
+Pages shows larger previews with their numbers underneath. The outlined page is your current position.
+
+With the PDF focused, Left and Right move between pages. Up and Down keep normal continuous scrolling. Arrow keys inside an editable field keep their usual editing behaviour.
+
 ## Mark what matters
 
 Choose a highlight, note or drawing tool. Save writes changes to the open file. Undo lets you revisit an edit.

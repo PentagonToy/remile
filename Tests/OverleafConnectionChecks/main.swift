@@ -18,6 +18,16 @@ func require(_ value: Bool, _ message: String) { precondition(value, message); p
 }
 Task { @MainActor in
     do {
+        let sendView = WKWebView()
+        let absent = try await sendView.callAsyncJavaScript(OverleafLiveBrowser.sendScript, arguments: ["frame": "test"], in: nil, contentWorld: .page)
+        require(absent as? Bool == false, "A socket closed before browser send reports a transport disconnect")
+        _ = try await sendView.callAsyncJavaScript("window.__remileLiveSocket = {readyState: WebSocket.OPEN, send() { this.readyState = WebSocket.CLOSED; throw new DOMException('Closed', 'InvalidStateError'); }};", arguments: [:], in: nil, contentWorld: .page)
+        let racing = try await sendView.callAsyncJavaScript(OverleafLiveBrowser.sendScript, arguments: ["frame": "test"], in: nil, contentWorld: .page)
+        require(racing as? Bool == false, "The browser closed-socket send race stays recoverable")
+        _ = try await sendView.callAsyncJavaScript("window.__remileLiveSocket = {readyState: WebSocket.OPEN, send() { throw new Error('unexpected'); }};", arguments: [:], in: nil, contentWorld: .page)
+        do { _ = try await sendView.callAsyncJavaScript(OverleafLiveBrowser.sendScript, arguments: ["frame": "test"], in: nil, contentWorld: .page); preconditionFailure("Unrelated JavaScript error swallowed") }
+        catch { require((error as NSError).domain == WKError.errorDomain, "Unrelated browser script errors remain errors") }
+        sendView.stopLoading()
         let original = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
         var overrides = original; overrides[NetworkAccessGate.preference] = true
         UserDefaults.standard.setVolatileDomain(overrides, forName: UserDefaults.argumentDomain)
@@ -191,6 +201,8 @@ Task { @MainActor in
         try await until { fetchStarted }; cancelled.stop(); try await until { fetchCancelled }
         require(!cancelled.signedIn && !cancelled.checking, "Closing connection cancels verification before saving or completing")
         try await checkLiveWorkspace(output: output, check: require)
+        try await checkReviewDecisions(output: output, check: require)
+        try await checkWarmProject(output: output, check: require)
         let brandedDirectory = output.appendingPathComponent("brand-library")
         try FileManager.default.createDirectory(at: brandedDirectory, withIntermediateDirectories: true)
         let fixtureConnection = OverleafConnection(id: UUID(), profileID: UUID(), projectID: "6ad72e207e5cd74f01fe6b18", name: "Fixture manuscript", account: "Fixture", branch: "master")

@@ -24,7 +24,7 @@ Signed PDFs start with an editing lock. Click it and accept the warning to edit.
 
 Read, Edit and Split share one source buffer. Split initially gives the source and preview equal space. Format supports styles, links, lists, maths, code and tables. Spreadsheet paste creates a table. Paste as Markdown preserves formatted text. Share exports PDF.
 
-Reading previews load remote images near the viewport, with up to three requests and a 12 MiB memory cache. No disk cache is kept. Offline or unavailable images show labelled placeholders. Unsupported formulae show their original TeX while the surrounding text remains readable.
+Reading previews load remote images near the viewport, with up to three requests, a 12 MiB per-preview memory cache and a shared 256 MiB HTTP disk cache. New previews can reuse cached responses. Refresh and no-store rules follow the source's HTTP cache policy. Cookies and saved credentials are excluded. Going offline cancels requests without deleting the cache. Offline or unavailable images show labelled placeholders. Unsupported formulae show their original TeX while the surrounding text remains readable.
 
 Local raster images and passive SVGs appear in previews and PDF exports. Keep assets in the document folder or its subfolders. HTML `<img>` and `<picture>` are supported. Theme variants follow the reader appearance and PDF export uses the light fallback. PDF export requires local images and supported formulae. Scripts and embedded content are excluded.
 
@@ -58,7 +58,7 @@ Connected projects use the native LaTeX editor and local compiler. Local edits s
 
 Live sync shares existing text edits in both directions while the project is open. It pauses Git publication. File changes and overlapping edits may need review. See [live synchronisation](../overleaf-realtime.md) for its current limits.
 
-Project tags appear as muted stripes. Click to read their names. Sync ages use whole minutes. Double-clicking the title renames the online project after server confirmation. Comments opens a native view with Markdown and JSON export. Git sync does not join Overleaf’s live presence channel. Published changes appear in project history.
+Project tags appear as muted stripes. Click to read their names. Sync ages use whole minutes. Double-clicking the title renames the online project after server confirmation. Review reads server comments and tracked edits with source links. The speech bubble opens project Ask. Comment export remains available through the CLI. Git sync does not join Overleaf’s live presence channel. Published changes appear in project history.
 
 ## Library search
 
@@ -66,11 +66,11 @@ Add PDF or Markdown folders to Library. Update Index scans changed files. The re
 
 Press Return to search. Keywords use local page/passage ranking with term coverage, proximity and headings. Quoted phrases are mandatory. Boost search with Apple Intelligence optionally expands natural-language questions on this Mac. Work offline, Manual mode or an unavailable model uses standard local ranking.
 
-Relevance groups results by document. Rank shows the global order. Results retain page context and offer PDF preview, highlights and document questions. Narrow windows use Results and Preview tabs. Returning from a document preserves results until the query, settings or index changes. Results are limited to 200 matches.
+Relevance groups results by document. Rank shows the global order. Results retain page context and offer PDF preview, highlights and document questions. Narrow windows use Results and Preview tabs. Returning from a document preserves results until the query, settings or index changes. Results are paged in groups of up to 200 ranked locations. Only the current page's excerpts are loaded. Sorting and document filters apply within that page. Identical passages are collapsed within each page, so a page may show fewer matches. The same wording can appear at another location on a later page. Keyword results appear before optional Apple Intelligence refinement. The first search may also need to prepare the resident index.
 
 ## AI and local tools
 
-Apple Intelligence, ChatGPT and Manual share one provider selector. Ask works with PDFs, Markdown and search results. Proofreading and LaTeX suggestions present changes for review and support Undo. The eye control shows AI and CLI edits. See [AI and writing](../assistant.md) for connections, context and privacy, and [CLI](../cli.md) for local automation.
+Apple Intelligence, ChatGPT and Manual share one provider selector. Ask works with PDFs, Markdown, LaTeX projects and search results. Proofreading and LaTeX suggestions present changes for review and support Undo. The eye control shows AI and CLI edits. See [AI and writing](../assistant.md) for connections, context and privacy, and [CLI](../cli.md) for local automation.
 
 Compilation uses temporary snapshots. Replaced and failed builds are removed. Abandoned build folders are pruned after seven days or above a combined 512 MB, excluding active builds. Text history keeps up to 120 entries and 32 MB per project. Search indexes, project copies and editor drafts remain separate from these disposable caches.
 

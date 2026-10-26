@@ -35,7 +35,8 @@ struct OverleafThreadArchive: Codable {
                 guard let id = value["id"] as? String, let text = value["content"] as? String else { throw OverleafGit.Failure("The server returned an unfamiliar comment message.") }
                 let user = value["user"] as? [String: Any]
                 let timestamp = (value["timestamp"] as? String) ?? (value["timestamp"] as? Double).map { ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: $0 / 1000)) }
-                return Message(id: id, author: user?["name"] as? String ?? value["user_id"] as? String ?? "Unknown author", text: text, timestamp: timestamp)
+                let fullName = [user?["first_name"] as? String, user?["last_name"] as? String].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+                return Message(id: id, author: user?["name"] as? String ?? (fullName.isEmpty ? nil : fullName) ?? "Contributor", text: text, timestamp: timestamp)
             }
             return Thread(id: id, resolved: thread["resolved"] as? Bool ?? false, resolvedAt: thread["resolved_at"] as? String, messages: parsed)
         }

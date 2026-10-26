@@ -11,6 +11,12 @@ import WebKit
     private var treeDirty = false
     private var restarting = false
     private var lastFileCheck = Date.distantPast
+    @Published private(set) var reconnecting = false
+    private var recoveryTask: Task<Void, Never>?
+    private var recoveryID = UUID()
+    private var transportClosing: Task<Void, Never>?
+    private let retryDelay: (Int) -> Duration
+    private var transportSource: String?
     @Published private(set) var connecting = false
     @Published private(set) var issue: String?
     @Published private(set) var connected = false
@@ -24,6 +30,16 @@ import WebKit
         return states.filter { path, state in
             state.inFlight != nil || (project.buffers[path] ?? state.local) != state.base.text
         }.count
+    }
+    /// Local observations only. Reading this never opens a socket or publishes an edit.
+    var automationStatus: [String: Any] {
+        let pending = pendingDocumentCount
+        return ["enabled": enabled, "connected": connected, "connecting": connecting, "reconnecting": reconnecting,
+                "pendingDocuments": pending, "syncingFiles": syncingFiles || treeDirty || restarting,
+                "confirmed": connected && !connecting && !syncingFiles && !treeDirty && !restarting && conflict == nil && resolving.isEmpty && pending == 0 && !awaitingConfirmation && lastConfirmedAt != nil,
+                "lastConfirmedAt": lastConfirmedAt.map { $0.timeIntervalSince1970 } as Any? ?? NSNull(),
+                "reviewRequired": conflict != nil || requiresGitReview,
+                "issue": issue as Any? ?? NSNull()]
     }
     private func updateConfirmation() {
         guard connected, !connecting, !syncingFiles, !treeDirty, !restarting, conflict == nil, pendingDocumentCount == 0, resolving.isEmpty else { return }
@@ -41,11 +57,43 @@ import WebKit
     private weak var library: OverleafLibrary?
     private var connection: OverleafConnection?
     private var socket: (any OverleafLiveChannel)?
+    private let readReviewRanges: @MainActor (OverleafConnection) async throws -> Data
+    private let acceptReviewChange: @MainActor (OverleafConnection, String, String) async throws -> Void
     private let authenticate: (UUID) async throws -> Void
     private let makeChannel: (OverleafConnection) -> any OverleafLiveChannel
     private var writer: OverleafLiveWriterLease?
     private var reader: Task<Void, Never>?
     private var ticker: Task<Void, Never>?
+    private var connectionTask: Task<Void, Never>?
+    private var visible = true
+    func connectVisible(project: TeXProject, library: OverleafLibrary, connection: OverleafConnection) {
+        setVisible(true)
+        if reconnecting { scheduleRecovery(immediate: true); return }
+        guard !connected, !connecting, connectionTask == nil else { return }
+        connectionTask = Task { [weak self] in
+            guard let self else { return }
+            await self.start(project: project, library: library, connection: connection)
+            self.connectionTask = nil
+        }
+    }
+    func setVisible(_ value: Bool) {
+        visible = value
+        if value { startTicker() }
+        else {
+            ticker?.cancel(); ticker = nil
+            if pendingDocumentCount > 0 { Task { [weak self] in await self?.flush() } }
+        }
+    }
+    private func startTicker() {
+        guard visible, connected, ticker == nil else { return }
+        ticker = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+                guard let self, self.visible, !Task.isCancelled else { return }
+                await self.flush()
+            }
+        }
+    }
     private var states: [String: OverleafLive.State] = [:]
     private var paths: [String: String] = [:]
     private var disk: [String: String] = [:]
@@ -56,14 +104,23 @@ import WebKit
     private var flushing = false
     private var choices: [String: ConflictChoice] = [:]
     private struct ConflictChoice { let local: String; let remote: OverleafLive.Snapshot; let result: String }
-    init(syncFiles: Bool = true, files: OverleafFileSync? = nil, authenticate: @escaping (UUID) async throws -> Void = { try await OverleafLiveWorkspace.savedSession($0) }, makeChannel: @escaping (OverleafConnection) -> any OverleafLiveChannel = { OverleafLiveSocket(project: $0.projectID, profile: $0.profileID) }) {
+    init(syncFiles: Bool = true, files: OverleafFileSync? = nil, retryDelay: @escaping (Int) -> Duration = OverleafLiveRecovery.delay, authenticate: @escaping (UUID) async throws -> Void = { try await OverleafLiveWorkspace.savedSession($0) }, makeChannel: @escaping (OverleafConnection) -> any OverleafLiveChannel = { OverleafLiveSocket(project: $0.projectID, profile: $0.profileID) }, readReviewRanges: @escaping @MainActor (OverleafConnection) async throws -> Data = { connection in
+        try await OverleafWebClient.request("/project/" + connection.projectID + "/ranges", profile: connection.profileID)
+    }, acceptReviewChange: @escaping @MainActor (OverleafConnection, String, String) async throws -> Void = { connection, document, change in
+        let service = OverleafFileService(connection)
+        defer { service.close() }
+        try await service.open()
+        try await service.acceptChange(document: document, change: change)
+    }) {
+        self.retryDelay = retryDelay
+        self.readReviewRanges = readReviewRanges; self.acceptReviewChange = acceptReviewChange
         self.authenticate = authenticate; self.makeChannel = makeChannel; fileSync = syncFiles ? (files ?? OverleafFileSync()) : nil
     }
     private static func savedSession(_ profile: UUID) async throws {
         _ = try OverleafWebClient.parseProjects(await OverleafWebClient.request("/user/projects", profile: profile))
     }
     func start(project: TeXProject, library: OverleafLibrary, connection: OverleafConnection) async {
-        guard !connecting, !connected, !library.busy, library.review == nil else { return }
+        guard !connecting, !connected, transportClosing == nil, !library.busy, library.review == nil else { return }
         self.project = project; self.library = library; self.connection = connection
         let attempt = UUID(); generation = attempt
         connecting = true; enabled = true; issue = nil; conflict = nil; lastConfirmedAt = nil; awaitingConfirmation = true; requiresGitReview = false
@@ -100,25 +157,34 @@ import WebKit
                     remoteProject = try await transport.connect(); try check(attempt)
                 }
             }
+            transportSource = await transport.sourceID()
             treeDirty = false; lastFileCheck = Date()
             OverleafLiveDiagnostics.note("project-connected")
             try check(attempt)
             let documents = try OverleafLiveWire.documents(remoteProject, expectedID: connection.projectID).filter { project.buffers[$0.path] != nil }
             OverleafLiveDiagnostics.note("project-tree", code: documents.count)
             guard !documents.isEmpty, documents.count <= 1_000 else { throw OverleafLiveWire.Failure.changedTree }
+            let snapshots = try await joinDocuments(documents, using: transport, attempt: attempt)
             revision = project.fileRevision; states = [:]; paths = [:]; disk = [:]; sentAt = [:]; resolving = []
             let importedBase = connection.liveOnly == true && fileSync == nil ? try OverleafSourceArchive.sources(from: OverleafSourceArchive.baseline(connection.id, under: library.directory)) : nil
             for doc in documents {
                 try check(attempt)
                 let key = OverleafLive.Key(profile: connection.profileID, project: connection.projectID, document: doc.id)
                 paths[doc.id] = doc.path
-                let localDisk = try readDisk(doc.path); disk[doc.path] = localDisk
-                let remote = try await transport.join(doc.id)
-                OverleafLiveDiagnostics.note("document-joined")
-                try check(attempt)
-                guard let local = project.buffers[doc.path] else { throw OverleafLiveWire.Failure.changedTree }
                 let file = OverleafLiveJournal.checkpoint(for: key, under: journalDirectory)
                 let saved = FileManager.default.fileExists(atPath: file.path) ? try OverleafLiveJournal.load(from: file, for: key) : nil
+                let catchUp: OverleafLiveWire.CatchUp?
+                if let saved, saved.inFlight?.sources != nil, transportSource != nil {
+                    try await transport.leave(doc.id)
+                    catchUp = try await transport.catchUp(doc.id, version: saved.base.version)
+                } else { catchUp = nil }
+                let remote: OverleafLive.Snapshot
+                if let catchUp { remote = catchUp.snapshot }
+                else { guard let snapshot = snapshots[doc.id] else { throw OverleafLiveWire.Failure.changedTree }; remote = snapshot }
+                OverleafLiveDiagnostics.note("document-joined")
+                try check(attempt)
+                disk[doc.path] = try readDisk(doc.path)
+                guard let local = project.buffers[doc.path] else { throw OverleafLiveWire.Failure.changedTree }
                 let reviewFile = file.appendingPathExtension("review")
                 let base: String
                 if let saved { base = saved.base.text }
@@ -137,6 +203,10 @@ import WebKit
                 var state = try OverleafLive.State(key: key, base: remote, local: local)
                 try state.resume(remote, epoch: state.epoch)
                 do {
+                    if let saved, remote.version < saved.base.version || (remote.version == saved.base.version && remote.text != saved.base.text) {
+                        state = try OverleafLive.State(checkpoint: saved); try state.edited(local)
+                        throw OverleafLive.Failure.staleSnapshot
+                    }
                     let merged: String
                     if let choice = choices[doc.path], choice.local == local, choice.remote == remote {
                         merged = choice.result
@@ -144,8 +214,21 @@ import WebKit
                     } else if FileManager.default.fileExists(atPath: reviewFile.path), local != remote.text {
                         throw OverleafLiveWire.Failure.conflict
                     } else if let pending = saved?.inFlight {
-                        guard remote.text == pending.after || remote.text == local else { throw OverleafLiveWire.Failure.uncertain }
-                        merged = try OverleafLiveText.merge(base: pending.after, local: local, remote: remote.text)
+                        let applied = try catchUp.map { evidence in try evidence.contains(pending, base: saved!.base) } ?? false
+                        if remote.text == pending.after || applied {
+                            merged = try OverleafLiveText.merge(base: pending.after, local: local, remote: remote.text)
+                        } else if let saved, pending.sources != nil, let source = transportSource {
+                            // Verify that the unseen server changes do not overlap local intent.
+                            // Replay the exact original version with all previous source IDs.
+                            _ = try OverleafLiveText.merge(base: saved.base.text, local: pending.after, remote: remote.text)
+                            var resumed = try OverleafLive.State(checkpoint: saved)
+                            try resumed.edited(local)
+                            let replay = try resumed.replay(remote, source: source)
+                            try install(doc.path, next: resumed, expected: local)
+                            sentAt[doc.path] = Date()
+                            try await transport.submit(replay); try check(attempt)
+                            continue
+                        } else { throw OverleafLiveWire.Failure.uncertain }
                     } else { merged = try OverleafLiveText.merge(base: base, local: local, remote: remote.text) }
                     try state.edited(merged); try install(doc.path, next: state, expected: local)
                     if FileManager.default.fileExists(atPath: reviewFile.path) { try FileManager.default.removeItem(at: reviewFile) }
@@ -155,7 +238,7 @@ import WebKit
                     throw error
                 }
             }
-            choices = [:]; connecting = false; connected = true
+            choices = [:]; connecting = false; connected = true; reconnecting = false
             reader = Task { [weak self] in
                 for await event in transport.events {
                     guard let self, self.generation == attempt, !Task.isCancelled else { return }
@@ -165,15 +248,32 @@ import WebKit
                 guard let self, self.generation == attempt, !Task.isCancelled else { return }
                 await self.pause(OverleafLiveWire.Failure.disconnected, attempt: attempt)
             }
-            ticker = Task { [weak self] in
-                while !Task.isCancelled {
-                    do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
-                    guard let self, self.generation == attempt else { return }
-                    await self.flush()
-                }
-            }
+            startTicker()
             await flush()
         } catch { await pause(error, attempt: attempt) }
+    }
+    /// Bound startup concurrency so a large project does not require one round trip per file.
+    private func joinDocuments(_ documents: [OverleafLiveWire.Document], using channel: any OverleafLiveChannel, attempt: UUID) async throws -> [String: OverleafLive.Snapshot] {
+        try await withThrowingTaskGroup(of: (String, OverleafLive.Snapshot).self) { group in
+            var next = 0, bytes = 0, result: [String: OverleafLive.Snapshot] = [:]
+            while next < min(4, documents.count) {
+                let document = documents[next].id
+                group.addTask { (document, try await channel.join(document)) }
+                next += 1
+            }
+            while let (id, snapshot) = try await group.next() {
+                try check(attempt); try snapshot.validate()
+                bytes += snapshot.text.utf8.count
+                guard bytes <= OverleafLiveFiles.byteLimit else { throw OverleafLiveWire.Failure.changedTree }
+                result[id] = snapshot
+                if next < documents.count {
+                    let document = documents[next].id
+                    group.addTask { (document, try await channel.join(document)) }
+                    next += 1
+                }
+            }
+            return result
+        }
     }
     func flush() async {
         guard connected, !connecting, !flushing, let project, let socket else { return }
@@ -181,7 +281,7 @@ import WebKit
         let attempt = generation
         do {
             try check(attempt)
-            if fileSync != nil {
+            if visible, fileSync != nil {
                 if states.keys.contains(where: { !FileManager.default.fileExists(atPath: project.root.appendingPathComponent($0).path) }) { treeDirty = true }
                 if Date().timeIntervalSince(lastFileCheck) >= 2 {
                     lastFileCheck = Date()
@@ -205,9 +305,9 @@ import WebKit
                     project.buffers[path] = actualDisk; disk[path] = actualDisk
                 }
                 let current = project.buffers[path]!
-                try state.edited(current)
+                if state.local != current { try state.edited(current) }
                 if let sent = sentAt[path], Date().timeIntervalSince(sent) > 20 { throw OverleafLiveWire.Failure.timeout }
-                let op = try state.submission()
+                let op = try state.submission(source: transportSource)
                 if op != nil || states[path]?.local != current || disk[path] != current { try install(path, next: state, expected: current) }
                 if let op {
                     sentAt[path] = Date()
@@ -216,7 +316,56 @@ import WebKit
             }
         } catch { await pause(error, attempt: attempt) }
     }
+    /// Review writes share the existing Live writer and its durable acknowledgement.
+    func decideReviewChange(_ change: OverleafReviewSnapshot.Change, accept: Bool) async throws {
+        guard change.anchor.localPathKnown, change.singleRange, let project, let connection, connected, !connecting, !syncingFiles, !flushing, !treeDirty, !restarting, conflict == nil,
+              pendingDocumentCount == 0, !project.compiling, library?.busy == false, let state = states[change.anchor.file],
+              state.key.document == change.documentID, state.base.text == change.anchor.source, project.buffers[change.anchor.file] == change.anchor.source else {
+            throw OverleafGit.Failure("Wait for confirmed Live sync, then refresh the review.")
+        }
+        let attempt = generation
+        let ranges = try await readReviewRanges(connection)
+        try check(attempt)
+        guard try change.isCurrent(in: ranges), pendingDocumentCount == 0, project.buffers[change.anchor.file] == change.anchor.source else { throw OverleafGit.Failure("This change moved. Refresh the review.") }
+        if !accept {
+            guard !flushing, let socket, var next = states[change.anchor.file], next.base.text == change.anchor.source, next.inFlight == nil else { throw OverleafLive.Failure.staleDraft }
+            flushing = true
+            defer { flushing = false }
+            let after = try change.rejectedSource()
+            try next.edited(after)
+            guard let submission = try next.submission(rejecting: true, source: transportSource) else { throw OverleafLive.Failure.staleDraft }
+            guard let edit = project.editSource, edit(change.anchor.file, change.anchor.source, after, "Reject Overleaf change") else { throw OverleafGit.Failure("Open the source editor before rejecting this change.") }
+            do {
+                try install(change.anchor.file, next: next, expected: after)
+                sentAt[change.anchor.file] = Date()
+                try await socket.submit(submission)
+                let deadline = Date().addingTimeInterval(20)
+                while states[change.anchor.file]?.inFlight != nil {
+                    try check(attempt)
+                    guard Date() < deadline, connected else { throw OverleafGit.Failure("The rejection is not yet confirmed. Check Live sync before retrying.") }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                guard project.buffers[change.anchor.file] == after, states[change.anchor.file]?.base.text == after else { throw OverleafGit.Failure("The source changed during review. Refresh before continuing.") }
+                let latest = try await readReviewRanges(connection)
+                let retained = try OverleafReviewSnapshot.documentRanges(latest).first { $0.id == change.documentID }.map { row in
+                    (row.ranges["changes"] as? [[String: Any]] ?? []).contains { $0["id"] as? String == change.changeID }
+                } ?? false
+                guard !retained else { throw OverleafGit.Failure("Source restored. Refresh review to confirm the rejection.") }
+            } catch {
+                // Do not let the normal flush path resend a failed inverse edit
+                // without its persisted rejection marker.
+                await pause(error, attempt: attempt)
+                throw error
+            }
+            return
+        }
+        let latest = try await readReviewRanges(connection)
+        try check(attempt)
+        guard try change.isCurrent(in: latest), pendingDocumentCount == 0, project.buffers[change.anchor.file] == change.anchor.source else { throw OverleafGit.Failure("This change moved. Refresh the review.") }
+        try await acceptReviewChange(connection, change.documentID, change.changeID)
+    }
     func retry() async {
+        cancelRecovery()
         guard let project, let library, let connection else { return }
         await pause(nil, attempt: generation)
         await start(project: project, library: library, connection: connection)
@@ -236,6 +385,8 @@ import WebKit
         await library.check(connection, save: project.save)
     }
     func stop() async {
+        cancelRecovery()
+        connectionTask?.cancel(); connectionTask = nil
         await pause(nil, attempt: generation)
         enabled = false; issue = nil; conflict = nil
         if let connection, let library {
@@ -243,8 +394,45 @@ import WebKit
             library.liveOwned.remove(connection.id)
         }
         writer = nil
+        // Durable journals retain recovery intent. A stopped session needs no second source cache.
+        states.removeAll(); paths.removeAll(); disk.removeAll(); sentAt.removeAll(); resolving.removeAll(); choices.removeAll()
+        transportSource = nil; lastConfirmedAt = nil; awaitingConfirmation = true
     }
-    func suspend() async { if enabled { await pause(NetworkAccessGate.Offline(), attempt: generation) } }
+    func suspend() async {
+        if enabled && (connected || connecting || reconnecting || issue == nil) { await pause(NetworkAccessGate.Offline(), attempt: generation) }
+    }
+    /// A path change wakes recovery immediately, without changing the chosen mode.
+    func networkChanged() async {
+        guard enabled else { return }
+        if !online { await suspend() }
+        else if reconnecting && !connecting {
+            cancelRecovery()
+            reconnecting = true; scheduleRecovery(immediate: true)
+        }
+    }
+    private var online: Bool { !NetworkAccess.offline && library?.offlineMode == false && library?.hasNetwork == true }
+    private func cancelRecovery() {
+        recoveryID = UUID(); recoveryTask?.cancel(); recoveryTask = nil; reconnecting = false
+    }
+    private func scheduleRecovery(immediate: Bool = false) {
+        guard enabled, !connected, !connecting, transportClosing == nil, recoveryTask == nil, conflict == nil, !requiresGitReview else { return }
+        reconnecting = true
+        guard online else { return }
+        let id = UUID(); recoveryID = id
+        recoveryTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.recoveryID == id { self.recoveryTask = nil } }
+            var attempt = 0
+            while self.enabled, self.reconnecting, self.recoveryID == id, !Task.isCancelled {
+                do { try await Task.sleep(for: immediate && attempt == 0 ? .milliseconds(1) : self.retryDelay(attempt)) }
+                catch { return }
+                guard self.recoveryID == id, self.enabled, self.reconnecting, !Task.isCancelled, self.online else { return }
+                guard let project = self.project, let library = self.library, let connection = self.connection else { return }
+                await self.start(project: project, library: library, connection: connection)
+                attempt = min(attempt + 1, 6)
+            }
+        }
+    }
     private var journalDirectory: URL { library!.directory.appendingPathComponent("Live") }
     private func check(_ attempt: UUID) throws {
         try Task.checkCancellation(); try NetworkAccess.requireOnline()
@@ -284,7 +472,7 @@ import WebKit
     }
     private func receive(_ event: OverleafLiveSocket.Event, attempt: UUID) async throws {
         try check(attempt)
-        if event.name == "remileDisconnected" { throw OverleafLiveWire.Failure.disconnected }
+        if event.name == "remileDisconnected" { throw event.failure ?? OverleafLiveWire.Failure.disconnected }
         if ["reciveNewDoc", "reciveNewFile", "removeEntity", "renameEntity", "moveEntity", "reciveEntityRename", "reciveEntityMove", "reciveNewFolder"].contains(event.name) {
             if fileSync != nil { treeDirty = true; awaitingConfirmation = true; return }
             throw OverleafLiveWire.Failure.changedTree
@@ -293,7 +481,7 @@ import WebKit
               let path = paths[doc], var state = states[path], let project, let local = project.buffers[path],
               let version = update["v"].integer, version >= 0, version < Int.max else { return }
         try state.edited(local)
-        if let ops = update["op"].array, !ops.isEmpty {
+        if let ops = update["op"].array {
             if version < state.base.version { return }
             if state.inFlight != nil { return } // After our acknowledgement, a fresh join includes all transformed ops.
             if version != state.base.version { try await refresh(path, attempt: attempt); return }
@@ -375,6 +563,16 @@ import WebKit
                 }
             } else { pauseReason = "Connection interrupted" }
         }
-        await previous?.stop()
+        reconnecting = error.map { OverleafLiveRecovery.transient($0) || ($0 is CancellationError && !online) } == true && enabled && conflict == nil && !requiresGitReview
+        let pausedEpoch = generation
+        let priorClose = transportClosing
+        if let previous { transportClosing = Task { await priorClose?.value; await previous.stop() } }
+        await transportClosing?.value
+        guard generation == pausedEpoch else { return }
+        transportClosing = nil
+        if let error, enabled, conflict == nil, !requiresGitReview,
+           OverleafLiveRecovery.transient(error) || (error is CancellationError && !online) {
+            scheduleRecovery()
+        } else { cancelRecovery() }
     }
 }

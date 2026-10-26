@@ -123,13 +123,41 @@ final class SparseSearchRanker {
         }
         return best
     }
-    private func order(_ scores: [Float], allowed: Set<Int64>?) -> [Int] {
-        scores.indices.filter { scores[$0] > 0 && (allowed == nil || allowed!.contains(pages[$0].rowID)) }
-            .sorted { scores[$0] == scores[$1] ? $0 < $1 : scores[$0] > scores[$1] }.prefix(200).map { $0 }
+    private func order(_ scores: [Float], allowed: Set<Int64>?, limit: Int = 200) -> [Int] {
+        func better(_ a: Int, _ b: Int) -> Bool { scores[a] == scores[b] ? a < b : scores[a] > scores[b] }
+        guard limit > 0 else { return [] }
+        if limit >= scores.count {
+            return scores.indices.filter { scores[$0] > 0 && (allowed == nil || allowed!.contains(pages[$0].rowID)) }.sorted(by: better)
+        }
+        // Keep the worst retained candidate at the root. Ranking and ties stay identical.
+        var heap: [Int] = []; heap.reserveCapacity(limit)
+        for i in scores.indices where scores[i] > 0 && (allowed == nil || allowed!.contains(pages[i].rowID)) {
+            if heap.count < limit {
+                heap.append(i)
+                var child = heap.count - 1
+                while child > 0 {
+                    let parent = (child - 1) / 2
+                    guard better(heap[parent], heap[child]) else { break }
+                    heap.swapAt(parent, child); child = parent
+                }
+            } else if better(i, heap[0]) {
+                heap[0] = i
+                var parent = 0
+                while parent * 2 + 1 < heap.count {
+                    var child = parent * 2 + 1
+                    if child + 1 < heap.count, better(heap[child], heap[child + 1]) { child += 1 }
+                    guard better(heap[parent], heap[child]) else { break }
+                    heap.swapAt(parent, child); parent = child
+                }
+            }
+        }
+        return heap.sorted(by: better)
     }
-    func search(_ query: String, expansions: [String] = [], allowed: Set<Int64>? = nil) throws -> [Match] {
-        let original = try b0(query), base = order(original, allowed: allowed)
-        guard !expansions.isEmpty else { return base.map { Match(rowID: pages[$0].rowID, score: Double(original[$0])) } }
+    func search(_ query: String, expansions: [String] = [], allowed: Set<Int64>? = nil, offset: Int = 0, limit: Int = 200) throws -> [Match] {
+        guard offset >= 0, limit > 0, offset <= Int.max - limit else { throw CocoaError(.coderInvalidValue) }
+        let original = try b0(query)
+        let base = order(original, allowed: allowed, limit: expansions.isEmpty ? offset + limit : pages.count)
+        guard !expansions.isEmpty else { return base.dropFirst(offset).prefix(limit).map { Match(rowID: pages[$0].rowID, score: Double(original[$0])) } }
         var expanded = Array(repeating: Float(0), count: pages.count)
         for phrase in expansions {
             try Task.checkCancellation()
@@ -138,7 +166,7 @@ final class SparseSearchRanker {
         }
         var fusion: [Int: Double] = [:]
         for (rank, i) in base.enumerated() { fusion[i, default: 0] += 1 / Double(61 + rank) }
-        for (rank, i) in order(expanded, allowed: allowed).enumerated() { fusion[i, default: 0] += 0.7 / Double(61 + rank) }
-        return fusion.keys.sorted { fusion[$0] == fusion[$1] ? $0 < $1 : fusion[$0]! > fusion[$1]! }.prefix(200).map { Match(rowID: pages[$0].rowID, score: fusion[$0]!) }
+        for (rank, i) in order(expanded, allowed: allowed, limit: pages.count).enumerated() { fusion[i, default: 0] += 0.7 / Double(61 + rank) }
+        return fusion.keys.sorted { fusion[$0] == fusion[$1] ? $0 < $1 : fusion[$0]! > fusion[$1]! }.dropFirst(offset).prefix(limit).map { Match(rowID: pages[$0].rowID, score: fusion[$0]!) }
     }
 }

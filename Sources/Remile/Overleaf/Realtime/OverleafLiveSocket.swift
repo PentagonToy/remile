@@ -7,14 +7,23 @@ protocol OverleafLiveChannel: Sendable {
     func leave(_ document: String) async throws
     func submit(_ operation: OverleafLive.Submission) async throws
     func stop() async
+    func catchUp(_ document: String, version: Int) async throws -> OverleafLiveWire.CatchUp?
+    func sourceID() async -> String?
+}
+extension OverleafLiveChannel {
+    func sourceID() async -> String? { nil }
+    func catchUp(_ document: String, version: Int) async throws -> OverleafLiveWire.CatchUp? { nil }
 }
 
 /// Socket.IO routing is native. WebKit owns the account-origin network context.
 actor OverleafLiveSocket: OverleafLiveChannel {
     typealias JSON = OverleafLiveWire.JSON
-    struct Event: Sendable { let name: String; let args: [JSON] }
+    struct Event: Sendable { let name: String; let args: [JSON]; var failure: (any Error)? = nil }
     nonisolated let events: AsyncStream<Event>
     private let output: AsyncStream<Event>.Continuation
+    private var canSkipLeave = false
+    private var publicID: String?
+    func sourceID() -> String? { publicID }
     private var browser: OverleafLiveBrowser?
     private var reader: Task<Void, Never>?
     private var watchdog: Task<Void, Never>?
@@ -63,7 +72,16 @@ actor OverleafLiveSocket: OverleafLiveChannel {
         } catch { fail(error, epoch: attempt); throw error }
     }
     func join(_ document: String) async throws -> OverleafLive.Snapshot {
-        try await OverleafLiveWire.snapshot(request("joinDoc", [.string(document), .int(-1), .object(["encodeRanges": .bool(true)])]))
+        let response = try await request("joinDoc", [.string(document), .int(-1), .object(["encodeRanges": .bool(true)])])
+        if response.count > 5, case .bool(true) = response[5]["canSkipLeaveDoc"] { canSkipLeave = true }
+        return try OverleafLiveWire.snapshot(response)
+    }
+    func catchUp(_ document: String, version: Int) async throws -> OverleafLiveWire.CatchUp? {
+        let response = try await request("joinDoc", [.string(document), .int(version), .object(["encodeRanges": .bool(true)])])
+        let snapshot = try OverleafLiveWire.snapshot(response)
+        guard response.count > 2, let operations = response[2].array else { throw OverleafLiveWire.Failure.uncertain }
+        if response.count > 5, case .bool(true) = response[5]["canSkipLeaveDoc"] { canSkipLeave = true }
+        return .init(snapshot: snapshot, operations: operations)
     }
     func submit(_ operation: OverleafLive.Submission) async throws {
         guard operation.key.project == project, operation.key.profile == profile else { throw OverleafLive.Failure.invalidIdentity }
@@ -71,6 +89,7 @@ actor OverleafLiveSocket: OverleafLiveChannel {
         // RPC confirms queuing. OtUpdateApplied confirms application.
     }
     func leave(_ document: String) async throws {
+        if canSkipLeave { return }
         _ = try await request("leaveDoc", [.string(document)])
     }
     func stop() async { fail(CancellationError(), epoch: epoch); await closing?.value }
@@ -112,6 +131,7 @@ actor OverleafLiveSocket: OverleafLiveChannel {
                     if name == "joinProjectResponse" {
                         OverleafLiveDiagnostics.note("join-project-response")
                         guard let value = args.first, ["readAndWrite", "owner"].contains(value["permissionsLevel"].string ?? ""), value["publicId"].string != nil else { throw OverleafLiveWire.Failure.permission }
+                        publicID = value["publicId"].string
                         guard let joining else { throw OverleafLiveWire.Failure.protocolMismatch }
                         self.joining = nil; joining.resume(returning: value["project"])
                     } else if name == "connectionAccepted" {
@@ -122,7 +142,8 @@ actor OverleafLiveSocket: OverleafLiveChannel {
                                 if let joining = self.joining { self.joining = nil; joining.resume(returning: response[0]) }
                             } catch { self.fail(error, epoch: expected) }
                         }
-                    } else if ["forceDisconnect", "connectionRejected", "otUpdateError"].contains(name) { throw OverleafLiveWire.Failure.disconnected }
+                    } else if name == "connectionRejected" || name == "forceDisconnect" { throw OverleafLiveWire.Failure.permission }
+                    else if name == "otUpdateError" { throw OverleafLiveWire.Failure.protocolMismatch }
                     else {
                         if case .dropped = output.yield(Event(name: name, args: args)) { throw OverleafLiveWire.Failure.protocolMismatch }
                     }
@@ -149,7 +170,7 @@ actor OverleafLiveSocket: OverleafLiveChannel {
         reader?.cancel(); watchdog?.cancel(); reader = nil; watchdog = nil
         let previous = browser; browser = nil
         closing = Task { await previous?.stop() }
-        output.yield(Event(name: "remileDisconnected", args: [])); output.finish()
+        output.yield(Event(name: "remileDisconnected", args: [], failure: error)); output.finish()
     }
     deinit { let previous = browser; Task { await previous?.stop() }; output.finish() }
 }

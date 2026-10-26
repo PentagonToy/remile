@@ -86,8 +86,8 @@ enum OverleafLiveFiles {
         guard Set(result.keys) == Set(tree.files.keys) else { throw Failure.stale }
         return result
     }
-    static func scan(_ root: URL, buffers: [String: String] = [:]) throws -> [String: Data] {
-        var result: [String: Data] = [:], total = 0, folded = Set<String>()
+    private static func files(at root: URL) throws -> [(path: String, url: URL, size: Int)] {
+        var result: [(path: String, url: URL, size: Int)] = [], total = 0, folded = Set<String>()
         var traversalError: Error?
         guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey], options: [.skipsHiddenFiles], errorHandler: { _, error in
             traversalError = error; return false
@@ -98,16 +98,45 @@ enum OverleafLiveFiles {
             // An unsupported link must never look like a deliberate deletion of the remote file.
             guard values.isSymbolicLink != true else { throw Failure.invalid }
             guard values.isRegularFile == true else { continue }
-            let path = String(url.path.dropFirst(root.path.count + 1))
-            guard result.count < 10_000, validPath(path), folded.insert(path.precomposedStringWithCanonicalMapping.lowercased()).inserted, (values.fileSize ?? Int.max) <= fileLimit else { throw Failure.invalid }
+            let path = String(url.path.dropFirst(root.path.count + 1)), size = values.fileSize ?? Int.max
+            guard result.count < 10_000, validPath(path), folded.insert(path.precomposedStringWithCanonicalMapping.lowercased()).inserted, size <= fileLimit else { throw Failure.invalid }
             _ = try TeXFileSystem.url(path, root: root)
-            let bytes = try buffers[path].map { Data($0.utf8) } ?? Data(contentsOf: url)
-            total += bytes.count; guard total <= byteLimit else { throw Failure.invalid }
-            result[path] = bytes
+            total += size; guard total <= byteLimit else { throw Failure.invalid }
+            result.append((path, url, size))
         }
         // Incomplete enumeration is not evidence that omitted remote files were deleted locally.
         if let traversalError { throw traversalError }
         return result
+    }
+    static func scan(_ root: URL, buffers: [String: String] = [:]) throws -> [String: Data] {
+        var result: [String: Data] = [:], total = 0
+        for file in try files(at: root) {
+            try Task.checkCancellation()
+            let bytes = try buffers[file.path].map { Data($0.utf8) } ?? Data(contentsOf: file.url)
+            total += bytes.count
+            guard bytes.count <= fileLimit, total <= byteLimit else { throw Failure.invalid }
+            result[file.path] = bytes
+        }
+        return result
+    }
+    /// Same digest as fingerprint(scan(root), assetsOnly: true), without retaining file bytes.
+    static func fingerprintAssets(at root: URL) throws -> String {
+        var hash = SHA256()
+        for file in try files(at: root).sorted(by: { $0.path < $1.path }) {
+            try Task.checkCancellation()
+            hash.update(data: Data(file.path.utf8)); hash.update(data: Data([0]))
+            guard !source(file.path) else { continue }
+            let handle = try FileHandle(forReadingFrom: file.url)
+            defer { try? handle.close() }
+            var read = 0
+            while let chunk = try handle.read(upToCount: 256 * 1024), !chunk.isEmpty {
+                try Task.checkCancellation()
+                read += chunk.count; guard read <= file.size else { throw Failure.stale }
+                hash.update(data: chunk)
+            }
+            guard read == file.size else { throw Failure.stale }
+        }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
     static func fingerprint(_ files: [String: Data], assetsOnly: Bool = false) -> String {
         var hash = SHA256()

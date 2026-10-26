@@ -20,23 +20,30 @@ Double-click in the PDF to return to the corresponding source. Word context refi
 
 Inside `\includegraphics{…}`, type part of a filename to see matching project images. `\input{…}` and `\include{…}` suggest TeX files. `\ref{…}` and `\eqref{…}` suggest labels from the project. Completing a supported `\begin{…}` inserts its matching end and places the cursor inside. These suggestions use local project data without a network request.
 
+## Ask about your manuscript
+
+Open the speech bubble for source-linked questions using your selected assistant. Choose **Review manuscript** above the message field to use your saved review criteria. This works without an Overleaf account.
+
 ## When a build needs attention
 
 Open Errors beside Compile. Start with the highest-priority issue and follow its source link. A green check means the PDF matches the current source.
 
 Use **Settings → LaTeX → Check LaTeX Environment** to inspect the local tools. remile provides guidance before any package installation.
 
+Click the source background control beside the text size to switch between **Default** and **Paper**. Default follows the app appearance. Paper stays softly white.
+
+The terminal and PDF share one button. Open logs, then click the PDF icon to return to the previous preview position.
+
 ## Buttons at a glance
 
 | Button | What it does |
 | --- | --- |
 | <img class="remile-guide-symbol" src="../../others/symbols/guide/sidebar.svg" alt="" width="24" height="24"> **Files and outline** | Show the project navigation. |
-| <img class="remile-guide-symbol" src="../../others/symbols/guide/review.svg" alt="" width="24" height="24"> **Review** | Ask source-linked questions about the manuscript. |
+| <img class="remile-guide-symbol" src="../../others/symbols/guide/chat.svg" alt="" width="24" height="24"> **Ask** | Ask about the source or open manuscript review. |
 | <img class="remile-guide-symbol" src="../../others/symbols/guide/sparkles.svg" alt="" width="24" height="24"> **Editor tools** | Review source transformations before applying them. |
 | <img class="remile-guide-symbol" src="../../others/symbols/guide/eye.svg" alt="" width="24" height="24"> **Review edits** | Show or hide AI and CLI edits. |
 | <img class="remile-guide-symbol" src="../../others/symbols/guide/history.svg" alt="" width="24" height="24"> **History** | Compare saved local source versions. |
-| <img class="remile-guide-symbol" src="../../others/symbols/guide/terminal.svg" alt="" width="24" height="24"> **Build logs** | Read compiler output, errors and warnings. |
-| <img class="remile-guide-symbol" src="../../others/symbols/guide/pdf.svg" alt="" width="24" height="24"> **Show PDF** | Return to the last successful PDF. |
+| <img class="remile-guide-symbol" src="../../others/symbols/guide/terminal.svg" alt="" width="24" height="24"> **Build logs / PDF** | Open compiler output; click again to return to the previous PDF position. |
 | <img class="remile-guide-symbol" src="../../others/symbols/guide/books.svg" alt="" width="24" height="24"> **Reference** | Choose citations and their bibliography destination. |
 | <img class="remile-guide-symbol" src="../../others/symbols/guide/export.svg" alt="" width="24" height="24"> **Export** | Export the PDF or project sources. |
 | <img class="remile-guide-symbol" src="../../others/symbols/guide/play.svg" alt="" width="24" height="24"> **Compile** | Build the PDF. The adjacent menu holds build options. |

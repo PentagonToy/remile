@@ -2,9 +2,10 @@ import Foundation
 import WebKit
 import ImageIO
 
-/// Reading-only image requests use the app's offline gate and a small, per-preview memory cache.
+/// Reading-only image requests share a bounded HTTP disk cache and retain the offline gate.
 @MainActor final class MarkdownRemoteImages: NSObject, WKURLSchemeHandler {
     nonisolated static let scheme = "remile-image"
+    nonisolated static let responseCache = URLCache(memoryCapacity: 0, diskCapacity: 256 * 1024 * 1024, directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app/MarkdownImages", isDirectory: true))
     nonisolated static func sourceURL(for remote: URL) -> URL? {
         guard ["http", "https"].contains(remote.scheme?.lowercased() ?? ""), remote.host != nil,
               remote.user == nil, remote.password == nil else { return nil }
@@ -24,6 +25,7 @@ import ImageIO
         init(_ url: URL) { self.url = url }
     }
     private let gate: NetworkAccessGate
+    private let responseCache: URLCache
     private let cache = NSCache<NSURL, CachedImage>()
     private var failedUntil: [URL: Date] = [:]
     private var groups: [URL: Group] = [:]
@@ -32,13 +34,13 @@ import ImageIO
     private var running = 0
     private var pumping = false
 
-    init(gate: NetworkAccessGate = NetworkAccess.gate) {
-        self.gate = gate; super.init(); cache.totalCostLimit = 12 * 1024 * 1024; cache.countLimit = 32
+    init(gate: NetworkAccessGate = NetworkAccess.gate, responseCache: URLCache = MarkdownRemoteImages.responseCache) {
+        self.gate = gate; self.responseCache = responseCache; super.init(); cache.totalCostLimit = 12 * 1024 * 1024; cache.countLimit = 32
     }
     deinit {
         for group in groups.values { group.download?.cancel(); if let watch = group.watch { gate.release(watch) } }
     }
-    func clearCache() { cache.removeAllObjects(); clearFailures() }
+    func clearCache() { cache.removeAllObjects(); responseCache.removeAllCachedResponses(); clearFailures() }
     func clearFailures() { failedUntil.removeAll() }
     func cancelAll() {
         let previous = Array(groups.values)
@@ -83,7 +85,7 @@ import ImageIO
             let url = pending.removeFirst()
             guard let group = groups[url], group.download == nil else { continue }
             let id = group.id
-            let download = MarkdownImageDownload(url: url) { [weak self] result in
+            let download = MarkdownImageDownload(url: url, cache: responseCache) { [weak self] result in
                 Task { @MainActor [weak self] in self?.finished(url, id: id, result: result) }
             }
             do {
@@ -135,10 +137,10 @@ private final class MarkdownImageDownload: NSObject, URLSessionDataDelegate, @un
     private var completion: ((Result<Image, Error>) -> Void)?
     private var session: URLSession!
     private var task: URLSessionDataTask!
-    init(url: URL, completion: @escaping (Result<Image, Error>) -> Void) {
+    init(url: URL, cache: URLCache, completion: @escaping (Result<Image, Error>) -> Void) {
         self.completion = completion; super.init()
-        let config = URLSessionConfiguration.ephemeral
-        config.urlCache = nil; config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        let config = URLSessionConfiguration.default
+        config.urlCache = cache; config.requestCachePolicy = .useProtocolCachePolicy
         config.httpCookieStorage = nil; config.httpShouldSetCookies = false
         config.urlCredentialStorage = nil
         config.timeoutIntervalForRequest = 12; config.timeoutIntervalForResource = 25

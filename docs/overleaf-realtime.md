@@ -4,9 +4,9 @@ Projects start in Live mode while visible. An explicit choice of Private is reme
 
 ## Ownership and lifetime
 
-`OverleafLiveWorkspace` owns the visible project's text session. Git review, automatic publication and project removal share its project-level OS writer lease. Git checks take that lease before saving buffers. While live mode is enabled, Git cannot publish, including after a live connection failure. Stop live releases the lease but leaves automatic Git publication paused until project review. Closing the project cancels the socket and pending requests. No daemon or background permission is used.
+`OverleafLiveWorkspace` owns the project's text session. Git review, automatic publication and project removal share its project-level OS writer lease. Git checks take that lease before saving buffers. While live mode is enabled, Git cannot publish, including after a live connection failure. Stop live releases the lease but leaves automatic Git publication paused until project review. One recently closed project can stay available for 45 seconds for a quick return. Hidden file checks stop, and expiry closes the session. No daemon or background permission is used.
 
-Offline mode cancels app-owned network sessions. Live mode remains paused until an explicit reconnect, which reads fresh snapshots before publishing. Project identity changes create a new visible-session owner. Connection recovery uses the same per-account web sign-in screen as project browsing. A Git token does not authenticate the editor socket.
+Brief transport failures reconnect automatically with bounded backoff while preserving Live mode and the local draft. Work offline cancels online work and suppresses retries until online access returns. Recovery reads fresh snapshots before sending. Authentication, permissions, rate limits and real conflicts remain explicit issues. Project identity changes create a new session owner. A Git token does not authenticate the editor socket.
 
 The detached WebKit transport disables idle suspension only for its active lifetime so that heartbeat replies can run. Closing it restores suspension. RPC decoding accepts both data-bearing and empty Socket.IO acknowledgements. An empty RPC acknowledgement confirms receipt only. The workspace still waits for `otUpdateApplied` and a fresh document snapshot before confirming a source update. Document leave requests also use the acknowledged RPC form.
 
@@ -34,7 +34,9 @@ If the advertised file tree changes while the source archive is downloading, the
 
 ## Draft preservation
 
-Persist the operation intent before sending. Edits made during an upload remain in the buffer and are reconciled against the acknowledged upload and fresh server text. A timeout or disconnect retains uncertain intent. Reconnect does not blindly replay it. Unconfirmed divergent uploads require review. Same-position inserts and overlapping replacements also require review rather than silently choosing one author.
+Persist operation intent before sending. Edits made during an upload remain in the buffer. Recovery checks the server snapshot and complete catch-up history for the original operation. If it was applied, newer local typing is reconciled against that result. Otherwise, a journal with known connection source IDs can replay the exact original operation and version with `dupIfSource`, allowing the server to suppress a duplicate. A foreign empty operation or comment anchor cannot acknowledge a local upload.
+
+Older journals without reliable source IDs remain conservative. Unconfirmed divergent uploads, overlapping replacements, same-position inserts and incomplete history require review. Source-ID replay and lost-acknowledgement recovery are covered by fake transports and read-only upstream protocol inspection. This new recovery path has not been verified against the deployed server or a real Wi-Fi outage.
 
 Conflict records retain both texts with private permissions. A persistent review marker prevents reopening from silently treating the local draft as an authorised overwrite. The review highlights changed sections with nearby context. Choose local or Overleaf for each section, or keep one complete version. Every choice rechecks both the current local draft and remote snapshot before applying the result. Newer changes cause another review. Each installed source update compares the expected editor text and existing disk content. Unexpected disk edits or symlinks stop the session.
 
@@ -44,11 +46,26 @@ Checkpoints live outside the project worktree and contain no cookies or Git toke
 
 Live text reconciliation uses unchanged line anchors and refines changed blocks to character boundaries. Disjoint changes combine, identical edits are included once and overlapping edits require review. The line comparison is capped at 250,000 cells and 2,000 lines per side. More complex changes fall back to one conservative range. Separate edits within one changed line can still request review. Read-only accounts cannot start a writable socket. Unsupported protocol responses and browser verification remain visible failures. No login or TLS policy is bypassed.
 
+## Risk boundaries
+
+| Situation | Behaviour | Remaining limit |
+| --- | --- | --- |
+| Both sides change separate text ranges | Combine edits and preserve typing made during upload | Separate edits within one complex changed line can still need review |
+| Both sides change overlapping text | Preserve copies and ask for a decision | Private provides deliberate Git review for Git-backed projects |
+| Connection fails after an upload | Check fresh snapshots and operation history before known-source replay | The new replay path still needs deployed-server validation |
+| A file changes during rename, replacement or deletion | Stop installation or keep recovery copies | Web file routes lack the Git route's commit-level comparison guarantee |
+| Authentication or editing permission changes | Stop and show the account issue | Do not retry permissions or bypass browser verification |
+| An agent reads through the CLI | Return source hashes, provenance and local Live observations | A confirmed observation is not a fresh atomic read of the remote project |
+
+Live retains the writer lease through transient failures. Private is an explicit review option, not an automatic fallback that can start a competing writer.
+
 ## File changes
 
 `OverleafLiveFiles` validates the remote entity tree and compares a persisted three-way manifest. `OverleafFileSync` coordinates authenticated source snapshots, local file checks, recovery copies and editor installation. File additions, deletions and image replacements trigger automatic reconciliation, followed by a fresh text session. Local file renames are represented as a new path and deletion of the old path. Directories containing synced files are created as needed. Empty-folder changes and hidden metadata are not mirrored. Existing joined source contents remain under the OT journal rather than an unversioned file upload.
 
 Normal files are limited to 30 MB each and 100 MB per project snapshot. Paths, duplicate names, symlinks and snapshot membership are checked before installation. A two-second asset scan detects external image replacement and file membership changes. Source deletion is checked before reading the next OT source. Changes made while a file request is pending invalidate the local installation instead of replacing newer editor content.
+
+Idle asset checks hash files in 256 KiB chunks instead of loading a complete project snapshot. They retain the same fingerprint and path validation, include source filenames without rereading source bodies, and honour cancellation. Comment-only updates and confirmations that leave source text unchanged do not rewrite its file. Unchanged editor buffers avoid repeated text validation. Stopping Live releases its in-memory source caches while retaining editor buffers and durable recovery journals. These changes do not relax conflict checks or increase existing file limits.
 
 For a Git-backed Premium project with an accessible saved token, `OverleafGitLiveFiles` starts from the latest remote branch in a private worktree. It checks each affected path against the web preflight, changes only the planned paths, then makes a normal non-force push. A concurrent server commit rejects the push. The open worktree's HEAD and index are preserved. Separate private Git refs retain the pre-operation local snapshot and accepted publication. Git-backed projects also keep these local recovery copies when the web route is used because a token is unavailable.
 
@@ -60,9 +77,7 @@ Run `zsh tools/check_overleaf_files.sh /absolute/new-output-directory` for file 
 
 Run `zsh tools/check_overleaf_realtime.sh /absolute/new-output-directory` for wire framing, Unicode operations, conservative merges, checkpoint recovery, writer exclusion and offline/cancellation checks. `tools/check_overleaf_connection.sh` also runs the actual visible workspace against a fake project channel and temporary Git worktree: transformed acknowledgement, edits during upload, ownership, conflict persistence and explicit review. These tests do not establish real-server compatibility, collaboration latency or installed Keychain approval. Keep those live results separate from synthetic checks.
 
-Installed-app checks against `remile_sample` joined 19 text documents and covered two-way edits, same-position conflict preservation, explicit review and offline reconnect. The session remained connected for about eleven minutes, handled heartbeat frames and completed another text round trip afterwards. Idle polling did not advance its confirmation timestamp. All temporary comments were removed and the web and local content matched the connected baseline.
-
-A separate real-server check withheld applied-update delivery at the test transport boundary and closed the socket after submitting a comment. Pending intent survived. Reconnect recognised the applied server snapshot without replaying the submission, then removed the comment. This verifies controlled response-loss recovery. It does not establish system-wide outage behaviour, hours-long stability or a fresh OS Keychain approval path.
+Earlier installed-app checks covered two-way text edits, heartbeats, conflict preservation and controlled response loss. The new known-source replay path has focused synthetic coverage and still needs deployed-server validation. Neither establishes system-wide outage recovery or hours-long stability.
 
 ## Real-server release checks
 

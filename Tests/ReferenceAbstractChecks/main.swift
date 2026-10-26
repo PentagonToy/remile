@@ -5,6 +5,11 @@ public func hostVersionAtLeast(_ a: Int32, _ b: Int32, _ c: Int32) -> Int32 { Pr
 var checks = 0
 func check(_ value: Bool, _ message: String) { precondition(value, message); checks += 1; print("PASS: " + message) }
 let fixture = Data(#"{"doi":"https://doi.org/10.1234/example","abstract_inverted_index":{"Ammonia":[0],"and":[1],"hydrogen":[2],"have":[3],"different":[4],"reactivity.":[5]}}"#.utf8)
+actor LookupActivity {
+    var active = 0, peak = 0
+    func begin() { active += 1; peak = max(peak, active) }
+    func end() { active -= 1 }
+}
 Task { @MainActor in
  do {
     let original = ReferenceRecord(key: "KeepKey", fields: ["title": "Ammonia and hydrogen properties", "doi": "10.1234/example", "author": "Writer, Actual", "year": "2025"])
@@ -32,6 +37,28 @@ Task { @MainActor in
     check(merged.fields["abstract"] == manual.fields["abstract"], "Lookup cannot overwrite an existing user abstract")
     let change = try ReferenceCleanup.onlineChange(original, local: original, fetched: enriched)
     check(change?.fields == ["abstract"] && original.fields["abstract"] == nil, "Clean up previews an abstract without writing it")
+    check(ReferenceMetadata.rows(enriched).last?.id == "abstract", "Long abstracts appear after all metadata and dates")
+    check(ReferenceMetadata.rows(enriched).contains { $0.id == "abstract" && $0.value == parsed }, "Stored abstracts appear in metadata regardless of export settings")
+    let activity = LookupActivity()
+    let batch = (0..<7).map { ReferenceRecord(key: "Batch_\($0)", fields: ["title": "Synthetic paper \($0)"]) }
+    var delivered: [UUID] = [], missing = 0
+    try await ReferenceCleanup.lookup(batch, load: { record in
+        await activity.begin()
+        try await Task.sleep(for: .milliseconds(20))
+        await activity.end()
+        if record.key == "Batch_2" { throw URLError(.cannotConnectToHost) }
+        return record
+    }) { record, result in delivered.append(record.id); if result == nil { missing += 1 } }
+    check(await activity.peak == 3 && Set(delivered) == Set(batch.map(\.id)) && missing == 1, "Lookup uses three workers and preserves independent results after one failure")
+    var cancelledResults = 0
+    let cancellation = Task { @MainActor in
+        try await ReferenceCleanup.lookup(batch, load: { _ in
+            try await Task.sleep(for: .seconds(30)); preconditionFailure("Cancelled lookup resumed")
+        }) { _, _ in cancelledResults += 1 }
+    }
+    await Task.yield(); cancellation.cancel()
+    do { try await cancellation.value; check(false, "Lookup cancellation was swallowed") }
+    catch is CancellationError { check(cancelledResults == 0, "Stopping lookup cancels pending workers without applying results") }
     check(ReferenceCleanup.needsLookup(original) && !ReferenceCleanup.needsLookup(enriched), "Complete contributor, year and abstract fields leave the missing-details queue")
     check(ReferenceColumn.publication.displayedValue(original) == "—" && ReferenceColumn.publication.value(original).isEmpty, "Missing publication is a display placeholder, never stored metadata")
     check(ReferenceColumn.author.label == "Author / Editor", "The contributor heading names both roles")

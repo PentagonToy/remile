@@ -71,7 +71,7 @@ struct SearchMarkdownCanvas: NSViewRepresentable {
         }
         deinit { if let networkObserver { NotificationCenter.default.removeObserver(networkObserver) } }
         func applyRemotePolicy() {
-            if NetworkAccess.offline { remoteImages.cancelAll(); remoteImages.clearCache() }
+            if NetworkAccess.offline { remoteImages.cancelAll() }
             guard loaded, let web else { return }
             web.evaluateJavaScript("window.remileSetOffline?.(\(NetworkAccess.offline ? "true" : "false"))", completionHandler: nil)
         }

@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+- Search shows local results before optional question refinement and pages beyond 200 matches. The CLI supports search offsets.
+- PDF Pages uses larger previews with page numbers below. Reference gives the selected title more room.
+
+- Show stored Reference abstracts last in a collapsed section. Remove GPT correction and the Clean up PDFs tab. Look up missing metadata and abstracts with up to three requests in progress.
+- Reuse Markdown image downloads through a shared HTTP disk cache. Avoid repeated Markdown renders, cancel stale LaTeX outlines and reuse Reference PDF thumbnails. Use bounded top-candidate selection for keyword result pages.
+
+- Reduce Live sync overhead with streaming asset checks, cancellation, unchanged-source write avoidance and stopped-session cache release. Expose pending Live sync and confirmation observations through the project CLI.
+
+- Remove merged Reference duplicates directly while retaining PDFs and session Undo. Keep user-deleted references in Trash.
+
+- Recover Overleaf Live automatically after brief transport loss, preserving pending edits, newer typing and Undo. Keep conflicts and account restrictions explicit. Allow switching to Private during connection startup.
+- Add focused Left/Right PDF page navigation while preserving vertical scrolling and editable-field keys. Show the Apple Intelligence provider label in Ask.
+- Stabilise Reference column dragging, add automatic-width reset and use spare width without replacing manual choices. Match the website's workspace navigation to Home.
+
+- Align Ask and Reference actions, add scene-specific Workspace menu commands, improve dark Ask contrast and enlarge pane restore targets. Fit automatic Reference columns while preserving manual widths.
+
+- Give local LaTeX the same Ask and manuscript review as connected projects. Distinguish Review manuscript from Attach Overleaf feedback and keep server Review in connected projects.
+
+- Replace connected Overleaf Review with comments and tracked edits, distinct source highlights, full Markdown/JSON export and guarded Accept/Reject actions. Open project questions from Ask and remove the duplicate Review toolbar button.
+- Reuse one recent Live project for a quick return without rejoining or recompiling. Stop hidden file checks and expire it after 45 seconds.
+- Offer Default and Paper source backgrounds. Default now follows the app appearance.
+- Add draft and feedback review shortcuts to Ask, project-ID review reads through the CLI and source-linked Markdown/JSON or ZIP hand-offs.
+- Let unchanged Live projects connect during initial compilation. Keep Paper editor surfaces consistent and switch backgrounds with one click.
+- Toggle logs and the last PDF from one toolbar button.
+- Allow PDF double-click navigation after source edits and small pointer movement. Keep uncertain matches at line level.
+- Remove embedded publisher sign-in and saved publisher sessions. Keep public PDF discovery and local attachment import.
+
 ## 0.1.4-beta.1 — 25 October 2026
 
 - Add optional publisher website access with validated PDF capture, a browser fallback and opt-in session storage in this Mac's Keychain. Embedded publisher verification can still fail. No institutional login compatibility is guaranteed.

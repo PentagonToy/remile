@@ -35,6 +35,7 @@ struct MarkdownWorkspace: View {
         @Published var table: MarkdownTableEditor.State?
         @Published var printing = false
         @Published var ask = false
+        @Published var paneReset = UUID()
         @Published var error: String?
         init(mode: Mode) { self.mode = mode }
     }
@@ -46,7 +47,7 @@ struct MarkdownWorkspace: View {
             Divider()
             Group {
                 if presentation.outline {
-                    ReaderSplit(sizing: .outline, minimum: 180, maximum: 300, minimumContent: 580, label: "outline", pane: { outlinePanel }, content: { documentContent })
+                    ReaderSplit(sizing: .outline, minimum: 180, maximum: 300, minimumContent: 580, label: "outline", revealToken: presentation.paneReset.uuidString, pane: { outlinePanel }, content: { documentContent })
                 } else { documentContent }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
@@ -58,6 +59,7 @@ struct MarkdownWorkspace: View {
                 ReaderThemeButton()
             }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 12).frame(height: 32).background(RemileStyle.editorBar)
         }
+        .focusedSceneValue(\.workspaceActions, WorkspaceActions(ask: { presentation.ask.toggle() }, references: { presentation.references = true }, restorePanes: { presentation.paneReset = UUID() }))
         .sheet(isPresented: $presentation.references) {
             ReferencePicker(format: .markdown, insert: presentation.mode == .read ? nil : { record, _ in
                 guard let view = editor.textView, !view.hasMarkedText(), view.string == source else { throw ReferenceFailure("Open the Markdown editor before inserting a citation.") }
@@ -140,13 +142,13 @@ struct MarkdownWorkspace: View {
                     Button { preview.revealSource() } label: { Image(systemName: "arrow.left") }.remileHelp("Show preview selection in source")
                     Button { preview.reveal(line: editor.selectedLine) } label: { Image(systemName: "arrow.right") }.remileHelp("Show source in preview")
                 }
-                Button { presentation.references = true } label: { Image(systemName: "books.vertical") }.remileHelp("Reference library").accessibilityLabel("Reference library")
                 AIToolGroup {
                 AIProviderButton()
-                Button { presentation.ask.toggle() } label: { Image(systemName: "text.bubble") }.remileHelp("Ask about document").accessibilityLabel("Ask about document")
                 EditorWritingReviewButton(review: writing, editor: editor)
                 }
 
+                WorkspaceAskButton(isPresented: presentation.ask) { presentation.ask.toggle() }.labelStyle(.iconOnly)
+                WorkspaceReferenceButton { presentation.references = true }
                 if !compact { Button { showExternalEdits.toggle() } label: { Image(systemName: showExternalEdits ? "eye" : "eye.slash") }.remileHelp(RemileHints.edits(showExternalEdits)).accessibilityLabel("Show AI and CLI edits").accessibilityValue(showExternalEdits ? "On" : "Off") }
                 Menu {
                     Toggle("Focus paragraph", isOn: $focusMode)
@@ -185,7 +187,7 @@ struct MarkdownWorkspace: View {
     }
     @ViewBuilder private var documentContent: some View {
         if presentation.ask {
-            ReaderSplit(side: .trailing, initial: 330, minimum: 240, maximum: 420, minimumContent: 280, preferPaneWhenNarrow: true, label: "Markdown Ask", pane: {
+            ReaderSplit(side: .trailing, initial: 330, minimum: 240, maximum: 420, minimumContent: 280, preferPaneWhenNarrow: true, label: "Markdown Ask", revealToken: presentation.paneReset.uuidString, pane: {
                 AssistantPanel(assistant: assistant, passages: [], topic: fileURL?.deletingPathExtension().lastPathComponent ?? "this document", select: { item in editor.reveal(line: item.location.unit); presentation.ask = false }, close: { presentation.ask = false }, retrieve: { question in
                     let lines = source.components(separatedBy: "\n")
                     let passages = stride(from: 0, to: lines.count, by: 16).map { index in AssistantPassage(location: .init(path: fileURL?.path ?? "Untitled.md", unit: index + 1, label: "Line \(index + 1)"), text: lines[index..<min(lines.count, index + 16)].joined(separator: "\n")) }
@@ -199,7 +201,7 @@ struct MarkdownWorkspace: View {
         case .read: previewView
         case .edit: editorView
         case .split:
-            ReaderSplit(sizing: .equal, minimum: 280, maximum: .greatestFiniteMagnitude, minimumContent: 280, preferPaneWhenNarrow: true, label: "Markdown editor", pane: { editorView }, content: { previewView })
+            ReaderSplit(sizing: .equal, minimum: 280, maximum: .greatestFiniteMagnitude, minimumContent: 280, preferPaneWhenNarrow: true, label: "Markdown editor", revealToken: presentation.paneReset.uuidString, pane: { editorView }, content: { previewView })
         }
     }
     private var previewURL: URL { fileURL ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Untitled.md") }

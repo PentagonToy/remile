@@ -65,11 +65,18 @@ remile overleaf list --query "remile-sample-4"
 remile overleaf show --id overleaf:PROJECT_ID
 remile overleaf read --id overleaf:PROJECT_ID --file main.tex
 remile overleaf open --id overleaf:PROJECT_ID
+remile overleaf review --id overleaf:PROJECT_ID --format json
+remile overleaf review --id overleaf:PROJECT_ID --format markdown --output /absolute/new-review.md
+remile overleaf review --id overleaf:PROJECT_ID --format bundle --output /absolute/new-review.zip
 ```
 
 Replace `PROJECT_ID` with the copied 24-character ID. `list` returns project names, persistent IDs, connection UUIDs and local roots. Several account connections to the same project require `--connection UUID`. Several open windows require `--target UUID` from `documents`.
 
-`show` returns known sync status and the last recorded sync time. For an open project it also returns the session target, source hashes, unsaved state and whether its PDF matches the current source. For a closed project, PDF currency is unknown. `read` returns an open editor buffer or the saved UTF-8 source, its SHA-256 and origin. It accepts project-relative text paths up to 4 MB and refuses paths outside the project. Unsaved buffers take precedence over disk files.
+`show` returns known sync status and the last recorded sync time. An open project includes `live` observations: connection and reconnection state, pending document count, file reconciliation, review requirements and the last confirmed sync time. `live.confirmed` becomes false as soon as local typing is pending. A closed project returns `live: null`. For an open project it also returns the session target, source hashes, unsaved state and whether its PDF matches the current source. For a closed project, PDF currency is unknown. `read` returns an open editor buffer or the saved UTF-8 source, its SHA-256 and origin. It accepts project-relative text paths up to 4 MB and refuses paths outside the project. Unsaved buffers take precedence over disk files.
+
+`review` reads the connected account's current server comments and tracked changes directly. It does not require opening the sidebar first. JSON is the default. Markdown carries project, document, thread and change identities, UTF-16 anchors, source hashes and bounded source excerpts. `complete: false` identifies missing or changing review locations. Read-only review access never accepts, rejects, resolves or edits a record.
+
+A review bundle contains `review.md`, `review.json`, text sources and a hash manifest. Editor buffers take precedence over saved files. A differing review snapshot is retained under `review-source/`. Figures, compiled PDFs and account credentials are omitted. Use new absolute output paths. Export is bounded to 1,000 text sources and 64 MB, including differing review sources.
 
 Listing, showing and reading do not fetch remote changes. `remoteFreshness: not-checked` means these results cannot establish the latest Overleaf version. `observedAt` records local observation time. Read again after edits, and retain source hashes with review findings.
 
@@ -88,7 +95,7 @@ Run `documents` to discover open document sessions, then pass `--target UUID` to
 | `writer-page [--columns 1\|2] [--header TEXT] [--footer TEXT] [--top-line on\|off] [--bottom-line on\|off] [--page-numbers on\|off]` | Read page layout or change it with `--expected-sha256 HASH`. Use `--clear-header` or `--clear-footer` to remove text |
 | `writer-object --id UUID [--wrap on\|off] [--lock on\|off]` | Read object layout or change it with `--expected-sha256 HASH` |
 | `diagnostics` | Read main-process memory, source size, cached hashes, build-cache ownership and automation transport |
-| `library-search "question or keywords" [--no-boost]` | Search the current local library with the same engine and boosting policy as the app. Return ranked paths, pages, excerpts and matched terms |
+| `library-search "question or keywords" [--no-boost] [--offset N]` | Search the current local library with the same engine and boosting policy as the app. Return ranked paths, pages, excerpts and matched terms |
 | `pdf-read [/path/document.pdf] [--page N] [--find text] [--render /path/new.png]` | Read PDF page text, annotation data and search bounds. Optionally render a page image |
 | `read [--file relative.tex]` | Read the buffer, SHA-256 and CLI edit ranges |
 | `replace --source-file /path/source --expected-sha256 HASH [--file relative.tex]` | Apply an undoable buffer edit |
@@ -137,7 +144,7 @@ For a connected Overleaf project, `comments` exports the latest snapshot from it
 
 Without a document path, `pdf-read` reads the current reader page, including unsaved annotation edits, and reports whether the document has unsaved changes. Text is capped at 64,000 characters, annotations at 500 and matches at 100 per page. The response flags truncated text. This command reads context without editing the PDF or changing its visible page.
 
-Library search uses B0 for keywords and optionally B-guided for questions. `--no-boost`, Work offline and Manual mode keep the request on B0. The response identifies the engine and accepted expansion phrases. It does not change the search field or document selection. Start the app before issuing this live command. Allow up to 60 seconds for the initial resident index and model preparation.
+Library search uses B0 for keywords and optionally B-guided for questions. `--no-boost`, Work offline and Manual mode keep the request on B0. The response identifies the engine and accepted expansion phrases. It returns up to 200 matches with `offset`, `hasMore` and `nextOffset`. Pass `--offset N` using `nextOffset` to continue. Keep the query and library unchanged while paging. It does not change the search field or document selection. Start the app before issuing this live command. Allow up to 60 seconds for the initial resident index and model preparation.
 
 
 Reference list summaries include publication/type and a summaryTruncated flag. Lists and suggestions retain separate `authors` and `editors` fields, with `contributors` for display and `contributorRole` identifying the fallback used. Sorting by `author` uses editors when no author is recorded. Title is limited to 1,000 characters, authors/publication to 500 and year to 32. Use show with an explicit ID for the complete stored fields. Each response reads records and library identities from one catalogue snapshot.

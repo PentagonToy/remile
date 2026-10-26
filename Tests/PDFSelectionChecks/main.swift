@@ -27,6 +27,14 @@ _ = NSApplication.shared
 let bytes = fixture(), document = PDFDocument(data: bytes)!, foreign = PDFDocument(data: bytes)!
 let view = PDFSelectionView(frame: CGRect(x: 0, y: 0, width: 700, height: 850))
 view.document = document; view.autoScales = true; view.layoutDocumentView()
+func pageKey(_ code: UInt16, modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
+    NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)!
+}
+view.go(to: document.page(at: 0)!)
+expect(view.turnPage(with: pageKey(124)) && view.currentPage === document.page(at: 1), "Right arrow advances exactly one PDF page")
+expect(view.turnPage(with: pageKey(123)) && view.currentPage === document.page(at: 0), "Left arrow returns exactly one PDF page")
+expect(!view.turnPage(with: pageKey(125)) && !view.turnPage(with: pageKey(126)), "Vertical arrows retain PDFKit continuous scrolling")
+expect(!view.turnPage(with: pageKey(124, modifiers: .shift)) && !view.turnPage(with: pageKey(123, modifiers: .command)), "Modified arrows retain native selection and navigation")
 let page = document.page(at: 0)!, first = page.selection(for: NSRange(location: 0, length: 7))!
 let second = page.selection(for: NSRange(location: 8, length: 8))!
 let snapshot = PDFSelectionContext(selection: first, document: document)!

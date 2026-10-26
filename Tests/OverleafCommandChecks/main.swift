@@ -16,7 +16,11 @@ struct OverleafConnection {
     init(_ directory: URL) { self.directory = directory }
     func root(_ project: OverleafConnection) -> URL { directory.appendingPathComponent(project.id.uuidString) }
 }
+@MainActor final class TestLiveWorkspace {
+    var automationStatus: [String: Any] = ["enabled": true, "connected": true, "confirmed": false, "pendingDocuments": 1]
+}
 @MainActor final class TestProject {
+    let liveWorkspace = TestLiveWorkspace()
     let identity = UUID()
     let root: URL
     var buffers: [String: String] = ["main.tex": "unsaved source"]
@@ -52,6 +56,13 @@ enum EditorBridge {
         var kind: String?
         var file: String?
         var target: UUID?
+        var output: String?
+    }
+}
+
+@MainActor enum OverleafReviewCommands {
+    static func handle(connection: OverleafConnection, root: URL, project: TestProject?, format: String?, output: String?, library: OverleafLibrary) async -> [String: Any] {
+        ["ok": true, "review": true, "projectID": connection.projectID, "format": format ?? "json", "opened": project != nil]
     }
 }
 
@@ -62,6 +73,8 @@ Task { @MainActor in
         let id = "0123456789abcdef01234567"
         let project = OverleafConnection(id: UUID(), projectID: id, name: "Renamed paper")
         library.projects = [project]
+        let review = await OverleafCommands.handle(.init(action: "review", source: "overleaf:" + id, kind: "json"), homes: [home], current: home)
+        precondition(review["ok"] as? Bool == true && review["review"] as? Bool == true && review["opened"] as? Bool == false && home.opens == 0)
         let root = library.root(project)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try "saved source".write(to: root.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
@@ -70,6 +83,7 @@ Task { @MainActor in
         }
         func call(_ request: EditorBridge.Request, homes: [HomeModel]? = nil) async -> [String: Any] { await OverleafCommands.handle(request, homes: homes ?? [home], current: home) }
         let closed = await call(request("show"))
+        precondition(closed["live"] is NSNull)
         precondition(closed["ok"] as? Bool == true && closed["pdfCurrent"] is NSNull && home.opens == 0)
         let disk = await call(request("read", file: "main.tex"))
         precondition(disk["source"] as? String == "saved source" && disk["origin"] as? String == "disk")
@@ -90,6 +104,8 @@ Task { @MainActor in
         let buffer = await call(request("read", file: "main.tex"))
         precondition(buffer["source"] as? String == "unsaved source" && buffer["origin"] as? String == "editor-buffer")
         precondition(buffer["dirty"] as? Bool == true && buffer["pdfCurrent"] as? Bool == false)
+        precondition((buffer["live"] as? [String: Any])?["pendingDocuments"] as? Int == 1)
+        precondition((buffer["live"] as? [String: Any])?["confirmed"] as? Bool == false)
         let again = await call(request("open"))
         precondition(again["ok"] as? Bool == true && home.opens == 1)
         let second = HomeModel(library); second.texProject = TestProject(root)

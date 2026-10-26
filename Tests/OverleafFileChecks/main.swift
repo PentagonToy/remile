@@ -110,15 +110,44 @@ Task { @MainActor in
         try FileManager.default.removeItem(at: linked); try local["figure.png"]!.write(to: linked)
         do { _ = try OverleafLiveFiles.scan(run.appendingPathComponent("missing-project")); fatalError("An unavailable root became an empty snapshot") }
         catch { check(true, "An unavailable project root cannot become an empty deletion snapshot") }
+        let expectedAssetHash = OverleafLiveFiles.fingerprint(try OverleafLiveFiles.scan(root), assetsOnly: true)
+        check(try OverleafLiveFiles.fingerprintAssets(at: root) == expectedAssetHash, "Streaming assets preserve the exact existing fingerprint")
+        let largeAsset = root.appendingPathComponent("streaming.bin")
+        try Data(repeating: 173, count: 2 * 1024 * 1024 + 17).write(to: largeAsset)
+        check(try OverleafLiveFiles.fingerprintAssets(at: root) == OverleafLiveFiles.fingerprint(OverleafLiveFiles.scan(root), assetsOnly: true), "Multi-chunk hashing matches across chunk boundaries")
+        try FileManager.default.removeItem(at: largeAsset)
+        let sourceURL = root.appendingPathComponent("main.tex")
+        let savedSource = try Data(contentsOf: sourceURL)
+        try bytes("changed text").write(to: sourceURL)
+        check(try OverleafLiveFiles.fingerprintAssets(at: root) == expectedAssetHash, "Text edits do not trigger binary reconciliation")
+        try savedSource.write(to: sourceURL)
+        try FileManager.default.createSymbolicLink(at: largeAsset, withDestinationURL: linkTarget)
+        do { _ = try OverleafLiveFiles.fingerprintAssets(at: root); fatalError("Streaming scan followed a symlink") }
+        catch { check(true, "Streaming inspection keeps the symlink safety boundary") }
+        try FileManager.default.removeItem(at: largeAsset)
         let project = try TeXProject(root, historyEnabled: false)
         try OverleafLiveFiles.save(base, to: OverleafFileSync.baseline(connection, library: library.directory))
         let service = FileRemoteFixture(remote), sync = OverleafFileSync(makeRemote: { _ in service })
-        let result = try await sync.reconcile(project: project, library: library, connection: connection, tree: service.tree, textBases: [:], check: {})
+        project.compiling = true
+        var finished = false
+        let pendingReconcile = Task { @MainActor in
+            let result = try await sync.reconcile(project: project, library: library, connection: connection, tree: service.tree, textBases: [:], check: {})
+            finished = true
+            return result
+        }
+        try await Task.sleep(for: .milliseconds(80))
+        check(!finished && service.operations.isEmpty, "A running preview delays actual file mutations without failing Live startup")
+        project.compiling = false
+        let result = try await pendingReconcile.value
         check(result.reconnect && service.files == plan.result, "Staged upload, replacement and deletion reach the expected remote result")
         check(try OverleafLiveFiles.scan(root) == plan.result && project.treeFiles.contains("server.png"), "Remote additions install into disk and the visible file tree")
         check(service.files.keys.allSatisfy { !$0.hasPrefix("remile-") }, "Confirmed temporary remote files are cleaned up")
         check(FileManager.default.fileExists(atPath: sync.recovery!.appendingPathComponent("after-remote.json").path), "Recovery preserves the exact parked remote bytes before deletion")
         check(!(try await sync.changed(project)), "Installed image hashes do not trigger an upload loop")
+        project.compiling = true
+        let unchanged = try await sync.reconcile(project: project, library: library, connection: connection, tree: service.tree, textBases: [:], check: {})
+        check(!unchanged.reconnect && project.compiling, "An unchanged project can connect while the initial PDF compiles")
+        project.compiling = false
         try bytes("Finder replacement").write(to: root.appendingPathComponent("figure.png"), options: .atomic)
         check(try await sync.changed(project), "A binary replacement outside the editor is detected")
         let assetBefore = try OverleafLiveFiles.scan(root)

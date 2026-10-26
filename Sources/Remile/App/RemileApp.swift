@@ -6,7 +6,7 @@ final class RemileDelegate: NSObject, NSApplicationDelegate {
     private var automationTask: Task<Void, Never>?
     func bind() {
         guard automationTask == nil else { return }
-        Task.detached(priority: .utility) { TeXCache.prune() }
+        Task.detached(priority: .utility) { RetiredPublisherSession.clear(); TeXCache.prune() }
         automationTask = Task { @MainActor in await EditorBridge.serve { RemileWindows.shared.requestHome() } }
     }
     func applicationWillTerminate(_ notification: Notification) { automationTask?.cancel() }
@@ -41,7 +41,7 @@ struct RemileApp: App {
     var body: some Scene {
         WindowGroup("remile.", id: "home") { RemileWindow(delegate: delegate) }
             .defaultSize(width: 1120, height: 800)
-            .commands { RemileCommands() }
+            .commands { RemileCommands(); WorkspaceCommands() }
         Settings { ReaderSettings().modifier(ReaderAppearanceModifier()).modifier(NetworkAccessScope()) }
     }
 }

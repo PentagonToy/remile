@@ -40,7 +40,10 @@ enum ReferencePaperLookup {
         let papers = try await search(doi.hasPrefix("10.") ? doi : record.title, deadline: deadline)
         let exact = papers.filter { matches(record, fields: $0.record.fields) }
         guard exact.count == 1, let paper = exact.first else { throw ReferenceFailure("No unique match. Add a DOI or arXiv ID and try again.") }
-        return try await fillingAbstract(paper.record, deadline: deadline)
+        if (record.fields["abstract"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return try await fillingAbstract(paper.record, deadline: deadline)
+        }
+        return paper.record
     }
     static func fillingAbstract(_ record: ReferenceRecord, deadline: Date, load: @escaping @Sendable (String, Date) async throws -> Data = { doi, deadline in try await openAccessData(doi: doi, deadline: deadline, abstractOnly: true) }) async throws -> ReferenceRecord {
         guard (record.fields["abstract"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return record }

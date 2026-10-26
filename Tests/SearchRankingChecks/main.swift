@@ -51,6 +51,21 @@ do {
     try expect(SearchBoostPolicy.enabled(defaults: suite), "Boosting defaults on without overwriting an explicit choice")
     suite.set(false, forKey: SearchBoostPolicy.preference); try expect(!SearchBoostPolicy.enabled(defaults: suite), "Explicit false is retained")
     try expect(SearchBoostPolicy.validate(["vanishing gradients", "VANISHING GRADIENTS", "x", "one two three four five six seven"]) == ["vanishing gradients"], "Plan validation bounds and deduplicates")
+    let many = SparseSearchRanker()
+    for i in 1...600 { many.append(rowID: Int64(i), heading: i.isMultiple(of: 7) ? "Signal" : "", body: "Signal shared marker.") }
+    try many.finish()
+    let expectedMany = ((1...600).filter { $0.isMultiple(of: 7) } + (1...600).filter { !$0.isMultiple(of: 7) }).prefix(200).map(Int64.init)
+    let manyMatches = try many.search("signal").map(\.rowID)
+    try expect(manyMatches == expectedMany, "Top-200 selection retains exact heading priorities and stable tie order")
+    let allowedMany = Set((1...600).filter { $0.isMultiple(of: 2) }.map(Int64.init))
+    let allowedMatches = try many.search("signal", allowed: allowedMany).map(\.rowID)
+    try expect(allowedMatches == (((1...600).filter { $0.isMultiple(of: 7) } + (1...600).filter { !$0.isMultiple(of: 7) }).map(Int64.init).filter { allowedMany.contains($0) }).prefix(200).map { $0 }, "Top-200 selection respects phrase-filter membership before retaining candidates")
+    for expansions in [[], ["shared marker"]] {
+        let whole = try many.search("signal", expansions: expansions, limit: 600).map(\.rowID)
+        var paged: [Int64] = []
+        for offset in stride(from: 0, to: 600, by: 200) { paged += try many.search("signal", expansions: expansions, offset: offset).map(\.rowID) }
+        try expect(paged == whole && Set(paged).count == 600, "Keyword and guided pages reach all matches with stable ranking and no overlap")
+    }
     let ranker = SparseSearchRanker()
     ranker.append(rowID: 1, heading: "Sigmoid", body: "The sigmoid activation is smooth and bounded. Binary classification predicts a probability.")
     ranker.append(rowID: 2, heading: "Pressure", body: "The pressure Poisson equation combines momentum and continuity to enforce mass conservation.")

@@ -21,6 +21,8 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     private var appliedOffline: Bool?
     private var generation = UUID()
     private var renderGeneration = UUID()
+    private var renderedSource: String?
+    private var renderedURL: URL?
     private let remoteImages = MarkdownRemoteImages()
     private var networkObserver: NSObjectProtocol?
     override init() {
@@ -43,7 +45,9 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     }()
     func render(_ source: String, url: URL) async {
         let token = UUID(); renderGeneration = token
+        if renderedSource == source, renderedURL == url, html != nil, message == nil { return }
         do { try await Task.sleep(for: .milliseconds(180)); try Task.checkCancellation() } catch { return }
+        guard renderGeneration == token else { return }
         let worker = Task.detached(priority: .userInitiated) { () throws -> (String, [SearchMarkdown.Section], Int) in
             let sections = SearchMarkdown.sections(source)
             var renderer = MarkdownHTML(baseURL: url, preview: true)
@@ -54,7 +58,9 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
         }
         do {
             let result = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
-            try Task.checkCancellation(); guard renderGeneration == token else { return }; html = result.0; sections = result.1; wordCount = result.2; message = nil
+            try Task.checkCancellation(); guard renderGeneration == token else { return }
+            renderedSource = source; renderedURL = url
+            html = result.0; sections = result.1; wordCount = result.2; message = nil
         } catch is CancellationError { }
         catch {
             guard !Task.isCancelled, renderGeneration == token else { return }
@@ -110,7 +116,7 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
         web.evaluateJavaScript("(()=>{const a=[...document.querySelectorAll('[data-source-line]')].filter(a=>Number(a.dataset.sourceLine)<=\(max(0,line))).pop();a?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth'})})()", completionHandler: nil)
     }
     private func updateRemotePolicy() {
-        if NetworkAccess.offline { remoteImages.cancelAll(); remoteImages.clearCache() }
+        if NetworkAccess.offline { remoteImages.cancelAll() }
         guard loaded else { return }
         guard appliedOffline != NetworkAccess.offline else { return }
         appliedOffline = NetworkAccess.offline

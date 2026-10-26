@@ -40,6 +40,18 @@ enum TeXSync {
         guard build.buffers[file] != nil else { throw Failure(errorDescription: "This file is not editable in the project.") }
         return SourceLocation(file: file, line: line - 1)
     }
+    /// Preserve precise ranges only for the compiled source. Shift an unchanged
+    /// suffix after edits above it, otherwise navigate to a clamped coarse line.
+    static func relocate(_ location: SourceLocation, from previous: String, to current: String) -> SourceLocation {
+        guard previous != current else { return location }
+        let old = previous.components(separatedBy: "\n"), new = current.components(separatedBy: "\n")
+        var prefix = 0
+        while prefix < min(old.count, new.count), old[prefix] == new[prefix] { prefix += 1 }
+        var suffix = 0
+        while suffix < min(old.count, new.count) - prefix, old[old.count - suffix - 1] == new[new.count - suffix - 1] { suffix += 1 }
+        let line = location.line >= old.count - suffix ? location.line + new.count - old.count : location.line
+        return .init(file: location.file, line: max(0, min(new.count - 1, line)))
+    }
     /// Refine only a small SyncTeX neighbourhood. Ambiguous or weak matches keep the line result.
     static func refine(_ location: SourceLocation, source: String, hint: TextHint?) -> SourceLocation {
         guard location.line >= 0, let hint, hint.text.utf16.count <= 500 else { return location }

@@ -8,7 +8,6 @@ struct ReferenceEditor: View {
         @Published var draft: ReferenceRecord
         @Published var citation: String
         @Published var citationMode: Bool
-        @Published var repair = false
         @Published var error: String?
         init(record: ReferenceRecord?, citation: String) { draft = record ?? ReferenceRecord(); self.citation = citation; citationMode = !citation.isEmpty }
     }
@@ -20,10 +19,10 @@ struct ReferenceEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack { Text(existing ? "Edit reference" : "Add reference").font(.title2.weight(.semibold)); Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
-            Picker("Entry", selection: $state.citationMode) { Text("Details").tag(false); Text("Citation / BibTeX").tag(true) }.pickerStyle(.segmented).labelsHidden()
+            Picker("Entry", selection: $state.citationMode) { Text("Details").tag(false); Text("BibTeX").tag(true) }.pickerStyle(.segmented).labelsHidden()
             if state.citationMode {
                 TextEditor(text: $state.citation).font(.system(size: 13, design: .monospaced)).frame(minHeight: 250).scrollContentBackground(.hidden).padding(8).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 8))
-                Text("Paste one BibTeX entry, or ask GPT to organise a plain citation.").font(RemileType.caption).foregroundStyle(.secondary)
+                Text("Paste one BibTeX entry.").font(RemileType.caption).foregroundStyle(.secondary)
             } else {
                 ScrollView { Form {
                     TextField("Title", text: field("title"))
@@ -43,6 +42,7 @@ struct ReferenceEditor: View {
                     }
                     TextField("DOI", text: field("doi"))
                     TextField("URL", text: field("url"))
+                    TextField("Abstract", text: field("abstract"), axis: .vertical).lineLimit(3...8)
                     TextField("Notes", text: field("note"), axis: .vertical).lineLimit(2...4)
                     Picker("Type", selection: Binding(get: { ReferenceKind.classify(state.draft) }, set: { state.draft = $0.applying(to: state.draft) })) {
                         ForEach(ReferenceKind.allCases, id: \.self) { kind in Text(kind.label).tag(kind) }
@@ -53,19 +53,12 @@ struct ReferenceEditor: View {
             if let error = state.error { Text(error).foregroundStyle(RemileStyle.warning).font(RemileType.callout) }
             if let error = model.error { Text(error).foregroundStyle(RemileStyle.warning).font(RemileType.callout) }
             HStack {
-                Button { state.repair = true } label: { HStack { GPTMark(); Text("GPT") } }.disabled(repairSource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.busy)
                 Spacer()
                 if model.busy { ProgressView().controlSize(.small) }
                 Button("Save") { save() }.keyboardShortcut(.defaultAction).disabled(model.busy)
             }
         }.padding(24).frame(width: 560).background(RemileStyle.background).tint(RemileStyle.accent)
-            .sheet(isPresented: $state.repair) { ReferenceRepair(source: repairSource) { correction in
-                let storedAbstract = state.draft.fields["abstract"]
-                state.draft.fields = correction.fields; if state.draft.fields["abstract"] == nil { state.draft.fields["abstract"] = storedAbstract }; state.draft.key = correction.key; state.draft.type = correction.type
-                state.citation = (try? ReferenceBibTeX.export([correction])) ?? ""; state.citationMode = false
-            } }
     }
-    private var repairSource: String { state.citationMode ? state.citation : (try? ReferenceExport.bibtex([state.draft])) ?? "" }
     private func field(_ name: String) -> Binding<String> { Binding(get: { state.draft.fields[name] ?? "" }, set: { state.draft.fields[name] = $0 }) }
     private func save() {
         do {

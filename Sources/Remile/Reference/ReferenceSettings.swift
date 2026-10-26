@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ReferenceSettings: View {
     @AppStorage(ReferenceKeyRule.preference) private var rule = ReferenceKeyRule.surnameYearWord.rawValue
+    @AppStorage(ReferenceColumnWidths.preference) private var columnWidths = "{}"
     @AppStorage(ReferenceColumn.preference) private var columns = ReferenceColumn.defaults
     @AppStorage(ReferenceExport.abstractPreference) private var abstract = false
     var body: some View {
@@ -17,7 +18,7 @@ struct ReferenceSettings: View {
                     .remileHelp("Uses the first author's surname. Existing keys change only when regenerated.")
                 Text("Existing keys stay unchanged.").font(RemileType.caption).foregroundStyle(.secondary)
                 Divider()
-                Text("List columns").font(RemileType.section)
+                HStack { Text("List columns").font(RemileType.section); Spacer(); Button("Reset widths") { columnWidths = "{}" }.buttonStyle(RemileActionStyle()) }
                 ForEach(ReferenceColumn.allCases) { column in
                     Toggle(column.label, isOn: Binding(get: { ReferenceColumn.visible(columns).contains(column) }, set: { enabled in
                         var selected = Set(ReferenceColumn.visible(columns)); if enabled { selected.insert(column) } else { selected.remove(column) }

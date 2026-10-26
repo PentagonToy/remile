@@ -255,6 +255,14 @@ Task {
         try await mathsIndex.remove(mathsFolder)
         let removedFolder = try await mathsIndex.rankedSearch("momentum")
         try expect(removedFolder.isEmpty, "Removing a folder clears loaded sparse ranking data")
+        let pagingRoot = output.appendingPathComponent("paging")
+        try FileManager.default.createDirectory(at: pagingRoot, withIntermediateDirectories: true)
+        for i in 0..<205 { try "# Paging fixture \(i)\nPagination marker unique \(i).".write(to: pagingRoot.appendingPathComponent("\(i).md"), atomically: true, encoding: .utf8) }
+        let pagingIndex = LibraryIndex(location: output.appendingPathComponent("paging.sqlite"))
+        try await pagingIndex.add(pagingRoot); try await pagingIndex.refresh { _ in }
+        let firstPage = try await pagingIndex.rankedPage("pagination"), nextPage = try await pagingIndex.rankedPage("pagination", offset: 200)
+        try expect(firstPage.hits.count == 200 && firstPage.hasMore && nextPage.hits.count == 5 && !nextPage.hasMore, "Paged search reaches matches beyond 200 without retaining their full text")
+        try expect(Set((firstPage.hits + nextPage.hits).map(\.id)).count == 205, "Result pages have distinct stable locations")
         print("\(checks) library checks passed")
         exit(0)
     } catch {

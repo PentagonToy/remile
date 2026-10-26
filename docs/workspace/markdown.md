@@ -12,7 +12,7 @@ A small place for notes that can grow into something more.
 
 The Format tools insert headings, links, lists, maths, code and tables. Pasting cells from a spreadsheet creates a table.
 
-Keep local images beside the document or in a subfolder. Remote images need a connection. PDF export uses local images and supported formulae.
+Keep local images beside the document or in a subfolder. Remote images use a local cache so revisiting a page can reuse downloaded images. The source's cache policy controls refreshes. Online access is required to load remote images. PDF export uses local images and supported formulae.
 
 ## Settle into the page
 

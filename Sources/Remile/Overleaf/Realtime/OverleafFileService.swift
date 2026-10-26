@@ -61,6 +61,10 @@ import WebKit
         guard Self.id(entry.id), ["doc", "file"].contains(entry.kind) else { throw OverleafLiveFiles.Failure.invalid }
         _ = try await request("delete", args: ["entity": entry.id, "kind": entry.kind])
     }
+    func acceptChange(document: String, change: String) async throws {
+        guard Self.id(document), !change.isEmpty, change.utf8.count <= 256, !change.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw OverleafLiveFiles.Failure.invalid }
+        _ = try await request("acceptChange", args: ["entity": document, "change": change])
+    }
     private static func id(_ value: String) -> Bool { value.range(of: "^[a-f0-9]{24}$", options: .regularExpression) != nil }
     private static let script = """
     const csrf = document.querySelector('meta[name="ol-csrfToken"]')?.content;
@@ -73,6 +77,9 @@ import WebKit
         body = new FormData(); body.append('name', name); body.append('relativePath', path);
         body.append('qqfile', new Blob([bytes], {type: 'application/octet-stream'}), name);
         url = '/Project/' + project + '/upload?folder_id=' + root; method = 'POST';
+    } else if (action === 'acceptChange') {
+        url = '/project/' + project + '/doc/' + entity + '/changes/accept';
+        method = 'POST'; headers['Content-Type'] = 'application/json'; body = JSON.stringify({change_ids: [change]});
     } else {
         url = '/project/' + project + '/' + kind + '/' + entity;
         if (action === 'rename') { url += '/rename'; method = 'POST'; headers['Content-Type'] = 'application/json'; body = JSON.stringify({name}); }

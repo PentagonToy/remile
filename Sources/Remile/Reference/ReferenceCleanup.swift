@@ -9,6 +9,32 @@ enum ReferenceCleanup {
         var id: UUID { before.id }
         var fields: [String] { (Set(before.fields.keys).union(after.fields.keys).filter { before.fields[$0] != after.fields[$0] } + (before.type != after.type ? ["@type"] : [])).sorted() }
     }
+    /// Independent public lookups share a small concurrency window, preserving provider pacing.
+    @MainActor static func lookup(_ records: [ReferenceRecord], load: @escaping @Sendable (ReferenceRecord) async throws -> ReferenceRecord = { try await ReferencePaperLookup.metadata(for: $0) }, receive: (ReferenceRecord, ReferenceRecord?) -> Void) async throws {
+        try Task.checkCancellation(); try NetworkAccess.requireOnline()
+        try await withThrowingTaskGroup(of: (Int, ReferenceRecord?).self) { group in
+            var next = 0
+            while next < min(3, records.count) {
+                let index = next, record = records[next]
+                group.addTask { (index, try await lookupOne(record, load: load)) }
+                next += 1
+            }
+            while let (index, fetched) = try await group.next() {
+                try Task.checkCancellation(); try NetworkAccess.requireOnline()
+                receive(records[index], fetched)
+                if next < records.count {
+                    let index = next, record = records[next]
+                    group.addTask { (index, try await lookupOne(record, load: load)) }
+                    next += 1
+                }
+            }
+        }
+    }
+    private static func lookupOne(_ record: ReferenceRecord, load: @Sendable (ReferenceRecord) async throws -> ReferenceRecord) async throws -> ReferenceRecord? {
+        do { try Task.checkCancellation(); return try await load(record) }
+        catch is CancellationError { throw CancellationError() }
+        catch { try Task.checkCancellation(); return nil }
+    }
     static func needsLookup(_ record: ReferenceRecord) -> Bool {
         ReferenceRecognition.eligible(record) && (record.contributors.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || record.year.isEmpty || (record.fields["abstract"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
