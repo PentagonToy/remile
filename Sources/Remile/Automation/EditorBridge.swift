@@ -114,8 +114,9 @@ enum EditorBridge {
                 guard let query = request.source else { return ["ok": false, "error": "Provide a search question or keywords."] }
                 let offset = request.offset ?? 0
                 guard offset >= 0, offset <= Int.max - 201 else { return ["ok": false, "error": "Use a non-negative search offset."] }
-                let response = try await home.librarySearch(query, boost: request.apply != false, offset: offset)
-                return ["ok": true, "engine": response.phrases.isEmpty ? "B0" : "B-guided", "expansionPhrases": response.phrases, "offset": offset, "hasMore": response.hasMore, "nextOffset": response.hasMore ? offset + 200 as Any : NSNull(), "hits": response.hits.map { hit in
+                let includeBibliography = SearchScope.includesBibliography
+                let response = try await home.librarySearch(query, boost: request.apply != false, offset: offset, includeBibliography: includeBibliography)
+                return ["ok": true, "engine": response.phrases.isEmpty ? "B0" : "B-guided", "expansionPhrases": response.phrases, "searchScope": includeBibliography ? "all-text" : "main-text", "offset": offset, "hasMore": response.hasMore, "nextOffset": response.hasMore ? offset + 200 as Any : NSNull(), "hits": response.hits.map { hit in
                     ["path": hit.path, "page": hit.page, "excerpt": hit.excerpt, "score": hit.score, "matchQuery": hit.matchQuery ?? query] as [String: Any]
                 }]
             } catch { return ["ok": false, "error": error.localizedDescription] }

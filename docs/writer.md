@@ -39,6 +39,7 @@ An opened Word document keeps its filename and closes quietly if unchanged. Supp
 | <img class="remile-guide-symbol" src="../others/symbols/guide/columns-one.svg" alt="" width="24" height="24"> **One column** | Let body text use one column. |
 | <img class="remile-guide-symbol" src="../others/symbols/guide/columns-two.svg" alt="" width="24" height="24"> **Two columns** | Flow body text through two columns. |
 | <img class="remile-guide-symbol" src="../others/symbols/guide/lock.svg" alt="" width="24" height="24"> **Lock position** | Keep an object from moving or resizing. |
+| <img class="remile-guide-symbol" src="../others/symbols/guide/save.svg" alt="" width="24" height="24"> **Save** | Save changes to the current DOCX. Hover over an icon to see its action. |
 | <img class="remile-guide-symbol" src="../others/symbols/guide/export.svg" alt="" width="24" height="24"> **Export** | Save a separate DOCX or PDF copy. |
 
 [Shared buttons and status marks](buttons.md)

@@ -1,8 +1,8 @@
 import SQLite3
 
 var checks = 0
-func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {
-    guard condition() else { throw NSError(domain: "SearchRanking", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
+func expect(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {
+    guard try condition() else { throw NSError(domain: "SearchRanking", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
     checks += 1
 }
 func corpusCheck(_ root: String) throws {
@@ -35,7 +35,7 @@ func corpusCheck(_ root: String) throws {
     }
 }
 do {
-    try expect(SearchLexicon.words("Café naïve x2") == ["cafe", "naive", "x", "2"], "Fixed accent and digit tokenisation")
+    try expect(SearchLexicon.words("Café naïve x2") == ["cafe", "naive", "x2"], "Fixed accent and digit tokenisation")
     try expect(SearchLexicon.terms("Why are gradients vanishing?") == ["gradient", "vanish"], "Frozen question stopwords and inflection")
     for query in ["sigmoid", "PISO", "\"linear system of equations\"", "gradient descent"] { try expect(!SearchLexicon.isQuestion(query), "Literal queries bypass model") }
     for query in ["Why does a coarse mesh smear a front?", "What is a sigmoid function?", "How do we conserve mass?", "Can pressure correct the velocity field?"] { try expect(SearchLexicon.isQuestion(query), "Question is eligible") }
@@ -66,6 +66,17 @@ do {
         for offset in stride(from: 0, to: 600, by: 200) { paged += try many.search("signal", expansions: expansions, offset: offset).map(\.rowID) }
         try expect(paged == whole && Set(paged).count == 600, "Keyword and guided pages reach all matches with stable ranking and no overlap")
     }
+    let aliasCases: [(String, String)] = [("k-ε turbulence", "epsilon"), ("H₂ NH₃", "H2 NH3"), ("ﬁnite volume", "finite"), ("turbu-\nlence", "turbulence"), ("φ = 0.5", "phi"), ("τ mixing", "tau"), ("CO2 flame", "CO2")]
+    for (text, query) in aliasCases {
+        let scientific = SparseSearchRanker(); scientific.append(rowID: 1, heading: "", body: text); try scientific.finish()
+        try expect(try scientific.search(query).first?.rowID == 1, "Scientific aliases retain " + query)
+    }
+    let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("remile-rank-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+    try many.save(to: cacheURL, key: "fixture")
+    let restored = try SparseSearchRanker.load(from: cacheURL, key: "fixture")!
+    try expect(try restored.search("signal").map(\.rowID) == manyMatches, "Persisted weighted index preserves ranks and ties")
+    try expect(try SparseSearchRanker.load(from: cacheURL, key: "changed") == nil, "A different index generation never reuses stale weights")
     let ranker = SparseSearchRanker()
     ranker.append(rowID: 1, heading: "Sigmoid", body: "The sigmoid activation is smooth and bounded. Binary classification predicts a probability.")
     ranker.append(rowID: 2, heading: "Pressure", body: "The pressure Poisson equation combines momentum and continuity to enforce mass conservation.")

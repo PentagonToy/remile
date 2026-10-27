@@ -67,13 +67,7 @@ struct ReaderZoomControls: View {
             Button { zoom.step(-1) } label: { Image(systemName: "minus").frame(width: 32, height: 32).contentShape(Rectangle()) }
                 .remileHelp("Zoom out 10 percentage points (⌘−: fine)").accessibilityLabel("Zoom out")
             Menu {
-                Button("Actual size · 100%") { zoom.change(1) }
-                Button(text ? "Reading width" : "Fit page") { zoom.fit(width: false) }
-                Button("Fit width") { zoom.fit(width: true) }
-                Divider()
-                ForEach([50, 75, 100, 125, 150, 200], id: \.self) { percent in
-                    Button("\(percent)%") { zoom.change(CGFloat(percent) / 100) }
-                }
+                ReaderZoomMenuItems(zoom: zoom, text: text)
             } label: { Text(zoom.label).monospacedDigit().frame(width: 70, height: 32) }
                 .menuStyle(.borderlessButton).fixedSize().remileHelp("Zoom percentage and fit options")
             Button { zoom.step(1) } label: { Image(systemName: "plus").frame(width: 32, height: 32).contentShape(Rectangle()) }
@@ -91,5 +85,22 @@ struct ReaderZoomControls: View {
             .padding(.horizontal, 2)
             .foregroundStyle(.primary)
 
+    }
+}
+
+struct ReaderZoomMenuItems: View {
+    @ObservedObject var zoom: ReaderZoom
+    var text = false
+    var body: some View {
+        Button("Zoom in") { zoom.step(1) }
+        Button("Zoom out") { zoom.step(-1) }
+        Divider()
+        Button("Actual size · 100%") { zoom.change(1) }
+        Button(text ? "Reading width" : "Fit page") { zoom.fit(width: false) }
+        Button("Fit width") { zoom.fit(width: true) }
+        Divider()
+        ForEach([50, 75, 100, 125, 150, 200], id: \.self) { percent in
+            Button("\(percent)%") { zoom.change(CGFloat(percent) / 100) }
+        }
     }
 }

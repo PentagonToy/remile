@@ -71,6 +71,7 @@ final class HomeModel: ObservableObject {
         let provider: String
         let boosting: Bool
         let offline: Bool
+        let bibliography: Bool
         let corrections: Bool
     }
     private var previousSearch: SearchStamp?
@@ -78,7 +79,7 @@ final class HomeModel: ObservableObject {
         SearchStamp(query: query.trimmingCharacters(in: .whitespacesAndNewlines), revision: libraryRevision,
                     provider: UserDefaults.standard.string(forKey: "assistant.provider") ?? "Apple Intelligence",
                     boosting: SearchBoostPolicy.enabled(), offline: NetworkAccess.offline,
-                    corrections: UserDefaults.standard.object(forKey: SearchQuestion.spellingPreference) as? Bool ?? true)
+                    bibliography: SearchScope.includesBibliography, corrections: UserDefaults.standard.object(forKey: SearchQuestion.spellingPreference) as? Bool ?? true)
     }
 
     var hasSubmittedSearch: Bool { previousSearch == currentSearch && searchDuration != nil }
@@ -194,15 +195,15 @@ final class HomeModel: ObservableObject {
     }
 
     /// The CLI and UI share one engine and policy; a failed or paused boost returns B0.
-    func librarySearch(_ text: String, boost: Bool = true, offset: Int = 0, onBase: ((LibrarySearchPage) -> Void)? = nil) async throws -> (hits: [LibraryHit], phrases: [String], hasMore: Bool) {
-        let original = try await index.rankedPage(text, offset: offset)
+    func librarySearch(_ text: String, boost: Bool = true, offset: Int = 0, includeBibliography: Bool = SearchScope.includesBibliography, onBase: ((LibrarySearchPage) -> Void)? = nil) async throws -> (hits: [LibraryHit], phrases: [String], hasMore: Bool) {
+        let original = try await index.rankedPage(text, offset: offset, includeBibliography: includeBibliography)
         try Task.checkCancellation(); onBase?(original)
         guard boost, SearchBoostPolicy.canUse(query: text) else { return (original.hits, [], original.hasMore) }
         do {
             let phrases = try await searchBoost.phrases(for: text)
             try Task.checkCancellation()
             guard !phrases.isEmpty, SearchBoostPolicy.canUse(query: text) else { return (original.hits, [], original.hasMore) }
-            let page = try await index.rankedPage(text, expansions: phrases, offset: offset)
+            let page = try await index.rankedPage(text, expansions: phrases, offset: offset, includeBibliography: includeBibliography)
             try Task.checkCancellation()
             guard SearchBoostPolicy.canUse(query: text) else { return (original.hits, [], original.hasMore) }
             return (page.hits, phrases, page.hasMore)
@@ -357,6 +358,7 @@ final class HomeModel: ObservableObject {
                 let project = try TeXProject(root, displayName: nil, draft: true)
                 project.savedDraft = { [weak self] in self?.recordRecent($0) }
                 texProject = project; overleaf.browsing = false; page = .home
+                project.compile()
             } catch { try? FileManager.default.removeItem(at: root); throw error }
         } catch { self.error = "Could not create LaTeX draft: " + error.localizedDescription }
     }
@@ -371,7 +373,8 @@ final class HomeModel: ObservableObject {
         if let current = texProject, current.root.path == root.standardizedFileURL.path { overleaf.browsing = false; return }
         if let warm = overleaf.takeWarmProject(root) {
             guard reader.close(), closeTeX() else { _ = overleaf.retainWarmProject(warm); return }
-            texProject = warm; overleaf.browsing = false; recordRecent(warm.root); return
+            texProject = warm; overleaf.browsing = false; recordRecent(warm.root)
+            if warm.pdf == nil && !warm.compileFailed { warm.compile() }; return
         }
         do { let connection = overleaf.connection(for: root); let project = try TeXProject(root, historyEnabled: connection == nil, displayName: connection?.name); guard reader.close(), closeTeX() else { return }; texProject = project
             if let connection { project.renameConnectedProject = { [weak library = overleaf] name in

@@ -10,24 +10,28 @@ On another Mac, choose **Load preset** and review the import. Appearance, editin
 
 Accounts, credentials, document paths and the library location stay local. A preset transfers preferences when loaded. It does not synchronise them automatically.
 
-## Choose the library folder
+## Choose one storage folder
 
-Storage shows the active Reference folder. Choose **Change → Move library** to copy it into a new `remile-reference` folder under the selected parent.
+In **Settings → Storage → Change → Move storage**, choose a parent folder. remile creates `remile-storage` and applies the move when you next open the app.
 
-The move includes records, PDFs and saved passages. remile verifies the copied files and keeps the previous folder as a recovery copy. Close Reference PDFs before switching.
+Reference records, attachments and this Mac's search index move together. Prepared search caches are retained when available. Original PDFs outside Reference stay where they are. The previous storage remains available for recovery.
 
 ## Use the library on another Mac
 
-1. Put the library in a Dropbox or iCloud Drive folder on the first Mac.
-2. Let that folder finish syncing and download it on the other Mac.
-3. Choose **Storage → Change → Open library** and select the downloaded `remile-reference` folder.
+1. Move storage into Dropbox or iCloud Drive and let syncing finish.
+2. Download the complete `remile-storage` folder on the other Mac.
+3. Choose **Storage → Change → Open storage**, then restart remile.
 
-It opens read only. You can browse records and PDFs without changing the shared originals.
+Reference opens read only. To edit, turn off Read only on one Mac after sync finishes. Simultaneous Reference edits are not merged automatically.
 
-To edit, turn off Read only on one Mac after sync finishes. Finish syncing before switching to another Mac. Simultaneous edits are not merged automatically.
+Each Mac has its own search database inside the same storage folder. Search folders and their access permissions remain specific to that Mac. Do not open another Mac's database directly.
 
-## Know where things live
+## External drives
 
-Preferences use macOS's standard `~/Library/Preferences` folder. The default Reference library is in `~/Library/Application Support/local.remile.app/Reference`. **Locations** shows the paths and opens them in Finder.
+Keep the drive connected while using remile. If it is unavailable, reconnect it. remile does not silently create replacement storage. Keep cloud storage downloaded for offline access.
 
-[Storage format, availability and recovery details](details/reference.md#storage-and-other-macs) · [Your files and privacy](privacy.md)
+## Preferences
+
+macOS keeps preferences in `~/Library/Preferences`. Presets transfer supported preferences without transferring storage paths or machine identity. **Locations** shows the Reference and search paths.
+
+[Storage details](details/reference.md#storage-and-other-macs) · [Your files and privacy](privacy.md)

@@ -4,8 +4,8 @@ import AppKit
 // Run through tools/check_library.sh. Generated fixtures remain outside the checkout.
 let output = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true).appendingPathComponent(UUID().uuidString)
 var checks = 0
-func expect(_ condition: @autoclosure () -> Bool, _ name: String) throws {
-    guard condition() else { throw NSError(domain: "LibraryChecks", code: 1, userInfo: [NSLocalizedDescriptionKey: name]) }
+func expect(_ condition: @autoclosure () throws -> Bool, _ name: String) throws {
+    guard try condition() else { throw NSError(domain: "LibraryChecks", code: 1, userInfo: [NSLocalizedDescriptionKey: name]) }
     checks += 1
 }
 func fixture(_ url: URL, pages: [String]) throws {
@@ -263,6 +263,86 @@ Task {
         let firstPage = try await pagingIndex.rankedPage("pagination"), nextPage = try await pagingIndex.rankedPage("pagination", offset: 200)
         try expect(firstPage.hits.count == 200 && firstPage.hasMore && nextPage.hits.count == 5 && !nextPage.hasMore, "Paged search reaches matches beyond 200 without retaining their full text")
         try expect(Set((firstPage.hits + nextPage.hits).map(\.id)).count == 205, "Result pages have distinct stable locations")
+        let scienceRoot = output.appendingPathComponent("science")
+        try FileManager.default.createDirectory(at: scienceRoot, withIntermediateDirectories: true)
+        let fixtures: [(String, String, String)] = [
+            ("greek", "k-ε turbulence closure", "epsilon"),
+            ("formula", "H₂ and NH₃ flame kinetics", "H2 NH3"),
+            ("ligature", "A ﬁnite volume solver", "finite"),
+            ("wrapped", "Predicting turbu-\nlence statistics", "turbulence"),
+            ("symbol", "The φ and τ values", "phi tau"),
+            ("unicode", "연소 modelling", "연소"),
+            ("body", "Combustion appears in the main text.", "combustion"),
+            ("uncertain", "References\nCombustion is discussed here without a citation list.", "combustion"),
+            ("appendix", "References\n[1] Smith 2020\n[2] Jones 2021\nAppendix A\nA combustion experiment.", "combustion")
+        ]
+        for (name, body, _) in fixtures { try body.write(to: scienceRoot.appendingPathComponent(name + ".md"), atomically: true, encoding: .utf8) }
+        try "References\n[1] Combustion journal 2020\n[2] Combustion methods 2021".write(to: scienceRoot.appendingPathComponent("bibliography.md"), atomically: true, encoding: .utf8)
+        let scienceURL = output.appendingPathComponent("science.sqlite"), science = LibraryIndex(location: scienceURL)
+        try await science.add(scienceRoot); try await science.refresh { _ in }
+        _ = try await science.rankedPage("combustion")
+        let warmedPreparation = await science.lastRankerPreparation
+        try expect(warmedPreparation == "memory", "Refresh prepares ranking before the first search")
+        for (name, _, query) in fixtures {
+            let hits = try await science.rankedPage(query, includeBibliography: false)
+            try expect(hits.hits.contains(where: { $0.path.hasSuffix("/" + name + ".md") }), "Scientific fixture is retrieved: " + name)
+        }
+        let noBibliography = try await science.rankedPage("combustion", includeBibliography: false)
+        try expect(!noBibliography.hits.contains(where: { $0.path.hasSuffix("/bibliography.md") }), "Detected bibliography-only matches stay out of main-text search")
+        let withBibliography = try await science.rankedPage("combustion", includeBibliography: true)
+        try expect(withBibliography.hits.contains(where: { $0.path.hasSuffix("/bibliography.md") }), "Including bibliography makes the complete reference-list evidence available")
+        let phrase = try await science.rankedPage("\"H2 and NH3\"", includeBibliography: false)
+        try expect(phrase.hits.contains(where: { $0.path.hasSuffix("/formula.md") }), "Quoted FTS filtering shares chemical normalisation with B0")
+        let ftsFormula = try await science.search("H2 NH3", interpretQuestions: false)
+        try expect(ftsFormula.contains(where: { $0.path.hasSuffix("/formula.md") }), "Direct FTS search shares normalisation")
+        let restoredScience = LibraryIndex(location: scienceURL)
+        _ = try await restoredScience.rankedPage("combustion", includeBibliography: false)
+        let preparation = await restoredScience.lastRankerPreparation
+        try expect(preparation == "disk", "A fresh library actor restores the finished disk index")
+        try "New oxygen benchmark.".write(to: scienceRoot.appendingPathComponent("body.md"), atomically: true, encoding: .utf8)
+        try await science.refresh { _ in }
+        let changedScience = try await science.rankedPage("oxygen", includeBibliography: false)
+        try expect(changedScience.hits.contains(where: { $0.path.hasSuffix("/body.md") }), "A changed document invalidates global weights and refreshes derived text")
+        let source = "k-ε model with H₂ and a ﬁnite mesh. turbu-\nlence"
+        for query in ["epsilon", "H2", "finite", "turbulence"] {
+            let matches = SearchText.matches(source, query: query)
+            try expect(!matches.isEmpty && matches.allSatisfy { NSMaxRange($0.range) <= (source as NSString).length }, "Original highlight ranges survive alias: " + query)
+        }
+        var inBibliography = false
+        let repeated = Set([SearchPageStructure.marginKey("Combustion and Flame 2026")])
+        let structured = SearchPageStructure.analyse("Combustion and Flame 2026\nAuthors\n\nA pressure experiment\nwith several lines\nin the actual body\nand useful results\n23", repeatedMargins: repeated, inBibliography: &inBibliography)
+        try expect(!structured.body.contains("Combustion and Flame") && structured.body.contains("pressure"), "Known repeated margin lines do not become topic evidence")
+        var continuation = true
+        let chapter = SearchPageStructure.analyse("A new chapter without a numbered heading\nCombustion models and their governing equations.", inBibliography: &continuation)
+        try expect(!continuation && chapter.body.contains("Combustion"), "A page without citation evidence is never silently carried into a preceding bibliography")
+        let cacheFile = scienceURL.deletingPathExtension().appendingPathExtension("body-rank")
+        try Data("broken cache".utf8).write(to: cacheFile)
+        let damagedCache = LibraryIndex(location: scienceURL)
+        let recoveredHits = try await damagedCache.rankedPage("oxygen", includeBibliography: false)
+        try expect(recoveredHits.hits.contains(where: { $0.path.hasSuffix("/body.md") }), "Corrupt disposable caches rebuild without losing searchable documents")
+        try "Combustion is measured in the main text.\nReferences\n[1] Combustion journal 2020\n[2] Combustion handbook 2021".write(to: scienceRoot.appendingPathComponent("mixed.md"), atomically: true, encoding: .utf8)
+        try await science.refresh { _ in }
+        let mixed = try await science.rankedPage("combustion", includeBibliography: false)
+        let mixedExcerpt = mixed.hits.first { $0.path.hasSuffix("/mixed.md") }?.excerpt ?? ""
+        try expect(mixedExcerpt.contains("main text") && !mixedExcerpt.contains("Combustion journal"), "Main-text excerpts do not quote a detected reference list on the same page")
+        let plainBookmark = try scienceRoot.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        let renewedURL = try LibraryFolder.verifiedUnscopedURL(plainBookmark, path: scienceRoot.path)
+        try expect(renewedURL.path == scienceRoot.standardizedFileURL.resolvingSymlinksInPath().path, "A legacy grant resolves only to the same registered folder")
+        do {
+            _ = try LibraryFolder.verifiedUnscopedURL(plainBookmark, path: pagingRoot.path)
+            throw NSError(domain: "Wrong folder grant accepted", code: 1)
+        } catch LibraryIndex.Failure.inaccessible { checks += 1 }
+        do {
+            _ = try LibraryFolder.verifiedUnscopedURL(Data("invalid".utf8), path: scienceRoot.path)
+            throw NSError(domain: "Corrupt grant accepted", code: 1)
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain { checks += 1 }
+        let originalScope = LibraryFolder(id: "fixture", path: scienceRoot.path, bookmark: plainBookmark)
+        let scopeURL = try originalScope.url()
+        try expect(scopeURL.standardizedFileURL.resolvingSymlinksInPath().path == renewedURL.path, "Library access survives a bookmark without the old signing scope")
+        let problems = try await store.indexedDocuments(issuesOnly: true)
+        try expect(problems.allSatisfy { $0.failed || $0.emptyPages > 0 }, "Search coverage lists only files with unavailable searchable text")
+        let coverage = try await store.summary()
+        try expect(coverage.needsAttention >= problems.count, "Coverage counts affected files rather than all library documents")
         print("\(checks) library checks passed")
         exit(0)
     } catch {

@@ -6,7 +6,7 @@ remile. runs on Apple Silicon Macs with macOS 14 or later.
 
 Open the [latest release](https://github.com/PentagonToy/remile/releases/latest), download the Apple Silicon DMG, then drag **remile.app** into **Applications**.
 
-The public package is not Apple-notarised. If macOS blocks first launch, verify the download source and follow [Apple's downloaded-app guidance](https://support.apple.com/en-au/102445).
+The app and DMG are Developer ID signed and Apple-notarised. macOS may ask you to confirm the first launch.
 
 ## Use Homebrew
 

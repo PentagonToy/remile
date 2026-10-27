@@ -30,7 +30,8 @@ struct NetworkAccessScope: ViewModifier {
 struct OfflineModeButton: View {
     @ObservedObject private var network = NetworkAccessState.shared
     var body: some View {
-        Button { network.setOffline(!network.offline) } label: { Image(systemName: network.offline ? "airplane.circle.fill" : "airplane.circle") }
+        Button { network.setOffline(!network.offline) } label: { Image(systemName: "airplane") }
+            .font(.system(size: 15, weight: .regular)).frame(width: 32, height: 32).buttonStyle(.plain)
             .foregroundStyle(network.offline ? RemileStyle.accent : RemileStyle.ink.opacity(0.65))
             .accessibilityLabel(network.offline ? "Turn off offline mode" : "Work offline")
             .remileHelp(network.offline ? "Offline mode · click to restore online services" : "Pause all online services in remile.")

@@ -10,7 +10,7 @@ A small place for notes that can grow into something more.
 
 ## Add a little structure
 
-The Format tools insert headings, links, lists, maths, code and tables. Pasting cells from a spreadsheet creates a table.
+The Format tools insert headings, links, lists, maths, code and tables. In a narrow window, open **More** for Format, Find and Zoom. Pasting cells from a spreadsheet creates a table.
 
 Keep local images beside the document or in a subfolder. Remote images use a local cache so revisiting a page can reuse downloaded images. The source's cache policy controls refreshes. Online access is required to load remote images. PDF export uses local images and supported formulae.
 
@@ -28,8 +28,10 @@ Keep local images beside the document or in a subfolder. Remote images use a loc
 | <img class="remile-guide-symbol" src="../../others/symbols/guide/books.svg" alt="" width="24" height="24"> **Reference** | Find and insert a citation. |
 | <img class="remile-guide-symbol" src="../../others/symbols/guide/eye.svg" alt="" width="24" height="24"> **Review edits** | Show or hide AI and CLI edits. |
 | <img class="remile-guide-symbol" src="../../others/symbols/guide/chat.svg" alt="" width="24" height="24"> **Ask** | Ask about the document. |
-| <img class="remile-guide-symbol" src="../../others/symbols/guide/more.svg" alt="" width="24" height="24"> **More** | Focus mode and Markdown settings. |
+| <img class="remile-guide-symbol" src="../../others/symbols/guide/more.svg" alt="" width="24" height="24"> **More** | Secondary tools and Markdown settings. |
 
 [Shared buttons and status marks](../buttons.md)
 
 [Images, maths and completion details](../details/features.md#markdown)
+
+Spelling and grammar shows the affected text and available corrections. Choose Writing language in that panel to use British English, American English or another installed language. Select a word to reveal it in the source.

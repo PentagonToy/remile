@@ -80,11 +80,11 @@ Add PDFs through Add PDF or by dropping them onto a reference. Clean up does not
 
 ## Storage and other Macs
 
-Settings → Storage shows the active library folder. The default is `~/Library/Application Support/local.remile.app/Reference`, outside the application. macOS keeps preferences in `~/Library/Preferences/local.remile.app.plist`. Locations reveals full file details and Finder actions.
+Settings → Storage offers one location for Reference and search data. Change → Move storage creates a `remile-storage` folder at the chosen location. The change runs before workspaces open on the next launch. Reference copies are verified and the search database is copied through SQLite's snapshot API, including committed changes in its write-ahead log. Previous files remain intact.
 
-Choose Change → Move library to copy the catalogue, attachments and saved passages into a new `remile-reference` folder. Choose a parent in Dropbox or iCloud Drive to let that service synchronise the folder. remile verifies copied bytes and keeps the previous folder as a recovery copy. Close Reference PDFs before switching locations.
+Reference uses `Reference/` and relative attachment paths. Search uses `Search/<Mac identity>/`. Another Mac opens the shared storage through Change → Open storage and keeps a separate search database. Machine identity and storage paths are excluded from presets. Existing customised Reference locations keep working until a storage move is requested.
 
-On another Mac, let the complete folder download, then choose Change → Open library and select that Mac's synced `remile-reference` folder. Opening validates the catalogue without importing, merging or duplicating records. PDFs use relative attachment paths, so different usernames and cloud folder locations do not change their identities. A missing catalogue produces an error rather than an empty replacement library.
+If copying fails, the active location is unchanged. If the selected drive is missing, reconnect it. Keep cloud files downloaded before opening storage. This uses a local folder or mounted drive, rather than a remote database service.
 
 An opened library starts read only. Catalogue changes, passage saves and saving over managed PDFs are blocked. Copies can be saved outside the library. To edit, turn off Read only on one Mac after folder sync finishes. Wait for changes to finish syncing before editing on another Mac. The local file lock does not coordinate writers on different computers, and remile does not merge cloud conflicts automatically. Keep unresolved conflict files until they have been reviewed.
 

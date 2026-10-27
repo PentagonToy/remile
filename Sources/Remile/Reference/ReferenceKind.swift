@@ -2,6 +2,17 @@ import Foundation
 
 enum ReferenceKind: String, CaseIterable {
     case article, book, newspaper, webpage, conference, preprint, other
+    var symbol: String {
+        switch self {
+        case .article: return "doc.text"
+        case .book: return "book.closed"
+        case .newspaper: return "newspaper"
+        case .webpage: return "globe"
+        case .conference: return "person.3"
+        case .preprint: return "doc.plaintext"
+        case .other: return "doc"
+        }
+    }
     var label: String {
         switch self {
         case .article: return "Journal article"

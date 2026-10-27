@@ -19,9 +19,8 @@ struct WriterColumns: View {
                                 .frame(maxWidth: .infinity).frame(height: 66)
                         }
                     }
-                    .foregroundStyle(model.pageStyle.columnCount == count ? RemileStyle.accent : RemileStyle.ink)
+                    .foregroundStyle(RemileStyle.ink)
                     .background(model.pageStyle.columnCount == count ? RemileStyle.accent.opacity(0.15) : RemileStyle.editorBar, in: RoundedRectangle(cornerRadius: RemileRadius.control))
-                    .overlay(RoundedRectangle(cornerRadius: RemileRadius.control).strokeBorder(RemileStyle.accent.opacity(model.pageStyle.columnCount == count ? 0.45 : 0.08)))
                     .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel(count == 1 ? "1 column" : "2 columns")
                     .accessibilityAddTraits(model.pageStyle.columnCount == count ? .isSelected : [])
@@ -30,11 +29,8 @@ struct WriterColumns: View {
         }.font(RemileType.small)
     }
     private func symbol(_ count: Int) -> some View {
-        HStack(spacing: 2) {
-            ForEach(0..<count, id: \.self) { _ in
-                VStack(spacing: 2) { ForEach(0..<4, id: \.self) { _ in Rectangle().frame(height: 1) } }
-            }
-        }.padding(3).frame(width: 17, height: 21)
-            .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(lineWidth: 1)).accessibilityHidden(true)
+        Image(systemName: count == 1 ? "rectangle" : "rectangle.split.2x1")
+            .font(RemileType.control).symbolRenderingMode(.monochrome)
+            .frame(width: 20, height: 20).accessibilityHidden(true)
     }
 }

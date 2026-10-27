@@ -221,7 +221,7 @@ struct ReferenceWorkspace: View {
     private func libraryRow(_ library: ReferenceLibrary) -> some View {
         let count = model.libraryCounts[library.id, default: 0]
         return Button { model.selectLibrary(library.id) } label: {
-            HStack { Label(library.name, systemImage: library.parentID == nil ? "books.vertical" : "folder").lineLimit(1); Spacer(minLength: 2); Text(String(count)).font(RemileType.caption).foregroundStyle(.secondary) }
+            HStack { Label(library.name, systemImage: library.parentID == nil ? "tray.full" : "folder").lineLimit(1); Spacer(minLength: 2); Text(String(count)).font(RemileType.caption).foregroundStyle(.secondary) }
                 .padding(10).background(model.selectedLibrary == library.id && !model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain).contextMenu {
             let records = model.contents(library.id).filter { $0.trashed == nil }
@@ -251,7 +251,7 @@ struct ReferenceWorkspace: View {
                 VStack(spacing: 12) {
                     Image(systemName: model.showingTrash ? "trash" : "books.vertical").font(.system(size: 32, weight: .light)).foregroundStyle(RemileStyle.accent)
                     Text(model.showingTrash ? "No deleted references" : model.query.isEmpty ? "A place for your references" : "No matching references").font(RemileType.heading)
-                    if !model.showingTrash && model.query.isEmpty { Text("Drop PDFs or BibTeX here, or add a reference.").font(RemileType.callout).foregroundStyle(.secondary).multilineTextAlignment(.center) }
+                    if !model.showingTrash && model.query.isEmpty { Text("Save a PDF in your browser, then drop it here. You can also import BibTeX.").font(RemileType.callout).foregroundStyle(.secondary).multilineTextAlignment(.center) }
                 }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { scroll in
@@ -293,7 +293,7 @@ struct ReferenceWorkspace: View {
                 Button("Read metadata…", systemImage: "doc.text.viewfinder") { state.metadata = record }
                 Button("Find a paper…", systemImage: "doc.text.magnifyingglass") { model.error = nil; state.paperTarget = record; state.paperSearch = true }
                 Button("View source", systemImage: "doc.text.magnifyingglass") { state.evidence = record }.disabled(model.showingTrash)
-                Button("Edit…", systemImage: "pencil") { model.error = nil; state.editor = Entry(record: record) }
+                Button("Edit…", systemImage: "square.and.pencil") { model.error = nil; state.editor = Entry(record: record) }
                 Button("Duplicate", systemImage: "plus.square.on.square") { model.duplicate(record) }
                 if model.activeLibraries.count > 1 {
                     Menu("Add to library") { ForEach(model.activeLibraries.filter { $0.parentID == nil && $0.id != record.library }) { library in Button(library.name) { model.duplicate(record, to: library.id) } } }

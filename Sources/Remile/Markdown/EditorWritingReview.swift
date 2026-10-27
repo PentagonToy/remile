@@ -27,9 +27,10 @@ import AppKit
             Task { @MainActor in
                 guard let self, self.generation == token, let editor else { return }
                 var issues: [Issue] = []
-                for result in results where EditorSpellcheck.accepts(result.range, excluded: excluded) {
+                for result in results.prefix(100) where EditorSpellcheck.accepts(result.range, excluded: excluded) {
                     if result.resultType == .spelling {
-                        issues.append(.init(range: result.range, message: "Spelling", replacement: nil))
+                        let choices = NSSpellChecker.shared.guesses(forWordRange: result.range, in: source, language: language == "Automatic" ? nil : language, inSpellDocumentWithTag: tag) ?? []
+                        issues.append(.init(range: result.range, message: "Spelling", replacement: choices.first, alternatives: Array(choices.prefix(3))))
                     } else if result.resultType == .grammar {
                         for detail in result.grammarDetails ?? [] {
                             guard let relative = detail[NSGrammarRange] as? NSValue else { continue }
@@ -87,8 +88,10 @@ import AppKit
 }
 
 struct EditorWritingReviewButton: View {
+    @AppStorage("editor.language") private var language = "Automatic"
     @ObservedObject var review: EditorWritingReview
     let editor: MarkdownEditorController
+    var reveal: () -> Void = {}
     var body: some View {
         Button { review.presented.toggle() } label: {
             HStack(spacing: 4) { Image(systemName: "text.badge.checkmark"); if !review.issues.isEmpty { Text("\(review.issues.count)").monospacedDigit() } }
@@ -96,14 +99,41 @@ struct EditorWritingReviewButton: View {
             .popover(isPresented: $review.presented) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Spelling and grammar").font(RemileType.heading)
+                    Picker("Writing language", selection: $language) {
+                        Text("Automatic").tag("Automatic")
+                        ForEach(NSSpellChecker.shared.availableLanguages.sorted(), id: \.self) { value in Text(EditorLanguageSettings.languageTitle(value)).tag(value) }
+                    }
                     if review.checking { ProgressView("Checking…").controlSize(.small) }
                     else if review.issues.isEmpty { Text("No suggestions").foregroundStyle(.secondary) }
                     else { ScrollView {
                         VStack(alignment: .leading, spacing: 12) {
                             ForEach(review.issues) { issue in
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Button(issue.message) { editor.selectWritingIssue(issue.range, source: review.source) }.buttonStyle(.plain)
-                                    if let replacement = issue.replacement { Button("Use “\(replacement)”") { editor.replaceWritingIssue(issue.range, with: replacement, source: review.source); review.presented = false } }
+                                    let source = review.source as NSString
+                                    let valid = issue.range.location >= 0 && NSMaxRange(issue.range) <= source.length
+                                    let phrase = valid ? source.substring(with: issue.range) : issue.message
+                                    Button {
+                                        reveal()
+                                        Task { @MainActor in
+                                            await Task.yield()
+                                            editor.selectWritingIssue(issue.range, source: review.source)
+                                        }
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(phrase).font(RemileType.callout.weight(.medium)).lineLimit(2)
+                                            Text(issue.message).font(RemileType.caption).foregroundStyle(.secondary)
+                                        }.frame(maxWidth: .infinity, alignment: .leading)
+                                    }.buttonStyle(.plain).remileHelp("Show in source")
+                                    if let replacement = issue.replacement {
+                                        Button("Use “\(replacement)”") {
+                                            reveal()
+                                            Task { @MainActor in
+                                                await Task.yield()
+                                                editor.replaceWritingIssue(issue.range, with: replacement, source: review.source)
+                                                review.presented = false
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)

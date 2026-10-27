@@ -11,6 +11,7 @@ struct LibrarySearchView: View {
     private var assistant: DocumentAssistant { model.assistant }
     @StateObject private var citationState = CitationState()
     private final class CitationState: ObservableObject { @Published var paneReset = UUID(); @Published var references = false; @Published var focus: AssistantCitation?; @Published var selectedPassages: [AssistantPassage] = []; @Published var compactPreview = false; @Published var settingsPresented = false }
+    @AppStorage(SearchScope.bibliographyPreference) private var includeBibliography = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var selection: Binding<String?> {
@@ -38,6 +39,7 @@ struct LibrarySearchView: View {
             .onChange(of: network.offline) { model.invalidateSearch() }
             .onChange(of: assistantProvider) { model.invalidateSearch() }
             .onChange(of: offerCorrections) { model.invalidateSearch() }
+            .onChange(of: includeBibliography) { model.invalidateSearch() }
             .onChange(of: model.resultOrder) { model.filterDocuments() }
             .onAppear { model.resumeSearch() }
             .onDisappear { model.cancelExploration() }
@@ -59,8 +61,12 @@ struct LibrarySearchView: View {
         }.frame(width: 540, height: 600).background(RemileStyle.background).tint(RemileStyle.accent)
     }
 
-    private var previewAndAsk: some View {
+    @ViewBuilder private var previewAndAsk: some View {
+        if model.summary.folders.isEmpty && !model.askPresented {
+            SearchEmptyPane(library: false, add: model.addFolder, settings: { citationState.settingsPresented = true })
+        } else {
         SearchPreviewSplit(askPresented: model.askPresented, revealToken: citationState.paneReset.uuidString, assistant: { searchAssistant }, preview: { preview })
+        }
     }
     private var searchAssistant: some View {
         AssistantPanel(assistant: assistant, passages: citationState.selectedPassages + assistantHits.map(\.assistantPassage).filter { passage in !citationState.selectedPassages.contains { $0.id == passage.id } }, topic: model.query, select: { source in
@@ -115,7 +121,10 @@ struct LibrarySearchView: View {
     private var libraryButton: some View {
         Button { model.libraryPresented = true } label: { Label("Library", systemImage: "folder") }.remileHelp("Manage indexed folders")
     }
-    private var sidebar: some View {
+    @ViewBuilder private var sidebar: some View {
+        if model.summary.folders.isEmpty {
+            SearchEmptyPane(library: true, add: model.addFolder, settings: { citationState.settingsPresented = true })
+        } else {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("\(model.summary.folders.count) \(model.summary.folders.count == 1 ? "folder" : "folders")")
@@ -124,10 +133,10 @@ struct LibrarySearchView: View {
             }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.top, 14)
                 .lineLimit(1)
             if model.indexing {
-                if let progress = model.progress {
+                if let progress = model.progress, !progress.preparingSearch {
                     ProgressView(value: Double(progress.completed), total: Double(max(1, progress.total))).padding(.horizontal, 14)
                     Text("\(progress.completed) of \(progress.total) · \(progress.name)").font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal, 14)
-                } else { ProgressView("Preparing index…").controlSize(.small).padding(.horizontal, 14) }
+                } else { ProgressView(model.progress?.preparingSearch == true ? "Preparing search…" : "Preparing index…").controlSize(.small).padding(.horizontal, 14) }
             }
             if model.summary.needsOCR > 0 || model.summary.failed > 0 || model.searchDuration != nil {
                 Button { model.libraryPresented = true } label: {
@@ -255,6 +264,7 @@ struct LibrarySearchView: View {
                 Label("Settings", systemImage: "gearshape").font(RemileType.callout).frame(maxWidth: .infinity, alignment: .leading)
             }.buttonStyle(RemileToolStyle()).padding(12).accessibilityLabel("Search settings").remileHelp("Search settings")
         }.frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
     }
     private var coverageTitle: String {
         guard let duration = model.searchDuration else { return "Index coverage" }
@@ -306,6 +316,48 @@ struct LibrarySearchView: View {
         if model.askPresented { assistant.cancel() }
         else { citationState.compactPreview = true }
         withAnimation(reduceMotion ? nil : RemileMotion.panel) { model.askPresented.toggle() }
+    }
+
+}
+
+/// Matching slots keep the two empty panes on the same visual baseline.
+private struct SearchEmptyPane: View {
+    let library: Bool
+    let add: () -> Void
+    let settings: () -> Void
+    var body: some View {
+        VStack(spacing: 12) {
+            Group {
+                if library { counts }
+                else { counts.hidden().accessibilityHidden(true) }
+            }
+            VStack(spacing: 16) {
+                Image(systemName: library ? "folder" : "doc.text.magnifyingglass")
+                    .font(.system(size: 34, weight: .regular)).foregroundStyle(.secondary)
+                    .frame(width: 52, height: 52).accessibilityHidden(true)
+                Text(library ? "Build your library" : "Search your library").font(RemileType.section)
+                Group {
+                    if library { addButton }
+                    else { addButton.hidden().disabled(true).accessibilityHidden(true) }
+                }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            Group {
+                if library { Divider(); settingsButton }
+                else { Divider().hidden(); settingsButton.hidden().disabled(true).accessibilityHidden(true) }
+            }
+        }
+    }
+    private var counts: some View {
+        HStack { Text("0 folders"); Spacer(); Text("0 indexed") }
+            .font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.top, 14)
+    }
+    private var addButton: some View {
+        Button("Add to Library…", action: add).buttonStyle(RemileActionStyle(emphasis: .primary))
+    }
+    private var settingsButton: some View {
+        Button(action: settings) {
+            Label("Settings", systemImage: "gearshape").font(RemileType.callout).frame(maxWidth: .infinity, alignment: .leading)
+        }.buttonStyle(RemileToolStyle()).padding(12).accessibilityLabel("Search settings")
     }
 
 }

@@ -3,7 +3,7 @@ import Foundation
 /// B0 page/passage BM25 and guided two-route fusion. Owned by the serial library actor.
 final class SparseSearchRanker {
     struct Posting { let unit: Int; var value: Float }
-    struct Page { let rowID: Int64; let start: Int; let count: Int; let heading: Set<Int> }
+    struct Page: Codable { let rowID: Int64; let start: Int; let count: Int; let heading: Set<Int> }
     struct Match { let rowID: Int64; let score: Double }
     private var vocabulary: [String: Int] = [:]
     private var rawVocabulary: [String: Int] = [:]
@@ -65,6 +65,78 @@ final class SparseSearchRanker {
         }
         chunkLengths.removeAll(keepingCapacity: false)
     }
+    private struct Archive: Codable {
+        let version: Int
+        let key: String
+        let vocabulary: [String: Int]
+        let pages: [Page]
+        let tokens: Data
+        let pagePostings: Data
+        let chunkPostings: Data
+        let chunkOwners: Data
+        let idf: Data
+    }
+    private static func pack<T>(_ values: [T]) -> Data { values.withUnsafeBufferPointer { Data(buffer: $0) } }
+    private static func unpack<T>(_ data: Data, as type: T.Type) throws -> [T] {
+        guard data.count.isMultiple(of: MemoryLayout<T>.stride) else { throw CocoaError(.fileReadCorruptFile) }
+        return data.withUnsafeBytes { raw in
+            stride(from: 0, to: raw.count, by: MemoryLayout<T>.stride).map { raw.loadUnaligned(fromByteOffset: $0, as: T.self) }
+        }
+    }
+    private static func packPostings(_ lists: [[Posting]]) -> Data {
+        var values: [UInt32] = []
+        for list in lists {
+            values.append(UInt32(list.count))
+            for posting in list { values.append(UInt32(posting.unit)); values.append(posting.value.bitPattern) }
+        }
+        return pack(values)
+    }
+    private static func unpackPostings(_ data: Data, terms: Int, units: Int) throws -> [[Posting]] {
+        let values = try unpack(data, as: UInt32.self)
+        var cursor = 0, result: [[Posting]] = []
+        for _ in 0..<terms {
+            guard cursor < values.count else { throw CocoaError(.fileReadCorruptFile) }
+            let count = Int(values[cursor]); cursor += 1
+            guard count <= (values.count - cursor) / 2 else { throw CocoaError(.fileReadCorruptFile) }
+            var list: [Posting] = []; list.reserveCapacity(count)
+            for _ in 0..<count {
+                let unit = Int(values[cursor]), value = Float(bitPattern: values[cursor + 1]); cursor += 2
+                guard unit < units, value.isFinite, value >= 0 else { throw CocoaError(.fileReadCorruptFile) }
+                list.append(Posting(unit: unit, value: value))
+            }
+            result.append(list)
+        }
+        guard cursor == values.count else { throw CocoaError(.fileReadCorruptFile) }
+        return result
+    }
+    func save(to url: URL, key: String) throws {
+        try Task.checkCancellation()
+        let archive = Archive(version: 1, key: key, vocabulary: vocabulary, pages: pages, tokens: Self.pack(tokens), pagePostings: Self.packPostings(pagePostings), chunkPostings: Self.packPostings(chunkPostings), chunkOwners: Self.pack(chunkOwners.map(Int64.init)), idf: Self.pack(idf))
+        let encoder = PropertyListEncoder(); encoder.outputFormat = .binary
+        let data = try encoder.encode(archive)
+        try Task.checkCancellation()
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+    static func load(from url: URL, key: String) throws -> SparseSearchRanker? {
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        let archive = try PropertyListDecoder().decode(Archive.self, from: data)
+        guard archive.version == 1, archive.key == key else { return nil }
+        try Task.checkCancellation()
+        let ranker = SparseSearchRanker(); ranker.vocabulary = archive.vocabulary; ranker.pages = archive.pages
+        let count = archive.vocabulary.count
+        guard Set(archive.vocabulary.values) == Set(0..<count) else { throw CocoaError(.fileReadCorruptFile) }
+        ranker.tokens = try unpack(archive.tokens, as: Int32.self)
+        ranker.chunkOwners = try unpack(archive.chunkOwners, as: Int64.self).map(Int.init)
+        ranker.idf = try unpack(archive.idf, as: Float.self)
+        guard ranker.idf.count == count, ranker.idf.allSatisfy({ $0.isFinite && $0 >= 0 }),
+              ranker.tokens.allSatisfy({ $0 >= 0 && $0 < count }),
+              ranker.chunkOwners.allSatisfy({ $0 >= 0 && $0 < ranker.pages.count }),
+              ranker.pages.allSatisfy({ $0.start >= 0 && $0.count >= 0 && $0.start <= ranker.tokens.count && $0.count <= ranker.tokens.count - $0.start && $0.heading.allSatisfy({ $0 >= 0 && $0 < count }) }) else { throw CocoaError(.fileReadCorruptFile) }
+        ranker.pagePostings = try unpackPostings(archive.pagePostings, terms: count, units: ranker.pages.count)
+        ranker.chunkPostings = try unpackPostings(archive.chunkPostings, terms: count, units: ranker.chunkOwners.count)
+        return ranker
+    }
     private func queryTerms(_ query: String) -> [(Int, Float)] {
         var order: [Int] = [], counts: [Int: Int] = [:]
         for word in SearchLexicon.terms(query) {
@@ -96,6 +168,10 @@ final class SparseSearchRanker {
             result[i] += 0.5 * passage[i]
             guard result[i] > 0 else { continue }
             let page = pages[i]
+            if terms.count == 1 {
+                if page.heading.contains(terms[0]) { result[i] += 0.25 * idf[terms[0]] }
+                continue
+            }
             var positions = Array(repeating: [Int](), count: terms.count)
             for offset in 0..<page.count {
                 if let term = lookup[Int(tokens[page.start + offset])] { positions[term].append(offset) }

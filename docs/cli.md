@@ -17,6 +17,39 @@ remile status
 
 Keep an existing command if that name is already in use. Homebrew manages its CLI link through the cask. The bundled launcher resolves the installed app location and calls the same native CLI used by `tools/remile`.
 
+## Common workflows
+
+Use IDs returned by the preceding command in place of `LIBRARY_UUID`, `RECORD_UUID` and `overleaf:PROJECT_ID`.
+
+### Find a passage and read its page
+
+```sh
+remile library-search "combustion" --no-boost
+remile pdf-read /absolute/paper.pdf --page 12
+```
+
+Take the path and page number from the search response. `pdf-read` returns text without changing the editor. Search reports `searchScope` as `main-text` or `all-text`, following Settings → Search.
+
+### Add a paper and obtain its citation
+
+```sh
+remile reference libraries
+remile reference import --library LIBRARY_UUID --source-file /absolute/paper.pdf
+remile reference citation --id RECORD_UUID --kind latex
+```
+
+Use the imported record ID for the final command. It returns citation text to paste into the manuscript. It does not insert text or change a project bibliography by itself.
+
+### Inspect a connected project before editing
+
+```sh
+remile overleaf list
+remile overleaf show --id overleaf:PROJECT_ID
+remile overleaf read --id overleaf:PROJECT_ID --file main.tex
+```
+
+Check the reported local Live state before making changes. These reads do not pull, publish or confirm a fresh remote snapshot. Open the app to connect and review changes.
+
 ## Document tools
 
 These commands run independently of the application window. Output paths identify new files.
@@ -144,7 +177,9 @@ For a connected Overleaf project, `comments` exports the latest snapshot from it
 
 Without a document path, `pdf-read` reads the current reader page, including unsaved annotation edits, and reports whether the document has unsaved changes. Text is capped at 64,000 characters, annotations at 500 and matches at 100 per page. The response flags truncated text. This command reads context without editing the PDF or changing its visible page.
 
-Library search uses B0 for keywords and optionally B-guided for questions. `--no-boost`, Work offline and Manual mode keep the request on B0. The response identifies the engine and accepted expansion phrases. It returns up to 200 matches with `offset`, `hasMore` and `nextOffset`. Pass `--offset N` using `nextOffset` to continue. Keep the query and library unchanged while paging. It does not change the search field or document selection. Start the app before issuing this live command. Allow up to 60 seconds for the initial resident index and model preparation.
+Start the app before using library search. Keywords use the local index. Questions can use optional Apple Intelligence refinement. `--no-boost`, Work offline and Manual keep it off. The response reports `engine` (`B0` for local ranking or `B-guided` after refinement), `expansionPhrases` and `searchScope`.
+
+Each response contains up to 200 matches. Pass the returned `nextOffset` as `--offset N` to continue while `hasMore` is true. Keep the query and library unchanged while paging. CLI search does not change the editor’s search field or document selection.
 
 
 Reference list summaries include publication/type and a summaryTruncated flag. Lists and suggestions retain separate `authors` and `editors` fields, with `contributors` for display and `contributorRole` identifying the fallback used. Sorting by `author` uses editors when no author is recorded. Title is limited to 1,000 characters, authors/publication to 500 and year to 32. Use show with an explicit ID for the complete stored fields. Each response reads records and library identities from one catalogue snapshot.
@@ -192,9 +227,3 @@ Use `pdf-regions /absolute/paper.pdf --page 4` to list embedded image regions. A
 Export a region with `--region image-1 --output /absolute/new.png --expected-sha256 HASH`. Use the hash returned by inspection. Tables require `--tables` and a `.tsv` or `.md` output. Existing files are never overwritten. Region bounds use PDF page points before rotation, with a bottom-left origin. Images are page-region renders up to 2,200 pixels on the longest edge.
 
 Reference CLI import and collect keep their local-only behaviour. Use `reference recognise` afterwards for explicit online enrichment. `status` reports whether the active LaTeX project is a draft.
-
-### Evaluate citation retrieval
-
-For local development, `tools/evaluate_citations.sh /absolute/new-output --tex /path/main.tex --bib /path/references.bib` extracts explicit citation contexts and writes `ranking.json`. It reads only the supplied files and never changes them. Existing citations provide a retrieval reference, not verified scientific ground truth. Included files and macro-generated citations are not expanded.
-
-The report gives recall@5 and MRR truncated at rank 5, plus the expected and returned keys for every example. Missing bibliography keys are counted separately. A small synthetic regression fixture is available with `--dataset /absolute/repository/Tests/CitationRankingChecks/fixtures.json`. It checks mechanics rather than general citation quality. No manuscript feedback is added to the engine's index.

@@ -29,6 +29,7 @@ struct ReferencePreview: View {
         ScrollView {
             VStack(spacing: 14) {
                 titleHeading
+                Divider()
 
                 if record.attachments.count > 1 {
                     Picker("PDF", selection: Binding(get: { attachment?.id }, set: { state.attachmentID = $0; model.previewAttachments[record.id] = $0 })) {
@@ -48,11 +49,19 @@ struct ReferencePreview: View {
                     }.frame(maxWidth: .infinity).frame(height: 165)
                     Text("\(state.page + 1) / \(document.pageCount)").font(RemileType.caption).monospacedDigit().foregroundStyle(.secondary)
                 } else {
-                    VStack(spacing: 8) {
-                        Image(systemName: "doc.richtext").font(.system(size: 24, weight: .light)).foregroundStyle(RemileStyle.accent)
-                        Text(state.error ?? "No PDF attached").font(RemileType.caption).foregroundStyle(.secondary)
-                        if record.trashed == nil { Button("Add PDF…", action: addFiles).buttonStyle(.borderless) }
-                    }.frame(maxWidth: .infinity).frame(height: 100)
+                    HStack(spacing: 8) {
+                        Image(systemName: "paperclip").font(RemileType.control).accessibilityHidden(true)
+                        Text("Attachment").font(RemileType.small)
+                        Spacer(minLength: 4)
+                        if record.trashed == nil {
+                            Button("Attach…", action: addFiles).buttonStyle(RemileActionStyle(emphasis: .quiet))
+                                .remileHelp("Attach a local PDF to this reference")
+                        }
+                    }.foregroundStyle(RemileStyle.secondaryInk).frame(maxWidth: .infinity).padding(.vertical, 4)
+                    if let error = state.error {
+                        Text(error).font(RemileType.small).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
                 Divider()
                 VStack(spacing: 0) {
@@ -63,8 +72,9 @@ struct ReferencePreview: View {
                                     .frame(maxWidth: .infinity, alignment: .leading).lineSpacing(3).padding(.top, 6)
                             }.font(RemileType.caption).padding(.vertical, 10)
                         } else {
-                            HStack(alignment: .top, spacing: 12) {
-                                Text(row.label).foregroundStyle(.secondary).frame(width: 78, alignment: .trailing)
+                            HStack(alignment: .top, spacing: 10) {
+                                Text(row.label).font(RemileType.small).foregroundStyle(.secondary)
+                                    .lineLimit(1).fixedSize(horizontal: true, vertical: false).frame(width: 78, alignment: .trailing)
                                 if state.editingField == row.id {
                                     TextField(row.label, text: $state.draft).textFieldStyle(.roundedBorder)
                                         .focused($editingFocus, equals: row.id).disabled(model.busy)
@@ -74,7 +84,7 @@ struct ReferencePreview: View {
                                         .background(InlineEditBoundary(cancel: { state.editingField = nil; state.snapshot = nil }) { commit() })
                                         .remileHelp("Return or click elsewhere to save · Esc cancels")
                                 } else {
-                                    Text(row.value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                                    Text(row.value).textSelection(.enabled).lineSpacing(2).frame(maxWidth: .infinity, alignment: .leading)
                                         .contentShape(Rectangle()).highPriorityGesture(TapGesture(count: 2).onEnded { edit(row) })
                                         .accessibilityAction(named: "Edit value") { edit(row) }
                                 }
@@ -103,7 +113,8 @@ struct ReferencePreview: View {
                             .contentShape(Rectangle()).highPriorityGesture(TapGesture(count: 2).onEnded { editTitle() })
                             .accessibilityAction(named: "Edit title") { editTitle() }
                     }
-                }.font(RemileType.heading).frame(maxWidth: .infinity, alignment: .leading)
+                }.font(.system(size: 15, weight: .medium)).lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
 
     }
     private func editTitle() {

@@ -24,7 +24,11 @@ for source in sorted((root / 'Sources/Remile').rglob('*.swift')):
     names = set(re.findall(r'(?:systemName|systemImage):\s*"([^"\\]+)"', content))
     # Include literal alternatives in conditional systemName expressions as well.
     for expression in re.findall(r'(?:systemName|systemImage):[^\n)]*', content):
-        names.update(re.findall(r'"([a-z][a-z0-9.-]*)"', expression))
+        choices = expression.split("?", 1)[-1]
+        names.update(re.findall(r'"([a-z][a-z0-9.-]*)"', choices))
+    if source.name in {"ReferenceKind.swift", "PDFDrawing.swift"}:
+        symbol_body = content.split("var symbol: String {", 1)[1].split("\n    }", 1)[0]
+        names.update(re.findall(r'return "([a-z][a-z0-9.-]*)"', symbol_body))
     for name in names:
         uses.setdefault(name, []).append(source.relative_to(root).as_posix())
 catalogues = {

@@ -132,7 +132,7 @@ struct OverleafProjects: View {
                 ForEach(library.accounts) { account in Button(account.name) { state.accountID = account.id } }
             } label: {
                 HStack(spacing: 8) { Text(account?.name ?? "Choose account").lineLimit(1); Spacer(minLength: 0); Image(systemName: "chevron.down").font(RemileType.small) }.frame(width: 160)
-            }.menuStyle(.button).menuIndicator(.hidden).disabled(library.accounts.isEmpty || library.busy)
+            }.menuStyle(.borderlessButton).menuIndicator(.hidden).buttonStyle(RemileActionStyle()).disabled(library.accounts.isEmpty || library.busy)
                 .accessibilityLabel("Account").accessibilityValue(account?.name ?? "None")
             Button(library.accounts.isEmpty ? "Add account…" : "Manage…") { state.managingAccounts = true }.disabled(library.busy)
         }

@@ -4,7 +4,8 @@ project_directory="$(cd "$(dirname "$0")/.." && pwd)"
 check_directory="${1:?Provide an absolute output directory under Agents/Repository}"
 case "$check_directory" in /*) ;; *) exit 1 ;; esac
 mkdir -p "$check_directory/module-cache"
-cat "$project_directory/Sources/Remile/Search/SearchMarkdown.swift" \
+cat "$project_directory/Sources/Remile/App/StorageLocation.swift" \
+    "$project_directory/Sources/Remile/Search/SearchMarkdown.swift" \
     "$project_directory/Sources/Remile/Search/SearchText.swift" \
     "$project_directory/Sources/Remile/Assistant/AppleIntelligence.swift" \
     "$project_directory/Sources/Remile/Assistant/AssistantEngine.swift" \

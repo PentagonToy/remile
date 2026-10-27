@@ -95,7 +95,8 @@ body { -webkit-font-smoothing: antialiased; }
 
 .md-content__inner > p, .md-content__inner > ul, .md-content__inner > ol { max-width: 65ch; }
 
-.md-typeset .remile-guide-symbol { display: inline-block; width: 1.25rem; height: 1.25rem; max-width: none; vertical-align: middle; margin-right: .45rem; }
+.md-typeset .remile-guide-symbol { display: inline-block; width: 1.25rem; height: 1.25rem; max-width: none; vertical-align: middle; margin-right: .45rem; filter: brightness(0) saturate(100%) opacity(.8); }
+[data-md-color-scheme="slate"] .md-typeset .remile-guide-symbol { filter: brightness(0) invert(1) opacity(.9); }
 .remile-guide-banner { margin: 2.5rem 0 1rem; max-width: 34rem; opacity: .9; }
 .remile-guide-banner img { display: block; width: 100%; height: auto; }
 .remile-guide-banner .remile-art-dark { display: none; }

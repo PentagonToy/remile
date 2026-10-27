@@ -16,26 +16,26 @@ struct WriterWorkspace: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 14) {
-                Button(action: goHome) { Image(systemName: "chevron.left") }.buttonStyle(.plain).remileHelp("Back to Home").accessibilityLabel("Back to Home")
+            HStack(spacing: 8) {
+                Button(action: goHome) { Image(systemName: "chevron.left") }.buttonStyle(RemileToolStyle()).remileHelp("Back to Home").accessibilityLabel("Back to Home")
                 Text("Writer").font(RemileType.heading)
                 Divider().frame(height: 18)
-                Button { state.tools.toggle() } label: { Image(systemName: "sidebar.left") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent).remileHelp("Show or hide writing tools").accessibilityLabel("Writing tools")
-                HStack(spacing: 14) {
+                Button { state.tools.toggle() } label: { Image(systemName: "sidebar.left") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).remileHelp("Show or hide writing tools").accessibilityLabel("Writing tools")
+                HStack(spacing: 8) {
                     Button { model.undo.undo(); model.revisionChanged() } label: { Image(systemName: "arrow.uturn.backward") }
                         .disabled(!model.undo.canUndo).accessibilityLabel("Undo").remileHelp("Undo")
                     Button { model.undo.redo(); model.revisionChanged() } label: { Image(systemName: "arrow.uturn.forward") }
                         .disabled(!model.undo.canRedo).accessibilityLabel("Redo").remileHelp("Redo")
-                }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent).padding(.leading, 4)
+                }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).padding(.leading, 4)
 
                 Spacer()
                 Text(model.title + (model.dirty ? " · Edited" : "")).font(RemileType.callout.weight(.semibold)).lineLimit(1).padding(.horizontal, 12).padding(.vertical, 5).frame(maxWidth: 360).background(RemileStyle.editorBar, in: RoundedRectangle(cornerRadius: RemileRadius.control))
                 Spacer()
-                Button { model.open() } label: { Image(systemName: "folder") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent).remileHelp("Open a DOCX document").accessibilityLabel("Open document")
-                Button { model.save() } label: { Label("Save", systemImage: "square.and.arrow.down") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent).remileHelp("Save changes to the working DOCX file.")
+                Button { model.open() } label: { Image(systemName: "folder") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).remileHelp("Open a DOCX document").accessibilityLabel("Open document")
+                Button { model.save() } label: { DocumentActionIcon(action: .save) }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).accessibilityLabel("Save").remileHelp("Save changes · ⌘S")
                     .contextMenu { Button("Save As…") { model.saveAs() } }
-                Button { model.exportCopy() } label: { Label("Export", systemImage: "square.and.arrow.up") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent).remileHelp("Create a separate PDF or DOCX copy.")
-            }.font(RemileType.control).padding(.horizontal, 16).padding(.vertical, 6).background(RemileStyle.background)
+                Button { model.exportCopy() } label: { DocumentActionIcon(action: .export) }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).accessibilityLabel("Export").remileHelp("Create a separate PDF or DOCX copy.")
+            }.font(RemileType.control).padding(.horizontal, 12).padding(.vertical, 5).background(RemileStyle.background)
             Divider()
             GeometryReader { geometry in
                 ReaderSplit(isPresented: state.tools, initial: min(320, max(250, geometry.size.width * 0.22)), minimum: 250, maximum: 340, minimumContent: 380, label: "writer tools", pane: { tools }, content: { document })
@@ -196,9 +196,9 @@ struct WriterWorkspace: View {
         Button(action: action) {
             Image(systemName: icon).frame(maxWidth: .infinity).frame(height: 28)
                 .background(active ? RemileStyle.accent.opacity(0.20) : RemileStyle.editorBar, in: RoundedRectangle(cornerRadius: RemileRadius.control))
-                .foregroundStyle(RemileStyle.accent)
+                .foregroundStyle(active ? RemileStyle.accent : RemileStyle.ink)
                 .contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel(title).accessibilityAddTraits(active ? .isSelected : []).remileHelp(title)
+        }.buttonStyle(RemileCompactToolStyle()).accessibilityLabel(title).accessibilityAddTraits(active ? .isSelected : []).remileHelp(title)
     }
     private func alignButton(_ value: NSTextAlignment, icon: String, title: String) -> some View {
         traitButton(title, icon: icon, active: model.alignment == value.rawValue) { model.alignment = value.rawValue; model.format() }

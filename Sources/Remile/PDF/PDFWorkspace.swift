@@ -158,7 +158,7 @@ struct PDFWorkspace: View {
             Spacer(minLength: 12)
             PDFProtectionButton(protection: session.protection, unlock: session.requestEditingUnlock)
             Button { presentation.ocr = true } label: { controlLabel("Scan & OCR", symbol: "text.viewfinder", compact: compact) }.remileHelp("Recognise text throughout this PDF with Apple Vision").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
-            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.toggleEditing() } } label: { controlLabel(session.isEditing ? "Done" : "Edit PDF", symbol: session.isEditing ? "checkmark" : "pencil", compact: compact) }.remileHelp(session.isEditing ? "Finish editing PDF" : "Edit PDF text, annotations and pages").disabled(session.document == nil)
+            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.toggleEditing() } } label: { controlLabel(session.isEditing ? "Done" : "Edit PDF", symbol: session.isEditing ? "checkmark" : "square.and.pencil", compact: compact) }.remileHelp(session.isEditing ? "Finish editing PDF" : "Edit PDF text, annotations and pages").disabled(session.document == nil)
             AIToolGroup {
             AIProviderButton()
             Button { toggleAssistant() } label: { Image(systemName: "text.bubble") }.remileHelp(assistantProvider == "ChatGPT" ? "Ask ChatGPT" : "Ask (on-device)").accessibilityLabel(assistantProvider == "ChatGPT" ? "Ask ChatGPT" : "Ask (on-device)").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
@@ -231,7 +231,7 @@ struct PDFWorkspace: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: session.drawingTool?.symbol ?? "pencil.tip")
+                    Image(systemName: session.drawingTool?.symbol ?? "pencil.line")
                         .font(RemileType.control).frame(width: 20, height: 28)
                     if !compact { Text(session.drawingTool?.rawValue ?? "Draw").font(RemileType.control) }
                     Image(systemName: "chevron.down").font(.system(size: 10, weight: .medium))

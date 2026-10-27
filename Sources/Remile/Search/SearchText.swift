@@ -3,14 +3,7 @@ import Foundation
 /// Unicode word matching shared by excerpts and both preview renderers.
 struct SearchText {
     struct Match { let range: NSRange; let group: Int }
-    private struct Token { let word: String; let range: NSRange }
-    private static func tokens(_ text: String) -> [Token] {
-        let source = text as NSString
-        let regex = try! NSRegularExpression(pattern: "[\\p{L}\\p{N}\\p{M}]+")
-        return regex.matches(in: text, range: NSRange(location: 0, length: source.length)).map {
-            Token(word: source.substring(with: $0.range).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX")), range: $0.range)
-        }
-    }
+    private static func tokens(_ text: String) -> [SearchNormalisation.Token] { SearchNormalisation.tokens(text) }
     static func matches(_ text: String, query: String, limit: Int = 500) -> [Match] {
         guard let groups = try? LibraryIndex.queryTerms(query) else { return [] }
         let words = tokens(text)

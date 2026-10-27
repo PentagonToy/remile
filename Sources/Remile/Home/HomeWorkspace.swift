@@ -59,15 +59,15 @@ struct HomeWorkspace: View {
                         Text("v" + RemileRelease.current).font(RemileType.small).monospacedDigit().foregroundStyle(.secondary).fixedSize()
                     }
                 }.padding(.vertical, 22)
-                Label("Home", systemImage: "house").font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).background(RemileStyle.accent.opacity(0.17), in: RoundedRectangle(cornerRadius: 9))
-                Button { navigate(.search) } label: { Label("Search", systemImage: "magnifyingglass").font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("search")
+                Label("Home", systemImage: "house").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).background(RemileStyle.accent.opacity(0.17), in: RoundedRectangle(cornerRadius: 9))
+                Button { navigate(.search) } label: { Label("Search", systemImage: "magnifyingglass").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("search")
                 Button { navigate(.reference) } label: {
                     Label { Text("Reference").fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: "books.vertical") }
-                        .font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11)
+                        .labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11)
                 }.buttonStyle(.plain).tourTarget("reference")
                 Spacer()
-                Button { actions.settings = true } label: { Label("Settings", systemImage: "gearshape").frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("settings")
-                Button { model.guidePresented = true } label: { Label("User guide", systemImage: "book.closed").frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).remileHelp("A quick guide to remile.").tourTarget("guide")
+                Button { actions.settings = true } label: { Label("Settings", systemImage: "gearshape").labelStyle(RemileNavigationLabelStyle()).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("settings")
+                Button { model.guidePresented = true } label: { Label("User guide", systemImage: "book.closed").labelStyle(RemileNavigationLabelStyle()).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).remileHelp("A quick guide to remile.").tourTarget("guide")
             }.padding(14).frame(maxWidth: .infinity).background(.ultraThinMaterial)
         }, content: { home.frame(maxWidth: .infinity, maxHeight: .infinity) })
     }

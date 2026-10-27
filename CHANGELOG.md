@@ -1,33 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 27 October 2026
 
-- Search shows local results before optional question refinement and pages beyond 200 matches. The CLI supports search offsets.
-- PDF Pages uses larger previews with page numbers below. Reference gives the selected title more room.
-
-- Show stored Reference abstracts last in a collapsed section. Remove GPT correction and the Clean up PDFs tab. Look up missing metadata and abstracts with up to three requests in progress.
-- Reuse Markdown image downloads through a shared HTTP disk cache. Avoid repeated Markdown renders, cancel stale LaTeX outlines and reuse Reference PDF thumbnails. Use bounded top-candidate selection for keyword result pages.
-
-- Reduce Live sync overhead with streaming asset checks, cancellation, unchanged-source write avoidance and stopped-session cache release. Expose pending Live sync and confirmation observations through the project CLI.
-
-- Remove merged Reference duplicates directly while retaining PDFs and session Undo. Keep user-deleted references in Trash.
-
-- Recover Overleaf Live automatically after brief transport loss, preserving pending edits, newer typing and Undo. Keep conflicts and account restrictions explicit. Allow switching to Private during connection startup.
-- Add focused Left/Right PDF page navigation while preserving vertical scrolling and editable-field keys. Show the Apple Intelligence provider label in Ask.
-- Stabilise Reference column dragging, add automatic-width reset and use spare width without replacing manual choices. Match the website's workspace navigation to Home.
-
-- Align Ask and Reference actions, add scene-specific Workspace menu commands, improve dark Ask contrast and enlarge pane restore targets. Fit automatic Reference columns while preserving manual widths.
-
-- Give local LaTeX the same Ask and manuscript review as connected projects. Distinguish Review manuscript from Attach Overleaf feedback and keep server Review in connected projects.
-
-- Replace connected Overleaf Review with comments and tracked edits, distinct source highlights, full Markdown/JSON export and guarded Accept/Reject actions. Open project questions from Ask and remove the duplicate Review toolbar button.
-- Reuse one recent Live project for a quick return without rejoining or recompiling. Stop hidden file checks and expire it after 45 seconds.
-- Offer Default and Paper source backgrounds. Default now follows the app appearance.
-- Add draft and feedback review shortcuts to Ask, project-ID review reads through the CLI and source-linked Markdown/JSON or ZIP hand-offs.
-- Let unchanged Live projects connect during initial compilation. Keep Paper editor surfaces consistent and switch backgrounds with one click.
-- Toggle logs and the last PDF from one toolbar button.
-- Allow PDF double-click navigation after source edits and small pointer movement. Keep uncertain matches at line level.
-- Remove embedded publisher sign-in and saved publisher sessions. Keep public PDF discovery and local attachment import.
+- Distribute a Developer ID signed, Apple-notarised app and installer.
+- Unify editor toolbars, native SF Symbols and Save/Export actions. Refine Writer controls, Reference details and narrow Markdown layouts.
+- Show spelling corrections with the affected words and writing-language selection.
+- Choose one storage location for Reference and Mac-specific search indexes, with verified moves applied at next launch.
+- Prepare and persist ranking indexes during library updates. Show local results before optional AI refinement and browse beyond 200 matches.
+- Preserve scientific search terms and highlight ranges. Separate detected bibliographies and suppress repeated PDF margins.
+- Improve Overleaf Live reconnection, preserve pending edits and Undo, and reduce background work. Keep Private available for reviewed changes.
+- Show connected comments and tracked edits with source links, guarded review actions and Markdown/JSON exports.
+- Add local LaTeX manuscript review, automatic compilation for new drafts and conservative source/PDF navigation.
+- Show Reference abstracts in a collapsed section. Retrieve available metadata and abstracts concurrently, and remove duplicate records while retaining attachments and Undo.
+- Cache Markdown image downloads and Reference thumbnails. Improve PDF page previews and keyboard navigation.
+- Extend CLI project discovery, review reads, search pagination and practical workflows.
+- Remove embedded publisher sign-in and GPT metadata correction. Keep public-paper discovery and local PDF attachments.
 
 ## 0.1.4-beta.1 — 25 October 2026
 
