@@ -8,6 +8,8 @@ struct PDFWorkspace: View {
     @ObservedObject private var navigation = ReaderNavigation.shared
     let updateDocument: (Data) -> Void
     @StateObject private var session = PDFSession()
+    @StateObject private var sidebarPresentation = PDFSidebarPresentation()
+    @AppStorage(AnimationPolicy.preference) private var animations = true
     @StateObject private var assistant = DocumentAssistant()
     @StateObject private var presentation = Presentation()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -45,10 +47,11 @@ struct PDFWorkspace: View {
             PDFDocumentTabs(reader: readingSession)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { readingSession?.pdfSession = session; readingSession?.pdfInspection = { [weak session = session] page, find, render in guard let session, let document = session.document else { throw CocoaError(.fileReadUnknown) }; return try PDFInspection.read(document, page: page ?? max(1, session.currentPage), find: find, render: render) }; readingSession?.commentsExport = { [weak session = session] in guard let session else { throw CocoaError(.fileReadUnknown) }; return try session.exportComments(name: fileURL?.lastPathComponent ?? "Untitled.pdf") }; assistant.useHistory(fileURL.map { "pdf:" + $0.path }); session.undoManager = undoManager; session.readingURL = fileURL; session.load(data); session.loadComments(); revealLibraryPage(); if !session.query.isEmpty { session.search() } }
+        .onChange(of: session.showsSidebar, initial: true) { _, shown in sidebarPresentation.setShown(shown, animated: !reduceMotion && animations) }
         .onChange(of: data) { _, data in assistant.cancel(); presentation.selectedPassages = []; session.load(data) }
         .onChange(of: fileURL) { assistant.useHistory(fileURL.map { "pdf:" + $0.path }) }
         .onChange(of: navigation.request?.id) { revealLibraryPage() }
-        .onDisappear { session.persistReadingPosition(); assistant.cancel(); session.stop(); session.protection.finish(); readingSession?.commentsExport = nil; readingSession?.pdfInspection = nil; readingSession?.pdfSession = nil }
+        .onDisappear { sidebarPresentation.cancel(); session.persistReadingPosition(); assistant.cancel(); session.stop(); session.protection.finish(); readingSession?.commentsExport = nil; readingSession?.pdfInspection = nil; readingSession?.pdfSession = nil }
         .onChange(of: session.query) { session.search() }
         .onChange(of: session.caseSensitive) { session.search() }
         .onChange(of: session.pendingAnnotationRevision) { readingSession?.objectWillChange.send() }
@@ -60,7 +63,14 @@ struct PDFWorkspace: View {
 
     // Keep the PDFReader at a stable structural position when either pane opens.
     private var readingColumns: some View {
-        ReaderSplit(sizing: .sidebar, isPresented: session.showsSidebar, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: presentation.ask ? 720 : 380, label: "document sidebar", pane: { sidebar }, content: { readingAndAsk })
+        ReaderSplit(sizing: .sidebar, isPresented: sidebarPresentation.mounted, animatesResizing: false, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: presentation.ask ? 720 : 380, label: "document sidebar", pane: {
+            if sidebarPresentation.mounted {
+                sidebar.opacity(sidebarPresentation.visible ? 1 : 0)
+                    .offset(x: sidebarPresentation.visible ? 0 : -PDFSidebarPresentation.offset)
+                    .animation(reduceMotion || !animations ? nil : PDFSidebarPresentation.animation, value: sidebarPresentation.visible)
+                    .onAppear { sidebarPresentation.appeared() }
+            }
+        }, content: { readingAndAsk })
     }
     private var readingAndAsk: some View {
         ReaderSplit(side: .trailing, isPresented: presentation.ask, initial: 360, minimum: 320, maximum: 440, minimumContent: 380, preferPaneWhenNarrow: true, label: "Ask panel", pane: { assistantPanel }, content: { readingCanvas })
@@ -71,7 +81,10 @@ struct PDFWorkspace: View {
                 if session.showsOverview {
                     PDFThumbnailOverview(session: session)
                 } else {
-                    PDFReader(session: session, zoom: zoom, selectionActions: selectionActions)
+                    PDFReader(session: session, zoom: zoom, selectionActions: selectionActions, openPDFs: { urls in
+                        guard let readingSession else { return false }
+                        return RemileWindows.shared.openDroppedPDFs(urls, for: readingSession)
+                    })
                 }
             } else if session.document?.isLocked == true {
                 VStack(spacing: 16) {
@@ -131,7 +144,7 @@ struct PDFWorkspace: View {
     }
     private func readingControlRow(compact: Bool) -> some View {
         HStack(spacing: RemileControl.spacing) {
-            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.showsSidebar.toggle() } } label: { SymbolIcon(systemName: "sidebar.left") }.remileHelp("Pages, outline, search and comments").accessibilityLabel("Document sidebar").accessibilityValue(session.showsSidebar ? "Shown" : "Hidden")
+            Button { session.showsSidebar.toggle() } label: { SymbolIcon(systemName: "sidebar.left") }.remileHelp("Pages, outline, search and comments").accessibilityLabel("Document sidebar").accessibilityValue(session.showsSidebar ? "Shown" : "Hidden")
             HStack(spacing: 6) {
                 if !compact { Button { session.previousPage() } label: { SymbolIcon(systemName: "chevron.up") }.remileHelp("Previous page").disabled(session.showsOverview || session.currentPage <= 1) }
                 ReaderPageControl(current: session.currentPage, total: session.document?.pageCount ?? 0, go: session.goToPage)
@@ -285,7 +298,7 @@ struct PDFWorkspace: View {
             }.frame(height: 32).padding(.horizontal, 16).padding(.bottom, 8)
             Divider()
             switch session.sidebar {
-            case .pages: if let document = session.document { PDFPagesPanel(document: document, currentPage: session.currentPage, select: session.goToPage) }
+            case .pages: if let document = session.document { PDFPagesPanel(document: document, currentPage: session.currentPage, select: session.goToPage, revision: "\(session.pageRevision):\(session.pendingAnnotationRevision)", rendersThumbnails: session.showsSidebar) }
             case .outline: if let document = session.document { PDFOutlinePanel(document: document, select: session.goToOutline) }
             case .search: searchPanel
             case .comments: commentsPanel

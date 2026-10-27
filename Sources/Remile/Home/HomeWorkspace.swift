@@ -17,14 +17,14 @@ struct HomeWorkspace: View {
     var body: some View {
         ZStack {
             if model.page == .home {
-                homeLayout.transition(.opacity.combined(with: .offset(x: -16)))
+                homeLayout.modifier(RemileNavigationContent()).transition(.opacity.combined(with: .offset(x: -16)))
             } else if model.page == .writer, let writer = model.writer {
                 WriterWorkspace(model: writer, goHome: { if model.closeWriter() { model.page = .home } }).navigationTitle(writer.title)
             } else if model.page == .reference {
                 ReferenceWorkspace(model: model.references, goHome: { navigate(.home) }, openPDF: { url, page in
                     ReaderNavigation.shared.reveal(LibraryHit(path: url.path, folderID: "reference", page: page + 1, excerpt: "", score: 0), query: "")
                     model.open(url)
-                })
+                }).modifier(RemileNavigationContent()).transition(.opacity)
             } else {
                 LibrarySearchView(model: model, open: open, goHome: { navigate(.home) })
                     .transition(.opacity.combined(with: .offset(x: 16)))

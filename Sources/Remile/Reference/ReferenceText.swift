@@ -1,12 +1,58 @@
 import Foundation
 
+/// Reuse short display strings without retaining records, abstracts or PDF data.
+final class ReferenceTextCache: @unchecked Sendable {
+    private struct Key: Hashable { let kind: String; let source: String }
+    private struct Entry { let value: [String]; let bytes: Int; var used: UInt64 }
+    private let lock = NSLock()
+    private var entries: [Key: Entry] = [:]
+    private var bytes = 0
+    private var clock: UInt64 = 0
+    let countLimit: Int
+    let byteLimit: Int
+    init(countLimit: Int = 512, byteLimit: Int = 1_048_576) {
+        self.countLimit = countLimit; self.byteLimit = byteLimit
+    }
+    var usage: (count: Int, textBytes: Int) { lock.withLock { (entries.count, bytes) } }
+    func value(kind: String, source: String, compute: () -> [String]) -> [String] {
+        // Large fields bypass the cache rather than displacing small row labels.
+        guard source.utf8.count <= 16_384 else { return compute() }
+        let key = Key(kind: kind, source: source)
+        if let found = lock.withLock({ () -> [String]? in
+            guard var entry = entries[key] else { return nil }
+            clock &+= 1; entry.used = clock; entries[key] = entry
+            return entry.value
+        }) { return found }
+        let value = compute()
+        let cost = source.utf8.count + kind.utf8.count + value.reduce(0) { $0 + $1.utf8.count }
+        guard cost <= byteLimit, countLimit > 0 else { return value }
+        lock.withLock {
+            if let old = entries.removeValue(forKey: key) { bytes -= old.bytes }
+            while entries.count >= countLimit || bytes + cost > byteLimit {
+                guard let oldest = entries.min(by: { $0.value.used < $1.value.used })?.key,
+                      let removed = entries.removeValue(forKey: oldest) else { break }
+                bytes -= removed.bytes
+            }
+            clock &+= 1; entries[key] = Entry(value: value, bytes: cost, used: clock); bytes += cost
+        }
+        return value
+    }
+}
+
 /// Readable labels without modifying the BibTeX retained for export and editing.
 enum ReferenceText {
+    private static let cache = ReferenceTextCache()
     static func display(_ source: String) -> String {
+        cache.value(kind: "display", source: source) { [uncachedDisplay(source)] }[0]
+    }
+    private static func uncachedDisplay(_ source: String) -> String {
         var reader = Reader(chars: Array(source.prefix(100_000)))
         return reader.read().replacingOccurrences(of: "---", with: "—").replacingOccurrences(of: "--", with: "–").split(whereSeparator: \.isWhitespace).joined(separator: " ").precomposedStringWithCanonicalMapping
     }
     static func authors(_ source: String) -> [String] {
+        cache.value(kind: "authors", source: source) { uncachedAuthors(source) }
+    }
+    private static func uncachedAuthors(_ source: String) -> [String] {
         let chars = Array(source)
         var result: [String] = [], start = 0, depth = 0, i = 0, escaped = false
         while i < chars.count {
@@ -22,6 +68,9 @@ enum ReferenceText {
         return result.filter { !$0.isEmpty }
     }
     static func shortAuthors(_ source: String) -> String {
+        cache.value(kind: "shortAuthors", source: source) { [uncachedShortAuthors(source)] }[0]
+    }
+    private static func uncachedShortAuthors(_ source: String) -> String {
         let names = authors(source)
         guard let first = names.first else { return "" }
         let name: String

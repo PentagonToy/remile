@@ -5,12 +5,13 @@ struct PDFReader: NSViewRepresentable {
     @ObservedObject var session: PDFSession
     var zoom: ReaderZoom? = nil
     var selectionActions = PDFSelectionActions()
+    var openPDFs: (([URL]) -> Bool)? = nil
 
     @MainActor final class Coordinator { let citations = PDFCitationHighlights() }
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> PDFView {
-        let view = PDFSelectionView(); view.selectionActions = selectionActions
+        let view = PDFSelectionView(); view.selectionActions = selectionActions; view.openPDFs = openPDFs; view.receivesWindowPageKeys = true
         configureDrawing(view)
         view.pageOverlayViewProvider = context.coordinator.citations
         context.coordinator.citations.update(session.activeCitation)
@@ -27,6 +28,7 @@ struct PDFReader: NSViewRepresentable {
     func updateNSView(_ view: PDFView, context: Context) {
         ReaderScrolling.configure(view)
         (view as? PDFSelectionView)?.selectionActions = selectionActions
+        (view as? PDFSelectionView)?.openPDFs = openPDFs
         if let selectionView = view as? PDFSelectionView { configureDrawing(selectionView) }
         let mode: PDFDisplayMode = session.twoPage ? .twoUpContinuous : .singlePageContinuous
         if view.displayMode != mode { view.displayMode = mode }
@@ -51,7 +53,7 @@ struct PDFReader: NSViewRepresentable {
     static func dismantleNSView(_ view: PDFView, coordinator: Coordinator) {
         if let view = view as? PDFSelectionView {
             view.cancelDrawing(); view.drawingTool = nil; view.beginDrawing = nil; view.commitDrawing = nil; view.finishDrawing = nil
-            view.selectionActions = PDFSelectionActions(); view.editNote = nil
+            view.selectionActions = PDFSelectionActions(); view.editNote = nil; view.openPDFs = nil
         }
         view.document?.cancelFindString()
         view.pageOverlayViewProvider = nil; coordinator.citations.update(nil)

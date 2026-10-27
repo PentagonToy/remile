@@ -14,6 +14,7 @@ struct ReaderSplit<Pane: View, Content: View>: View {
     var side: Side = .leading
     var sizing: Sizing = .fixed
     var isPresented = true
+    var animatesResizing = true
     var initial: CGFloat = 280
     var minimum: CGFloat = 240
     var maximum: CGFloat = 440
@@ -60,9 +61,9 @@ struct ReaderSplit<Pane: View, Content: View>: View {
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height)
                 .coordinateSpace(name: "reader.split." + label)
-                .transaction { if state.origin != nil { $0.animation = nil } }
-                .animation(reduceMotion ? nil : RemileMotion.panel, value: state.collapsed)
-                .animation(reduceMotion ? nil : RemileMotion.panel, value: isPresented)
+                .transaction { if state.origin != nil { $0.animation = nil; $0.disablesAnimations = true } else if !animatesResizing { $0.animation = nil } }
+                .animation(reduceMotion || !animatesResizing ? nil : RemileMotion.panel, value: state.collapsed)
+                .animation(reduceMotion || !animatesResizing ? nil : RemileMotion.panel, value: isPresented)
                 .onAppear {
                     let saved = UserDefaults.standard.double(forKey: WorkspaceLayout.key(label))
                     if saved.isFinite, saved >= minimum, saved <= maximum { state.width = saved }

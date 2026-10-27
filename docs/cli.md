@@ -50,6 +50,19 @@ remile overleaf read --id overleaf:PROJECT_ID --file main.tex
 
 Check the reported local Live state before making changes. These reads do not pull, publish or confirm a fresh remote snapshot. Open the app to connect and review changes.
 
+### Apply a citation edit with a checked source hash
+
+```sh
+remile documents
+remile read --target TARGET_UUID --file main.tex
+remile replace --target TARGET_UUID --file main.tex --source-file /absolute/revised-main.tex --expected-sha256 HASH
+remile save --target TARGET_UUID
+```
+
+Prepare the complete revised source from the `read` response and the citation response above. Use the exact returned SHA-256. An edit made since that read is rejected. The replacement is undoable and does not save or compile until you request those actions. This recipe edits the source. It does not automatically choose or update a bibliography file. The in-app Reference picker performs that paired citation and bibliography action.
+
+`status`, `read` and `diagnostics` inspect the running app through the same document sessions as the UI. For a loaded PDF, `status` reports its page count and one-based `currentPage`. A value of zero means no loaded PDF page is available. `reference citation` returns text. It does not simulate a click in the editor. `overleaf show` reports the locally observed Live state, not an independently verified remote snapshot.
+
 ## Document tools
 
 These commands run independently of the application window. Output paths identify new files.

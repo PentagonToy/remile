@@ -61,6 +61,20 @@ struct ReferenceRepository: Sendable {
             let library = ReferenceLibrary(name: name, parentID: parentID); libraries.append(library); catalogue.libraries = libraries; return library
         }
     }
+    func renameLibrary(_ id: UUID, to name: String, expectedName: String? = nil) throws {
+        try catalogueTransaction { catalogue in
+            var libraries = catalogue.libraries ?? [.primary]
+            guard let index = libraries.firstIndex(where: { $0.id == id && $0.trashed == nil }) else { throw ReferenceFailure("The library is unavailable.") }
+            if let expectedName, libraries[index].name != expectedName { throw ReferenceFailure("The library changed. Open it again before renaming.") }
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, name.count <= 80,
+                  !libraries.contains(where: { $0.id != id && $0.parentID == libraries[index].parentID && $0.trashed == nil && $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }) else {
+                throw ReferenceFailure("Use a new library name of up to 80 characters.")
+            }
+            libraries[index].name = name
+            catalogue.libraries = libraries
+        }
+    }
     func reorderLibrary(_ id: UUID, before target: UUID) throws {
         try catalogueTransaction { catalogue in
             var libraries = catalogue.libraries ?? [.primary]

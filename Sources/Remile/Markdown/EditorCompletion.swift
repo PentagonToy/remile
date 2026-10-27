@@ -15,12 +15,12 @@ enum EditorCompletion {
         let name = prefix.substring(with: match.range(at: 2)), indent = prefix.substring(with: match.range(at: 1))
         guard environments.contains(name) else { return nil }
         let closing = selection.location < text.length && text.character(at: selection.location) == 125 ? 1 : 0
-        let tail = text.substring(from: selection.location + closing).prefix(1000)
+        let tail = text.substring(with: NSRange(location: selection.location + closing, length: min(1000, text.length - selection.location - closing)))
         guard !tail.contains("\\end{\(name)}") else { return nil }
         let body = indent + "    " + (["itemize", "enumerate", "description"].contains(name) ? "\\item " : "")
         return .init(range: NSRange(location: selection.location, length: closing), text: "}\n" + body + "\n" + indent + "\\end{\(name)}", selection: NSRange(location: selection.location + 2 + (body as NSString).length, length: 0))
     }
-    static func context(_ source: String, selection: NSRange, tex: Bool) -> Context? {
+    static func context(_ source: String, selection: NSRange, tex: Bool, explicit: Bool = false) -> Context? {
         let value = source as NSString
         guard selection.length == 0, selection.location > 0, selection.location <= value.length else { return nil }
         guard tex || (selection.location <= 200_000 && MathCompletion.insideMath(Array(value.substring(to: selection.location).utf16))) else { return nil }
@@ -39,7 +39,7 @@ enum EditorCompletion {
             let raw = prefix as NSString, name = raw.substring(with: match.range(at: 1))
             let closing = selection.location < value.length && value.character(at: selection.location) == 125 ? 1 : 0
             let opening = prefix.contains("\\begin{")
-            let tail = value.substring(from: selection.location + closing).prefix(1000)
+            let tail = value.substring(with: NSRange(location: selection.location + closing, length: min(1000, value.length - selection.location - closing)))
             let items = available.filter { $0.hasPrefix(name) }.map { environment -> Item in
                 guard tex, opening, !tail.contains("\\end{\(environment)}") else { return Item(label: environment, insertion: environment + "}") }
                 let indent = String(prefix.prefix { $0 == " " || $0 == "\t" })
@@ -52,19 +52,27 @@ enum EditorCompletion {
         var begin = units.count
         while begin > 0 && ((65...90).contains(units[begin - 1]) || (97...122).contains(units[begin - 1])) { begin -= 1 }
         let name = String(decoding: units[begin...], as: UTF16.self)
-        guard name.count >= 2 else { return nil }
+        guard name.count >= 2 || (explicit && begin > 0 && units[begin - 1] == 92) else { return nil }
         let hasSlash = begin > 0 && units[begin - 1] == 92
         if hasSlash { begin -= 1; if begin > 0 && units[begin - 1] == 92 { return nil } }
+        guard hasSlash else { return nil }
+        if selection.location < value.length {
+            let next = value.character(at: selection.location)
+            if (65...90).contains(next) || (97...122).contains(next) { return nil }
+        }
         var items: [Item] = []
-        if "begin".hasPrefix(name), name != "begin" { items.append(Item(label: "\\begin{…}", insertion: "\\begin{}", caret: 7)) }
+        if "begin".hasPrefix(name), name != "begin" { items.append(Item(label: "\\begin{…}", insertion: selection.location < value.length && value.character(at: selection.location) == 123 ? "\\begin" : "\\begin{}", caret: 7)) }
         for environment in available where name.count >= 2 && environment.hasPrefix(name) {
             let body = ["itemize", "enumerate", "description"].contains(environment) ? "    \\item " : "    "
             let insertion = "\\begin{\(environment)}\n" + body + "\n\\end{\(environment)}"
             items.append(Item(label: environment + " block", insertion: insertion, caret: ("\\begin{\(environment)}\n" + body as NSString).length))
         }
-        let commands = MathCompletion.commands + (tex ? ["\\item ", "\\includegraphics{}", "\\section{}", "\\subsection{}", "\\caption{}", "\\label{}", "\\ref{}", "\\cite{}", "\\textbf{}", "\\textit{}", "\\input{}"] : [])
+        let commands = MathCompletion.commands + (tex ? ["item ", "includegraphics{}", "section{}", "subsection{}", "subsubsection{}", "chapter{}", "part{}", "paragraph{}", "caption{}", "label{}", "ref{}", "eqref{}", "autoref{}", "cref{}", "pageref{}", "cite{}", "citep{}", "citet{}", "parencite{}", "textcite{}", "textbf{}", "textit{}", "texttt{}", "emph{}", "input{}", "include{}", "usepackage{}", "documentclass{}", "bibliography{}", "bibliographystyle{}", "addbibresource{}", "printbibliography", "newcommand{}{}", "renewcommand{}{}", "newenvironment{}{}{}", "DeclareMathOperator{}{}", "title{}", "author{}", "date{}", "maketitle", "tableofcontents", "footnote{}", "url{}", "href{}{}", "centering", "hline", "toprule", "midrule", "bottomrule", "textwidth", "linewidth", "newpage", "clearpage", "vspace{}", "hspace{}"].map { "\\" + $0 } : [])
         for command in commands where command.dropFirst().hasPrefix(name) && command != "\\" + name {
-            items.append(Item(label: command, insertion: command, caret: MathCompletion.insertionSelection(command, location: 0).location))
+            var insertion = command
+            let existingArguments = selection.location < value.length && value.character(at: selection.location) == 123
+            if existingArguments { while insertion.hasSuffix("{}") { insertion.removeLast(2) } }
+            items.append(Item(label: command, insertion: insertion, caret: existingArguments ? (insertion as NSString).length + 1 : MathCompletion.insertionSelection(insertion, location: 0).location))
         }
         guard !items.isEmpty else { return nil }
         items.sort { a, b in
@@ -87,8 +95,8 @@ enum EditorCompletion {
     private var buttons: [NSButton] = []
     private var detail: NSTextField?
     var visible: Bool { panel?.isVisible == true }
-    func show(in view: NSTextView, tex: Bool, custom: EditorCompletion.Context? = nil, prepare: ((EditorCompletion.Item) throws -> Void)? = nil, failure: ((String) -> Void)? = nil) {
-        guard view.window?.firstResponder === view, !view.hasMarkedText(), let context = custom ?? EditorCompletion.context(view.string, selection: view.selectedRange(), tex: tex), let window = view.window else { dismiss(); return }
+    func show(in view: NSTextView, tex: Bool, custom: EditorCompletion.Context? = nil, prepare: ((EditorCompletion.Item) throws -> Void)? = nil, failure: ((String) -> Void)? = nil, explicit: Bool = false) {
+        guard view.window?.firstResponder === view, !view.hasMarkedText(), let context = custom ?? EditorCompletion.context(view.string, selection: view.selectedRange(), tex: tex, explicit: explicit), let window = view.window else { dismiss(); return }
         self.prepare = prepare; self.failure = failure
         self.view = view; self.context = context; source = view.string; caret = view.selectedRange(); index = 0
         let panel = self.panel ?? NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)

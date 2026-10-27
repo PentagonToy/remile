@@ -34,7 +34,7 @@ struct TeXWorkspace: View {
             Divider()
             lifecycleContent
             ReaderThemeFooter(notice: freeOverleaf ? "Overleaf Free · Git sync unavailable" : nil, noticeHelp: "Live sync is available. Git sync requires Overleaf Premium for you or the project owner.")
-        }.focusedSceneValue(\.workspaceActions, WorkspaceActions(ask: { project.showsAssistant.toggle() }, references: { presentation.references = true }, restorePanes: { presentation.paneReset = UUID() }, logs: toggleLogs))
+        }.focusedSceneValue(\.workspaceActions, WorkspaceActions(ask: { project.showsAssistant.toggle() }, references: { presentation.references = true }, restorePanes: { presentation.paneReset = UUID() }, logs: toggleLogs, find: { presentation.pane = "Source"; editor.find($0) }, complete: { presentation.pane = "Source"; editor.complete() }))
         .font(RemileType.control).background(RemileStyle.background).navigationTitle(project.displayName + (project.dirty ? " •" : ""))
     }
     private var workspaceContent: some View {
@@ -83,7 +83,7 @@ struct TeXWorkspace: View {
             }
             editor.citationCompletion = { [weak project = project] source, range in
                 guard let project else { return nil }
-                if let local = project.localCompletion.context(source, selection: range, file: project.selected, paths: project.treeFiles, buffers: project.buffers) { return local }
+                if let local = await project.localCompletion.context(source, selection: range, file: project.selected, paths: project.treeFiles, buffers: project.buffers) { return local }
                 return await project.citations.completion(source: source, selection: range, buffers: project.buffers)
             }
             editor.prepareCitation = { [weak project = project] item in

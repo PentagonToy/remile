@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// The active scene supplies actions so menu commands never affect another window.
 struct WorkspaceActions {
@@ -6,6 +7,8 @@ struct WorkspaceActions {
     var references: (() -> Void)? = nil
     var restorePanes: (() -> Void)? = nil
     var logs: (() -> Void)? = nil
+    var find: ((NSTextFinder.Action) -> Void)? = nil
+    var complete: (() -> Void)? = nil
 }
 private struct WorkspaceActionsKey: FocusedValueKey { typealias Value = WorkspaceActions }
 extension FocusedValues {
@@ -17,6 +20,16 @@ extension FocusedValues {
 struct WorkspaceCommands: Commands {
     @FocusedValue(\.workspaceActions) private var actions
     var body: some Commands {
+        CommandGroup(after: .textEditing) {
+            Menu("Find") {
+                Button("Find in Document…") { actions?.find?(.showFindInterface) }.keyboardShortcut("f")
+                Button("Find Next") { actions?.find?(.nextMatch) }.keyboardShortcut("g")
+                Button("Find Previous") { actions?.find?(.previousMatch) }.keyboardShortcut("g", modifiers: [.command, .shift])
+                Button("Find and Replace…") { actions?.find?(.showReplaceInterface) }.keyboardShortcut("f", modifiers: [.command, .option])
+                Button("Use Selection for Find") { actions?.find?(.setSearchString) }.keyboardShortcut("e")
+            }.disabled(actions?.find == nil)
+            Button("Complete Command") { actions?.complete?() }.keyboardShortcut(.escape, modifiers: .option).disabled(actions?.complete == nil)
+        }
         CommandMenu("Workspace") {
             Button("Show or Hide Ask") { actions?.ask?() }.keyboardShortcut("a", modifiers: [.command, .shift]).disabled(actions?.ask == nil)
             Button("Reference Library…") { actions?.references?() }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(actions?.references == nil)

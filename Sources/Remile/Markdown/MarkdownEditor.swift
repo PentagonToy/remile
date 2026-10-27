@@ -22,6 +22,10 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
     var citationFailure: ((String) -> Void)?
     private let completion = EditorCompletionPanel()
     private var completionTask: Task<Void, Never>?
+    private var pendingFind: NSTextFinder.Action?
+    private var pendingCompletion = false
+    let findState = EditorFindState()
+    private var findHost: NSHostingView<EditorFindBar>?
     private var focusMode = false
     private static let markdownPatterns = ["(?m)^#{1,6}\\s+.*$", "`[^`\\n]+`", "\\*\\*[^*\\n]+\\*\\*", "\\[[^]\\n]+\\]\\([^\\n)]+\\)"].compactMap { try? NSRegularExpression(pattern: $0) }
     private var appliedTheme: String?
@@ -43,7 +47,7 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
     private var spellingExcluded: [NSRange] = []
     func makeView() -> NSScrollView {
         if let scroll { scroll.removeFromSuperview(); return scroll }
-        let scroll = NSScrollView(); scroll.borderType = .noBorder; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
+        let scroll = NSScrollView(); scroll.borderType = .noBorder; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true; scroll.findBarPosition = .belowContent
         let view = MarkdownSourceTextView(frame: .zero)
         view.isRichText = false; view.allowsUndo = true; view.usesFindBar = true; view.isIncrementalSearchingEnabled = true
         view.isAutomaticQuoteSubstitutionEnabled = false; view.isAutomaticDashSubstitutionEnabled = false
@@ -64,9 +68,14 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
             if self.texTheme != nil, modifiers == .command, event.charactersIgnoringModifiers == "/" { self.toggleComment(); return true }
             return false
         }
+        view.attached = { [weak self] in self?.applyPendingFind(); if self?.pendingCompletion == true { self?.pendingCompletion = false; self?.complete() } }
+        view.findAction = { [weak self] in self?.find($0) }
+        view.explicitCompletion = { [weak self] in guard let self, self.texTheme != nil else { return false }; self.complete(); return true }
         view.resigned = { [weak self] in self?.completion.dismiss(); self?.assistance.cancel() }
         view.syncSelection = { [weak self] in guard let self else { return }; self.syncToPreview?(self.selectedLine) }
         scroll.documentView = view; ReaderScrolling.configure(scroll); self.scroll = scroll; textView = view
+        findState.view = view
+        findState.layoutChanged = { [weak self] in self?.updateFindBar() }
         scroll.contentView.postsBoundsChangedNotifications = true
         scrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in self?.scheduleStyle(); self?.scroll?.verticalRulerView?.needsDisplay = true }
@@ -103,6 +112,7 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
             let selection = view.selectedRange(), origin = scroll?.contentView.bounds.origin ?? .zero
             clearFlash(); completion.dismiss(); assistance.cancel()
             view.string = source
+            findState.sourceChanged()
             view.setSelectedRange(NSIntersectionRange(selection, NSRange(location: 0, length: (source as NSString).length)))
             scroll?.contentView.scroll(to: origin)
         }
@@ -134,7 +144,8 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         if let pending = pendingLocation { pendingLocation = nil; reveal(line: pending.0, text: pending.1) }
     }
     func textDidChange(_ notification: Notification) {
-        guard let view = textView else { return }; fadeFlash(); changed(view.string); scroll?.verticalRulerView?.needsDisplay = true; scheduleStyle(); scheduleCompletion(); assistance.schedule(view)
+        findState.sourceChanged()
+        guard let view = textView else { return }; fadeFlash(); changed(view.string); scroll?.verticalRulerView?.needsDisplay = true; scheduleStyle(); if !findState.visible { scheduleCompletion(); assistance.schedule(view) }
     }
     func textView(_ view: NSTextView, didCheckTextIn range: NSRange, types checkingTypes: NSTextCheckingTypes, options: [NSSpellChecker.OptionKey: Any] = [:], results: [NSTextCheckingResult], orthography: NSOrthography, wordCount: Int) -> [NSTextCheckingResult] {
         if spellingSource != view.string { spellingSource = view.string; spellingExcluded = EditorSpellcheck.excluded(view.string) }
@@ -159,20 +170,20 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
     }
     func suspend() {
         completionTask?.cancel(); styling?.cancel(); flashTask?.cancel()
-        completion.dismiss(); assistance.cancel(); changed = { _ in }
+        completion.dismiss(); assistance.cancel(); findState.close(); changed = { _ in }
     }
     func pasteMarkdown() { (textView as? MarkdownSourceTextView)?.pasteMarkdown(nil) }
-    func textViewDidChangeSelection(_ notification: Notification) { completion.dismiss(); if focusMode { scheduleStyle() }; if let view = textView { assistance.schedule(view) } }
-    private func scheduleCompletion() {
+    func textViewDidChangeSelection(_ notification: Notification) { completion.dismiss(); if focusMode { scheduleStyle() }; if !findState.visible, let view = textView { assistance.schedule(view) } }
+    private func scheduleCompletion(explicit: Bool = false) {
         completionTask?.cancel()
         completionTask = Task { @MainActor [weak self] in
-            do { try await Task.sleep(for: .milliseconds(160)) } catch { return }
+            if !explicit { do { try await Task.sleep(for: .milliseconds(160)) } catch { return } }
             guard let self, let view = self.textView, !view.hasMarkedText() else { return }
             let source = view.string, selection = view.selectedRange()
             let custom = self.texTheme == nil ? nil : await self.citationCompletion?(source, selection)
             guard !Task.isCancelled, view.string == source, view.selectedRange() == selection else { return }
             if self.texTheme != nil, ReferenceCitationCompletion.prefix(source, selection: selection) != nil, custom == nil { self.completion.dismiss(); return }
-            self.completion.show(in: view, tex: self.texTheme != nil, custom: custom, prepare: self.prepareCitation, failure: self.citationFailure)
+            self.completion.show(in: view, tex: self.texTheme != nil, custom: custom, prepare: self.prepareCitation, failure: self.citationFailure, explicit: explicit)
             if self.completion.visible { self.assistance.cancel() }
         }
     }
@@ -243,9 +254,33 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         guard let view = textView else { return }
         apply(MarkdownEditing.prefix(view.string, selection: view.selectedRange(), marker: marker), name: name)
     }
-    func find() {
-        guard let view = textView else { return }; view.window?.makeFirstResponder(view)
-        let item = NSMenuItem(); item.tag = Int(NSFindPanelAction.showFindPanel.rawValue); view.performFindPanelAction(item)
+    func find(_ action: NSTextFinder.Action = .showFindInterface) {
+        completionTask?.cancel(); completion.dismiss(); assistance.cancel()
+        pendingFind = action
+        applyPendingFind()
+    }
+    private func applyPendingFind() {
+        guard let action = pendingFind, let view = textView, let window = view.window else { return }
+        pendingFind = nil
+        window.makeFirstResponder(view)
+        findState.perform(action)
+    }
+    private func updateFindBar() {
+        guard let scroll else { return }
+        if findState.visible {
+            let host = findHost ?? NSHostingView(rootView: EditorFindBar(state: findState))
+            host.sizingOptions = []
+            host.frame = NSRect(x: 0, y: 0, width: scroll.bounds.width, height: 41 + (findState.showsReplace ? 36 : 0) + (findState.error == nil ? 0 : 24))
+            host.autoresizingMask = [.width]
+            findHost = host; scroll.findBarView = host; scroll.isFindBarVisible = true
+            scroll.findBarViewDidChangeHeight()
+        } else { scroll.isFindBarVisible = false; scroll.findBarView = nil; findHost = nil }
+    }
+    func complete() {
+        guard let view = textView, let window = view.window else { pendingCompletion = true; return }
+        window.makeFirstResponder(view)
+        if texTheme != nil { scheduleCompletion(explicit: true) }
+        else { view.complete(nil) }
     }
     var selectedLine: Int {
         guard let view = textView else { return 0 }
@@ -280,7 +315,7 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
             if texTheme != nil, let change = EditorSourceEditing.indent(textView.string, selection: textView.selectedRange(), reverse: false) { apply(change, name: "Indent"); return true }
         }
         if commandSelector == #selector(NSResponder.insertBacktab(_:)), texTheme != nil, let change = EditorSourceEditing.indent(textView.string, selection: textView.selectedRange(), reverse: true) { apply(change, name: "Outdent"); return true }
-        if commandSelector == #selector(NSResponder.cancelOperation(_:)) { assistance.cancel() }
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) { assistance.cancel(); if findState.visible { findState.close(); return true } }
         guard !textView.hasMarkedText(), commandSelector == #selector(NSResponder.insertNewline(_:)), NSEvent.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty,
               let change = MarkdownEditing.newline(textView.string, selection: textView.selectedRange()) else { return false }
         apply(change, name: "Continue List"); return true
@@ -340,6 +375,15 @@ final class MarkdownSourceTextView: NSTextView {
     var proofreadSelection: (NSRange) -> Void = { _ in }
     var markdownMode = true
     var resigned: () -> Void = {}
+    var attached: () -> Void = {}
+    var explicitCompletion: () -> Bool = { false }
+    var findAction: ((NSTextFinder.Action) -> Void)?
+    override func performTextFinderAction(_ sender: Any?) {
+        if let item = sender as? NSMenuItem, let action = NSTextFinder.Action(rawValue: item.tag), let findAction { findAction(action) }
+        else { super.performTextFinderAction(sender) }
+    }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); if window != nil { attached() } }
+    override func complete(_ sender: Any?) { if !explicitCompletion() { super.complete(sender) } }
     override func paste(_ sender: Any?) {
         guard markdownMode else { super.paste(sender); return }
         let board = NSPasteboard.general

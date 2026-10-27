@@ -4,19 +4,30 @@ import PDFKit
 /// Horizontal arrows turn pages. Vertical arrows remain native continuous scrolling.
 @MainActor class PageNavigationPDFView: PDFView {
     private var pageKeys: Any?
+    var receivesWindowPageKeys = false
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let pageKeys { NSEvent.removeMonitor(pageKeys); self.pageKeys = nil }
         guard window != nil else { return }
         pageKeys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let handled = MainActor.assumeIsolated {
-                guard let self, event.window === self.window, let focused = self.window?.firstResponder as? NSView,
-                      focused === self || focused.isDescendant(of: self), !(focused is NSControl),
-                      !((focused as? NSTextView)?.isEditable == true) else { return false }
+                guard let self, event.window === self.window, self.acceptsPageKeys(from: self.window?.firstResponder) else { return false }
                 return self.turnPage(with: event)
             }
             return handled ? nil : event
         }
+    }
+    func acceptsPageKeys(from responder: NSResponder?) -> Bool {
+        if let focused = responder as? NSView {
+            guard !(focused is NSControl), !((focused as? NSTextView)?.isEditable == true) else { return false }
+            if focused === self || focused.isDescendant(of: self) { return true }
+            return receivesWindowPageKeys && focused === window?.contentView
+        }
+        return receivesWindowPageKeys && responder === window
+    }
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        super.mouseDown(with: event)
     }
     override func keyDown(with event: NSEvent) {
         if !turnPage(with: event) { super.keyDown(with: event) }

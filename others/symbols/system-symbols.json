@@ -46,6 +46,12 @@
       ]
     },
     {
+      "name": "arrow.left.arrow.right",
+      "sources": [
+        "Sources/Remile/Markdown/EditorFind.swift"
+      ]
+    },
+    {
       "name": "arrow.right",
       "sources": [
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
@@ -183,6 +189,7 @@
         "Sources/Remile/Home/HomeWorkspace.swift",
         "Sources/Remile/LaTeX/TeXProjectSidebar.swift",
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Markdown/EditorFind.swift",
         "Sources/Remile/Overleaf/OverleafProjects.swift",
         "Sources/Remile/PDF/PDFWorkspace.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift",
@@ -219,6 +226,7 @@
       "name": "chevron.up",
       "sources": [
         "Sources/Remile/Home/CombineWorkspace.swift",
+        "Sources/Remile/Markdown/EditorFind.swift",
         "Sources/Remile/PDF/PDFWorkspace.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift",
         "Sources/Remile/Search/LibrarySearchView.swift"
@@ -707,6 +715,12 @@
       ]
     },
     {
+      "name": "slider.horizontal.3",
+      "sources": [
+        "Sources/Remile/Markdown/EditorFind.swift"
+      ]
+    },
+    {
       "name": "sparkle.magnifyingglass",
       "sources": [
         "Sources/Remile/Search/LibrarySearchView.swift"
@@ -869,6 +883,7 @@
         "Sources/Remile/Convert/ConvertWorkspace.swift",
         "Sources/Remile/Home/CombineWorkspace.swift",
         "Sources/Remile/LaTeX/TeXAskPanel.swift",
+        "Sources/Remile/Markdown/EditorFind.swift",
         "Sources/Remile/PDF/PDFDocumentTabs.swift",
         "Sources/Remile/PDF/PDFWorkspace.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift",

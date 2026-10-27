@@ -28,6 +28,7 @@ import UniformTypeIdentifiers
     let repository: ReferenceRepository
     @Published private(set) var sorting = ReferenceSort()
     private var cachedItems: [ReferenceRecord]?
+    private var loadedVersion: ReferenceRepository.Version?
     func sort(by column: ReferenceColumn) { cachedItems = nil; sorting.select(column) }
     private let history = ReferenceRepository.History()
     init(repository: ReferenceRepository = ReferenceRepository(), recognitionLookup: @escaping @Sendable (ReferenceRecord) async throws -> ReferenceRecord = ReferencePaperLookup.metadata) {
@@ -71,9 +72,17 @@ import UniformTypeIdentifiers
             defer { changes.cancel() }
             for await _ in changes.events {
                 guard !Task.isCancelled else { return }
-                if busy { reloadRequested = true } else { load() }
+                await reloadIfChanged()
             }
         } catch { self.error = error.localizedDescription }
+    }
+    private func reloadIfChanged() async {
+        guard !busy else { reloadRequested = true; return }
+        let repository = repository
+        let version = await Task.detached(priority: .utility) { repository.version() }.value
+        guard !Task.isCancelled else { return }
+        guard !busy else { reloadRequested = true; return }
+        if readingAttachment != nil || loadedVersion != version { load() }
     }
     func title(for url: URL) -> String? { records.first { record in record.attachments.contains { repository.attachmentURL($0).standardizedFileURL == url.standardizedFileURL } }?.title }
     func contextRecords(_ record: ReferenceRecord) -> [ReferenceRecord] { selectedIDs.contains(record.id) ? items.filter { selectedIDs.contains($0.id) } : [record] }
@@ -86,7 +95,10 @@ import UniformTypeIdentifiers
         let attachment = readingAttachment; readingAttachment = nil
         perform { if let attachment { try $0.refreshAttachment(attachment) }; return nil }
     }
-    func addLibrary(_ name: String, parentID: UUID? = nil, completion: @escaping () -> Void = {}) { perform(completion: { if let last = self.activeLibraries.last { self.selectLibrary(last.id) }; completion() }) { _ = try $0.addLibrary(name, parentID: parentID); return nil } }
+    func addLibrary(_ name: String, parentID: UUID? = nil, failure: @escaping () -> Void = {}, completion: @escaping () -> Void = {}) { perform(completion: { if let last = self.activeLibraries.last { self.selectLibrary(last.id) }; completion() }, failure: failure) { _ = try $0.addLibrary(name, parentID: parentID); return nil } }
+    func renameLibrary(_ library: ReferenceLibrary, to name: String, failure: @escaping () -> Void = {}, completion: @escaping () -> Void = {}) {
+        perform(completion: completion, failure: failure, selectResult: false) { try $0.renameLibrary(library.id, to: name, expectedName: library.name); return nil }
+    }
     func deleteLibrary(_ library: ReferenceLibrary) { perform { try $0.deleteLibrary(library.id); return nil } }
     func restoreLibrary(_ id: UUID) { perform { try $0.restoreLibrary(id); return nil } }
     func emptyTrash() { perform { try $0.emptyTrash(); return nil } }
@@ -189,11 +201,13 @@ import UniformTypeIdentifiers
         busy = true; error = nil
         let repository = repository
         Task {
-            defer { busy = false; if !pendingEdits.isEmpty { pendingEdits.removeFirst()() } else if reloadRequested { reloadRequested = false; load() } }
+            defer { busy = false; if !pendingEdits.isEmpty { pendingEdits.removeFirst()() } else if reloadRequested { reloadRequested = false; Task { await self.reloadIfChanged() } } }
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     let selection = try await operation(repository)
+                    let before = repository.version()
                     let snapshot = try repository.snapshot()
+                    let after = repository.version()
                     let records = snapshot.records, libraries = snapshot.libraries
                     let hidden = Set(libraries.filter { $0.trashed != nil }.map(\.id))
                     let active = records.filter { !hidden.contains($0.library) && $0.collectionID.map(hidden.contains) != true }
@@ -202,13 +216,16 @@ import UniformTypeIdentifiers
                         counts[record.library, default: 0] += 1
                         if let collection = record.collectionID { counts[collection, default: 0] += 1 }
                     }
-                    return (records, libraries, selection, ReferenceDuplicates.lookup(active), counts)
+                    return (records, libraries, selection, ReferenceDuplicates.lookup(active), counts, before == after ? after : nil)
                 }.value
-                records = result.0; libraries = result.1; duplicates = result.3; libraryCounts = result.4
+                if records != result.0 { records = result.0 }
+                if libraries != result.1 { libraries = result.1 }
+                duplicates = result.3; libraryCounts = result.4; loadedVersion = result.5
                 if !activeLibraries.contains(where: { $0.id == selectedLibrary }), let first = activeLibraries.first { selectedLibrary = first.id }
                 if selectResult, let id = result.2, items.contains(where: { $0.id == id }) { selected = id; selectedIDs = [id] }
                 if !items.contains(where: { $0.id == selected }) { selected = items.first?.id }
-                selectedIDs.formIntersection(Set(items.map(\.id)))
+                let retained = selectedIDs.intersection(Set(items.map(\.id)))
+                if selectedIDs != retained { selectedIDs = retained }
                 if selectedIDs.isEmpty, let selected { selectedIDs.insert(selected) }
                 completion()
             } catch { self.error = error.localizedDescription; failure() }

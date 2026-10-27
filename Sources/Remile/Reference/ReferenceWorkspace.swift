@@ -30,7 +30,10 @@ struct ReferenceWorkspace: View {
         @Published var settings = false
         @Published var regenerate = false
         @Published var addingLibrary = false
+        @Published var renamingLibrary: ReferenceLibrary?
         @Published var libraryName = ""
+        var nameDraftID = UUID()
+        var savingName = false
         @Published var deletingLibrary: ReferenceLibrary?
         @Published var duplicateReview: DuplicateGroup?
         @Published var parentLibrary: UUID?
@@ -63,10 +66,7 @@ struct ReferenceWorkspace: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                toolbar.labelStyle(.iconOnly)
-                toolbar.labelStyle(.iconOnly)
-            }
+            toolbar.labelStyle(.iconOnly)
             Divider()
             GeometryReader { window in
                 let side = WorkspaceLayout.referenceSide(window.size.width)
@@ -117,7 +117,6 @@ struct ReferenceWorkspace: View {
                 Button("Cancel", role: .cancel) { }
                 Button("Empty Trash", role: .destructive) { model.emptyTrash() }
             } message: { Text("Permanently delete all references, libraries and collections in Trash? Their metadata and unshared PDFs cannot be recovered. PDFs used by active references stay in place.") }
-            .onChange(of: state.addingLibrary) { namingLibrary = state.addingLibrary }
             .sheet(item: $state.attachments) { record in ReferenceAttachments(model: model, recordID: record.id) }
             .sheet(item: $state.evidence) { record in ReferenceEvidenceView(record: record) }
             .sheet(isPresented: $state.paperSearch) { ReferencePaperSearch(model: model, target: state.paperTarget) }
@@ -126,7 +125,31 @@ struct ReferenceWorkspace: View {
             .sheet(item: $state.editor) { entry in ReferenceEditor(model: model, record: entry.record, citation: entry.citation) }
             .sheet(item: $state.duplicateReview) { group in ReferenceDuplicateReview(model: model, records: group.records) }
     }
-    private func addLibrary(parent: UUID? = nil) { state.libraryName = ""; state.parentLibrary = parent; state.addingLibrary = true; libraryExpanded = true }
+    private func addLibrary(parent: UUID? = nil) {
+        state.nameDraftID = UUID(); state.savingName = false; state.renamingLibrary = nil
+        state.libraryName = ""; state.parentLibrary = parent; state.addingLibrary = true; libraryExpanded = true
+    }
+    private func renameLibrary(_ library: ReferenceLibrary) {
+        state.nameDraftID = UUID(); state.savingName = false; state.addingLibrary = false
+        state.libraryName = library.name; state.parentLibrary = library.parentID; state.renamingLibrary = library; libraryExpanded = true
+    }
+    private func cancelLibraryName() {
+        state.nameDraftID = UUID(); state.addingLibrary = false; state.renamingLibrary = nil
+        state.libraryName = ""; state.parentLibrary = nil; state.savingName = false; namingLibrary = false
+    }
+    private func saveLibraryName() {
+        guard state.addingLibrary || state.renamingLibrary != nil, !state.savingName else { return }
+        guard !InlineNamePolicy.isEmpty(state.libraryName) else { cancelLibraryName(); return }
+        guard !model.busy else { return }
+        let name = state.libraryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name == state.renamingLibrary?.name { cancelLibraryName(); return }
+        let id = state.nameDraftID
+        state.savingName = true
+        let finished = { if state.nameDraftID == id { cancelLibraryName() } }
+        let failed = { if state.nameDraftID == id { state.savingName = false; namingLibrary = true } }
+        if let library = state.renamingLibrary { model.renameLibrary(library, to: name, failure: failed, completion: finished) }
+        else { model.addLibrary(name, parentID: state.parentLibrary, failure: failed, completion: finished) }
+    }
     private var draggingFiles: Bool { !model.showingTrash && (state.windowTarget || state.dropTarget || state.hoveredRecord != nil || state.harbourTarget || state.previewTarget) }
     private func rowTarget(_ id: UUID) -> Binding<Bool> {
         Binding(get: { state.hoveredRecord == id }, set: { active in
@@ -213,20 +236,34 @@ struct ReferenceWorkspace: View {
         }.frame(maxWidth: .infinity, maxHeight: .infinity).background(RemileStyle.sidebar)
     }
     private var libraryNameField: some View {
-        TextField(state.parentLibrary == nil ? "Library name" : "Collection name", text: $state.libraryName)
-            .textFieldStyle(.roundedBorder).focused($namingLibrary).padding(6).onAppear { namingLibrary = true }
-            .onSubmit { model.addLibrary(state.libraryName, parentID: state.parentLibrary) { state.addingLibrary = false } }
-            .onExitCommand { state.addingLibrary = false }
+        let id = state.nameDraftID
+        let save = { if state.nameDraftID == id { saveLibraryName() } }
+        let cancel = { if state.nameDraftID == id { cancelLibraryName() } }
+        return TextField(state.parentLibrary == nil ? "Library name" : "Collection name", text: $state.libraryName)
+            .textFieldStyle(.roundedBorder).focused($namingLibrary).padding(6)
+            .onAppear { DispatchQueue.main.async { if state.nameDraftID == id { namingLibrary = true } } }
+            .disabled(model.busy)
+            .background(InlineEditBoundary(cancel: cancel, outside: save))
+            .onSubmit { save() }
+            .onExitCommand(perform: cancel)
+            .onDisappear(perform: save)
+            .remileHelp("Return or click elsewhere to save · Esc cancels")
+            .id(id)
     }
     private func libraryRow(_ library: ReferenceLibrary) -> some View {
         let count = model.libraryCounts[library.id, default: 0]
-        return Button { model.selectLibrary(library.id) } label: {
+        return Group {
+        if state.renamingLibrary?.id == library.id { libraryNameField }
+        else { Button { model.selectLibrary(library.id) } label: {
             HStack { SymbolLabel(library.name, systemImage: library.parentID == nil ? "tray.full" : "folder").lineLimit(1); Spacer(minLength: 2); Text(String(count)).font(RemileType.caption).foregroundStyle(.secondary) }
                 .padding(10).background(model.selectedLibrary == library.id && !model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
-        }.buttonStyle(.plain).contextMenu {
+        }.buttonStyle(.plain).accessibilityAction(named: "Rename") { renameLibrary(library) }
+        }
+        }.contextMenu {
             let records = model.contents(library.id).filter { $0.trashed == nil }
             Button("Add library…", systemImage: "folder.badge.plus") { addLibrary() }
             if library.parentID == nil { Button("Add collection…", systemImage: "folder.badge.plus") { addLibrary(parent: library.id) } }
+            Button("Rename…", systemImage: "square.and.pencil") { renameLibrary(library) }
             Divider()
             Button("Copy library as BibTeX", systemImage: "doc.on.clipboard") { model.copy(records) }.disabled(records.isEmpty)
             Button("Export library as BibTeX…", systemImage: "square.and.arrow.up") { model.export(records) }.disabled(records.isEmpty)
