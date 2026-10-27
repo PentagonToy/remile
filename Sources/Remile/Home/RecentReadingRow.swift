@@ -24,12 +24,12 @@ struct RecentReadingRow: View {
         HStack(spacing: 16) {
             Group {
                 if let thumbnail = preview.image { Image(nsImage: thumbnail).resizable().scaledToFit() }
-                else { Image(systemName: "doc.text").font(.system(size: 30)).foregroundStyle(tint).padding(.bottom, 8) }
+                else { SymbolIcon(systemName: "doc.text", slot: RemileSymbol.emptySlot).font(.system(size: RemileSymbol.emptySize)).foregroundStyle(tint).padding(.bottom, 8) }
             }.frame(width: 44, height: 58).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 4))
                 .overlay(alignment: .bottom) { Text(tag).font(.system(size: 10, weight: .bold, design: .rounded)).tracking(0.5).foregroundStyle(scheme == .dark ? Color(nsColor: RemileStyle.slate) : .white).frame(width: 48, height: 19).background(tint, in: RoundedRectangle(cornerRadius: 3)).offset(y: 1) }.accessibilityLabel(kind + " document")
                 .overlay(alignment: .topTrailing) {
                     if isTeX && overleaf {
-                        Image(systemName: "leaf.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(tint)
+                        SymbolIcon(systemName: "leaf.fill").foregroundStyle(tint)
                             .frame(width: 22, height: 22).background(RemileStyle.background, in: Circle()).offset(x: 7, y: -5)
                             .remileHelp("Overleaf project").accessibilityLabel("Overleaf")
                     }

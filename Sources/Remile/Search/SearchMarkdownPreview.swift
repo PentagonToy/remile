@@ -39,7 +39,7 @@ struct SearchMarkdownPreview: View {
                 }
                 Spacer()
                 ReaderZoomControls(zoom: zoom, text: true)
-                Button { open(URL(fileURLWithPath: hit.path)) } label: { Label("Open", systemImage: "arrow.up.right.square") }
+                Button { open(URL(fileURLWithPath: hit.path)) } label: { SymbolLabel("Open", systemImage: "arrow.up.right.square") }
             }.padding(16)
             Divider()
             if let html = model.html { SearchMarkdownCanvas(html: html, section: hit.page, query: query, dark: colorScheme == .dark, citation: citation, zoom: zoom) }

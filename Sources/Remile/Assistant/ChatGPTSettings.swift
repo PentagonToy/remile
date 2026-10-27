@@ -70,7 +70,7 @@ struct ChatGPTSettings: View {
                     Button(connection.unlocking ? "Unlocking…" : "Unlock ChatGPT") { Task { await connection.unlock() } }.disabled(connection.unlocking || !canConnect)
                 } else if !connection.models.isEmpty {
                     Picker("Model", selection: $connection.model) { ForEach(connection.models) { Text($0.name).tag($0.id) } }
-                } else { Label("ChatGPT connected", systemImage: "checkmark.circle").font(RemileType.caption).foregroundStyle(.secondary) }
+                } else { SymbolLabel("ChatGPT connected", systemImage: "checkmark.circle").font(RemileType.caption).foregroundStyle(.secondary) }
             } else if !connection.busy {
                 Button("Continue with ChatGPT") { Task { await connection.signIn() } }.disabled(!canConnect)
             }

@@ -15,7 +15,7 @@ struct StorageSettings: View {
         Form {
             Section("Storage") {
                 HStack(spacing: 10) {
-                    Image(systemName: "folder").foregroundStyle(RemileStyle.accent)
+                    SymbolIcon(systemName: "folder").foregroundStyle(RemileStyle.accent)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Storage folder").font(RemileType.callout.weight(.medium))
                         Text((StorageLocation.root().path as NSString).abbreviatingWithTildeInPath).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
@@ -71,7 +71,7 @@ struct StorageSettings: View {
         Button {
             if directory { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path) }
             else { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-        } label: { Image(systemName: "arrow.up.forward.square") }
+        } label: { SymbolIcon(systemName: "arrow.up.forward.square") }
             .accessibilityLabel("Show in Finder").remileHelp("Show in Finder")
     }
     private func location(_ title: String, url: URL, directory: Bool = false) -> some View {

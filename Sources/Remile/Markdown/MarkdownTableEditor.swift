@@ -20,7 +20,7 @@ struct MarkdownTableEditor: View {
                             ForEach(0..<state.table.columns, id: \.self) { column in
                                 TextField(row == 0 ? "Heading" : "", text: Binding(get: { state.table.cells.indices.contains(row) && state.table.cells[row].indices.contains(column) ? state.table.cells[row][column] : "" }, set: { if state.table.cells.indices.contains(row), state.table.cells[row].indices.contains(column) { state.table.cells[row][column] = $0 } })).textFieldStyle(.roundedBorder).frame(width: 140)
                             }
-                            Button { state.table.cells.remove(at: row) } label: { Image(systemName: "minus.circle") }.disabled(state.table.cells.count <= 2 || row == 0).remileHelp("Remove row")
+                            Button { state.table.cells.remove(at: row) } label: { SymbolIcon(systemName: "minus.circle") }.disabled(state.table.cells.count <= 2 || row == 0).remileHelp("Remove row")
                         }
                     }
                 }.padding(2)

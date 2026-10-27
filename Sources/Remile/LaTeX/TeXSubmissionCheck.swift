@@ -51,7 +51,7 @@ struct TeXSubmissionPopover: View {
             ForEach(0..<2, id: \.self) { index in
                 HStack(alignment: .top, spacing: 12) {
                     if ["waiting", "running"].contains(check.rows[index].state) { ProgressView().controlSize(.small).opacity(check.rows[index].state == "waiting" ? 0.4 : 1) }
-                    else { Image(systemName: check.rows[index].state == "passed" ? "checkmark.circle.fill" : "exclamationmark.circle").foregroundStyle(check.rows[index].state == "passed" ? Color.green : RemileStyle.accent) }
+                    else { SymbolIcon(systemName: check.rows[index].state == "passed" ? "checkmark.circle.fill" : "exclamationmark.circle").foregroundStyle(check.rows[index].state == "passed" ? Color.green : RemileStyle.accent) }
                     VStack(alignment: .leading, spacing: 5) {
                         Text(index == 0 ? "Current source" : "With bibliography embedded").font(RemileType.callout.weight(.semibold))
                         Text(check.rows[index].detail).font(RemileType.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

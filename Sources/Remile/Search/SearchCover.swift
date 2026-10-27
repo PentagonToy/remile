@@ -40,7 +40,7 @@ struct SearchCover: View {
                     Rectangle().fill(RemileStyle.brand.opacity(0.2)).frame(width: 17, height: 2)
                 }
             } else if let image = state.image { Image(nsImage: image).resizable().scaledToFit() }
-            else { Image(systemName: "doc.text").foregroundStyle(RemileStyle.brand) }
+            else { SymbolIcon(systemName: "doc.text").foregroundStyle(RemileStyle.brand) }
         }.frame(width: 40, height: 54).clipShape(RoundedRectangle(cornerRadius: 4))
             .accessibilityHidden(true)
             .task(id: hit.path + revision.uuidString) {

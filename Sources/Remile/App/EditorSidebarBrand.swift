@@ -28,7 +28,7 @@ struct EditorSidebarFooter: View {
         VStack(alignment: .leading, spacing: 10) {
             EditorSidebarBrand(compact: compact)
             Button(action: action) {
-                Label(title, systemImage: "gearshape").font(RemileType.callout).frame(maxWidth: .infinity, alignment: .leading)
+                SymbolLabel(title, systemImage: "gearshape").font(RemileType.callout).frame(maxWidth: .infinity, alignment: .leading)
             }.buttonStyle(RemileToolStyle())
         }.padding(12)
     }

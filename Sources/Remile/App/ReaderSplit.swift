@@ -77,7 +77,7 @@ struct ReaderSplit<Pane: View, Content: View>: View {
             Rectangle().fill(RemileStyle.accent.opacity(0.16)).frame(width: 1).allowsHitTesting(false)
             if state.collapsed != 0 || available < minimum + minimumContent + Self.handleWidth {
                 Button { state.collapsed = state.collapsed == 0 ? (preferPaneWhenNarrow ? -1 : 1) : 0 } label: {
-                    Image(systemName: (state.collapsed < 0 || (state.collapsed == 0 && !preferPaneWhenNarrow)) == (side == .leading) ? "chevron.right" : "chevron.left").font(.system(size: 10, weight: .semibold)).frame(width: 14, height: 40).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
+                    SymbolIcon(systemName: (state.collapsed < 0 || (state.collapsed == 0 && !preferPaneWhenNarrow)) == (side == .leading) ? "chevron.right" : "chevron.left").frame(width: 14, height: 40).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
                 }.buttonStyle(.plain).frame(width: Self.handleWidth, height: 44).contentShape(Rectangle()).remileHelp("Restore split view").accessibilityLabel("Restore " + label)
             } else {
             HStack(spacing: 2) {

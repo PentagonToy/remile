@@ -18,6 +18,6 @@ struct OverleafMark: View {
     }()
     var body: some View {
         if let image = Self.symbol { Image(nsImage: image).resizable().scaledToFit().frame(width: 18, height: 18).accessibilityHidden(true) }
-        else { Image(systemName: "leaf").accessibilityHidden(true) }
+        else { SymbolIcon(systemName: "leaf").accessibilityHidden(true) }
     }
 }

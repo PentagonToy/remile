@@ -134,7 +134,7 @@ struct ConvertWorkspace: View {
         HStack(spacing: 14) {
             DocumentToolHeader(title: "Convert to PDF", subtitle: "Images, Word and Markdown", symbol: "doc.badge.arrow.up")
             if !model.inputs.isEmpty {
-                Button { model.choose() } label: { Label("Add Files…", systemImage: "plus") }
+                Button { model.choose() } label: { SymbolLabel("Add Files…", systemImage: "plus") }
                     .disabled(model.busy || model.saving)
             }
         }.padding(.horizontal, 24).padding(.vertical, 18)
@@ -153,7 +153,7 @@ struct ConvertWorkspace: View {
                         ForEach(batch.items) { item in
                             Button { model.selected = item.id } label: {
                                 HStack(spacing: 10) {
-                                    Image(systemName: model.saved[item.id] != nil ? "checkmark.circle.fill" : item.output == nil ? "exclamationmark.triangle" : "doc.text")
+                                    SymbolIcon(systemName: model.saved[item.id] != nil ? "checkmark.circle.fill" : item.output == nil ? "exclamationmark.triangle" : "doc.text")
                                         .foregroundStyle(item.output == nil ? Color.orange : RemileStyle.accent)
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(item.input.lastPathComponent).font(.callout.weight(.medium)).lineLimit(2)
@@ -167,10 +167,10 @@ struct ConvertWorkspace: View {
                     } else {
                         ForEach(model.inputs, id: \.self) { url in
                             HStack(spacing: 10) {
-                                Image(systemName: "doc").foregroundStyle(.secondary)
+                                SymbolIcon(systemName: "doc").foregroundStyle(.secondary)
                                 Text(url.lastPathComponent).font(RemileType.callout).lineLimit(2)
                                 Spacer(minLength: 0)
-                                Button { model.remove(url) } label: { Image(systemName: "xmark") }
+                                Button { model.remove(url) } label: { SymbolIcon(systemName: "xmark") }
                                     .buttonStyle(.borderless).remileHelp("Remove \(url.lastPathComponent)").disabled(model.busy || model.saving)
                             }.padding(12)
                         }
@@ -186,14 +186,14 @@ struct ConvertWorkspace: View {
                 HStack {
                     Text("PDF Preview").font(RemileType.heading)
                     Spacer()
-                    if item.output != nil { Image(systemName: "checkmark.circle").foregroundStyle(.secondary) }
+                    if item.output != nil { SymbolIcon(systemName: "checkmark.circle").foregroundStyle(.secondary) }
                 }
                 if let message = item.message { Text(message).font(RemileType.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
                 if let output = item.output { ConversionPreview(url: output).id(output).frame(maxWidth: .infinity, maxHeight: .infinity) }
                 else { ContentUnavailableView("This file needs attention", systemImage: "exclamationmark.triangle").frame(maxWidth: .infinity, maxHeight: .infinity) }
             } else {
                 VStack(spacing: 12) {
-                    Image(systemName: "doc.richtext").font(.system(size: 40, weight: .ultraLight)).foregroundStyle(.secondary)
+                    SymbolIcon(systemName: "doc.richtext", slot: RemileSymbol.emptySlot).font(.system(size: RemileSymbol.emptySize)).foregroundStyle(.secondary)
                     Text(model.busy ? "Preparing your PDFs…" : "\(model.inputs.count) files ready to convert").font(.title3.weight(.medium))
                     Text(model.busy ? "Your preview will appear here." : "Convert your files, then check each page here.")
                         .font(RemileType.callout).foregroundStyle(.secondary)
@@ -276,11 +276,11 @@ struct ConversionPreview: View {
     var body: some View {
         VStack(spacing: 10) {
             HStack {
-                Button { model.show(model.page - 1); pageChanged(model.page) } label: { Image(systemName: "chevron.left") }.disabled(model.loading || model.page == 0).remileHelp("Previous preview page")
+                Button { model.show(model.page - 1); pageChanged(model.page) } label: { SymbolIcon(systemName: "chevron.left") }.disabled(model.loading || model.page == 0).remileHelp("Previous preview page")
                 Spacer()
                 Text(model.count == 0 ? "Loading…" : "Page \(model.page + 1) of \(model.count)").font(RemileType.caption).monospacedDigit()
                 Spacer()
-                Button { model.show(model.page + 1); pageChanged(model.page) } label: { Image(systemName: "chevron.right") }.disabled(model.loading || model.page + 1 >= model.count).remileHelp("Next preview page")
+                Button { model.show(model.page + 1); pageChanged(model.page) } label: { SymbolIcon(systemName: "chevron.right") }.disabled(model.loading || model.page + 1 >= model.count).remileHelp("Next preview page")
             }
             if model.loading { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
             else if let image = model.image {

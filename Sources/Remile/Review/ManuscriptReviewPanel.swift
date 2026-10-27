@@ -30,14 +30,14 @@ struct ManuscriptReviewPanel: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(run.scope).font(RemileType.caption.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
                             Text(run.createdAt.formatted(date: .abbreviated, time: .shortened)).font(RemileType.caption).foregroundStyle(RemileStyle.secondaryInk)
-                            if run.sourceHashes.contains(where: { state.hashes[$0.key] != $0.value }) { Label("Source changed · check context", systemImage: "clock.arrow.circlepath").font(RemileType.caption).foregroundStyle(RemileStyle.warning) }
+                            if run.sourceHashes.contains(where: { state.hashes[$0.key] != $0.value }) { SymbolLabel("Source changed · check context", systemImage: "clock.arrow.circlepath").font(RemileType.caption).foregroundStyle(RemileStyle.warning) }
                             if run.questions.isEmpty { Text("No questions returned for this scope.").font(RemileType.caption).foregroundStyle(RemileStyle.secondaryInk) }
                             ForEach(run.questions) { item in
                                 VStack(alignment: .leading, spacing: 10) {
                                     Text(item.question).font(RemileType.callout.weight(.semibold)).textSelection(.enabled)
                                     Text(item.reason).font(RemileType.caption).textSelection(.enabled)
                                     ForEach(Array(item.anchors.enumerated()), id: \.offset) { _, anchor in
-                                        Button { reveal(anchor) } label: { VStack(alignment: .leading, spacing: 4) { Label(anchor.file + ":" + String(anchor.line + 1), systemImage: "doc.text.magnifyingglass").lineLimit(2); Text(anchor.quote).lineLimit(4).foregroundStyle(RemileStyle.secondaryInk) } }.buttonStyle(.plain).font(RemileType.caption).remileHelp("Locate the quoted passage in the current source")
+                                        Button { reveal(anchor) } label: { VStack(alignment: .leading, spacing: 4) { SymbolLabel(anchor.file + ":" + String(anchor.line + 1), systemImage: "doc.text.magnifyingglass").lineLimit(2); Text(anchor.quote).lineLimit(4).foregroundStyle(RemileStyle.secondaryInk) } }.buttonStyle(.plain).font(RemileType.caption).remileHelp("Locate the quoted passage in the current source")
                                     }
                                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 9))
                             }
@@ -53,7 +53,7 @@ struct ManuscriptReviewPanel: View {
             if store.running { ProgressView().controlSize(.small); Button("Stop") { store.stop() } }
             else { Button(compact ? "Review" : "Review file") { do { state.error = nil; try store.start(buffers: project.buffers, selected: project.selected) } catch { state.error = error.localizedDescription } }.disabled(project.buffers[project.selected] == nil) }
             Spacer(minLength: 0)
-            Menu { Button("Markdown…") { export(json: false) }; Button("JSON…") { export(json: true) } } label: { Image(systemName: "square.and.arrow.up") }.menuIndicator(.hidden).accessibilityLabel("Export review questions").disabled(store.archive.runs.isEmpty)
+            Menu { Button("Markdown…") { export(json: false) }; Button("JSON…") { export(json: true) } } label: { SymbolIcon(systemName: "square.and.arrow.up") }.menuIndicator(.hidden).accessibilityLabel("Export review questions").disabled(store.archive.runs.isEmpty)
             Button("Clear") { do { try store.clear(); state.error = nil } catch { state.error = error.localizedDescription } }.disabled(!store.hasSavedData && !store.running)
         }.font(RemileType.caption)
     }

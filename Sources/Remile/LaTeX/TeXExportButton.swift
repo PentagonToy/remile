@@ -9,7 +9,7 @@ struct TeXExportButton: View {
             Button("Source (.zip)…") { project.exportSource() }
         } label: {
             DocumentActionIcon(action: .export).frame(width: 32, height: 32)
-        }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        }.menuStyle(.borderlessButton).tint(RemileStyle.ink).menuIndicator(.hidden).fixedSize()
             .tint(RemileStyle.ink).foregroundStyle(RemileStyle.ink)
             .accessibilityLabel("Export").remileHelp("Export PDF or source")
     }

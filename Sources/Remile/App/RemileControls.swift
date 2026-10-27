@@ -5,6 +5,9 @@ enum RemileControl {
     static let height: CGFloat = 28
     static let spacing: CGFloat = 8
     static let rowSpacing: CGFloat = 12
+    static let toolHit: CGFloat = 32
+    static let iconSlot: CGFloat = 20
+    static let separatorHeight: CGFloat = 18
 }
 
 struct RemileActionStyle: ButtonStyle {
@@ -80,8 +83,8 @@ struct RemileToolbarItem<Content: View>: ToolbarContent {
 
 struct RemileNavigationLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 10) {
-            configuration.icon.frame(width: 20, height: 20)
+        HStack(spacing: RemileControl.spacing) {
+            configuration.icon.frame(width: RemileControl.iconSlot, height: RemileControl.iconSlot)
             configuration.title
         }
     }
@@ -107,9 +110,60 @@ struct DocumentActionIcon: View {
     enum Action { case save, export }
     let action: Action
     var body: some View {
-        Image(systemName: action == .save ? "square.and.arrow.down" : "tray.and.arrow.up")
-            .font(.system(size: action == .save ? 15 : 13, weight: .regular)).imageScale(.medium).symbolRenderingMode(.monochrome)
-            .offset(y: action == .save ? -1.5 : 0)
-            .foregroundStyle(RemileStyle.ink).frame(width: 20, height: 20).accessibilityHidden(true)
+        SymbolIcon(systemName: action == .save ? "square.and.arrow.down" : "tray.and.arrow.up",
+                   opticalOffset: action == .save ? RemileSymbol.saveOffset : 0)
+            .font(.system(size: action == .save ? RemileSymbol.saveSize : RemileSymbol.exportSize))
+            .foregroundStyle(RemileStyle.ink).accessibilityHidden(true)
+    }
+}
+
+
+enum RemileSymbol {
+    static let size: CGFloat = 14
+    static let smallSize: CGFloat = 10
+    static let emptySlot: CGFloat = 44
+    static let emptySize: CGFloat = 32
+    static let saveSize: CGFloat = 15
+    static let exportSize: CGFloat = 13
+    static let saveOffset: CGFloat = -1.5
+}
+
+/// All app-owned SF Symbols share a centred slot and rendering configuration.
+struct SymbolIcon: View {
+    let systemName: String
+    var slot: CGFloat = RemileControl.iconSlot
+    var opticalOffset: CGFloat = 0
+    var body: some View {
+        Image(systemName: systemName)
+            .fontWeight(.regular).imageScale(.medium).symbolRenderingMode(.monochrome)
+            .offset(y: opticalOffset)
+            .frame(width: slot, height: slot, alignment: .center)
+    }
+    static func nativeImage(systemName: String, description: String?) -> NSImage? {
+        NSImage(systemSymbolName: systemName, accessibilityDescription: description)?
+            .withSymbolConfiguration(.init(pointSize: RemileSymbol.size, weight: .regular, scale: .medium))
+    }
+}
+
+/// Labels retain native title-only and icon-only styles while sharing the symbol renderer.
+struct SymbolLabel: View {
+    let title: String
+    let systemImage: String
+    init(_ title: String, systemImage: String) { self.title = title; self.systemImage = systemImage }
+    var body: some View { Label { Text(title) } icon: { SymbolIcon(systemName: systemImage) } }
+}
+
+struct SymbolLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: RemileControl.spacing) { configuration.icon; configuration.title }
+    }
+}
+
+struct WorkspaceBackButton: View {
+    let title: String
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) { SymbolIcon(systemName: "chevron.left").frame(width: RemileControl.toolHit, height: RemileControl.toolHit).contentShape(Rectangle()) }
+            .buttonStyle(RemileToolStyle()).accessibilityLabel(title).remileHelp(title)
     }
 }

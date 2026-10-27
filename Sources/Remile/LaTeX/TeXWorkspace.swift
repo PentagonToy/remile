@@ -47,7 +47,7 @@ struct TeXWorkspace: View {
             if geometry.size.width < 820 {
                 VStack(spacing: 0) {
                     HStack {
-                        Button { presentation.files.toggle() } label: { Label("Files", systemImage: "sidebar.left") }.remileHelp("Files and outline")
+                        Button { presentation.files.toggle() } label: { SymbolLabel("Files", systemImage: "sidebar.left") }.remileHelp("Files and outline")
                             .popover(isPresented: $presentation.files) { projectSidebar.frame(width: 300, height: 520) }
                         Spacer()
                         RemileSegmentedControl(title: "Editor pane", selection: $presentation.pane, options: ["Source", "Preview"], label: { $0 }).frame(width: 190)
@@ -136,13 +136,13 @@ struct TeXWorkspace: View {
             HStack(spacing: 6) {
                 InlineName(value: (sourceFile as NSString).lastPathComponent, editing: $presentation.renameSource) { project.rename(sourceFile, to: $0) }.font(RemileType.caption).frame(maxWidth: .infinity, alignment: .leading)
                 if project.dirty { Text("•").foregroundStyle(.secondary) }
-                Button { editor.textView?.undoManager?.undo() } label: { Image(systemName: "arrow.uturn.backward") }.remileHelp("Undo the last source edit (⌘Z)").disabled(editor.textView?.undoManager?.canUndo != true)
-                Button { editor.textView?.undoManager?.redo() } label: { Image(systemName: "arrow.uturn.forward") }.remileHelp("Restore the last undone edit (⇧⌘Z)").disabled(editor.textView?.undoManager?.canRedo != true)
-                Button { theme = theme == TeXEditorTheme.paper.rawValue ? TeXEditorTheme.remile.rawValue : TeXEditorTheme.paper.rawValue } label: { Image(systemName: "circle.lefthalf.filled") }
+                Button { editor.textView?.undoManager?.undo() } label: { SymbolIcon(systemName: "arrow.uturn.backward") }.remileHelp("Undo the last source edit (⌘Z)").disabled(editor.textView?.undoManager?.canUndo != true)
+                Button { editor.textView?.undoManager?.redo() } label: { SymbolIcon(systemName: "arrow.uturn.forward") }.remileHelp("Restore the last undone edit (⇧⌘Z)").disabled(editor.textView?.undoManager?.canRedo != true)
+                Button { theme = theme == TeXEditorTheme.paper.rawValue ? TeXEditorTheme.remile.rawValue : TeXEditorTheme.paper.rawValue } label: { SymbolIcon(systemName: "circle.lefthalf.filled") }
                     .accessibilityLabel("Source background").accessibilityValue((TeXEditorTheme(rawValue: theme) ?? .remile).title)
                     .remileHelp(theme == TeXEditorTheme.paper.rawValue ? "Switch to the default source background" : "Switch to a paper source background")
                 Menu { ForEach([12, 14, 16, 17, 18, 20, 24, 28], id: \.self) { value in Button("\(value) pt") { fontSize = value } } } label: { Text("\(fontSize)").monospacedDigit().font(RemileType.small) }.remileHelp("Text size")
-                Button { project.syncToPDF(line: editor.selectedLine, hint: editor.sourceSyncHint); presentation.pane = "Preview" } label: { Image(systemName: "arrow.right") }.disabled(!project.canSync).remileHelp("Show in PDF")
+                Button { project.syncToPDF(line: editor.selectedLine, hint: editor.sourceSyncHint); presentation.pane = "Preview" } label: { SymbolIcon(systemName: "arrow.right") }.disabled(!project.canSync).remileHelp("Show in PDF")
             }.buttonStyle(RemileToolStyle()).padding(.horizontal, 10).background(RemileStyle.editorBar)
             MarkdownEditor(source: project.source, controller: editor, size: CGFloat(fontSize), serif: false, texTheme: TeXEditorTheme(rawValue: theme) ?? .remile, documentID: project.selected, externalRanges: project.externalEdits[project.selected] ?? [], showExternalEdits: showExternalEdits)
         } }
@@ -151,7 +151,7 @@ struct TeXWorkspace: View {
         ZStack {
             VStack(spacing: 0) {
                 HStack(spacing: 4) {
-                    Button { if let location = preview.currentLocation() { project.syncToSource(location) }; presentation.pane = "Source" } label: { Image(systemName: "arrow.left") }.disabled(!project.canSync).remileHelp("Show in source")
+                    Button { if let location = preview.currentLocation() { project.syncToSource(location) }; presentation.pane = "Source" } label: { SymbolIcon(systemName: "arrow.left") }.disabled(!project.canSync).remileHelp("Show in source")
                     Spacer(minLength: 0)
                     ReaderPageControl(current: preview.page, total: preview.pages, go: preview.go)
                     ReaderZoomControls(zoom: zoom)
@@ -198,22 +198,22 @@ struct TeXWorkspace: View {
             GeometryReader { geometry in
             ZStack {
             HStack(alignment: .center, spacing: 8) {
-                Button(action: close) { Image(systemName: "chevron.left") }.remileHelp("Home")
+                Button(action: close) { SymbolIcon(systemName: "chevron.left") }.remileHelp("Home")
                 Text(title).font(RemileType.heading).fixedSize()
                 Divider().frame(height: 18)
-                Button { project.goBack() } label: { Image(systemName: "arrow.backward") }.disabled(project.backFiles.isEmpty).remileHelp("Return to the previous source location")
-                Button { project.goForward() } label: { Image(systemName: "arrow.forward") }.disabled(project.forwardFiles.isEmpty).remileHelp("Go to the next source location")
+                Button { project.goBack() } label: { SymbolIcon(systemName: "arrow.backward") }.disabled(project.backFiles.isEmpty).remileHelp("Return to the previous source location")
+                Button { project.goForward() } label: { SymbolIcon(systemName: "arrow.forward") }.disabled(project.forwardFiles.isEmpty).remileHelp("Go to the next source location")
                 if geometry.size.width >= 900 {
                 EditorToolsMenu(project: project, editor: editor)
-                Button { showExternalEdits.toggle() } label: { Image(systemName: showExternalEdits ? "eye" : "eye.slash") }.remileHelp(RemileHints.edits(showExternalEdits)).accessibilityLabel("Show AI and CLI edits")
-                Button { project.captureHistory(file: project.selected); project.showsHistory.toggle(); project.showsLog = false; presentation.pane = "Preview" } label: { Image(systemName: "clock.arrow.circlepath") }.remileHelp(RemileHints.history(project.showsHistory))
+                Button { showExternalEdits.toggle() } label: { SymbolIcon(systemName: showExternalEdits ? "eye" : "eye.slash") }.remileHelp(RemileHints.edits(showExternalEdits)).accessibilityLabel("Show AI and CLI edits")
+                Button { project.captureHistory(file: project.selected); project.showsHistory.toggle(); project.showsLog = false; presentation.pane = "Preview" } label: { SymbolIcon(systemName: "clock.arrow.circlepath") }.remileHelp(RemileHints.history(project.showsHistory))
                 } else {
                     Menu {
                         Button("Editor tools…") { presentation.compactTools = true }
                         Button(showExternalEdits ? "Hide AI and CLI edits" : "Show AI and CLI edits") { showExternalEdits.toggle() }
                         Button("History") { project.captureHistory(file: project.selected); project.showsHistory.toggle(); project.showsLog = false; presentation.pane = "Preview" }
-                    } label: { Image(systemName: "ellipsis").frame(width: 32, height: 32) }
-                    .menuStyle(.borderlessButton).buttonStyle(.plain).menuIndicator(.hidden).accessibilityLabel("Editor options")
+                    } label: { SymbolIcon(systemName: "ellipsis").frame(width: RemileControl.toolHit, height: RemileControl.toolHit) }
+                    .menuStyle(.borderlessButton).tint(RemileStyle.ink).buttonStyle(.plain).menuIndicator(.hidden).accessibilityLabel("Editor options")
                     .popover(isPresented: $presentation.compactTools) { EditorToolsMenu(project: project, editor: editor).padding(12) }
                 }
                 let logSeverity = project.compiling ? nil : TeXDiagnostics.logSeverity(project.diagnostics, failed: project.compileFailed || project.setupNeeded || project.setupIssue != nil)
@@ -223,7 +223,7 @@ struct TeXWorkspace: View {
                     toggleLogs()
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: showingPanel ? "doc.richtext" : "terminal").overlay(alignment: .top) {
+                        SymbolIcon(systemName: showingPanel ? "doc.richtext" : "terminal").overlay(alignment: .top) {
                             if let logSeverity, !showingPanel {
                                 Circle().fill(logSeverity == .error ? Color.red : Color.yellow).frame(width: 6, height: 6)
                                     .overlay(Circle().stroke(RemileStyle.editorBar, lineWidth: 1)).offset(y: -7).accessibilityHidden(true)
@@ -235,14 +235,14 @@ struct TeXWorkspace: View {
                 if geometry.size.width >= 1100 { projectName(width: min(280, max(100, geometry.size.width - 850))).frame(maxWidth: .infinity) }
                 else { Spacer(minLength: 0) }
                 if let message = project.message, message != "Compilation failed", message != "Edited · recompile" {
-                    Button { presentation.notice.toggle() } label: { Image(systemName: "info.circle") }.remileHelp(message)
+                    Button { presentation.notice.toggle() } label: { SymbolIcon(systemName: "info.circle") }.remileHelp(message)
                         .popover(isPresented: $presentation.notice) { Text(message).font(RemileType.control).padding(16).frame(width: 300).background(RemileStyle.background) }
                 }
                 WorkspaceAskButton(isPresented: project.showsAssistant) { project.showsAssistant.toggle() }.labelStyle(.iconOnly)
                 WorkspaceReferenceButton { presentation.references = true }
                 TeXExportButton(project: project).frame(height: 32).remileHelp("Export")
                 if !project.compiling, project.compileFailed || project.setupNeeded || project.setupIssue != nil || project.diagnostics.contains(where: { $0.severity == .error }) {
-                    Button { project.setupNeeded = false; project.showsHistory = false; project.showsLog = true; presentation.pane = "Preview" } label: { Image(systemName: "exclamationmark.circle.fill").accessibilityLabel("Errors").font(RemileType.caption).foregroundStyle(RemileStyle.warning) }
+                    Button { project.setupNeeded = false; project.showsHistory = false; project.showsLog = true; presentation.pane = "Preview" } label: { SymbolIcon(systemName: "exclamationmark.circle.fill").accessibilityLabel("Errors").font(RemileType.caption).foregroundStyle(RemileStyle.warning) }
                         .remileHelp("Show errors")
                         .popover(isPresented: $project.setupNeeded, arrowEdge: .bottom) {
                             TeXCompileGuidance(project: project) {
@@ -250,16 +250,16 @@ struct TeXWorkspace: View {
                             }
                         }
                 } else if !project.compiling, project.outputCurrent, project.pdf != nil {
-                    Image(systemName: "checkmark.circle.fill").font(.system(size: 14)).foregroundStyle(RemileStyle.success).frame(width: 24, height: 32)
+                    SymbolIcon(systemName: "checkmark.circle.fill").foregroundStyle(RemileStyle.success).frame(width: RemileControl.toolHit, height: RemileControl.toolHit)
                         .remileHelp("PDF matches the current source.")
                         .accessibilityLabel("PDF matches the current source")
                 } else if !project.compiling, project.pdf != nil, !project.outputCurrent {
-                    Image(systemName: "circle.dashed").font(.system(size: 14)).foregroundStyle(RemileStyle.warning).frame(width: 24, height: 32)
+                    SymbolIcon(systemName: "circle.dashed").foregroundStyle(RemileStyle.warning).frame(width: RemileControl.toolHit, height: RemileControl.toolHit)
                         .remileHelp("Source changed. Compile to update the PDF.").accessibilityLabel("PDF needs compiling")
                 }
-                if project.compiling { ProgressView().controlSize(.small).frame(width: 24, height: 32); Button("Stop") { project.stop() } }
-                else { Button { project.compile(); presentation.pane = "Preview" } label: { HStack(alignment: .center, spacing: 6) { Image(systemName: "play.fill").font(.system(size: 13)).frame(width: 18, height: 20); if geometry.size.width >= 900 { Text("Compile").font(RemileType.control.weight(.semibold)) } }.frame(height: 32).foregroundStyle(RemileStyle.accent) }.keyboardShortcut(.return, modifiers: [.command]).remileHelp("Compile PDF · ⌘Return") }
-                Menu { Button("Recompile from scratch") { project.compile(scratch: true); presentation.pane = "Preview" }.keyboardShortcut(.return, modifiers: [.command, .shift]); Divider(); Button("Submission check") { project.compareSubmission() } } label: { Image(systemName: "chevron.down").font(.system(size: 10)) }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 24, height: 32).disabled(project.compiling).remileHelp("Compile options").accessibilityLabel("Compile options")
+                if project.compiling { ProgressView().controlSize(.small).frame(width: RemileControl.toolHit, height: RemileControl.toolHit); Button { project.stop() } label: { SymbolIcon(systemName: "stop.fill") }.accessibilityLabel("Stop compilation").remileHelp("Stop compilation") }
+                else { Button { project.compile(); presentation.pane = "Preview" } label: { HStack(alignment: .center, spacing: 6) { SymbolIcon(systemName: "play.fill").frame(width: 18, height: 20);  }.frame(height: 32).foregroundStyle(RemileStyle.accent) }.accessibilityLabel("Compile PDF").keyboardShortcut(.return, modifiers: [.command]).remileHelp("Compile PDF · ⌘Return") }
+                Menu { Button("Recompile from scratch") { project.compile(scratch: true); presentation.pane = "Preview" }.keyboardShortcut(.return, modifiers: [.command, .shift]); Divider(); Button("Submission check") { project.compareSubmission() } } label: { SymbolIcon(systemName: "chevron.down") }.menuStyle(.borderlessButton).tint(RemileStyle.ink).menuIndicator(.hidden).frame(width: RemileControl.toolHit, height: RemileControl.toolHit).disabled(project.compiling).remileHelp("Compile options").accessibilityLabel("Compile options")
             }.frame(height: 32)
 
             }

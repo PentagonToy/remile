@@ -258,7 +258,7 @@ struct PDFDocumentOCRSheet: View {
                 if model.totalPages > 0 { ProgressView(value: Double(model.completedPages), total: Double(model.totalPages)) }
             } else {
                 HStack {
-                    Label(model.stopped ? "Stopped after \(model.completedPages) pages" : "\(model.completedPages) pages processed", systemImage: model.stopped ? "pause.circle" : "checkmark.circle")
+                    SymbolLabel(model.stopped ? "Stopped after \(model.completedPages) pages" : "\(model.completedPages) pages processed", systemImage: model.stopped ? "pause.circle" : "checkmark.circle")
                     if model.failedPages > 0 { Text("· \(model.failedPages) unavailable").foregroundStyle(.secondary) }
                     Spacer()
                     Button("Try Again") { model.startDocument(data: data, password: password) }

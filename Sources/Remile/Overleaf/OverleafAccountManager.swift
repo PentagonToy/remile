@@ -50,7 +50,7 @@ struct OverleafAccountManager: View {
                             }
                         }.scrollContentGutter()
                     }
-                    Button { draft.adding = true; draft.selected = nil; draft.name = ""; draft.token = ""; library.error = nil } label: { Label("Add account", systemImage: "plus") }
+                    Button { draft.adding = true; draft.selected = nil; draft.name = ""; draft.token = ""; library.error = nil } label: { SymbolLabel("Add account", systemImage: "plus") }
                 }.padding(14).frame(width: 174).background(RemileStyle.sidebar)
                 Divider()
                 VStack(spacing: 0) {
@@ -81,7 +81,7 @@ struct OverleafAccountManager: View {
                                             HStack {
                                                 Link("Get a token", destination: URL(string: "https://www.overleaf.com/user/settings")!)
                                                 Spacer()
-                                                if draft.tokenSaved { Label("Saved", systemImage: "checkmark").foregroundStyle(RemileStyle.success) }
+                                                if draft.tokenSaved { SymbolLabel("Saved", systemImage: "checkmark").foregroundStyle(RemileStyle.success) }
                                                 Button("Save token", action: saveToken).disabled(draft.token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                                             }
                                         }.padding(.leading, 18).padding(.top, 10)
@@ -96,7 +96,7 @@ struct OverleafAccountManager: View {
                     if account != nil {
                         Divider()
                         HStack {
-                            Button(role: .destructive) { draft.removing = true } label: { Label("Remove account…", systemImage: "trash") }
+                            Button(role: .destructive) { draft.removing = true } label: { SymbolLabel("Remove account…", systemImage: "trash") }
                             Spacer()
                         }.padding(.horizontal, 20).padding(.vertical, 12)
                     }

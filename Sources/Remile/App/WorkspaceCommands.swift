@@ -30,15 +30,15 @@ struct WorkspaceAskButton: View {
     let isPresented: Bool
     let action: () -> Void
     var body: some View {
-        Button(action: action) { Label("Ask", systemImage: isPresented ? "text.bubble.fill" : "text.bubble") }
-            .foregroundStyle(isPresented ? RemileStyle.accent : RemileStyle.ink)
+        Button(action: action) { SymbolLabel("Ask", systemImage: isPresented ? "text.bubble.fill" : "text.bubble") }
+            .labelStyle(.iconOnly).foregroundStyle(isPresented ? RemileStyle.accent : RemileStyle.ink)
             .accessibilityLabel("Ask").accessibilityValue(isPresented ? "Open" : "Closed").remileHelp("Ask about this document · ⇧⌘A")
     }
 }
 struct WorkspaceReferenceButton: View {
     let action: () -> Void
     var body: some View {
-        Button(action: action) { Label("Reference library", systemImage: "books.vertical") }
+        Button(action: action) { SymbolLabel("Reference library", systemImage: "books.vertical") }
             .labelStyle(.iconOnly).accessibilityLabel("Reference library").remileHelp("Reference library · ⇧⌘R")
     }
 }

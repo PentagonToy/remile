@@ -22,7 +22,7 @@ struct OverleafBar: View {
                 .lineLimit(1).truncationMode(.tail).layoutPriority(-1)
             if !live.enabled {
                 Button { if connection.liveOnly == true { changeMode(true) } else if allowsGit { Task { await library.check(connection, save: project.save) } } else { presentation.premium = true } } label: {
-                    if geometry.size.width < 760 { Image(systemName: "arrow.triangle.2.circlepath") }
+                    if geometry.size.width < 760 { SymbolIcon(systemName: "arrow.triangle.2.circlepath") }
                     else { Text(connection.liveOnly == true ? "Connect Live" : "Check changes").padding(.horizontal, 6) }
                 }.buttonStyle(RemileToolStyle()).accessibilityLabel(connection.liveOnly == true ? "Connect Live" : "Check changes").opacity(allowsGit || connection.liveOnly == true ? 1 : 0.45).remileHelp(connection.liveOnly == true ? "Connect project changes to Overleaf" : (allowsGit ? "Review local and Overleaf changes" : OverleafLibrary.premiumHint))
                     .popover(isPresented: $presentation.premium) { HelpBubbleContent(text: OverleafLibrary.premiumHint) }
@@ -30,13 +30,13 @@ struct OverleafBar: View {
             }
             Divider().frame(height: 18).padding(.horizontal, 2)
             HStack(spacing: 4) {
-                Button { library.openLibrary() } label: { Image(systemName: "folder") }
+                Button { library.openLibrary() } label: { SymbolIcon(systemName: "folder") }
                     .accessibilityLabel("Overleaf projects").remileHelp("Overleaf projects").disabled(library.busy)
                 Button { presentation.settings.toggle() } label: {
                     if !live.enabled && allowsGit && OverleafCredential.locked(connection.profileID) {
-                        if geometry.size.width < 760 { Image(systemName: "lock") }
-                        else { Label("Unlock", systemImage: "lock").padding(.horizontal, 6) }
-                    } else { Image(systemName: "person.crop.circle") }
+                        if geometry.size.width < 760 { SymbolIcon(systemName: "lock") }
+                        else { SymbolLabel("Unlock", systemImage: "lock").padding(.horizontal, 6) }
+                    } else { SymbolIcon(systemName: "person.crop.circle") }
                 }.accessibilityLabel(!live.enabled && allowsGit && OverleafCredential.locked(connection.profileID) ? "Unlock connection" : "Connection settings")
                     .remileHelp("Connection settings").popover(isPresented: $presentation.settings) { connectionSettings }
             }.buttonStyle(RemileToolStyle()).font(.system(size: 15))
@@ -91,13 +91,13 @@ struct OverleafBar: View {
     }
     @ViewBuilder private func syncStatus(compact: Bool) -> some View {
             if live.enabled {
-                if liveOffline { Label("Saved locally · offline", systemImage: "icloud.slash").foregroundStyle(RemileStyle.secondaryInk) }
+                if liveOffline { SymbolLabel("Saved locally · offline", systemImage: "icloud.slash").foregroundStyle(RemileStyle.secondaryInk) }
                 else if live.connecting || live.reconnecting { ProgressView().controlSize(.small); Text(live.syncingFiles ? "Checking files…" : live.reconnecting ? "Reconnecting…" : "Connecting…") }
                 else if let issue = live.issue {
                     Button {
                         if live.conflict != nil { presentation.review = true }
                         else { Task { await live.retry() } }
-                    } label: { Label(compact ? "Paused" : "Paused · " + live.pauseReason, systemImage: "arrow.clockwise") }
+                    } label: { SymbolLabel(compact ? "Paused" : "Paused · " + live.pauseReason, systemImage: "arrow.clockwise") }
                         .foregroundStyle(RemileStyle.warning).remileHelp(issue)
                         .disabled(liveOffline || project.compiling).accessibilityHint("Reconnect and check the latest files")
                     if let recovery = live.recoveryDirectory { Button("Recovery copies") { NSWorkspace.shared.open(recovery) } }
@@ -106,22 +106,22 @@ struct OverleafBar: View {
                     else if live.requiresGitReview { Button(compact ? "Review Git" : "Stop live and review Git") { if allowsGit { Task { await live.reviewGit() } } else { presentation.premium = true } }.opacity(allowsGit ? 1 : 0.45).disabled(liveOffline || project.compiling).remileHelp(allowsGit ? "Stop live sync and review project file changes through Git" : OverleafLibrary.premiumHint).popover(isPresented: $presentation.premium) { HelpBubbleContent(text: OverleafLibrary.premiumHint) } }
                 } else if live.connected {
                     if live.pendingDocumentCount > 0 {
-                        Label("Confirming · \(live.pendingDocumentCount) \(live.pendingDocumentCount == 1 ? "file" : "files")", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(RemileStyle.accent)
+                        SymbolLabel("Confirming · \(live.pendingDocumentCount) \(live.pendingDocumentCount == 1 ? "file" : "files")", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(RemileStyle.accent)
                     } else if let date = live.lastConfirmedAt {
-                        Label(compact ? "Confirmed" : "Confirmed " + date.formatted(date: .omitted, time: .standard), systemImage: "checkmark.circle.fill").foregroundStyle(RemileStyle.success)
+                        SymbolLabel(compact ? "Confirmed" : "Confirmed " + date.formatted(date: .omitted, time: .standard), systemImage: "checkmark.circle.fill").foregroundStyle(RemileStyle.success)
                             .remileHelp("All connected text files match the confirmed Overleaf state.")
                     } else { Text("Checking changes…").foregroundStyle(RemileStyle.secondaryInk) }
                 } else { Text("Live sync paused").foregroundStyle(RemileStyle.warning) }
             } else if library.busy { ProgressView().controlSize(.small).remileHelp("Checking project changes") }
-            else if !allowsGit { Label("Local only", systemImage: "desktopcomputer").foregroundStyle(RemileStyle.secondaryInk).remileHelp("Your edits stay on this Mac. Use Live to sync project changes.") }
-            else if !library.offlineMode, library.hasNetwork, OverleafCredential.locked(connection.profileID) { Label(compact ? "Locked" : "Connection locked", systemImage: "lock").foregroundStyle(RemileStyle.warning).remileHelp("Your work is saved on this Mac. Unlock the saved connection to check Overleaf changes.") }
-            else if offline { Label(library.pendingFiles.contains(connection.id) ? "Changes saved locally" : "Offline", systemImage: "icloud.slash").foregroundStyle(RemileStyle.warning).remileHelp("Your work stays on this Mac. Check changes when you reconnect.") }
-            else if library.statuses[connection.id] == .conflict { Label("Conflicting edits", systemImage: "exclamationmark.circle.fill").foregroundStyle(.red).remileHelp("Overlapping edits need your choice before syncing.") }
-            else if library.statuses[connection.id] == .changes { Label("Changes to review", systemImage: "circle.fill").foregroundStyle(RemileStyle.warning).remileHelp("Review local and Overleaf changes before applying or publishing.") }
-            else if library.pendingFiles.contains(connection.id) { Label("Changes saved locally", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(RemileStyle.accent).remileHelp("Your edits will sync after a short pause while this project is online.") }
+            else if !allowsGit { SymbolLabel("Local only", systemImage: "desktopcomputer").foregroundStyle(RemileStyle.secondaryInk).remileHelp("Your edits stay on this Mac. Use Live to sync project changes.") }
+            else if !library.offlineMode, library.hasNetwork, OverleafCredential.locked(connection.profileID) { SymbolLabel(compact ? "Locked" : "Connection locked", systemImage: "lock").foregroundStyle(RemileStyle.warning).remileHelp("Your work is saved on this Mac. Unlock the saved connection to check Overleaf changes.") }
+            else if offline { SymbolLabel(library.pendingFiles.contains(connection.id) ? "Changes saved locally" : "Offline", systemImage: "icloud.slash").foregroundStyle(RemileStyle.warning).remileHelp("Your work stays on this Mac. Check changes when you reconnect.") }
+            else if library.statuses[connection.id] == .conflict { SymbolLabel("Conflicting edits", systemImage: "exclamationmark.circle.fill").foregroundStyle(.red).remileHelp("Overlapping edits need your choice before syncing.") }
+            else if library.statuses[connection.id] == .changes { SymbolLabel("Changes to review", systemImage: "circle.fill").foregroundStyle(RemileStyle.warning).remileHelp("Review local and Overleaf changes before applying or publishing.") }
+            else if library.pendingFiles.contains(connection.id) { SymbolLabel("Changes saved locally", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(RemileStyle.accent).remileHelp("Your edits will sync after a short pause while this project is online.") }
             else if let date = library.syncedAt[connection.id] {
                 TimelineView(.periodic(from: .now, by: 60)) { tick in
-                    Label(OverleafLibrary.syncAge(date, now: tick.date), systemImage: "checkmark.circle.fill").foregroundStyle(RemileStyle.success).remileHelp("Last matched: " + date.formatted(date: .abbreviated, time: .shortened))
+                    SymbolLabel(OverleafLibrary.syncAge(date, now: tick.date), systemImage: "checkmark.circle.fill").foregroundStyle(RemileStyle.success).remileHelp("Last matched: " + date.formatted(date: .abbreviated, time: .shortened))
                 }
             }
     }
@@ -223,7 +223,7 @@ struct OverleafLiveReview: View {
     private func section(_ title: String, text: String, index: Int, remote: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Button { selection.remote[index] = remote } label: {
-                Label(title, systemImage: selection.remote[index] == remote ? "checkmark.circle.fill" : "circle")
+                SymbolLabel(title, systemImage: selection.remote[index] == remote ? "checkmark.circle.fill" : "circle")
             }.buttonStyle(.plain).font(RemileType.callout.weight(.semibold))
             Text("\(Text(context(index, before: true)).foregroundColor(RemileStyle.secondaryInk))\(Text(text.isEmpty ? "(No text)" : text).foregroundColor(RemileStyle.ink))\(Text(context(index, before: false)).foregroundColor(RemileStyle.secondaryInk))")
                 .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
@@ -248,19 +248,19 @@ struct OverleafComparison: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 if !review.changes.isEmpty {
-                    Button { state.files.toggle() } label: { Image(systemName: "sidebar.left") }
+                    Button { state.files.toggle() } label: { SymbolIcon(systemName: "sidebar.left") }
                         .buttonStyle(RemileToolStyle()).remileHelp(state.files ? "Hide changed files" : "Show changed files")
                         .accessibilityLabel("Toggle changed files").accessibilityValue(state.files ? "Expanded" : "Collapsed")
                 }
                 Text("Compare changes").font(RemileType.heading); Spacer(); Text(review.connection.name).foregroundStyle(.secondary).lineLimit(1)
             }
-            if review.changes.isEmpty { Label("Everything matches", systemImage: "checkmark.circle.fill").foregroundStyle(RemileStyle.success).padding(.vertical, 24) }
+            if review.changes.isEmpty { SymbolLabel("Everything matches", systemImage: "checkmark.circle.fill").foregroundStyle(RemileStyle.success).padding(.vertical, 24) }
             else {
                 ReaderSplit(isPresented: state.files, initial: 200, minimum: 160, maximum: 320, minimumContent: 480, label: "changed files", pane: {
                     VStack(alignment: .leading, spacing: 10) {
                     Text("Files · \(review.changes.count)").font(RemileType.caption).foregroundStyle(.secondary)
                     ScrollView { VStack(alignment: .leading, spacing: 6) { ForEach(review.changes) { change in
-                        Button { state.path = change.path } label: { HStack { Text(change.path).lineLimit(2); Spacer(); if change.conflict { Image(systemName: state.choices[change.path] == nil ? "exclamationmark.circle" : "checkmark.circle").foregroundStyle(.red) } }.padding(7).frame(maxWidth: .infinity, alignment: .leading).background(selected?.path == change.path ? RemileStyle.accent.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6)) }.buttonStyle(.plain)
+                        Button { state.path = change.path } label: { HStack { Text(change.path).lineLimit(2); Spacer(); if change.conflict { SymbolIcon(systemName: state.choices[change.path] == nil ? "exclamationmark.circle" : "checkmark.circle").foregroundStyle(.red) } }.padding(7).frame(maxWidth: .infinity, alignment: .leading).background(selected?.path == change.path ? RemileStyle.accent.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6)) }.buttonStyle(.plain)
                     } } }
                     }.padding(.trailing, 8)
                 }, content: {
@@ -274,8 +274,8 @@ struct OverleafComparison: View {
                             }
                             if selected.conflict {
                                 Text("Overlapping edits. Choose the version to keep.").font(RemileType.caption)
-                                HStack { Button("Keep local") { state.choices[selected.path] = true }; Button("Use Overleaf") { state.choices[selected.path] = false }; if let local = state.choices[selected.path] { Label(local ? "Local selected" : "Overleaf selected", systemImage: "checkmark").font(RemileType.caption) } }
-                            } else { Label("Changes combine safely", systemImage: "checkmark.circle.fill").font(RemileType.caption).foregroundStyle(RemileStyle.success) }
+                                HStack { Button("Keep local") { state.choices[selected.path] = true }; Button("Use Overleaf") { state.choices[selected.path] = false }; if let local = state.choices[selected.path] { SymbolLabel(local ? "Local selected" : "Overleaf selected", systemImage: "checkmark").font(RemileType.caption) } }
+                            } else { SymbolLabel("Changes combine safely", systemImage: "checkmark.circle.fill").font(RemileType.caption).foregroundStyle(RemileStyle.success) }
                         }.padding(.leading, 8).frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }).animation(reduceMotion ? nil : RemileMotion.panel, value: state.files)

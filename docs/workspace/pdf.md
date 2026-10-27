@@ -8,6 +8,8 @@ Keep the page in view, and leave a few useful marks for later.
 2. Use the page field, thumbnails or outline to move through it.
 3. Open the sidebar to find text, highlights or comments.
 
+Open another PDF to keep both in the bottom tab bar. Select a tab to return to it, or close it when finished. Reopening a PDF restores its last reading position. Search results still open at the matching passage.
+
 Use the single-rectangle or split-rectangle button to switch between one and two pages. New reading sessions start with one page.
 
 Pages shows larger previews with their numbers underneath. The outlined page is your current position.

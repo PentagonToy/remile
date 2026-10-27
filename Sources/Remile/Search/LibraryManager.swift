@@ -14,12 +14,12 @@ struct LibraryManager: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Label("Library", systemImage: "folder").font(RemileType.heading)
+                SymbolLabel("Library", systemImage: "folder").font(RemileType.heading)
                 Spacer()
                 Button("Close") { model.libraryPresented = false }.keyboardShortcut(.cancelAction)
             }
             HStack {
-                Button(action: model.addFolder) { Label("Add to Library…", systemImage: "folder.badge.plus") }.disabled(model.indexing)
+                Button(action: model.addFolder) { SymbolLabel("Add to Library…", systemImage: "folder.badge.plus") }.disabled(model.indexing)
                 if model.indexing { Button("Stop", action: model.cancelIndexing) }
                 else { Button("Update Index") { model.refresh() }.disabled(model.summary.folders.isEmpty) }
                 Spacer()
@@ -32,19 +32,19 @@ struct LibraryManager: View {
                 List {
                 ForEach(model.summary.folders) { folder in
                     HStack(spacing: 12) {
-                        Image(systemName: "folder").foregroundStyle(RemileStyle.accent)
+                        SymbolIcon(systemName: "folder").foregroundStyle(RemileStyle.accent)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(folder.name).font(RemileType.section)
                             Text(folder.path).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         }
                         Spacer()
                         Button { state.coverageFolder = folder } label: {
-                            Image(systemName: state.loadError != nil || state.documents.contains(where: { $0.path.hasPrefix(folder.path.hasSuffix("/") ? folder.path : folder.path + "/") }) ? "exclamationmark.circle" : "checkmark.circle")
+                            SymbolIcon(systemName: state.loadError != nil || state.documents.contains(where: { $0.path.hasPrefix(folder.path.hasSuffix("/") ? folder.path : folder.path + "/") }) ? "exclamationmark.circle" : "checkmark.circle")
                         }
                             .buttonStyle(.plain).remileHelp("Search coverage for this folder").accessibilityLabel("Search coverage for " + folder.name)
-                        Button { model.reindex(folder) } label: { Image(systemName: "arrow.clockwise") }
+                        Button { model.reindex(folder) } label: { SymbolIcon(systemName: "arrow.clockwise") }
                             .buttonStyle(.plain).remileHelp("Reindex this folder, including unchanged files").accessibilityLabel("Reindex " + folder.name).disabled(model.indexing)
-                        Button { model.removeFolder(folder) } label: { Image(systemName: "minus.circle") }.buttonStyle(.plain).remileHelp("Remove from Library · keep original files").disabled(model.indexing)
+                        Button { model.removeFolder(folder) } label: { SymbolIcon(systemName: "minus.circle") }.buttonStyle(.plain).remileHelp("Remove from Library · keep original files").disabled(model.indexing)
                     }.padding(.vertical, 8)
                 }
                 }.listStyle(.plain).scrollContentBackground(.hidden)
@@ -54,7 +54,7 @@ struct LibraryManager: View {
                     ProgressView(value: Double(progress.completed), total: Double(max(1, progress.total)))
                     Text("\(progress.completed) of \(progress.total) · \(progress.name)").font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1)
                 } else { ProgressView(model.progress?.preparingSearch == true ? "Preparing search…" : "Preparing index…").controlSize(.small) }
-            } else if let message = model.message { Label(message, systemImage: "checkmark.circle").font(RemileType.caption).foregroundStyle(.secondary) }
+            } else if let message = model.message { SymbolLabel(message, systemImage: "checkmark.circle").font(RemileType.caption).foregroundStyle(.secondary) }
             if model.summary.needsOCR > 0 || model.summary.failed > 0 {
                 Text(coverageSummary).font(RemileType.caption).foregroundStyle(.secondary)
             }

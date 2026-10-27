@@ -210,7 +210,7 @@ struct OverleafSignIn: View {
                             HStack(spacing: 8) {
                                 SecureField("Password", text: $draft.password).textContentType(.password)
                                 if FileManager.default.fileExists(atPath: "/System/Applications/Passwords.app") {
-                                    Button { openPasswords() } label: { Label("Apple Passwords", systemImage: "key.fill") }
+                                    Button { openPasswords() } label: { SymbolLabel("Apple Passwords", systemImage: "key.fill") }
                                         .buttonStyle(.plain).font(RemileType.small).foregroundStyle(RemileStyle.accent)
                                         .fixedSize().help("Open Apple Passwords to choose your Overleaf login")
                                 }

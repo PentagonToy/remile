@@ -61,12 +61,12 @@ private struct TeXDiagnosticRow: View {
             if checkFirst { Text("Check first").font(RemileType.caption.weight(.semibold)).foregroundStyle(RemileStyle.accent) }
             Button { project.reveal(entry) } label: {
                 HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: entry.severity == .error ? "xmark.octagon" : "exclamationmark.triangle").foregroundStyle(RemileStyle.warning)
+                    SymbolIcon(systemName: entry.severity == .error ? "xmark.octagon" : "exclamationmark.triangle").foregroundStyle(RemileStyle.warning)
                     VStack(alignment: .leading, spacing: 5) {
                         Text(entry.displayMessage).font(RemileType.callout).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                         if let file = entry.file { Text(file + (entry.line.map { ":\($0)" } ?? "")).font(RemileType.small).foregroundStyle(.secondary).lineLimit(2) }
                     }
-                    if location != nil { Spacer(minLength: 8); Image(systemName: "scope").foregroundStyle(RemileStyle.accent).accessibilityHidden(true) }
+                    if location != nil { Spacer(minLength: 8); SymbolIcon(systemName: "scope").foregroundStyle(RemileStyle.accent).accessibilityHidden(true) }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.buttonStyle(.plain).remileHelp(location == nil ? "Build diagnostic" : "Go to source")
             if entry.severity != .info && !entry.isBuildSummary {

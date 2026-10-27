@@ -10,7 +10,7 @@ struct PDFCommentExportMenu: View {
         Menu {
             Button("Markdown…") { save(.markdown) }
             Button("JSON…") { save(.json) }
-        } label: { Image(systemName: "square.and.arrow.up") }.menuStyle(.borderlessButton).fixedSize().remileHelp("Export comments").accessibilityLabel("Export comments")
+        } label: { SymbolIcon(systemName: "square.and.arrow.up") }.menuStyle(.borderlessButton).tint(RemileStyle.ink).fixedSize().remileHelp("Export comments").accessibilityLabel("Export comments")
             .disabled(session.document?.isLocked != false)
             .alert("Unable to export comments", isPresented: Binding(get: { state.error != nil }, set: { if !$0 { state.error = nil } })) { Button("OK") { state.error = nil } } message: { Text(state.error ?? "") }
     }

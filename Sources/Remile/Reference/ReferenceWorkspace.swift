@@ -45,8 +45,8 @@ struct ReferenceWorkspace: View {
     private struct Entry: Identifiable { let id = UUID(); var record: ReferenceRecord?; var citation = "" }
     private struct DuplicateGroup: Identifiable { let id = UUID(); let records: [ReferenceRecord] }
     private var toolbar: some View {
-        HStack(spacing: 14) {
-            Button(action: goHome) { Image(systemName: "chevron.left") }.buttonStyle(RemileToolStyle()).accessibilityLabel("Back to Home").remileHelp("Back to Home")
+        HStack(spacing: RemileControl.spacing) {
+            Button(action: goHome) { SymbolIcon(systemName: "chevron.left") }.buttonStyle(RemileToolStyle()).accessibilityLabel("Back to Home").remileHelp("Back to Home")
             Text("Reference").font(RemileType.heading)
             Spacer()
             Menu {
@@ -54,17 +54,17 @@ struct ReferenceWorkspace: View {
                 Button("Import files…") { model.chooseFiles() }
                 Button("Add manually…") { model.error = nil; state.editor = Entry() }
                 Button("Paste BibTeX…") { model.error = nil; state.editor = Entry(citation: NSPasteboard.general.string(forType: .string) ?? "") }
-            } label: { Label("Add", systemImage: "plus") }.fixedSize()
-            Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward") }.disabled(!model.canUndo).accessibilityLabel("Undo").remileHelp("Undo the last Reference change")
-            Button { model.undo(redo: true) } label: { Image(systemName: "arrow.uturn.forward") }.disabled(!model.canRedo).accessibilityLabel("Redo").remileHelp("Redo the last Reference change")
-            Button { model.error = nil; state.cleanup = true } label: { Label("Clean up", systemImage: "wand.and.stars") }.disabled(model.libraryRecords.filter { $0.trashed == nil }.isEmpty || model.showingTrash || model.busy)
-            Button { state.regenerate = true } label: { Label("Keys", systemImage: "key") }.disabled(model.libraryRecords.allSatisfy { $0.trashed != nil }).remileHelp("Regenerate library citation keys")
+            } label: { SymbolLabel("Add", systemImage: "plus") }.fixedSize()
+            Button { model.undo() } label: { SymbolIcon(systemName: "arrow.uturn.backward") }.disabled(!model.canUndo).accessibilityLabel("Undo").remileHelp("Undo the last Reference change")
+            Button { model.undo(redo: true) } label: { SymbolIcon(systemName: "arrow.uturn.forward") }.disabled(!model.canRedo).accessibilityLabel("Redo").remileHelp("Redo the last Reference change")
+            Button { model.error = nil; state.cleanup = true } label: { SymbolLabel("Clean up", systemImage: "wand.and.stars") }.disabled(model.libraryRecords.filter { $0.trashed == nil }.isEmpty || model.showingTrash || model.busy)
+            Button { state.regenerate = true } label: { SymbolLabel("Keys", systemImage: "key") }.disabled(model.libraryRecords.allSatisfy { $0.trashed != nil }).remileHelp("Regenerate library citation keys")
         }.font(RemileType.control).buttonStyle(RemileToolStyle()).padding(.horizontal, 16).padding(.vertical, 6).disabled(model.busy)
     }
     var body: some View {
         VStack(spacing: 0) {
             ViewThatFits(in: .horizontal) {
-                toolbar.labelStyle(.titleAndIcon)
+                toolbar.labelStyle(.iconOnly)
                 toolbar.labelStyle(.iconOnly)
             }
             Divider()
@@ -90,7 +90,7 @@ struct ReferenceWorkspace: View {
             }
             if model.busy { ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(8) }
             if let error = model.error {
-                HStack { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).textSelection(.enabled); Spacer(); Button { model.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss message") }.padding(10).background(RemileStyle.editorBar)
+                HStack { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).textSelection(.enabled); Spacer(); Button { model.error = nil } label: { SymbolIcon(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss message") }.padding(10).background(RemileStyle.editorBar)
             }
         }.focusedSceneValue(\.workspaceActions, WorkspaceActions(restorePanes: { state.paneReset = UUID() }))
         .font(RemileType.control).background(RemileStyle.background).tint(RemileStyle.accent)
@@ -176,13 +176,13 @@ struct ReferenceWorkspace: View {
                         }
                         if state.addingLibrary && state.parentLibrary == nil { libraryNameField }
                         Button { model.showingTrash = true; model.selected = model.items.first?.id; model.selectedIDs = Set([model.selected].compactMap { $0 }) } label: {
-                            HStack { Label("Trash", systemImage: "trash"); Spacer(); Text(String(model.trashRecords.count)).foregroundStyle(.secondary) }.padding(10).background(model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                            HStack { SymbolLabel("Trash", systemImage: "trash"); Spacer(); Text(String(model.trashRecords.count)).foregroundStyle(.secondary) }.padding(10).background(model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
                         }.buttonStyle(.plain).contextMenu {
                             Button("Empty Trash…", systemImage: "trash", role: .destructive) { state.emptyTrash = true }.disabled(model.busy)
                         }
                         if model.showingTrash {
                             ForEach(model.deletedLibraries) { library in
-                                Button { } label: { Label(library.name, systemImage: "folder").padding(8).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).foregroundStyle(.secondary).contextMenu {
+                                Button { } label: { SymbolLabel(library.name, systemImage: "folder").padding(8).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).foregroundStyle(.secondary).contextMenu {
                                     Button("Restore", systemImage: "arrow.uturn.backward") { model.restoreLibrary(library.id) }
                                 }
                             }
@@ -221,7 +221,7 @@ struct ReferenceWorkspace: View {
     private func libraryRow(_ library: ReferenceLibrary) -> some View {
         let count = model.libraryCounts[library.id, default: 0]
         return Button { model.selectLibrary(library.id) } label: {
-            HStack { Label(library.name, systemImage: library.parentID == nil ? "tray.full" : "folder").lineLimit(1); Spacer(minLength: 2); Text(String(count)).font(RemileType.caption).foregroundStyle(.secondary) }
+            HStack { SymbolLabel(library.name, systemImage: library.parentID == nil ? "tray.full" : "folder").lineLimit(1); Spacer(minLength: 2); Text(String(count)).font(RemileType.caption).foregroundStyle(.secondary) }
                 .padding(10).background(model.selectedLibrary == library.id && !model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain).contextMenu {
             let records = model.contents(library.id).filter { $0.trashed == nil }
@@ -249,7 +249,7 @@ struct ReferenceWorkspace: View {
             Divider()
             if model.items.isEmpty {
                 VStack(spacing: 12) {
-                    Image(systemName: model.showingTrash ? "trash" : "books.vertical").font(.system(size: 32, weight: .light)).foregroundStyle(RemileStyle.accent)
+                    SymbolIcon(systemName: model.showingTrash ? "trash" : "books.vertical").foregroundStyle(RemileStyle.accent)
                     Text(model.showingTrash ? "No deleted references" : model.query.isEmpty ? "A place for your references" : "No matching references").font(RemileType.heading)
                     if !model.showingTrash && model.query.isEmpty { Text("Save a PDF in your browser, then drop it here. You can also import BibTeX.").font(RemileType.callout).foregroundStyle(.secondary).multilineTextAlignment(.center) }
                 }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -333,7 +333,7 @@ struct ReferenceWorkspace: View {
                     Button { model.sort(by: column) } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Text(column == .author && fitted < 110 ? "Author" : column == .publication && fitted < 145 ? "Publication" : column.label)
-                            if model.sorting.column == column { Image(systemName: model.sorting.ascending ? "chevron.up" : "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(RemileStyle.accent) }
+                            if model.sorting.column == column { SymbolIcon(systemName: model.sorting.ascending ? "chevron.up" : "chevron.down").foregroundStyle(RemileStyle.accent) }
                             Spacer(minLength: 0)
                         }.contentShape(Rectangle())
                     }.buttonStyle(.plain)

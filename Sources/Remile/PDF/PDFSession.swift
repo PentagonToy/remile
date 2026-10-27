@@ -86,6 +86,37 @@ final class PDFSession: NSObject, ObservableObject {
     var isReplyDraft: Bool { draftParent != nil }
     private var draftBounds = CGRect.zero
     private weak var view: PDFView?
+    var readingURL: URL?
+    private var restoredReadingPosition = false
+    private var restoringReadingPosition = false
+
+    func persistReadingPosition() {
+        guard restoredReadingPosition, !restoringReadingPosition, let url = readingURL, let view,
+              let document, view.document === document,
+              let destination = view.currentDestination, let page = destination.page else { return }
+        let index = document.index(for: page)
+        guard index != NSNotFound else { return }
+        PDFReadingPosition.save(.init(page: index, x: destination.point.x, y: destination.point.y, updated: Date()), for: url)
+    }
+
+    func restoreReadingPosition() {
+        guard !restoredReadingPosition, libraryDestination == nil,
+              let url = readingURL, let document, !document.isLocked,
+              let view, view.document === document else { return }
+        restoredReadingPosition = true
+        guard let marker = PDFReadingPosition.read(url), document.pageCount > 0,
+              let page = document.page(at: min(marker.page, document.pageCount - 1)) else { return }
+        restoringReadingPosition = true
+        DispatchQueue.main.async { [weak self, weak view] in
+            guard let self else { return }
+            defer { self.restoringReadingPosition = false }
+            guard let view, view.document === document, self.libraryDestination == nil else { return }
+            let bounds = page.bounds(for: view.displayBox)
+            let point = CGPoint(x: min(max(marker.x, bounds.minX), bounds.maxX), y: min(max(marker.y, bounds.minY), bounds.maxY))
+            view.go(to: PDFDestination(page: page, at: point))
+            self.currentPage = document.index(for: page) + 1
+        }
+    }
     private var libraryDestination: (page: Int, terms: [String], excerpt: String?, note: Bool)?
     private var inputData: Data?
     private var openedWithSignature = false
@@ -117,6 +148,7 @@ final class PDFSession: NSObject, ObservableObject {
         stop()
         undoManager?.removeAllActions(withTarget: self)
         inputData = data
+        restoredReadingPosition = false
         libraryDestination = nil
         document = PDFDocument(data: data)
         installNoteRenderer(in: document)
@@ -148,6 +180,7 @@ final class PDFSession: NSObject, ObservableObject {
         observers = []
         self.view = view
         applyLibraryDestination()
+        restoreReadingPosition()
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: .PDFViewPageChanged, object: view, queue: .main) { [weak self, weak view] _ in
             guard let self, let view, let page = view.currentPage, let document = self.document,
@@ -155,6 +188,7 @@ final class PDFSession: NSObject, ObservableObject {
             let index = document.index(for: page)
             guard index != NSNotFound else { return }
             self.currentPage = index + 1
+            self.persistReadingPosition()
         })
         observers.append(center.addObserver(forName: .PDFViewSelectionChanged, object: view, queue: .main) { [weak self] _ in self?.objectWillChange.send() })
         observers.append(center.addObserver(forName: .PDFViewAnnotationHit, object: view, queue: .main) { [weak self] notification in
@@ -169,6 +203,7 @@ final class PDFSession: NSObject, ObservableObject {
 
     func revealLibraryPage(_ number: Int, terms: [String], excerpt: String? = nil, addNote: Bool = false) {
         guard number > 0 else { return }
+        restoredReadingPosition = true
         libraryDestination = (number, terms, excerpt, addNote)
         applyLibraryDestination()
     }

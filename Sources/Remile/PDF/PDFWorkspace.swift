@@ -42,13 +42,13 @@ struct PDFWorkspace: View {
                     Button("Dismiss") { session.dismissCitationStatus() }
                 }.padding(10).background(RemileStyle.editorBar)
             }
-            ReaderThemeFooter()
+            PDFDocumentTabs(reader: readingSession)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { readingSession?.pdfSession = session; readingSession?.pdfInspection = { [weak session = session] page, find, render in guard let session, let document = session.document else { throw CocoaError(.fileReadUnknown) }; return try PDFInspection.read(document, page: page ?? max(1, session.currentPage), find: find, render: render) }; readingSession?.commentsExport = { [weak session = session] in guard let session else { throw CocoaError(.fileReadUnknown) }; return try session.exportComments(name: fileURL?.lastPathComponent ?? "Untitled.pdf") }; assistant.useHistory(fileURL.map { "pdf:" + $0.path }); session.undoManager = undoManager; session.load(data); session.loadComments(); revealLibraryPage(); if !session.query.isEmpty { session.search() } }
+        .onAppear { readingSession?.pdfSession = session; readingSession?.pdfInspection = { [weak session = session] page, find, render in guard let session, let document = session.document else { throw CocoaError(.fileReadUnknown) }; return try PDFInspection.read(document, page: page ?? max(1, session.currentPage), find: find, render: render) }; readingSession?.commentsExport = { [weak session = session] in guard let session else { throw CocoaError(.fileReadUnknown) }; return try session.exportComments(name: fileURL?.lastPathComponent ?? "Untitled.pdf") }; assistant.useHistory(fileURL.map { "pdf:" + $0.path }); session.undoManager = undoManager; session.readingURL = fileURL; session.load(data); session.loadComments(); revealLibraryPage(); if !session.query.isEmpty { session.search() } }
         .onChange(of: data) { _, data in assistant.cancel(); presentation.selectedPassages = []; session.load(data) }
         .onChange(of: fileURL) { assistant.useHistory(fileURL.map { "pdf:" + $0.path }) }
         .onChange(of: navigation.request?.id) { revealLibraryPage() }
-        .onDisappear { assistant.cancel(); session.stop(); session.protection.finish(); readingSession?.commentsExport = nil; readingSession?.pdfInspection = nil; readingSession?.pdfSession = nil }
+        .onDisappear { session.persistReadingPosition(); assistant.cancel(); session.stop(); session.protection.finish(); readingSession?.commentsExport = nil; readingSession?.pdfInspection = nil; readingSession?.pdfSession = nil }
         .onChange(of: session.query) { session.search() }
         .onChange(of: session.caseSensitive) { session.search() }
         .onChange(of: session.pendingAnnotationRevision) { readingSession?.objectWillChange.send() }
@@ -75,7 +75,7 @@ struct PDFWorkspace: View {
                 }
             } else if session.document?.isLocked == true {
                 VStack(spacing: 16) {
-                    Image(systemName: "lock.doc").font(.largeTitle).foregroundStyle(.secondary)
+                    SymbolIcon(systemName: "lock.doc", slot: RemileSymbol.emptySlot).font(.system(size: RemileSymbol.emptySize)).foregroundStyle(.secondary)
                     Text("Unlock this PDF").font(RemileType.heading)
                     SecureField("Password", text: $session.password)
                         .textFieldStyle(.roundedBorder).frame(width: 260).onSubmit { session.unlock() }
@@ -111,10 +111,10 @@ struct PDFWorkspace: View {
                     if session.isEditing || session.showsOverview { editingStrip.transition(.opacity) }
                     if let error = session.editingError {
                         HStack {
-                            Image(systemName: "exclamationmark.circle").foregroundStyle(.red)
+                            SymbolIcon(systemName: "exclamationmark.circle").foregroundStyle(.red)
                             Text(error).font(RemileType.callout)
                             Spacer()
-                            Button { session.dismissEditingError() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).remileHelp("Dismiss message")
+                            Button { session.dismissEditingError() } label: { SymbolIcon(systemName: "xmark") }.buttonStyle(.plain).remileHelp("Dismiss message")
                         }.padding(.horizontal, 16).padding(.vertical, 6)
                     }
                     Divider()
@@ -130,12 +130,12 @@ struct PDFWorkspace: View {
         }.frame(height: 32).padding(.horizontal, 16).padding(.vertical, 6)
     }
     private func readingControlRow(compact: Bool) -> some View {
-        HStack(spacing: compact ? 6 : 12) {
-            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.showsSidebar.toggle() } } label: { Image(systemName: "sidebar.left") }.remileHelp("Pages, outline, search and comments").accessibilityLabel("Document sidebar").accessibilityValue(session.showsSidebar ? "Shown" : "Hidden")
+        HStack(spacing: RemileControl.spacing) {
+            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.showsSidebar.toggle() } } label: { SymbolIcon(systemName: "sidebar.left") }.remileHelp("Pages, outline, search and comments").accessibilityLabel("Document sidebar").accessibilityValue(session.showsSidebar ? "Shown" : "Hidden")
             HStack(spacing: 6) {
-                if !compact { Button { session.previousPage() } label: { Image(systemName: "chevron.up") }.remileHelp("Previous page").disabled(session.showsOverview || session.currentPage <= 1) }
+                if !compact { Button { session.previousPage() } label: { SymbolIcon(systemName: "chevron.up") }.remileHelp("Previous page").disabled(session.showsOverview || session.currentPage <= 1) }
                 ReaderPageControl(current: session.currentPage, total: session.document?.pageCount ?? 0, go: session.goToPage)
-                if !compact { Button { session.nextPage() } label: { Image(systemName: "chevron.down") }.remileHelp("Next page").disabled(session.showsOverview || session.currentPage >= (session.document?.pageCount ?? 0)) }
+                if !compact { Button { session.nextPage() } label: { SymbolIcon(systemName: "chevron.down") }.remileHelp("Next page").disabled(session.showsOverview || session.currentPage >= (session.document?.pageCount ?? 0)) }
             }
             Button {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
@@ -145,11 +145,11 @@ struct PDFWorkspace: View {
                         session.showsOverview = true
                     }
                 }
-            } label: { Image(systemName: session.showsOverview ? "doc.text" : "square.grid.2x2") }
+            } label: { SymbolIcon(systemName: session.showsOverview ? "doc.text" : "square.grid.2x2") }
                 .remileHelp(session.showsOverview ? "Read document" : "Page overview").accessibilityLabel(session.showsOverview ? "Read document" : "Page overview").accessibilityValue(session.showsOverview ? "Overview" : "Reading")
                 .disabled(session.document?.isLocked != false)
             Button { session.firstPageAlone = false; session.twoPage.toggle() } label: {
-                Image(systemName: session.twoPage ? "rectangle.split.2x1" : "rectangle")
+                SymbolIcon(systemName: session.twoPage ? "rectangle.split.2x1" : "rectangle")
                     .frame(width: 22)
             }.remileHelp(session.twoPage ? "Show one page" : "Show two pages")
                 .accessibilityLabel("Page layout").accessibilityValue(session.twoPage ? "Two pages" : "Single page")
@@ -161,7 +161,7 @@ struct PDFWorkspace: View {
             Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.toggleEditing() } } label: { controlLabel(session.isEditing ? "Done" : "Edit PDF", symbol: session.isEditing ? "checkmark" : "square.and.pencil", compact: compact) }.remileHelp(session.isEditing ? "Finish editing PDF" : "Edit PDF text, annotations and pages").disabled(session.document == nil)
             AIToolGroup {
             AIProviderButton()
-            Button { toggleAssistant() } label: { Image(systemName: "text.bubble") }.remileHelp(assistantProvider == "ChatGPT" ? "Ask ChatGPT" : "Ask (on-device)").accessibilityLabel(assistantProvider == "ChatGPT" ? "Ask ChatGPT" : "Ask (on-device)").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
+            Button { toggleAssistant() } label: { SymbolIcon(systemName: "text.bubble") }.remileHelp(assistantProvider == "ChatGPT" ? "Ask ChatGPT" : "Ask (on-device)").accessibilityLabel(assistantProvider == "ChatGPT" ? "Ask ChatGPT" : "Ask (on-device)").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
 
             }
             if compact {
@@ -170,17 +170,14 @@ struct PDFWorkspace: View {
                     Button("Zoom out") { zoom.step(-1) }.disabled(session.showsOverview)
                     Button("Fit page") { zoom.fit(width: false) }.disabled(session.showsOverview)
                     Button("Fit width") { zoom.fit(width: true) }.disabled(session.showsOverview)
-                } label: { Image(systemName: "ellipsis").frame(width: 32, height: 32) }
+                } label: { SymbolIcon(systemName: "ellipsis").frame(width: RemileControl.toolHit, height: RemileControl.toolHit) }
                     .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).accessibilityLabel("View options")
             } else { ReaderZoomControls(zoom: zoom).disabled(session.showsOverview) }
-            Button { session.sidebar = .search; session.showsSidebar = true; searchFocused = true } label: { Image(systemName: "magnifyingglass") }.remileHelp("Find in document").keyboardShortcut("f")
+            Button { session.sidebar = .search; session.showsSidebar = true; searchFocused = true } label: { SymbolIcon(systemName: "magnifyingglass") }.remileHelp("Find in document").keyboardShortcut("f")
         }.buttonStyle(RemileToolStyle()).font(RemileType.control).labelStyle(.titleAndIcon)
     }
     private func controlLabel(_ title: String, symbol: String, compact: Bool) -> some View {
-        Group {
-            if compact { Image(systemName: symbol).accessibilityLabel(title) }
-            else { Label(title, systemImage: symbol).fixedSize() }
-        }
+        SymbolIcon(systemName: symbol).accessibilityLabel(title)
     }
 
     private var selectionActions: PDFSelectionActions {
@@ -208,11 +205,11 @@ struct PDFWorkspace: View {
         }.frame(height: 32).padding(.horizontal, 16).padding(.vertical, 6)
     }
     private func editingControlRow(compact: Bool) -> some View {
-        HStack(spacing: compact ? 8 : 16) {
+        HStack(spacing: RemileControl.spacing) {
             if !compact { Text(session.showsOverview ? "Pages" : "Edit PDF").font(RemileType.section) }
-            Button { session.choosePDFs() } label: { Image(systemName: "doc.badge.plus") }
+            Button { session.choosePDFs() } label: { SymbolIcon(systemName: "doc.badge.plus") }
                 .disabled(!session.canArrangePages).remileHelp("Add PDFs").accessibilityLabel("Add PDFs")
-            PDFPageSizeControl(session: session, compact: compact).disabled(!session.canArrangePages)
+            PDFPageSizeControl(session: session, compact: true).disabled(!session.canArrangePages)
             if !session.showsOverview {
             Button { session.beginComment() } label: { controlLabel("Note", symbol: "text.bubble", compact: compact) }
                 .disabled(session.document?.allowsCommenting != true).remileHelp("Add a note at the selection or current page")
@@ -221,32 +218,32 @@ struct PDFWorkspace: View {
             Menu {
                 Button("Select Text") { session.drawingTool = nil }
                 ForEach(PDFDrawingTool.allCases) { tool in
-                    Button { session.drawingTool = tool } label: { Label(tool.rawValue, systemImage: tool.symbol) }
+                    Button { session.drawingTool = tool } label: { SymbolLabel(tool.rawValue, systemImage: tool.symbol) }
                 }
                 Divider()
                 ForEach(HighlightColor.allCases) { color in
                     Button { session.drawingColor = color } label: {
-                        if session.drawingColor == color { Label(color.name, systemImage: "checkmark") } else { Text(color.name) }
+                        if session.drawingColor == color { SymbolLabel(color.name, systemImage: "checkmark") } else { Text(color.name) }
                     }
                 }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: session.drawingTool?.symbol ?? "pencil.line")
+                    SymbolIcon(systemName: session.drawingTool?.symbol ?? "pencil.line")
                         .font(RemileType.control).frame(width: 20, height: 28)
-                    if !compact { Text(session.drawingTool?.rawValue ?? "Draw").font(RemileType.control) }
-                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .medium))
-                }.foregroundStyle(RemileStyle.accent).contentShape(Rectangle())
+
+                    SymbolIcon(systemName: "chevron.down")
+                }.foregroundStyle(session.drawingTool != nil ? RemileStyle.accent : RemileStyle.ink).contentShape(Rectangle())
                     .accessibilityElement(children: .ignore).accessibilityLabel("Draw or add shapes")
             }
-                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().frame(minHeight: 28)
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().frame(minWidth: RemileControl.toolHit, minHeight: RemileControl.toolHit)
                 .accessibilityLabel("Draw or add shapes").accessibilityValue(session.drawingTool?.rawValue ?? "Select Text")
                 .remileHelp("Draw or add shapes. Escape returns to text selection.")
             }
             Divider().frame(height: 20)
-            Button { session.rotateVisiblePages(clockwise: false) } label: { Image(systemName: "rotate.left").font(RemileType.control).frame(width: 28, height: 28).contentShape(Rectangle()) }
+            Button { session.rotateVisiblePages(clockwise: false) } label: { SymbolIcon(systemName: "rotate.left").frame(width: RemileControl.toolHit, height: RemileControl.toolHit).contentShape(Rectangle()) }
                 .buttonStyle(RemileCompactToolStyle())
                 .disabled(!session.canArrangePages).remileHelp(session.showsOverview ? "Rotate selected pages left" : "Rotate current page left")
-            Button { session.rotateVisiblePages(clockwise: true) } label: { Image(systemName: "rotate.right").font(RemileType.control).frame(width: 28, height: 28).contentShape(Rectangle()) }
+            Button { session.rotateVisiblePages(clockwise: true) } label: { SymbolIcon(systemName: "rotate.right").frame(width: RemileControl.toolHit, height: RemileControl.toolHit).contentShape(Rectangle()) }
                 .buttonStyle(RemileCompactToolStyle())
                 .disabled(!session.canArrangePages).remileHelp(session.showsOverview ? "Rotate selected pages right" : "Rotate current page right")
             Spacer(minLength: 12)
@@ -272,7 +269,7 @@ struct PDFWorkspace: View {
             HStack(spacing: 5) {
                 ForEach(PDFSession.Sidebar.allCases, id: \.self) { tab in
                     Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.sidebar = tab } } label: {
-                        Image(systemName: sidebarSymbol(tab)).font(.system(size: 16)).frame(width: 20, height: 20).frame(maxWidth: .infinity).frame(height: 32)
+                        SymbolIcon(systemName: sidebarSymbol(tab)).frame(width: 20, height: 20).frame(maxWidth: .infinity).frame(height: 32)
                             .foregroundStyle(session.sidebar == tab ? RemileStyle.accent : RemileStyle.ink.opacity(0.7))
                             .overlay(alignment: .topTrailing) {
                                 if tab == .comments && !session.comments.isEmpty { Circle().fill(RemileStyle.accent).frame(width: 6, height: 6).padding(4).accessibilityLabel("\(session.comments.count) comments") }
@@ -412,7 +409,7 @@ struct PDFWorkspace: View {
                     .remileHelp("Show comment on the page")
             }
             if let parent = comment.parent, let original = session.comments.first(where: { $0.id == parent }) {
-                Label("Reply to \(original.author)", systemImage: "arrow.turn.up.left").font(RemileType.small).foregroundStyle(RemileStyle.accent)
+                SymbolLabel("Reply to \(original.author)", systemImage: "arrow.turn.up.left").font(RemileType.small).foregroundStyle(RemileStyle.accent)
                 Text(original.text).font(RemileType.small).foregroundStyle(.secondary).lineLimit(1).help(original.text)
             }
             Text(comment.text).textSelection(.enabled).multilineTextAlignment(.leading)

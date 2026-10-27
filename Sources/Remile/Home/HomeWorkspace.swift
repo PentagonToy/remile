@@ -59,15 +59,15 @@ struct HomeWorkspace: View {
                         Text("v" + RemileRelease.current).font(RemileType.small).monospacedDigit().foregroundStyle(.secondary).fixedSize()
                     }
                 }.padding(.vertical, 22)
-                Label("Home", systemImage: "house").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).background(RemileStyle.accent.opacity(0.17), in: RoundedRectangle(cornerRadius: 9))
-                Button { navigate(.search) } label: { Label("Search", systemImage: "magnifyingglass").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("search")
+                SymbolLabel("Home", systemImage: "house").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).background(RemileStyle.accent.opacity(0.17), in: RoundedRectangle(cornerRadius: 9))
+                Button { navigate(.search) } label: { SymbolLabel("Search", systemImage: "magnifyingglass").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("search")
                 Button { navigate(.reference) } label: {
-                    Label { Text("Reference").fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: "books.vertical") }
+                    Label { Text("Reference").fixedSize(horizontal: false, vertical: true) } icon: { SymbolIcon(systemName: "books.vertical") }
                         .labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11)
                 }.buttonStyle(.plain).tourTarget("reference")
                 Spacer()
-                Button { actions.settings = true } label: { Label("Settings", systemImage: "gearshape").labelStyle(RemileNavigationLabelStyle()).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("settings")
-                Button { model.guidePresented = true } label: { Label("User guide", systemImage: "book.closed").labelStyle(RemileNavigationLabelStyle()).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).remileHelp("A quick guide to remile.").tourTarget("guide")
+                Button { actions.settings = true } label: { SymbolLabel("Settings", systemImage: "gearshape").labelStyle(RemileNavigationLabelStyle()).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("settings")
+                Button { model.guidePresented = true } label: { SymbolLabel("User guide", systemImage: "book.closed").labelStyle(RemileNavigationLabelStyle()).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).remileHelp("A quick guide to remile.").tourTarget("guide")
             }.padding(14).frame(maxWidth: .infinity).background(.ultraThinMaterial)
         }, content: { home.frame(maxWidth: .infinity, maxHeight: .infinity) })
     }
@@ -83,7 +83,7 @@ struct HomeWorkspace: View {
                     HStack {
                         Spacer()
                         Button { if let url = model.chooseDocument() { open(url) } } label: {
-                            Label("Open a document", systemImage: "doc.badge.plus").font(RemileType.body).padding(.horizontal, 20).padding(.vertical, 12)
+                            SymbolLabel("Open a document", systemImage: "doc.badge.plus").font(RemileType.body).padding(.horizontal, 20).padding(.vertical, 12)
                                 .foregroundStyle(colorScheme == .dark ? Color(nsColor: RemileStyle.slate) : .white)
                                 .background(RemileStyle.accent, in: Capsule())
                         }.buttonStyle(.plain).tourTarget("open")
@@ -92,14 +92,14 @@ struct HomeWorkspace: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Button { withAnimation(reduceMotion || !animations ? nil : RemileMotion.disclosure) { recentExpanded.toggle() } } label: {
-                                HStack(spacing: 7) { Image(systemName: recentExpanded ? "chevron.down" : "chevron.right").font(.system(size: 11, weight: .semibold)); Text("Recently opened").font(RemileType.heading) }
+                                HStack(spacing: 7) { SymbolIcon(systemName: recentExpanded ? "chevron.down" : "chevron.right"); Text("Recently opened").font(RemileType.heading) }
                             }.buttonStyle(.plain).remileHelp(recentExpanded ? "Collapse recent documents" : "Expand recent documents").accessibilityValue(recentExpanded ? "Expanded" : "Collapsed")
                             Spacer()
                             Menu {
                                 Button("Clear recent items") { model.clearRecent() }.disabled(model.recent.isEmpty)
                                 Divider()
                                 Button("Delete local editing history…", role: .destructive) { actions.clearHistory = true }
-                            } label: { Image(systemName: "ellipsis").frame(width: 28, height: 26) }.menuStyle(.borderlessButton).fixedSize().remileHelp("Recent items and local history")
+                            } label: { SymbolIcon(systemName: "ellipsis").frame(width: 28, height: 26) }.menuStyle(.borderlessButton).tint(RemileStyle.ink).fixedSize().remileHelp("Recent items and local history")
                         }
                         if recentExpanded {
                             if model.recent.isEmpty { Text("Open a document or start with an editor below.").foregroundStyle(.secondary).font(RemileType.callout).padding(.vertical, 12) }
@@ -120,9 +120,9 @@ struct HomeWorkspace: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Editors").font(RemileType.heading)
                         HomeCardLayout(minimumWidth: 160) {
-                            Button { model.newWriter() } label: { Label("Writer", systemImage: "text.alignleft").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("New Writer document").tourTarget("writer")
-                            Button { model.newMarkdown() } label: { Label("Markdown", systemImage: "square.and.pencil").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("New Markdown document").tourTarget("markdown")
-                            Button { model.newTeX() } label: { Label("LaTeX", systemImage: "doc.text").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("New LaTeX project. Drop a folder or source ZIP to open it.").tourTarget("latex").modifier(ToolFileDrop(model: model, target: .latex))
+                            Button { model.newWriter() } label: { SymbolLabel("Writer", systemImage: "text.alignleft").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("New Writer document").tourTarget("writer")
+                            Button { model.newMarkdown() } label: { SymbolLabel("Markdown", systemImage: "square.and.pencil").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("New Markdown document").tourTarget("markdown")
+                            Button { model.newTeX() } label: { SymbolLabel("LaTeX", systemImage: "doc.text").frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("New LaTeX project. Drop a folder or source ZIP to open it.").tourTarget("latex").modifier(ToolFileDrop(model: model, target: .latex))
                             Button { model.overleaf.openLibrary() } label: { Label { Text("Overleaf") } icon: { OverleafMark() }.frame(maxWidth: .infinity).padding(.vertical, 8) }.remileHelp("Open Overleaf library").tourTarget("overleaf")
                         }.font(RemileType.callout).labelStyle(HomeEditorLabelStyle()).buttonStyle(RemileEditorButtonStyle()).tourTarget("editors")
                     }
@@ -147,7 +147,7 @@ struct HomeWorkspace: View {
     private func tool(_ title: String, symbol: String, detail: String, compact: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: compact ? 7 : 12) {
-                Image(systemName: symbol).font(.system(size: 20, weight: .medium)).foregroundStyle(RemileStyle.accent).frame(height: 24)
+                SymbolIcon(systemName: symbol).foregroundStyle(RemileStyle.accent).frame(height: 24)
                 Text(title).font(.system(size: 16, weight: .semibold))
                 Text(detail).font(RemileType.small).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(compact ? 14 : 20)
