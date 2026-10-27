@@ -150,6 +150,33 @@ try check(MainActor.assumeIsolated { model.selection?.key } == "Example_2026_Man
 print("Passed \(checks) Reference checks. Synthetic fixtures: \(output.path)")
 
 let library = try repository.addLibrary("Research")
+let renameHistory = ReferenceRepository.History()
+let renameRepo = ReferenceRepository(root: output.appendingPathComponent("library-renaming"), history: renameHistory)
+let renameLibrary = try renameRepo.addLibrary("Research")
+let renameCollection = try renameRepo.addLibrary("Notes", parentID: renameLibrary.id)
+let renameRecord = try renameRepo.add([ReferenceRecord(fields: ["title": "Keep the reference"])], libraryID: renameCollection.id)[0]
+let beforeLibraryRename = try renameRepo.records()
+try renameRepo.renameLibrary(renameLibrary.id, to: "  Reading  ", expectedName: "Research")
+try check(try renameRepo.libraries().first { $0.id == renameLibrary.id }?.name == "Reading", "Library rename trims the name and preserves its identity")
+try check(try renameRepo.records() == beforeLibraryRename && renameRepo.libraries().first { $0.id == renameCollection.id }?.parentID == renameLibrary.id, "Library rename preserves references and child membership")
+try renameRepo.undo()
+try check(try renameRepo.libraries().first { $0.id == renameLibrary.id }?.name == "Research", "Library rename can be undone")
+try renameRepo.undo(redo: true)
+try check(try renameRepo.libraries().first { $0.id == renameLibrary.id }?.name == "Reading", "Library rename can be redone")
+try renameRepo.renameLibrary(renameCollection.id, to: "Drafts", expectedName: "Notes")
+try check(try renameRepo.records().first?.collectionID == renameCollection.id && renameRepo.records().first?.id == renameRecord.id, "Collection rename preserves reference membership")
+rejects("Library rename rejects an empty name") { try renameRepo.renameLibrary(renameLibrary.id, to: " \n ") }
+rejects("Library rename rejects overlong names") { try renameRepo.renameLibrary(renameLibrary.id, to: String(repeating: "x", count: 81)) }
+rejects("Library rename rejects a sibling name collision") { try renameRepo.renameLibrary(renameLibrary.id, to: "MY LIBRARY") }
+rejects("A stale name editor cannot overwrite a later rename") { try renameRepo.renameLibrary(renameLibrary.id, to: "Stale", expectedName: "Research") }
+let secondRenameCollection = try renameRepo.addLibrary("Other", parentID: renameLibrary.id)
+rejects("Collection rename rejects a sibling name collision") { try renameRepo.renameLibrary(secondRenameCollection.id, to: "drafts") }
+try renameRepo.renameLibrary(renameLibrary.id, to: "READING", expectedName: "Reading")
+try check(try renameRepo.libraries().first { $0.id == renameLibrary.id }?.name == "READING", "An item may change the case of its own name")
+try renameRepo.deleteLibrary(secondRenameCollection.id)
+rejects("Trashed collections cannot be renamed") { try renameRepo.renameLibrary(secondRenameCollection.id, to: "Unavailable") }
+let readOnlyRenameRepo = ReferenceRepository(root: renameRepo.root, readOnly: true)
+rejects("Read-only catalogues reject library rename") { try readOnlyRenameRepo.renameLibrary(renameLibrary.id, to: "Forbidden") }
 try check(try repository.libraries().count == 2, "Legacy catalogue gains a second library")
 let copy = try repository.duplicate(attached.id, to: library.id)
 try check(copy.attachments == (try repository.records().first { $0.id == attached.id }!).attachments, "Cross-library copy shares managed PDF")
@@ -222,7 +249,7 @@ var withAbstract = manual; withAbstract.key = "Example"; withAbstract.fields["ab
 try check(try !ReferenceExport.bibtex([withAbstract], includeAbstract: false).contains("abstract ="), "Abstract excluded from export when off")
 try check(try ReferenceExport.bibtex([withAbstract], includeAbstract: true).contains("abstract ="), "Abstract included only when enabled")
 try check(withAbstract.fields["abstract"] == "Stored abstract", "Export does not erase stored abstract")
-try check(!ReferenceMetadata.rows(withAbstract).contains { $0.id == "abstract" }, "Metadata view hides abstract")
+try check(ReferenceMetadata.rows(withAbstract).last?.id == "abstract", "Abstract follows the compact metadata rows for its collapsed disclosure")
 try check(ReferenceColumn.visible("publisher,year").contains(.title), "Title column always stays visible")
 try check(ReferenceColumn.visible("title,unknown,publisher") == [.title,.publisher], "Column preferences ignore unknown values")
 print("Passed \(checks) Reference checks with collections, Trash and abstract policy.")
@@ -348,6 +375,31 @@ try check(readable.fields == untouched && (try ReferenceBibTeX.parse(ReferenceBi
 print("Passed \(checks) Reference checks including readable BibTeX labels")
 
 try check(ReferenceText.display("for~Subgrid--Scale---Models") == "for Subgrid–Scale—Models", "TeX spacing and dashes render without source notation")
+let displayCache = ReferenceTextCache(countLimit: 2, byteLimit: 64)
+var displayComputations = 0
+func cachedDisplay(_ source: String, kind: String = "display") -> [String] {
+    displayCache.value(kind: kind, source: source) { displayComputations += 1; return [source.uppercased()] }
+}
+try check(cachedDisplay("alpha") == ["ALPHA"] && cachedDisplay("alpha") == ["ALPHA"] && displayComputations == 1, "Unchanged display strings reuse their parsed value")
+_ = cachedDisplay("beta"); _ = cachedDisplay("alpha"); _ = cachedDisplay("gamma")
+let beforeCachedHit = displayComputations
+_ = cachedDisplay("alpha")
+try check(displayComputations == beforeCachedHit, "Display cache promotes recently used strings")
+_ = cachedDisplay("beta")
+try check(displayComputations == beforeCachedHit + 1, "Display cache evicts the least recently used string")
+_ = cachedDisplay("beta", kind: "authors")
+try check(displayComputations == beforeCachedHit + 2, "Different display operations do not share incompatible values")
+for i in 0..<100 { _ = cachedDisplay("field-\(i)") }
+try check(displayCache.usage.count <= 2 && displayCache.usage.textBytes <= 64, "Display reuse respects item and text-byte limits")
+let beforeOversized = displayCache.usage
+_ = cachedDisplay(String(repeating: "x", count: 20_000))
+try check(displayCache.usage.count == beforeOversized.count && displayCache.usage.textBytes == beforeOversized.textBytes, "Large metadata bypasses the display cache")
+let parallelDisplayCache = ReferenceTextCache(countLimit: 8, byteLimit: 512)
+DispatchQueue.concurrentPerform(iterations: 64) { i in
+    let source = "field-\(i % 8)"
+    precondition(parallelDisplayCache.value(kind: "display", source: source) { [source] } == [source])
+}
+try check(parallelDisplayCache.usage.count <= 8 && parallelDisplayCache.usage.textBytes <= 512, "Concurrent display preparation keeps the cache consistent and bounded")
 print("Passed \(checks) Reference checks including display spacing")
 
 var venue = ReferenceRecord(); venue.fields = ["journal": "{{Combustion}} and Flame", "publisher": "Elsevier"]
@@ -519,6 +571,21 @@ let refreshDeadline = Date().addingTimeInterval(5)
 while MainActor.assumeIsolated({ !watchingModel.records.contains { $0.id == external.id } }) && Date() < refreshDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
 try check(MainActor.assumeIsolated { watchingModel.records.contains { $0.id == external.id } }, "Native Reference model observes external CLI catalogue changes")
 watchingTask.cancel()
+RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+let settlingDeadline = Date().addingTimeInterval(5)
+while MainActor.assumeIsolated({ watchingModel.busy }) && Date() < settlingDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+var reentryPublications = 0, reentryBusyChanges = 0
+let recordsObservation = MainActor.assumeIsolated { watchingModel.$records.dropFirst().sink { _ in reentryPublications += 1 } }
+let busyObservation = MainActor.assumeIsolated { watchingModel.$busy.dropFirst().sink { _ in reentryBusyChanges += 1 } }
+let reentryWatch = Task { @MainActor in await watchingModel.watch() }
+RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+try check(reentryPublications == 0 && reentryBusyChanges == 0, "Reentering an unchanged library does not reload or disable its list")
+var afterReentry = selectionC; afterReentry.id = UUID(); afterReentry.fields["title"] = "An external edit after reentry"
+let changedAfterReentry = try writeRepo.add([afterReentry])[0]
+let reentryDeadline = Date().addingTimeInterval(5)
+while MainActor.assumeIsolated({ !watchingModel.records.contains { $0.id == changedAfterReentry.id } }) && Date() < reentryDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+try check(MainActor.assumeIsolated { watchingModel.records.contains { $0.id == changedAfterReentry.id } }, "A resumed watcher still refreshes changed metadata")
+reentryWatch.cancel(); recordsObservation.cancel(); busyObservation.cancel()
 print("Passed \(checks) Reference checks including CLI writes and live catalogue refresh")
 
 var citationExample = ReferenceRecord(key: "Example2026", fields: ["title": "A small observation", "author": "Example, A", "year": "2026"])

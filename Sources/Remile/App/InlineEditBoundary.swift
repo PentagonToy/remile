@@ -1,6 +1,10 @@
 import SwiftUI
 import AppKit
 
+enum InlineNamePolicy {
+    static func isEmpty(_ name: String) -> Bool { name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+}
+
 /// Non-focusable surfaces must also finish an inline edit when clicked.
 struct InlineEditBoundary: NSViewRepresentable {
     let outside: () -> Void

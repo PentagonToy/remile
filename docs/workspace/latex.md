@@ -6,7 +6,7 @@ Stay close to the source, with the finished page beside it.
 
 1. Choose **LaTeX** from Home to open an untitled draft. To open an existing project, drop its folder or source ZIP onto the LaTeX button.
 2. Choose the main document if asked.
-3. Select Compile to build the PDF with your local TeX installation.
+3. The first compile starts automatically with your local TeX installation. Choose Compile or press `⌘Return` after later edits.
 
 Save chooses a folder for a new draft. An unchanged draft closes quietly. Edited drafts ask whether to save, discard or stay. Working copies remain in remile’s private draft folder until saved or discarded.
 
@@ -19,6 +19,16 @@ Files holds the project. Outline follows its sections. Drag the divider to give 
 Double-click in the PDF to return to the corresponding source. Word context refines the target when it matches clearly. Ambiguous text and figures keep the SyncTeX location. Selecting text alone does not move the source. Type `\cite{` to search your bibliography and Reference while writing. [Read the citation hints →](../reference.md#read-citation-hints)
 
 Inside `\includegraphics{…}`, type part of a filename to see matching project images. `\input{…}` and `\include{…}` suggest TeX files. `\ref{…}` and `\eqref{…}` suggest labels from the project. Completing a supported `\begin{…}` inserts its matching end and places the cursor inside. These suggestions use local project data without a network request.
+
+## Find and complete
+
+Press `⌘F` to open Find below the source. `⌥⌘F` also opens the replacement row. `⌘G` moves to the next match and `⇧⌘G` to the previous one. Match case, whole words and regular expressions are available beside the query or in Search options when the pane is narrow. Escape closes Find. Replace and Replace All are undoable. In regular expressions, `$1`, `$2` and later groups refer to captured text.
+
+Type a backslash and at least two letters for local command suggestions. `⌥Escape` explicitly opens completion for a shorter prefix. Arrow keys choose an item, Return or Tab accepts it, and Escape dismisses the list. Ordinary prose does not open command suggestions.
+
+Completion includes common maths and document commands, package and class names, project files, bibliography filenames, labels and commands defined with `\newcommand` or `\DeclareMathOperator`. Project-defined environments receive a matching end. Package suggestions name common choices. They do not verify installation or install anything.
+
+Suggestions use a bounded, lazy project index off the UI thread. Very large files or projects may have definitions outside that index. The source remains editable and compilation still uses the complete project.
 
 ## Ask about your manuscript
 
@@ -63,5 +73,3 @@ The terminal and PDF share one button. Open logs, then click the PDF icon to ret
 During compilation, the terminal dot waits for the new result. Your source stays editable when a build fails.
 
 [Compiler, files and history details](../details/features.md#latex) · [Review a manuscript](../manuscript-review.md) · [LaTeX assistance](../details/assistant.md#writing)
-
-New drafts and opened projects start their first compile automatically. You can keep editing if compilation reports an error.

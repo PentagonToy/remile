@@ -8,6 +8,8 @@ Open Reference from Home. Use Add or drop PDF and BibTeX files into Harbour. Imp
 
 Create libraries and collections from the sidebar context menu. Drop a PDF onto a record when you want to attach it to that reference.
 
+Right-click a library or collection and choose **Rename…** to change its name. Return or a click elsewhere saves a valid name. An empty name cancels when you leave the field, and Escape cancels the edit. Renaming keeps its references and collections together and supports Undo.
+
 ## Find and organise
 
 Search by the details you remember. Click a column heading to sort, then click again to reverse the order. Drag a heading's edge to adjust its width.

@@ -753,9 +753,10 @@ final class PDFSession: NSObject, ObservableObject {
         return (index + 1, String(selected.prefix(3000)))
     }
 
-    func previousPage() { view?.goToPreviousPage(nil) }
-    func nextPage() { view?.goToNextPage(nil) }
-    func goToPage(_ number: Int) { if number > 0, let page = document?.page(at: number - 1) { if showsOverview { openOverviewPage(page) } else { view?.go(to: page) } } }
+    private func focusReader() { if let view { view.window?.makeFirstResponder(view) } }
+    func previousPage() { view?.goToPreviousPage(nil); focusReader() }
+    func nextPage() { view?.goToNextPage(nil); focusReader() }
+    func goToPage(_ number: Int) { if number > 0, let page = document?.page(at: number - 1) { if showsOverview { openOverviewPage(page) } else { view?.go(to: page) }; focusReader() } }
     func goToOutline(_ destination: PDFDestination) {
         guard let document, let page = destination.page, page.document === document else { return }
         currentPage = document.index(for: page) + 1

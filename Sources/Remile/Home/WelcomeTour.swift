@@ -10,7 +10,12 @@ extension View {
     func tourTarget(_ id: String) -> some View { transformAnchorPreference(key: TourTarget.self, value: .bounds) { targets, anchor in targets[id] = anchor }.id(id) }
 }
 
-final class WelcomeTourProgress: ObservableObject { @Published var step = 0; @Published var replay = false }
+final class WelcomeTourProgress: ObservableObject {
+    static let transitionDelay = Duration.milliseconds(600)
+    @Published var step = 0
+    @Published var replay = false
+    @Published var transitioning = false
+}
 
 /// The home screen provides anchors. The tour owns only presentation and completion.
 @MainActor struct WelcomeTour: ViewModifier {
@@ -53,24 +58,30 @@ final class WelcomeTourProgress: ObservableObject { @Published var step = 0; @Pu
                             RoundedRectangle(cornerRadius: 10).stroke(visible ? RemileStyle.accent : .clear, lineWidth: 2).frame(width: target.width, height: target.height).position(x: target.midX, y: target.midY).allowsHitTesting(false)
                             VStack(alignment: .leading, spacing: 14) {
                                 HStack { Text("\(state.step + 1) of \(Self.steps.count)").foregroundStyle(.secondary).accessibilityIdentifier("tour.step"); Spacer(); Button("Skip") { finish() }.buttonStyle(.plain).keyboardShortcut(.cancelAction) }.font(RemileType.caption)
-                                Text(item.title).font(RemileType.heading)
-                                Text(item.detail).font(RemileType.callout).fixedSize(horizontal: false, vertical: true)
+                                Text(item.title).font(RemileType.heading).contentTransition(.opacity)
+                                Text(item.detail).contentTransition(.opacity).font(RemileType.callout).fixedSize(horizontal: false, vertical: true)
                                 HStack {
-                                    if state.step > 0 { Button("Back") { state.step -= 1 } }
+                                    if state.step > 0 { Button("Back") { state.step -= 1 }.disabled(state.transitioning) }
                                     Spacer()
-                                    Button(state.step == Self.steps.count - 1 ? "Done" : "Next") { if state.step == Self.steps.count - 1 { finish() } else { state.step += 1 } }.keyboardShortcut(.defaultAction).accessibilityIdentifier("tour.next")
+                                    Button(state.step == Self.steps.count - 1 ? "Done" : "Next") { if state.step == Self.steps.count - 1 { finish() } else { state.step += 1 } }.keyboardShortcut(.defaultAction).accessibilityIdentifier("tour.next").disabled(state.transitioning)
                                     if state.step == Self.steps.count - 1 { Button("User guide") { finish(); openGuide() } }
                                 }
                             }.font(RemileType.control).buttonStyle(RemileActionStyle()).padding(20).frame(width: width).background(RemileStyle.background, in: RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(RemileStyle.accent.opacity(0.35))).shadow(color: .black.opacity(0.25), radius: 20, y: 8).position(x: x, y: y)
                         }.accessibilityElement(children: .contain).accessibilityAddTraits(.isModal)
-                        .animation(reduceMotion || !animations ? nil : RemileMotion.panel, value: state.step)
+                        .animation(reduceMotion || !animations ? nil : RemileMotion.tour, value: state.step)
+                        .task(id: state.step) {
+                            state.transitioning = !reduceMotion && animations
+                            guard state.transitioning else { return }
+                            do { try await Task.sleep(for: WelcomeTourProgress.transitionDelay) } catch { return }
+                            state.transitioning = false
+                        }
                     }
                 }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .remileReplayTour)) { _ in state.step = 0; state.replay = true }
     }
-    private func finish() { completed = true; state.replay = false; state.step = 0 }
+    private func finish() { state.transitioning = false; completed = true; state.replay = false; state.step = 0 }
 }
 private struct SpotlightShape: Shape {
     var hole: CGRect

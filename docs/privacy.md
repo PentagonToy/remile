@@ -8,6 +8,8 @@ Reference stores its catalogue and copied PDFs together. Its default folder is `
 
 Presets carry supported preferences. They exclude credentials, accounts, document paths and the library location. Search indexes and device caches stay local. Downloaded Markdown images can remain in `~/Library/Caches/local.remile.app/MarkdownImages`, with a 256 MiB HTTP cache capacity. The cache respects source response policies and is not copied into the document or shared Reference storage.
 
+Find, replace and TeX completion use the local editor and project data. Closing Find cancels pending work and releases its result snapshot. No search term or command prefix is sent to a service by these tools.
+
 ## When you connect
 
 Questions and selected document context are sent to the AI provider when you submit a request. ChatGPT suggestions use your connected account and its limits. Read [AI and writing](assistant.md) for context boundaries and provider controls.

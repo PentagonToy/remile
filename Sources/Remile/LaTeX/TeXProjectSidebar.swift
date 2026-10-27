@@ -166,7 +166,7 @@ private struct TeXSidebarCreation: View {
             if let error = project.newItemError { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).fixedSize(horizontal: false, vertical: true) }
         }.background(InlineEditBoundary(cancel: { cancel() }) { leave() }).padding(.horizontal, 12).padding(.vertical, 6)
             .onAppear { state.name = draft.initialName; state.finished = false; focused = true }
-            .onDisappear { if isRename { commit() } }
+            .onDisappear { if InlineNamePolicy.isEmpty(state.name) { cancel() } else if isRename { commit() } }
             .remileHelp(isRename ? "Return or click elsewhere to save · Esc cancels" : "Return confirms. Click elsewhere or press Esc to cancel.")
     }
     private var isRename: Bool { switch draft.kind { case .rename, .renameCollection: return true; default: return false } }
@@ -174,6 +174,7 @@ private struct TeXSidebarCreation: View {
     private func leave() { if isRename { commit() } else { cancel() } }
     private func commit() {
         guard !state.finished, project.newItemDraft?.id == draft.id else { return }
+        guard !InlineNamePolicy.isEmpty(state.name) else { cancel(); return }
         state.finished = true
         if !project.finishNewItem(state.name) { state.finished = false; focused = true }
     }

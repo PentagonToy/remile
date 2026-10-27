@@ -4,9 +4,9 @@ import Foundation
 enum MathCompletion {
     struct Context { let range: NSRange; let prefix: String }
     static let commands = [
-        "alpha", "beta", "gamma", "delta", "epsilon", "varepsilon", "theta", "lambda", "mu", "nu", "pi", "rho", "sigma", "tau", "phi", "omega",
+        "alpha", "beta", "gamma", "eta", "kappa", "xi", "upsilon", "chi", "psi", "zeta", "delta", "epsilon", "varepsilon", "theta", "lambda", "mu", "nu", "pi", "rho", "sigma", "tau", "phi", "omega",
         "Gamma", "Delta", "Theta", "Lambda", "Sigma", "Phi", "Omega", "partial", "nabla", "infty", "cdot", "times", "leq", "geq", "neq", "approx", "sum", "prod", "int", "lim",
-        "frac{}{}", "sqrt{}", "text{}", "mathrm{}", "mathbf{}", "hat{}", "bar{}", "vec{}"
+        "sin", "cos", "tan", "log", "ln", "exp", "min", "max", "sup", "inf", "det", "forall", "exists", "in", "notin", "subset", "subseteq", "cup", "cap", "rightarrow", "leftarrow", "Rightarrow", "leftrightarrow", "overline{}", "underline{}", "underbrace{}", "overbrace{}", "mathbb{}", "mathcal{}", "mathsf{}", "operatorname{}", "boldsymbol{}", "frac{}{}", "sqrt{}", "text{}", "mathrm{}", "mathbf{}", "hat{}", "bar{}", "vec{}"
     ].map { "\\" + $0 }.sorted()
 
     static func context(_ source: String, selection: NSRange) -> Context? {

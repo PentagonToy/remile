@@ -46,6 +46,34 @@ struct PDFSelectionActions {
 /// Reader and Search use the same explicit native menu, without swizzling PDFKit.
 @MainActor
 final class PDFSelectionView: PageNavigationPDFView {
+    var openPDFs: (([URL]) -> Bool)?
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        registerForDraggedTypes([.fileURL])
+    }
+    static func droppedPDFs(from pasteboard: NSPasteboard) -> [URL] {
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        guard !urls.isEmpty, urls.count <= 32, urls.allSatisfy({ $0.isFileURL && $0.pathExtension.lowercased() == "pdf" }) else { return [] }
+        var seen = Set<String>()
+        return urls.filter { seen.insert($0.standardizedFileURL.path).inserted }
+    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if openPDFs != nil, !Self.droppedPDFs(from: sender.draggingPasteboard).isEmpty { return .copy }
+        return super.draggingEntered(sender)
+    }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if openPDFs != nil, !Self.droppedPDFs(from: sender.draggingPasteboard).isEmpty { return .copy }
+        return super.draggingUpdated(sender)
+    }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if openPDFs != nil, !Self.droppedPDFs(from: sender.draggingPasteboard).isEmpty { return true }
+        return super.prepareForDragOperation(sender)
+    }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = Self.droppedPDFs(from: sender.draggingPasteboard)
+        if !urls.isEmpty, let openPDFs { return openPDFs(urls) }
+        return super.performDragOperation(sender)
+    }
     private lazy var imageDrag = PDFImageDrag(view: self)
     private lazy var contentMenu = PDFContentMenu(view: self)
     override var document: PDFDocument? {
@@ -87,6 +115,7 @@ final class PDFSelectionView: PageNavigationPDFView {
         if drawingTool != nil { addCursorRect(bounds, cursor: .crosshair) }
     }
     override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
         if drawingTool == nil, let editNote {
             let location = convert(event.locationInWindow, from: nil)
             if let page = page(for: location, nearest: false),

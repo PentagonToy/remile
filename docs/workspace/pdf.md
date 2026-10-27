@@ -50,3 +50,11 @@ Editing can affect digital signatures. Signed or restricted PDFs show an editing
 [Shared buttons and status marks](../buttons.md)
 
 [Page tools, OCR and signature details](../details/features.md#pdf) · [Find passages across files](search.md)
+
+## Add a PDF and keep reading
+
+Use the plus beside the last bottom tab, or drop another PDF onto the document canvas. The new PDF opens in another tab and becomes active. Dropping an already open PDF selects its existing tab. The previous document keeps its session, reading position and pending edits.
+
+Click the document before using the arrow keys. Left and right turn pages. Up and down retain continuous scrolling. Submitting a page number or using a page button returns the keyboard to the document. Arrows in search fields, page-number fields and editable form controls keep their normal text behaviour.
+
+Reading positions are stored separately from PDF contents, for the most recently read 512 files. Reopening the same file restores its page and position on the page. Explicit search destinations take priority. The PDF itself is unchanged.

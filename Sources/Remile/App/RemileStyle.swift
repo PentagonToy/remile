@@ -42,6 +42,13 @@ enum ReaderAppearance: String, CaseIterable {
     }
 }
 
+/// Page transitions animate the outer surface, not initial layouts inside it.
+struct RemileNavigationContent: ViewModifier {
+    func body(content: Content) -> some View {
+        content.transaction { $0.animation = nil }
+    }
+}
+
 struct ReaderAppearanceModifier: ViewModifier {
     @AppStorage(ReaderAppearance.preference) private var appearance = ReaderAppearance.system.rawValue
     @AppStorage(AnimationPolicy.preference) private var animations = true
@@ -102,7 +109,8 @@ enum RemileRadius {
 enum RemileMotion {
     static let disclosure = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.24)
     static let panel = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.24)
-    static let navigation = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.3)
+    static let tour = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.6)
+    static let navigation = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.4)
 }
 
 struct RemilePressStyle: ButtonStyle {

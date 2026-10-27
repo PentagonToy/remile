@@ -321,9 +321,16 @@ final class RemileWindows: ObservableObject {
     }
     func closeDocumentTab(_ id: ObjectIdentifier) { entries[id]?.0.performClose(nil) }
     func addDocumentTab(for reader: ReadingSession) {
-        guard let home = entries.values.first(where: { $0.1.reader === reader })?.1,
-              let url = home.chooseDocument() else { return }
-        home.open(url)
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.pdf]; panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK else { return }
+        _ = openDroppedPDFs(panel.urls, for: reader)
+    }
+    @discardableResult func openDroppedPDFs(_ urls: [URL], for reader: ReadingSession) -> Bool {
+        guard !urls.isEmpty, urls.count <= 32, urls.allSatisfy({ $0.isFileURL && $0.pathExtension.lowercased() == "pdf" }),
+              let home = entries.values.first(where: { $0.1.reader === reader })?.1 else { return false }
+        for url in urls { home.open(url) }
+        return true
     }
     /// Tabs reuse independent document, annotation and CLI sessions without reloading PDF data.
     func openPDFTab(_ url: URL, from model: HomeModel) -> Bool {

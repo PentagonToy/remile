@@ -29,6 +29,7 @@ struct InlineName: View {
     private func commit() {
         guard !draft.finished else { return }
         draft.finished = true
+        if InlineNamePolicy.isEmpty(draft.text) { editing = false; return }
         if draft.text == draft.original || draft.apply?(draft.text) == true { editing = false }
         else { draft.finished = false; focused = true }
     }

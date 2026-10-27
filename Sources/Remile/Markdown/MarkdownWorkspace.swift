@@ -45,11 +45,8 @@ struct MarkdownWorkspace: View {
         VStack(spacing: 0) {
             ViewThatFits(in: .horizontal) { editorToolbar(compact: false); editorToolbar(compact: true) }
             Divider()
-            Group {
-                if presentation.outline {
-                    ReaderSplit(sizing: .outline, minimum: 180, maximum: 300, minimumContent: 580, label: "outline", revealToken: presentation.paneReset.uuidString, pane: { outlinePanel }, content: { documentContent })
-                } else { documentContent }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            ReaderSplit(sizing: .outline, isPresented: presentation.outline, minimum: 180, maximum: 300, minimumContent: 580, label: "outline", revealToken: presentation.paneReset.uuidString, pane: { outlinePanel }, content: { documentContent })
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             HStack(spacing: 14) {
                 Text(presentation.mode == .read ? "Reading" : "Markdown source")
@@ -59,7 +56,7 @@ struct MarkdownWorkspace: View {
                 ReaderThemeButton()
             }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 12).frame(height: 32).background(RemileStyle.editorBar)
         }
-        .focusedSceneValue(\.workspaceActions, WorkspaceActions(ask: { presentation.ask.toggle() }, references: { presentation.references = true }, restorePanes: { presentation.paneReset = UUID() }))
+        .focusedSceneValue(\.workspaceActions, WorkspaceActions(ask: { presentation.ask.toggle() }, references: { presentation.references = true }, restorePanes: { presentation.paneReset = UUID() }, find: find, complete: presentation.mode == .read ? nil : { editor.complete() }))
         .sheet(isPresented: $presentation.references) {
             ReferencePicker(format: .markdown, insert: presentation.mode == .read ? nil : { record, _ in
                 guard let view = editor.textView, !view.hasMarkedText(), view.string == source else { throw ReferenceFailure("Open the Markdown editor before inserting a citation.") }
@@ -101,6 +98,10 @@ struct MarkdownWorkspace: View {
             Button("OK") { presentation.error = nil }
         } message: { Text(presentation.error ?? "") }
     }
+    private func find(_ action: NSTextFinder.Action) {
+        if presentation.mode == .read { presentation.mode = .edit }
+        editor.find(action)
+    }
     private var formatMenu: some View {
         Menu {
                     Button("Bold") { editor.wrap("**", "**", name: "Bold") }.keyboardShortcut("b")
@@ -121,15 +122,14 @@ struct MarkdownWorkspace: View {
     private func editorToolbar(compact: Bool) -> some View {
         HStack(spacing: RemileControl.spacing) {
                 Text("Markdown").font(RemileType.heading)
-                Button { presentation.outline.toggle() } label: { SymbolIcon(systemName: "list.bullet.indent") }.remileHelp("Show document outline").accessibilityLabel("Document outline")
+                Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { presentation.outline.toggle() } } label: { SymbolIcon(systemName: "list.bullet.indent") }.remileHelp("Show document outline").accessibilityLabel("Document outline")
                 if !compact { ReaderZoomControls(zoom: zoom, text: true) }
                 Spacer()
                 if !compact {
                 formatMenu
                 Button {
-                    if presentation.mode == .read { presentation.mode = .edit }
-                    Task { @MainActor in try? await Task.sleep(for: .milliseconds(60)); editor.find() }
-                } label: { SymbolIcon(systemName: "magnifyingglass") }.keyboardShortcut("f").remileHelp("Find in document")
+                    find(.showFindInterface)
+                } label: { SymbolIcon(systemName: "magnifyingglass") }.remileHelp("Find in document · ⌘F")
                 }
                 if compact {
                     Menu {
@@ -155,8 +155,7 @@ struct MarkdownWorkspace: View {
                     if compact {
                         formatMenu
                         Button("Find in document") {
-                            if presentation.mode == .read { presentation.mode = .edit }
-                            Task { @MainActor in try? await Task.sleep(for: .milliseconds(60)); editor.find() }
+                            find(.showFindInterface)
                         }.keyboardShortcut("f")
                         Menu("Zoom") { ReaderZoomMenuItems(zoom: zoom, text: true) }
                         Button("Export PDF…") { NotificationCenter.default.post(name: Notification.Name("remile.exportMarkdownPDF"), object: session) }

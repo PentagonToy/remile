@@ -1,8 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 — 27 October 2026
 
-- Open additional PDFs in a compact bottom tab bar and return to the last reading position when reopening a file.
+- Add source Find and Replace with case, whole-word and regular-expression options, plus broader local LaTeX completion.
+- Open PDFs in adaptive bottom tabs, support canvas drops and remember reading positions. Improve page-key handling.
+- Refine shared symbols, sidebar motion, Markdown Outline and the welcome tour.
+- Reduce repeated Reference metadata work. Add library and collection renaming, and cancel empty inline name drafts.
+- Correct CLI PDF status and update the workspace guides.
 
 ## 0.2.0 — 27 October 2026
 

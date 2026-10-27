@@ -27,7 +27,7 @@ struct RemileVersion: Comparable, CustomStringConvertible {
 struct RemileRelease {
     let version: RemileVersion
     let download: URL
-    static let current = Bundle.main.object(forInfoDictionaryKey: "RemileDisplayVersion") as? String ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.0"
+    static let current = Bundle.main.object(forInfoDictionaryKey: "RemileDisplayVersion") as? String ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.1"
     static let page = URL(string: "https://github.com/PentagonToy/remile/releases")!
     #if arch(arm64)
     static let architecture = "arm64"
