@@ -92,17 +92,17 @@ struct ReferenceCleanupReview: View {
         let first = group.records[0]
         return Button { state.group = group } label: {
             HStack(spacing: 14) {
-                Image(systemName: "doc.on.doc").foregroundStyle(RemileStyle.accent).frame(width: 22)
+                SymbolIcon(systemName: "doc.on.doc").foregroundStyle(RemileStyle.accent).frame(width: 22)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(first.displayTitle).font(RemileType.callout.weight(.medium)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                     Text("\(group.records.count) references · " + [first.shortContributors, first.year].filter { !$0.isEmpty }.joined(separator: " · ")).font(RemileType.caption).foregroundStyle(.secondary)
                 }
-                Image(systemName: "chevron.right").font(RemileType.caption).foregroundStyle(.secondary)
+                SymbolIcon(systemName: "chevron.right").foregroundStyle(.secondary)
             }.padding(14).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 7))
         }.buttonStyle(.plain).remileHelp("Review duplicates: " + first.displayTitle).accessibilityLabel("Review duplicates: " + first.displayTitle)
     }
     private func empty(_ text: String) -> some View {
-        VStack(spacing: 10) { Image(systemName: "checkmark.circle").font(.system(size: 24, weight: .light)).foregroundStyle(RemileStyle.accent); Text(text).font(RemileType.callout).foregroundStyle(.secondary) }
+        VStack(spacing: 10) { SymbolIcon(systemName: "checkmark.circle").foregroundStyle(RemileStyle.accent); Text(text).font(RemileType.callout).foregroundStyle(.secondary) }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     @MainActor private func lookup() async {

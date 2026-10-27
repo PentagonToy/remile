@@ -86,32 +86,32 @@ struct LibrarySearchView: View {
 
     private var header: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 14) { homeButton; Text("Search").font(RemileType.heading); queryField; aiActions; libraryButton }
+            HStack(spacing: RemileControl.spacing) { homeButton; Text("Search").font(RemileType.heading); queryField; aiActions; libraryButton }
             VStack(spacing: 10) {
                 HStack { homeButton; Text("Search").font(RemileType.heading); Spacer(); libraryButton }
-                HStack(spacing: 10) { queryField; aiActions.labelStyle(.iconOnly) }
+                HStack(spacing: RemileControl.spacing) { queryField; aiActions.labelStyle(.iconOnly) }
             }
-        }.font(RemileType.control).buttonStyle(RemileToolStyle()).padding(.horizontal, 16).padding(.vertical, 6)
+        }.font(RemileType.control).buttonStyle(RemileToolStyle()).labelStyle(.iconOnly).padding(.horizontal, 16).padding(.vertical, 6)
     }
     @ViewBuilder private var homeButton: some View {
             if let goHome {
-                Button(action: goHome) { Label("Home", systemImage: "chevron.left") }.buttonStyle(RemileToolStyle()).remileHelp("Back to Home")
+                WorkspaceBackButton(title: "Back to Home", action: goHome)
             }
     }
     private var queryField: some View {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            HStack(spacing: RemileControl.spacing) {
+                SymbolIcon(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Search your library", text: $model.query).textFieldStyle(.plain)
                     .onChange(of: model.query) { model.editSearch() }.onSubmit { model.search(immediate: true) }
                 if model.searching || model.exploring { ProgressView().controlSize(.small) }
-                if !model.query.isEmpty { Button { model.query = ""; model.invalidateSearch() } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).remileHelp("Clear search") }
+                if !model.query.isEmpty { Button { model.query = ""; model.invalidateSearch() } label: { SymbolIcon(systemName: "xmark.circle.fill") }.buttonStyle(.plain).remileHelp("Clear search") }
             }.font(RemileType.control).padding(.horizontal, 10).frame(minWidth: 180, minHeight: 32).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 9))
     }
     private var aiActions: some View {
-            HStack(spacing: 10) {
+            HStack(spacing: RemileControl.spacing) {
             AIToolGroup {
             if model.exploring { Button("Stop", action: model.cancelExploration) }
-            else { Button { model.explore() } label: { Label("Explore", systemImage: "sparkle.magnifyingglass") }.disabled(model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.summary.folders.isEmpty || assistantProvider == "Off" || network.offline).remileHelp("Find related concepts · " + assistantProvider) }
+            else { Button { model.explore() } label: { SymbolLabel("Explore", systemImage: "sparkle.magnifyingglass") }.disabled(model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.summary.folders.isEmpty || assistantProvider == "Off" || network.offline).remileHelp("Find related concepts · " + assistantProvider) }
             AIProviderButton()
             }
             WorkspaceAskButton(isPresented: model.askPresented, action: toggleAssistant)
@@ -119,7 +119,7 @@ struct LibrarySearchView: View {
             }
     }
     private var libraryButton: some View {
-        Button { model.libraryPresented = true } label: { Label("Library", systemImage: "folder") }.remileHelp("Manage indexed folders")
+        Button { model.libraryPresented = true } label: { SymbolLabel("Library", systemImage: "folder") }.remileHelp("Manage indexed folders")
     }
     @ViewBuilder private var sidebar: some View {
         if model.summary.folders.isEmpty {
@@ -140,19 +140,19 @@ struct LibrarySearchView: View {
             }
             if model.summary.needsOCR > 0 || model.summary.failed > 0 || model.searchDuration != nil {
                 Button { model.libraryPresented = true } label: {
-                    Label(coverageTitle, systemImage: "info.circle").font(RemileType.caption).lineLimit(1)
+                    SymbolLabel(coverageTitle, systemImage: "info.circle").font(RemileType.caption).lineLimit(1)
                 }.buttonStyle(.plain).foregroundStyle(model.summary.failed > 0 ? RemileStyle.warning : RemileStyle.ink.opacity(0.7)).padding(.horizontal, 14)
                     .remileHelp("\(model.summary.needsOCR) pages have no indexed text. Some may be blank or need OCR. \(model.summary.failed) documents were not indexed. Open Library for details. Time is the latest submitted search.")
             }
             if model.exploring { ProgressView("Exploring concepts…").controlSize(.small).padding(.horizontal, 14) }
             if !model.exploredQueries.isEmpty {
                 HStack {
-                    Label("Related results", systemImage: "sparkles").remileHelp(model.exploredQueries.joined(separator: " · "))
+                    SymbolLabel("Related results", systemImage: "sparkles").remileHelp(model.exploredQueries.joined(separator: " · "))
                     Spacer(); Button("Search again") { model.search(immediate: true) }.buttonStyle(.plain)
                 }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 14)
             }
             if model.boostApplied {
-                Label("Boosted with Apple Intelligence", systemImage: "sparkles")
+                SymbolLabel("Boosted with Apple Intelligence", systemImage: "sparkles")
                     .font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 14)
                     .remileHelp("Apple Intelligence suggested related retrieval phrases on this Mac. Your original question remains part of the ranking.")
             }
@@ -164,7 +164,7 @@ struct LibrarySearchView: View {
             }
             if let error = model.queryError { Text(error).font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 14) }
             if model.summary.folders.isEmpty {
-                ContentUnavailableView { Label("Build your library", systemImage: "folder") } actions: {
+                ContentUnavailableView { SymbolLabel("Build your library", systemImage: "folder") } actions: {
                     Button("Add to Library…", action: model.addFolder).buttonStyle(.borderedProminent)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -174,7 +174,7 @@ struct LibrarySearchView: View {
             } else if !model.hasSubmittedSearch {
                 ContentUnavailableView("Press Return to search", systemImage: "return").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.results.isEmpty {
-                ContentUnavailableView { Label("No matches", systemImage: "magnifyingglass") } description: {
+                ContentUnavailableView { SymbolLabel("No matches", systemImage: "magnifyingglass") } description: {
                     Text(model.indexing ? "Indexing is still in progress." : "Search covers indexed PDF and Markdown text.")
                 } actions: { Button("Check Library") { model.libraryPresented = true } }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -187,9 +187,9 @@ struct LibrarySearchView: View {
                     Spacer(minLength: 4)
                     if model.boosting { ProgressView().controlSize(.mini).accessibilityLabel("Refining search") }
                     if model.searchOffset > 0 || model.searchHasMore {
-                        Button { model.changeSearchPage(false) } label: { Image(systemName: "chevron.left") }.disabled(model.searchOffset == 0 || model.boosting).accessibilityLabel("Previous results")
+                        Button { model.changeSearchPage(false) } label: { SymbolIcon(systemName: "chevron.left") }.disabled(model.searchOffset == 0 || model.boosting).accessibilityLabel("Previous results")
                         Text("Page \(model.searchOffset / 200 + 1)").monospacedDigit().lineLimit(1)
-                        Button { model.changeSearchPage(true) } label: { Image(systemName: "chevron.right") }.disabled(!model.searchHasMore || model.boosting).accessibilityLabel("Next results")
+                        Button { model.changeSearchPage(true) } label: { SymbolIcon(systemName: "chevron.right") }.disabled(!model.searchHasMore || model.boosting).accessibilityLabel("Next results")
                     }
                 }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 14)
                 if model.resultGroups.isEmpty {
@@ -221,7 +221,7 @@ struct LibrarySearchView: View {
                                             Text(hit.location).font(.callout.weight(model.selectedHit?.id == hit.id ? .semibold : .regular))
                                             Spacer()
                                             if let rank = group.rank(for: hit) { rankBadge(rank) }
-                                            if model.selectedHit?.id == hit.id { Image(systemName: "arrow.right").font(RemileType.caption).foregroundStyle(RemileStyle.accent) }
+                                            if model.selectedHit?.id == hit.id { SymbolIcon(systemName: "arrow.right").foregroundStyle(RemileStyle.accent) }
                                         }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).padding(.vertical, 7)
                                             .background(model.selectedHit?.id == hit.id ? RemileStyle.accent.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
                                             .contentShape(Rectangle()).onTapGesture { selectResult(hit) }.tag(hit.id)
@@ -229,7 +229,7 @@ struct LibrarySearchView: View {
                                     }
                                 } label: {
                                     Button { selectResult(group.hits.first) } label: {
-                                        HStack(spacing: 10) {
+                                        HStack(spacing: RemileControl.spacing) {
                                             if let hit = group.hits.first { SearchCover(hit: hit, revision: model.libraryRevision) }
                                             VStack(alignment: .leading, spacing: 4) {
                                                 HStack(alignment: .top, spacing: 6) {
@@ -253,15 +253,15 @@ struct LibrarySearchView: View {
                     }
                 }
                 HStack(spacing: 8) {
-                    Image(systemName: "line.3.horizontal.decrease").foregroundStyle(.secondary)
+                    SymbolIcon(systemName: "line.3.horizontal.decrease").foregroundStyle(.secondary)
                     TextField("Filter documents", text: $model.documentFilter).textFieldStyle(.plain).onChange(of: model.documentFilter) { model.filterDocuments() }
-                    if !model.documentFilter.isEmpty { Button { model.documentFilter = ""; model.filterDocuments() } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain) }
+                    if !model.documentFilter.isEmpty { Button { model.documentFilter = ""; model.filterDocuments() } label: { SymbolIcon(systemName: "xmark.circle.fill") }.buttonStyle(.plain) }
                 }.padding(10).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 8)).padding([.horizontal, .bottom], 10)
 
             }
             Divider()
             Button { citationState.settingsPresented = true } label: {
-                Label("Settings", systemImage: "gearshape").font(RemileType.callout).frame(maxWidth: .infinity, alignment: .leading)
+                SymbolLabel("Settings", systemImage: "gearshape").font(RemileType.callout).frame(maxWidth: .infinity, alignment: .leading)
             }.buttonStyle(RemileToolStyle()).padding(12).accessibilityLabel("Search settings").remileHelp("Search settings")
         }.frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
@@ -277,8 +277,8 @@ struct LibrarySearchView: View {
                 HStack {
                     Text("Result \(position + 1) of \(model.visibleHits.count)").font(RemileType.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button { model.moveResult(-1) } label: { Image(systemName: "chevron.up") }.disabled(position == 0).remileHelp("Previous result").accessibilityLabel("Previous result")
-                    Button { model.moveResult(1) } label: { Image(systemName: "chevron.down") }.disabled(position + 1 == model.visibleHits.count).remileHelp("Next result").accessibilityLabel("Next result")
+                    Button { model.moveResult(-1) } label: { SymbolIcon(systemName: "chevron.up") }.disabled(position == 0).remileHelp("Previous result").accessibilityLabel("Previous result")
+                    Button { model.moveResult(1) } label: { SymbolIcon(systemName: "chevron.down") }.disabled(position + 1 == model.visibleHits.count).remileHelp("Next result").accessibilityLabel("Next result")
                 }.padding(.horizontal, 16).padding(.vertical, 8)
                 Divider()
             }
@@ -332,7 +332,7 @@ private struct SearchEmptyPane: View {
                 else { counts.hidden().accessibilityHidden(true) }
             }
             VStack(spacing: 16) {
-                Image(systemName: library ? "folder" : "doc.text.magnifyingglass")
+                SymbolIcon(systemName: library ? "folder" : "doc.text.magnifyingglass")
                     .font(.system(size: 34, weight: .regular)).foregroundStyle(.secondary)
                     .frame(width: 52, height: 52).accessibilityHidden(true)
                 Text(library ? "Build your library" : "Search your library").font(RemileType.section)
@@ -356,7 +356,7 @@ private struct SearchEmptyPane: View {
     }
     private var settingsButton: some View {
         Button(action: settings) {
-            Label("Settings", systemImage: "gearshape").font(RemileType.callout).frame(maxWidth: .infinity, alignment: .leading)
+            SymbolLabel("Settings", systemImage: "gearshape").font(RemileType.callout).frame(maxWidth: .infinity, alignment: .leading)
         }.buttonStyle(RemileToolStyle()).padding(12).accessibilityLabel("Search settings")
     }
 

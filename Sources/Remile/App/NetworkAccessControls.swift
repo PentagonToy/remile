@@ -14,7 +14,7 @@ import SwiftUI
 struct OfflineModeControl: View {
     @ObservedObject private var network = NetworkAccessState.shared
     var body: some View {
-        Toggle(isOn: Binding(get: { network.offline }, set: network.setOffline)) { Label("Work offline", systemImage: "airplane") }
+        Toggle(isOn: Binding(get: { network.offline }, set: network.setOffline)) { SymbolLabel("Work offline", systemImage: "airplane") }
             .remileHelp("Pause ChatGPT, Overleaf sync, search boosting, update checks, reference lookups and package lookups. Local documents and standard search remain available.")
     }
 }
@@ -30,7 +30,7 @@ struct NetworkAccessScope: ViewModifier {
 struct OfflineModeButton: View {
     @ObservedObject private var network = NetworkAccessState.shared
     var body: some View {
-        Button { network.setOffline(!network.offline) } label: { Image(systemName: "airplane") }
+        Button { network.setOffline(!network.offline) } label: { SymbolIcon(systemName: "airplane") }
             .font(.system(size: 15, weight: .regular)).frame(width: 32, height: 32).buttonStyle(.plain)
             .foregroundStyle(network.offline ? RemileStyle.accent : RemileStyle.ink.opacity(0.65))
             .accessibilityLabel(network.offline ? "Turn off offline mode" : "Work offline")

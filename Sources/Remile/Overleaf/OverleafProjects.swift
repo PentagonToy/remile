@@ -94,7 +94,7 @@ struct OverleafProjects: View {
                                             OverleafTagMark(tags: item.tags)
                                             Text(item.name).multilineTextAlignment(.leading).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                                             if library.busy && state.selected == item.id { ProgressView().controlSize(.small) }
-                                            else { Image(systemName: "plus.circle").foregroundStyle(RemileStyle.accent) }
+                                            else { SymbolIcon(systemName: "plus.circle").foregroundStyle(RemileStyle.accent) }
                                         }.padding(10).frame(minHeight: 40).contentShape(Rectangle())
                                     }.buttonStyle(.plain).disabled(library.busy || account == nil)
                                         .background(state.selected == item.id ? RemileStyle.accent.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: RemileRadius.control))
@@ -116,7 +116,7 @@ struct OverleafProjects: View {
                                     Button { library.presented = false; library.browsing = false; open(library.root(project)) } label: {
                                         Text(project.name).lineLimit(2).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
                                     }.buttonStyle(.plain).remileHelp("Open project")
-                                    Button { state.removing = project } label: { Image(systemName: "trash") }
+                                    Button { state.removing = project } label: { SymbolIcon(systemName: "trash") }
                                         .buttonStyle(RemileCompactToolStyle()).remileHelp("Remove from local library").accessibilityLabel("Remove " + project.name + " from local library").disabled(library.busy)
                                 }.padding(10).frame(minHeight: 40).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: RemileRadius.control))
                             }
@@ -131,15 +131,15 @@ struct OverleafProjects: View {
             Menu {
                 ForEach(library.accounts) { account in Button(account.name) { state.accountID = account.id } }
             } label: {
-                HStack(spacing: 8) { Text(account?.name ?? "Choose account").lineLimit(1); Spacer(minLength: 0); Image(systemName: "chevron.down").font(RemileType.small) }.frame(width: 160)
-            }.menuStyle(.borderlessButton).menuIndicator(.hidden).buttonStyle(RemileActionStyle()).disabled(library.accounts.isEmpty || library.busy)
+                HStack(spacing: 8) { Text(account?.name ?? "Choose account").lineLimit(1); Spacer(minLength: 0); SymbolIcon(systemName: "chevron.down") }.frame(width: 160)
+            }.menuStyle(.borderlessButton).tint(RemileStyle.ink).menuIndicator(.hidden).buttonStyle(RemileActionStyle()).disabled(library.accounts.isEmpty || library.busy)
                 .accessibilityLabel("Account").accessibilityValue(account?.name ?? "None")
             Button(library.accounts.isEmpty ? "Add account…" : "Manage…") { state.managingAccounts = true }.disabled(library.busy)
         }
     }
     private var connectionControls: some View {
         HStack(spacing: 8) {
-            Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }
+            Button { Task { await load() } } label: { SymbolIcon(systemName: "arrow.clockwise") }
                 .accessibilityLabel("Refresh projects").remileHelp("Refresh available projects").disabled(account == nil || state.loading || library.busy)
         }
     }
@@ -149,7 +149,7 @@ struct OverleafProjects: View {
     private var emptyCatalog: some View {
         VStack(spacing: 12) {
             if state.loading { ProgressView().controlSize(.small) }
-            else { Image(systemName: "books.vertical").font(.system(size: 28)).foregroundStyle(RemileStyle.secondaryInk) }
+            else { SymbolIcon(systemName: "books.vertical", slot: RemileSymbol.emptySlot).font(.system(size: RemileSymbol.emptySize)).foregroundStyle(RemileStyle.secondaryInk) }
             Text(state.loading ? "Loading projects…" : (state.catalog.isEmpty ? (account == nil ? "Add an account to browse projects." : "Connect Overleaf to browse projects.") : (state.query.isEmpty ? "All projects are in your library." : "No matching projects.")))
                 .foregroundStyle(.secondary).multilineTextAlignment(.center)
             if state.needsConnection { Button("Sign in…") { state.signIn = true } }

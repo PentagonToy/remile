@@ -6,7 +6,7 @@ struct DocumentToolHeader: View {
     let symbol: String
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: symbol).font(.system(size: 23, weight: .medium))
+            SymbolIcon(systemName: symbol)
                 .foregroundStyle(RemileStyle.accent).frame(width: 44, height: 44)
                 .background(RemileStyle.accent.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 4) {
@@ -29,7 +29,7 @@ struct DocumentToolEmptyState: View {
         VStack(spacing: 18) {
             HStack(spacing: -10) {
                 ForEach(Array(symbols.enumerated()), id: \.offset) { index, symbol in
-                    Image(systemName: symbol).font(.system(size: 28, weight: .light)).foregroundStyle(RemileStyle.accent)
+                    SymbolIcon(systemName: symbol, slot: RemileSymbol.emptySlot).font(.system(size: RemileSymbol.emptySize)).foregroundStyle(RemileStyle.accent)
                         .frame(width: 66, height: 80).background(RemileStyle.background, in: RoundedRectangle(cornerRadius: 10))
                         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(RemileStyle.accent.opacity(0.12)))
                         .rotationEffect(.degrees(Double(index) * 10 - Double(symbols.count - 1) * 5))

@@ -24,12 +24,12 @@ struct OverleafReviewPanel: View {
                 Text("Overleaf review").font(RemileType.callout.weight(.semibold))
                 Spacer(minLength: 4)
                 if state.busy { ProgressView().controlSize(.small) }
-                Button { state.refreshID = UUID() } label: { Image(systemName: "arrow.clockwise") }.disabled(state.busy || state.applying).remileHelp("Refresh review").accessibilityLabel("Refresh review")
+                Button { state.refreshID = UUID() } label: { SymbolIcon(systemName: "arrow.clockwise") }.disabled(state.busy || state.applying).remileHelp("Refresh review").accessibilityLabel("Refresh review")
                 Menu {
                     Button("Export all as Markdown…") { export(json: false) }
                     Button("Export all as JSON…") { export(json: true) }
                     Button("Review package with sources…") { exportPackage() }
-                } label: { Image(systemName: "square.and.arrow.up") }.disabled(state.snapshot == nil || state.busy || state.applying).remileHelp("Export all comments and changes").accessibilityLabel("Export review")
+                } label: { SymbolIcon(systemName: "square.and.arrow.up") }.disabled(state.snapshot == nil || state.busy || state.applying).remileHelp("Export all comments and changes").accessibilityLabel("Export review")
             }.buttonStyle(RemileToolStyle())
             RemileSegmentedControl(title: "Review entries", selection: $state.tab, options: [false, true], label: { $0 ? "Changes · \(state.snapshot?.changes.count ?? 0)" : "Comments · \(state.snapshot?.archive.threads.count ?? 0)" })
             if let failure = state.failure { Text(failure).font(RemileType.caption).foregroundStyle(RemileStyle.warning) }
@@ -43,7 +43,7 @@ struct OverleafReviewPanel: View {
                             if snapshot.changes.isEmpty { empty(snapshot.warning == nil ? "No tracked changes" : "Changes unavailable") }
                             ForEach(snapshot.changes) { change in
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Label(change.insertion ? "Added" : "Deleted", systemImage: change.insertion ? "plus" : "minus").foregroundStyle(change.insertion ? RemileStyle.success : RemileStyle.warning)
+                                    SymbolLabel(change.insertion ? "Added" : "Deleted", systemImage: change.insertion ? "plus" : "minus").foregroundStyle(change.insertion ? RemileStyle.success : RemileStyle.warning)
                                     location(change.anchor, highlight: .change)
                                     Text(change.text)
                                     if let timestamp = change.timestamp { date(timestamp) }
@@ -60,7 +60,7 @@ struct OverleafReviewPanel: View {
                             if threads.isEmpty { empty(state.resolved ? "No comments" : "No open comments") }
                             ForEach(threads) { thread in
                                 VStack(alignment: .leading, spacing: 8) {
-                                    if thread.resolved { Label("Resolved", systemImage: "checkmark.bubble").foregroundStyle(RemileStyle.secondaryInk) }
+                                    if thread.resolved { SymbolLabel("Resolved", systemImage: "checkmark.bubble").foregroundStyle(RemileStyle.secondaryInk) }
                                     if let anchor = snapshot.anchors[thread.id] { location(anchor, highlight: .comment) }
                                     else { Text("Source location unavailable").foregroundStyle(RemileStyle.secondaryInk) }
                                     ForEach(thread.messages) { message in

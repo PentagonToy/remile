@@ -11,7 +11,7 @@ struct TeXHistoryPanel: View {
         ZStack(alignment: .top) {
             if revisions.isEmpty {
                 VStack(spacing: 14) {
-                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 34, weight: .light)).foregroundStyle(RemileStyle.accent)
+                    SymbolIcon(systemName: "clock.arrow.circlepath", slot: RemileSymbol.emptySlot).font(.system(size: RemileSymbol.emptySize)).foregroundStyle(RemileStyle.accent)
                     Text("No history for this file").font(RemileType.heading)
                     Text(project.connected ? "Local snapshots are not saved for connected projects." : "Earlier edits will appear here.")
                         .font(RemileType.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -21,7 +21,7 @@ struct TeXHistoryPanel: View {
                     List(revisions, selection: $state.selected) { item in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(item.date.formatted(date: .abbreviated, time: .shortened)).font(RemileType.caption)
-                            if let marker = item.marker { Label(marker, systemImage: "wand.and.stars").font(RemileType.small).foregroundStyle(RemileStyle.accent) }
+                            if let marker = item.marker { SymbolLabel(marker, systemImage: "wand.and.stars").font(RemileType.small).foregroundStyle(RemileStyle.accent) }
                             Text(item.file).font(RemileType.small).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         }.padding(.vertical, 6).tag(item.id)
                     }.scrollContentBackground(.hidden).padding(.top, headerHeight + 1)
@@ -41,10 +41,10 @@ struct TeXHistoryPanel: View {
             }
             VStack(spacing: 0) {
                 HStack(spacing: 10) {
-                    Image(systemName: "clock.arrow.circlepath").foregroundStyle(RemileStyle.accent)
+                    SymbolIcon(systemName: "clock.arrow.circlepath").foregroundStyle(RemileStyle.accent)
                     Text("History").font(RemileType.heading)
                     Spacer(minLength: 8)
-                    Button { project.showsHistory = false; project.showsLog = false } label: { Image(systemName: "doc.richtext") }.remileHelp("Show PDF").accessibilityLabel("Show PDF")
+                    Button { project.showsHistory = false; project.showsLog = false } label: { SymbolIcon(systemName: "doc.richtext") }.remileHelp("Show PDF").accessibilityLabel("Show PDF")
                 }.buttonStyle(RemileToolStyle()).padding(.horizontal, 12).frame(height: headerHeight)
                 Divider()
             }.background(RemileStyle.sidebar)

@@ -123,6 +123,7 @@ final class ReadingSession: ObservableObject {
         } catch { NSAlert(error: error).runModal(); return false }
     }
     @discardableResult func confirmLeaving() -> Bool {
+        pdfSession?.persistReadingPosition()
         guard dirty else { return true }
         let alert = NSAlert()
         alert.messageText = "Save changes to “\(url?.lastPathComponent ?? "document")”?"
@@ -173,14 +174,14 @@ struct ReadingShell: View {
                     .navigationTitle((home.references.title(for: url) ?? url.deletingPathExtension().lastPathComponent) + (reader.dirty ? " •" : ""))
                     .toolbar {
                         RemileToolbarItem(placement: .navigation) {
-                            Button { reader.close() } label: { Label(home.page == .reference ? "Reference" : "Home", systemImage: "chevron.left") }.remileHelp(home.page == .reference ? "Return to Reference" : "Return to Home")
+                            WorkspaceBackButton(title: home.page == .reference ? "Return to Reference" : "Return to Home") { reader.close() }
                         }
                         if !markdownActive { RemileToolbarItem(placement: .primaryAction) {
                             Menu {
                                 Button("Convert to PDF…") { home.presentConversion() }
                                 Button("Compress PDF…") { home.presentCompression(!reader.dirty && url.pathExtension.lowercased() == "pdf" ? url : nil) }
                                 Button("Combine PDFs…") { home.create(.combine, open: home.open) }
-                            } label: { Image(systemName: "plus").frame(width: 30, height: 30) }.remileHelp("Document tools")
+                            } label: { SymbolIcon(systemName: "plus").frame(width: RemileControl.toolHit, height: RemileControl.toolHit) }.remileHelp("Document tools")
                         } }
                     }
             } else { HomeWorkspace(model: home).transition(.opacity) }
@@ -263,16 +264,91 @@ final class RemileWindows: ObservableObject {
     private var entries: [ObjectIdentifier: (NSWindow, HomeModel)] = [:]
     private var pending: [(HomeModel) -> Void] = []
     private var opening = false
+    private var pdfTabs: [(URL, NSWindow)] = []
+    private var pdfGroups: [[ObjectIdentifier]] = []
     var models: [HomeModel] { entries.values.map { $0.1 } }
     func register(_ model: HomeModel, window: NSWindow) {
+        let isNew = entries[ObjectIdentifier(window)] == nil
         entries[ObjectIdentifier(window)] = (window, model)
         if window.isKeyWindow || active == nil { active = model }
         opening = false
         let actions = pending; pending = []
         for action in actions { action(model) }
+        if isNew, !pdfTabs.isEmpty {
+            let (url, parent) = pdfTabs.removeFirst()
+            let parentID = ObjectIdentifier(parent)
+            let windowID = ObjectIdentifier(window)
+            if let group = pdfGroups.firstIndex(where: { $0.contains(parentID) }) { pdfGroups[group].append(windowID) }
+            else { pdfGroups.append([parentID, windowID]) }
+            parent.tabbingMode = .disallowed
+            window.tabbingMode = .disallowed
+            window.setFrame(parent.frame, display: false)
+            parent.orderOut(nil)
+            window.makeKeyAndOrderFront(nil)
+            active = model
+            model.open(url, inNewPDFTab: false)
+            if !pdfTabs.isEmpty { DispatchQueue.main.async { self.createWindow?() } }
+        }
+    }
+    struct PDFTab: Identifiable {
+        let id: ObjectIdentifier
+        let title: String
+        let url: URL
+        let selected: Bool
+    }
+    func documentTabs(for reader: ReadingSession) -> [PDFTab] {
+        guard let window = entries.values.first(where: { $0.1.reader === reader })?.0 else { return [] }
+        let ids = pdfGroups.first(where: { $0.contains(ObjectIdentifier(window)) }) ?? [ObjectIdentifier(window)]
+        return ids.compactMap { id in
+            guard let home = entries[id]?.1,
+                  let url = home.reader.url, url.pathExtension.lowercased() == "pdf" else { return nil }
+            return PDFTab(id: id, title: url.deletingPathExtension().lastPathComponent, url: url, selected: home.reader === reader)
+        }
+    }
+    func selectDocumentTab(_ id: ObjectIdentifier) {
+        guard let window = entries[id]?.0 else { return }
+        if let group = pdfGroups.first(where: { $0.contains(id) }) {
+            for otherID in group where otherID != id {
+                if let other = entries[otherID]?.0, other.isVisible {
+                    entries[otherID]?.1.reader.pdfSession?.persistReadingPosition()
+                    window.setFrame(other.frame, display: false)
+                    other.orderOut(nil)
+                }
+            }
+        }
+        window.makeKeyAndOrderFront(nil)
+        active = entries[id]?.1
+    }
+    func closeDocumentTab(_ id: ObjectIdentifier) { entries[id]?.0.performClose(nil) }
+    func addDocumentTab(for reader: ReadingSession) {
+        guard let home = entries.values.first(where: { $0.1.reader === reader })?.1,
+              let url = home.chooseDocument() else { return }
+        home.open(url)
+    }
+    /// Tabs reuse independent document, annotation and CLI sessions without reloading PDF data.
+    func openPDFTab(_ url: URL, from model: HomeModel) -> Bool {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        if let existing = entries.values.first(where: { $0.1.reader.url?.resolvingSymlinksInPath().standardizedFileURL.path == path }) {
+            selectDocumentTab(ObjectIdentifier(existing.0))
+            return true
+        }
+        guard case .pdf = model.reader.document.content, model.reader.url != nil,
+              let parent = entries.values.first(where: { $0.1 === model })?.0,
+              let createWindow else { return false }
+        pdfTabs.append((url, parent))
+        if pdfTabs.count == 1 { createWindow() }
+        return true
     }
     func remove(_ window: NSWindow) {
-        let removed = entries.removeValue(forKey: ObjectIdentifier(window))?.1
+        objectWillChange.send()
+        let id = ObjectIdentifier(window)
+        let removed = entries.removeValue(forKey: id)?.1
+        if let index = pdfGroups.firstIndex(where: { $0.contains(id) }) {
+            pdfGroups[index].removeAll { $0 == id }
+            let remaining = pdfGroups[index]
+            if remaining.isEmpty { pdfGroups.remove(at: index) }
+            if active === removed, let next = remaining.first { selectDocumentTab(next) }
+        }
         if active === removed { active = entries.values.first?.1 }
     }
     func perform(_ action: @escaping (HomeModel) -> Void) {

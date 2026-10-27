@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Open additional PDFs in a compact bottom tab bar and return to the last reading position when reopening a file.
+
 ## 0.2.0 — 27 October 2026
 
 - Distribute a Developer ID signed, Apple-notarised app and installer.

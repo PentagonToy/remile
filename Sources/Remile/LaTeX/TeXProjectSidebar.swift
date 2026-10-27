@@ -87,13 +87,13 @@ struct TeXProjectSidebar: View {
             DisclosureGroup("Files", isExpanded: $state.files) { EmptyView() }.font(RemileType.callout.weight(.semibold))
             if !compact {
                 if project.selected != project.main {
-                    Button { project.visit(file: project.main) } label: { Image(systemName: "doc.text").frame(width: 22, height: 22) }
+                    Button { project.visit(file: project.main) } label: { SymbolIcon(systemName: "doc.text").frame(width: 22, height: 22) }
                         .buttonStyle(.plain).remileHelp("Open main document").accessibilityLabel("Open main document")
                 }
-                Toggle(isOn: $showCollections) { Image(systemName: "square.stack.3d.up").frame(width: 22, height: 22) }
+                Toggle(isOn: $showCollections) { SymbolIcon(systemName: "square.stack.3d.up").frame(width: 22, height: 22) }
                     .toggleStyle(.button).buttonStyle(.plain).remileHelp("Show collections").accessibilityLabel("Show collections")
             }
-            Button { state.files = true; project.chooseFiles() } label: { Image(systemName: "tray.and.arrow.up").frame(width: 22, height: 22) }
+            Button { state.files = true; project.chooseFiles() } label: { SymbolIcon(systemName: "tray.and.arrow.up").frame(width: 22, height: 22) }
                 .buttonStyle(.plain).disabled(project.compiling).remileHelp("Add files to this folder").accessibilityLabel("Add files")
             Menu {
                 Button("New file") { state.files = true; project.newFile() }
@@ -104,14 +104,14 @@ struct TeXProjectSidebar: View {
                     Toggle("Show collections", isOn: $showCollections)
                     Button("Open main document") { project.visit(file: project.main) }
                 }
-            } label: { Image(systemName: "plus").frame(width: 20, height: 22) }
-                .menuStyle(.borderlessButton).fixedSize().remileHelp("New file, folder or collection")
+            } label: { SymbolIcon(systemName: "plus").frame(width: 20, height: 22) }
+                .menuStyle(.borderlessButton).tint(RemileStyle.ink).fixedSize().remileHelp("New file, folder or collection")
         }
     }
     private var outlinePane: some View {
         VStack(spacing: 0) {
             Button { state.outline.toggle() } label: {
-                HStack(spacing: 6) { Image(systemName: state.outline ? "chevron.down" : "chevron.right").font(.system(size: 10)); Text("Outline").font(RemileType.callout.weight(.semibold)); Spacer(minLength: 0) }
+                HStack(spacing: 6) { SymbolIcon(systemName: state.outline ? "chevron.down" : "chevron.right"); Text("Outline").font(RemileType.callout.weight(.semibold)); Spacer(minLength: 0) }
                     .frame(height: 44).padding(.horizontal, 12).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityValue(state.outline ? "Expanded" : "Collapsed").remileHelp("Project headings, including linked LaTeX files")
             Divider()
@@ -159,7 +159,7 @@ private struct TeXSidebarCreation: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Image(systemName: draft.symbol).foregroundStyle(RemileStyle.accent).frame(width: 17)
+                SymbolIcon(systemName: draft.symbol).foregroundStyle(RemileStyle.accent).frame(width: 17)
                 TextField(draft.placeholder, text: $state.name).textFieldStyle(.plain).focused($focused)
                     .accessibilityLabel(draft.placeholder).onSubmit { commit() }.onExitCommand { cancel() }
             }.padding(5).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 5))

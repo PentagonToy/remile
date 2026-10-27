@@ -63,7 +63,7 @@ struct TeXAssetPreview: View {
             else if let document = state.document { TeXPDFPreview(document: document, zoom: zoom, controller: controller, jump: nil) }
             else {
                 ContentUnavailableView {
-                    Label("Preview unavailable", systemImage: "doc")
+                    SymbolLabel("Preview unavailable", systemImage: "doc")
                 } description: { Text(state.error ?? "This file has no built-in preview.") }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }

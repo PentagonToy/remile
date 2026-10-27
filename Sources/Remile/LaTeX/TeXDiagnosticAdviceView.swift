@@ -19,7 +19,7 @@ struct TeXDiagnosticAdviceView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Divider()
                 HStack {
-                    Label("AI help", systemImage: "sparkles").font(RemileType.callout.weight(.semibold))
+                    SymbolLabel("AI help", systemImage: "sparkles").font(RemileType.callout.weight(.semibold))
                     Spacer()
                     if state.busy { ProgressView().controlSize(.small); Button("Cancel") { state.cancel() } }
                     else { Button(state.advice == nil ? "Ask ChatGPT" : "Ask again") { request() }.disabled(project.compiling || usage.active || usage.reason != nil).remileHelp(usage.reason ?? "Send error summaries to the selected ChatGPT model") }

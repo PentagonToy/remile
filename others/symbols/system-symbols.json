@@ -192,8 +192,8 @@
     {
       "name": "chevron.left",
       "sources": [
+        "Sources/Remile/App/RemileControls.swift",
         "Sources/Remile/Convert/ConvertWorkspace.swift",
-        "Sources/Remile/Documents/ReadingSession.swift",
         "Sources/Remile/LaTeX/TeXAskPanel.swift",
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
@@ -398,6 +398,7 @@
       "sources": [
         "Sources/Remile/App/StorageSettings.swift",
         "Sources/Remile/Home/HomeWorkspace.swift",
+        "Sources/Remile/LaTeX/TeXFileTree.swift",
         "Sources/Remile/Overleaf/OverleafViews.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift",
         "Sources/Remile/Search/LibraryManager.swift",
@@ -634,6 +635,7 @@
         "Sources/Remile/Overleaf/OverleafAccountManager.swift",
         "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafReviewPanel.swift",
+        "Sources/Remile/PDF/PDFDocumentTabs.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift",
         "Sources/Remile/Writer/WriterWorkspace.swift"
       ]
@@ -755,7 +757,14 @@
     {
       "name": "square.stack.3d.up",
       "sources": [
+        "Sources/Remile/LaTeX/TeXFileTree.swift",
         "Sources/Remile/LaTeX/TeXProjectSidebar.swift"
+      ]
+    },
+    {
+      "name": "stop.fill",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift"
       ]
     },
     {
@@ -823,6 +832,7 @@
     {
       "name": "trash",
       "sources": [
+        "Sources/Remile/LaTeX/TeXFileTree.swift",
         "Sources/Remile/Overleaf/OverleafAccountManager.swift",
         "Sources/Remile/Overleaf/OverleafProjects.swift",
         "Sources/Remile/Reference/ReferenceAttachments.swift",
@@ -859,6 +869,7 @@
         "Sources/Remile/Convert/ConvertWorkspace.swift",
         "Sources/Remile/Home/CombineWorkspace.swift",
         "Sources/Remile/LaTeX/TeXAskPanel.swift",
+        "Sources/Remile/PDF/PDFDocumentTabs.swift",
         "Sources/Remile/PDF/PDFWorkspace.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift",
         "Sources/Remile/Writer/WriterWorkspace.swift"

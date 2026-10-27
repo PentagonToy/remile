@@ -15,7 +15,7 @@ struct ReferenceAttachments: View {
                     ForEach(record?.attachments ?? []) { file in
                         Toggle(isOn: Binding(get: { state.selected.contains(file.id) }, set: { if $0 { state.selected.insert(file.id) } else { state.selected.remove(file.id) } })) {
                             HStack(spacing: 10) {
-                                Image(systemName: "doc.richtext").foregroundStyle(RemileStyle.accent)
+                                SymbolIcon(systemName: "doc.richtext").foregroundStyle(RemileStyle.accent)
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(file.name).lineLimit(2)
                                     Text(ByteCountFormatter.string(fromByteCount: Int64(file.bytes), countStyle: .file)).font(RemileType.caption).foregroundStyle(.secondary)
@@ -30,7 +30,7 @@ struct ReferenceAttachments: View {
             HStack {
                 Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button { if let record { model.removeAttachments(state.selected, from: record) { dismiss() } } } label: { Label("Remove selected", systemImage: "trash") }
+                Button { if let record { model.removeAttachments(state.selected, from: record) { dismiss() } } } label: { SymbolLabel("Remove selected", systemImage: "trash") }
                     .disabled(state.selected.isEmpty || model.busy).remileHelp("Remove selected attachments")
             }
         }.padding(24).frame(width: 480, height: 360).background(RemileStyle.background).tint(RemileStyle.accent)

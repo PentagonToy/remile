@@ -89,7 +89,7 @@ struct PDFProtectionButton: View {
     @AppStorage("appearance.animations") private var animations = true
     var body: some View {
         Button(action: unlock) {
-            Image(systemName: protection.authorised ? "lock.open.fill" : "lock.fill")
+            SymbolIcon(systemName: protection.authorised ? "lock.open.fill" : "lock.fill")
                 .foregroundStyle(protection.isLocked ? Color.accentColor : protection.authorised ? Color.primary : Color.secondary.opacity(0.45))
                 .font(.system(size: 15, weight: .semibold)).frame(width: 32, height: 28).contentShape(Rectangle())
                 .modifier(LockShake(progress: (reduceMotion || !animations) ? 0 : Double(protection.attempts)))

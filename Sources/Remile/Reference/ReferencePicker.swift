@@ -34,7 +34,7 @@ struct ReferencePicker: View {
                                 if use { state.selected.insert(library.id) } else { state.selected.remove(library.id) }
                             }))
                         }
-                    } label: { Label(selectionTitle, systemImage: "books.vertical") }
+                    } label: { SymbolLabel(selectionTitle, systemImage: "books.vertical") }
                     .remileHelp("Choose one or more libraries for this document's citation suggestions.")
                     Spacer()
                 }

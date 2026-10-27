@@ -29,7 +29,7 @@ struct WriterColumns: View {
         }.font(RemileType.small)
     }
     private func symbol(_ count: Int) -> some View {
-        Image(systemName: count == 1 ? "rectangle" : "rectangle.split.2x1")
+        SymbolIcon(systemName: count == 1 ? "rectangle" : "rectangle.split.2x1")
             .font(RemileType.control).symbolRenderingMode(.monochrome)
             .frame(width: 20, height: 20).accessibilityHidden(true)
     }

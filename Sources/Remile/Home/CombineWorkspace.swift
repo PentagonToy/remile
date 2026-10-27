@@ -39,7 +39,7 @@ struct CombineWorkspace: View {
         VStack(spacing: 0) {
             HStack {
                 DocumentToolHeader(title: "Combine files", subtitle: "PDFs or Markdown, in your order", symbol: "square.stack")
-                if !model.inputs.isEmpty { Button { model.choose() } label: { Label("Add Files…", systemImage: "plus") }.disabled(model.busy) }
+                if !model.inputs.isEmpty { Button { model.choose() } label: { SymbolLabel("Add Files…", systemImage: "plus") }.disabled(model.busy) }
             }.padding(.horizontal, 24).padding(.vertical, 18)
             Divider()
             Group {
@@ -66,12 +66,12 @@ struct CombineWorkspace: View {
                     ForEach(Array(model.inputs.enumerated()), id: \.offset) { index, url in
                         HStack(spacing: 14) {
                             Text("\(index + 1)").font(RemileType.callout).monospacedDigit().foregroundStyle(.secondary).frame(width: 24)
-                            Image(systemName: model.kind == .markdown ? "doc.text" : "doc.richtext").foregroundStyle(RemileStyle.accent).frame(width: 28)
+                            SymbolIcon(systemName: model.kind == .markdown ? "doc.text" : "doc.richtext").foregroundStyle(RemileStyle.accent).frame(width: 28)
                             Text(url.lastPathComponent).font(RemileType.callout).lineLimit(1).truncationMode(.middle).help(url.lastPathComponent)
                             Spacer(minLength: 12)
-                            Button { model.inputs.swapAt(index, index - 1) } label: { Image(systemName: "chevron.up") }.disabled(index == 0).remileHelp("Move up")
-                            Button { model.inputs.swapAt(index, index + 1) } label: { Image(systemName: "chevron.down") }.disabled(index == model.inputs.count - 1).remileHelp("Move down")
-                            Button { model.inputs.remove(at: index) } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).remileHelp("Remove file")
+                            Button { model.inputs.swapAt(index, index - 1) } label: { SymbolIcon(systemName: "chevron.up") }.disabled(index == 0).remileHelp("Move up")
+                            Button { model.inputs.swapAt(index, index + 1) } label: { SymbolIcon(systemName: "chevron.down") }.disabled(index == model.inputs.count - 1).remileHelp("Move down")
+                            Button { model.inputs.remove(at: index) } label: { SymbolIcon(systemName: "xmark") }.buttonStyle(.borderless).remileHelp("Remove file")
                         }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
                             .background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 10))
                     }

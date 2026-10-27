@@ -49,7 +49,7 @@ struct ReaderAppearanceModifier: ViewModifier {
     func body(content: Content) -> some View {
         content.preferredColorScheme((ReaderAppearance(rawValue: appearance) ?? .system).scheme)
             .tint(RemileStyle.accent).foregroundStyle(RemileStyle.ink).font(RemileType.control)
-            .buttonStyle(RemileActionStyle()).controlSize(.regular)
+            .buttonStyle(RemileActionStyle()).labelStyle(SymbolLabelStyle()).controlSize(.regular)
             .transaction { transaction in
                 if !animations || reduceMotion { transaction.animation = nil; transaction.disablesAnimations = true }
             }
@@ -124,7 +124,7 @@ struct RemileToolStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(RemileType.control).imageScale(.medium).symbolRenderingMode(.monochrome).frame(minWidth: 32, minHeight: 32).contentShape(.interaction, Rectangle())
+        configuration.label.font(RemileType.control).imageScale(.medium).symbolRenderingMode(.monochrome).frame(minWidth: RemileControl.toolHit, minHeight: RemileControl.toolHit).contentShape(.interaction, Rectangle())
             .background(configuration.isPressed ? RemileStyle.ink.opacity(0.09) : Color.clear, in: RoundedRectangle(cornerRadius: RemileRadius.control))
             .modifier(RemilePointerFeedback())
             .opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
@@ -132,12 +132,12 @@ struct RemileToolStyle: ButtonStyle {
     }
 }
 
-/// Compact editing controls share a 28-point hit area without shrinking their glyphs.
+/// Editing controls share the toolbar hit area without shrinking their glyphs.
 struct RemileCompactToolStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(RemileType.control).imageScale(.medium).symbolRenderingMode(.monochrome).frame(minWidth: 28, minHeight: 28).contentShape(Rectangle())
-            .background(configuration.isPressed ? RemileStyle.ink.opacity(0.09) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+        configuration.label.font(RemileType.control).imageScale(.medium).symbolRenderingMode(.monochrome).frame(minWidth: RemileControl.toolHit, minHeight: RemileControl.toolHit).contentShape(Rectangle())
+            .background(configuration.isPressed ? RemileStyle.ink.opacity(0.09) : Color.clear, in: RoundedRectangle(cornerRadius: RemileRadius.control))
             .modifier(RemilePointerFeedback())
             .opacity(enabled ? 1 : 0.4)
     }

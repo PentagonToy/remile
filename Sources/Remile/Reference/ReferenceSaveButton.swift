@@ -14,7 +14,7 @@ struct ReferenceSaveButton: View {
         @Published var message: String?
     }
     var body: some View {
-        Button { state.presented.toggle() } label: { Label(state.saved ? "Saved" : "Save reference", systemImage: state.saved ? "checkmark" : "text.book.closed") }
+        Button { state.presented.toggle() } label: { SymbolLabel(state.saved ? "Saved" : "Save reference", systemImage: state.saved ? "checkmark" : "text.book.closed") }
             .fixedSize().remileHelp("Save this PDF to a Reference library")
             .sheet(isPresented: $state.presented) {
                 ReferenceSavePanel(filename: source.lastPathComponent, libraries: state.libraries, library: $state.library, busy: state.busy, message: state.message, cancel: { state.presented = false }, save: save)

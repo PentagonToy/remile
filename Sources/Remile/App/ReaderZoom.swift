@@ -64,13 +64,13 @@ struct ReaderZoomControls: View {
     var text = false
     var body: some View {
         HStack(spacing: 0) {
-            Button { zoom.step(-1) } label: { Image(systemName: "minus").frame(width: 32, height: 32).contentShape(Rectangle()) }
+            Button { zoom.step(-1) } label: { SymbolIcon(systemName: "minus").frame(width: RemileControl.toolHit, height: RemileControl.toolHit).contentShape(Rectangle()) }
                 .remileHelp("Zoom out 10 percentage points (⌘−: fine)").accessibilityLabel("Zoom out")
             Menu {
                 ReaderZoomMenuItems(zoom: zoom, text: text)
             } label: { Text(zoom.label).monospacedDigit().frame(width: 70, height: 32) }
-                .menuStyle(.borderlessButton).fixedSize().remileHelp("Zoom percentage and fit options")
-            Button { zoom.step(1) } label: { Image(systemName: "plus").frame(width: 32, height: 32).contentShape(Rectangle()) }
+                .menuStyle(.borderlessButton).tint(RemileStyle.ink).fixedSize().remileHelp("Zoom percentage and fit options")
+            Button { zoom.step(1) } label: { SymbolIcon(systemName: "plus").frame(width: RemileControl.toolHit, height: RemileControl.toolHit).contentShape(Rectangle()) }
                 .remileHelp("Zoom in 10 percentage points (⌘+: fine)").accessibilityLabel("Zoom in")
             Button { zoom.fit(width: text) } label: { Text("Fit").frame(width: 42, height: 32).contentShape(Rectangle()) }.remileHelp(text ? "Fit reading width" : "Fit the whole page (⌘0)").keyboardShortcut("0")
         }.buttonStyle(RemileToolStyle()).font(RemileType.control).tint(.primary).fixedSize()

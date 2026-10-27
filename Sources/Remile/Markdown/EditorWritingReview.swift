@@ -94,7 +94,7 @@ struct EditorWritingReviewButton: View {
     var reveal: () -> Void = {}
     var body: some View {
         Button { review.presented.toggle() } label: {
-            HStack(spacing: 4) { Image(systemName: "text.badge.checkmark"); if !review.issues.isEmpty { Text("\(review.issues.count)").monospacedDigit() } }
+            HStack(spacing: 4) { SymbolIcon(systemName: "text.badge.checkmark"); if !review.issues.isEmpty { Text("\(review.issues.count)").monospacedDigit() } }
         }.remileHelp("Spelling and grammar").accessibilityLabel("Spelling and grammar")
             .popover(isPresented: $review.presented) {
                 VStack(alignment: .leading, spacing: 12) {

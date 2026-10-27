@@ -18,9 +18,9 @@ struct TeXAskPanel: View {
         VStack(spacing: 0) {
             if state.draftReview {
                 HStack {
-                    Button { state.draftReview = false } label: { Label("Ask", systemImage: "chevron.left") }
+                    Button { state.draftReview = false } label: { SymbolLabel("Ask", systemImage: "chevron.left") }
                     Spacer()
-                    Button(action: close) { Image(systemName: "xmark") }.accessibilityLabel("Close Ask")
+                    Button(action: close) { SymbolIcon(systemName: "xmark") }.accessibilityLabel("Close Ask")
                 }.buttonStyle(RemileToolStyle()).padding(10)
                 Divider()
                 ManuscriptReviewPanel(project: project)
@@ -38,8 +38,8 @@ struct TeXAskPanel: View {
             }
             if state.feedback {
                 HStack(spacing: 8) {
-                    Label("Overleaf feedback attached", systemImage: "checkmark").font(RemileType.caption)
-                    Button { state.feedback = false } label: { Image(systemName: "xmark").font(RemileType.caption) }
+                    SymbolLabel("Overleaf feedback attached", systemImage: "checkmark").font(RemileType.caption)
+                    Button { state.feedback = false } label: { SymbolIcon(systemName: "xmark") }
                         .buttonStyle(.plain).remileHelp("Remove Overleaf feedback").accessibilityLabel("Remove Overleaf feedback")
                 }.foregroundStyle(RemileStyle.secondaryInk).padding(.top, 3)
             }
@@ -52,7 +52,7 @@ struct TeXAskPanel: View {
         Button(action: perform) {
             HStack(spacing: 7) {
                 if loading { ProgressView().controlSize(.mini) }
-                else { Image(systemName: symbol).foregroundStyle(RemileStyle.accent) }
+                else { SymbolIcon(systemName: symbol).foregroundStyle(RemileStyle.accent) }
                 Text(title)
             }.font(RemileType.caption).padding(.horizontal, 11).padding(.vertical, 7)
                 .contentShape(Capsule())

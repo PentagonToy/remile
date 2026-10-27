@@ -36,6 +36,7 @@ struct PDFReader: NSViewRepresentable {
         guard view.document !== session.document else { return }
         view.document = session.document
         session.applyLibraryDestination()
+        session.restoreReadingPosition()
         context.coordinator.citations.update(session.activeCitation)
     }
     private func configureDrawing(_ view: PDFSelectionView) {

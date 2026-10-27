@@ -38,8 +38,8 @@ struct AIProviderButton: View {
             if usage.reconnecting { Button("Try ChatGPT again") { usage.retryConnection() } }
             Divider()
             Button("AI settings…") { state.settings = true }
-        } label: { AIProviderSymbol().frame(width: 32, height: 32) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).buttonStyle(.plain).frame(width: 32, height: 32, alignment: .center)
+        } label: { AIProviderSymbol().frame(width: RemileControl.toolHit, height: RemileControl.toolHit) }
+            .menuStyle(.borderlessButton).tint(RemileStyle.ink).menuIndicator(.hidden).buttonStyle(.plain).frame(width: 32, height: 32, alignment: .center)
             .remileHelp(hint).accessibilityLabel("AI provider").accessibilityValue(provider == "ChatGPT" && fallback && AppleIntelligence.status().ready && usage.reason != nil ? (usage.needsConnection ? "ChatGPT · connection needed" : "Apple Intelligence · automatic fallback") : provider == "Off" ? "Manual · AI off" : provider)
             .sheet(isPresented: $state.settings) { ChatGPTSettings() }
     }
@@ -63,7 +63,7 @@ struct AIProviderSymbol: View {
     var body: some View {
         Group {
             if provider == "ChatGPT" && (!fallback || !AppleIntelligence.status().ready || usage.showsGPTMark) { GPTMark() }
-            else { Image(systemName: provider == "Off" ? "pencil.tip" : "apple.intelligence").resizable().scaledToFit().frame(width: 20, height: 20) }
+            else { SymbolIcon(systemName: provider == "Off" ? "pencil.tip" : "apple.intelligence") }
         }.frame(width: 22, height: 22, alignment: .center).foregroundStyle(RemileStyle.accent)
             .overlay(alignment: .topTrailing) { if provider == "ChatGPT" && usage.reason != nil { Circle().fill(RemileStyle.warning).frame(width: 5, height: 5).overlay(Circle().stroke(RemileStyle.background, lineWidth: 1)).offset(x: 3, y: -2).accessibilityHidden(true) } }
             .opacity(provider == "Off" ? 0.7 : 1)
@@ -82,12 +82,12 @@ extension AssistantEngine {
 /// Visually groups provider and explicit AI actions throughout the app.
 struct AIToolGroup<Content: View>: View {
     @ViewBuilder var content: () -> Content
-    var body: some View { HStack(spacing: 2) { content() }.buttonStyle(RemileToolStyle()).accessibilityElement(children: .contain) }
+    var body: some View { HStack(spacing: RemileControl.spacing) { content() }.buttonStyle(RemileToolStyle()).accessibilityElement(children: .contain) }
 }
 struct AISettingsRow: View {
     @StateObject private var state = Presentation()
     private final class Presentation: ObservableObject { @Published var presented = false }
     var body: some View {
-        Button { state.presented = true } label: { HStack { AIProviderSymbol().frame(width: 24, height: 24); Text("AI & writing suggestions"); Spacer(); Image(systemName: "chevron.right").font(.caption) }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6).contentShape(Rectangle()) }.buttonStyle(.plain).remileHelp("Choose AI, writing suggestions and usage limits").sheet(isPresented: $state.presented) { ChatGPTSettings() }
+        Button { state.presented = true } label: { HStack { AIProviderSymbol().frame(width: 24, height: 24); Text("AI & writing suggestions"); Spacer(); SymbolIcon(systemName: "chevron.right") }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6).contentShape(Rectangle()) }.buttonStyle(.plain).remileHelp("Choose AI, writing suggestions and usage limits").sheet(isPresented: $state.presented) { ChatGPTSettings() }
     }
 }

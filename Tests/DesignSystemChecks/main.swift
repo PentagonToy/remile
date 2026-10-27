@@ -14,23 +14,23 @@ struct ControlSpecimen: View {
             Text("A little room to think.").font(RemileType.windowTitle)
             HStack(spacing: 8) {
                 Text("Markdown").font(RemileType.heading)
-                Button {} label: { Image(systemName: "list.bullet.indent") }.accessibilityLabel("Document outline")
+                Button {} label: { SymbolIcon(systemName: "list.bullet.indent") }.accessibilityLabel("Document outline")
                 Spacer()
                 if compact {
                     Menu("Read") { Button("Edit") {}; Button("Split") {} }.menuStyle(.borderlessButton)
                 } else {
                     RemileSegmentedControl(title: "Document mode", selection: .constant("Read"), options: ["Read", "Edit", "Split"], label: { $0 }).frame(width: 210)
                 }
-                Button {} label: { Image(systemName: "text.bubble") }.accessibilityLabel("Ask")
-                Button {} label: { Image(systemName: "books.vertical") }.accessibilityLabel("Reference library")
+                Button {} label: { SymbolIcon(systemName: "text.bubble") }.accessibilityLabel("Ask")
+                Button {} label: { SymbolIcon(systemName: "books.vertical") }.accessibilityLabel("Reference library")
                 Menu { Button("PDF…") {} } label: { DocumentActionIcon(action: .export).frame(width: 32, height: 32) }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().tint(RemileStyle.ink).accessibilityLabel("Export")
             }.buttonStyle(RemileToolStyle()).padding(12).background(RemileStyle.editorBar)
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Label("Search", systemImage: "magnifyingglass").labelStyle(RemileNavigationLabelStyle())
-                    Label("Reference", systemImage: "books.vertical").labelStyle(RemileNavigationLabelStyle())
-                    Label("Settings", systemImage: "gearshape").labelStyle(RemileNavigationLabelStyle())
+                    SymbolLabel("Search", systemImage: "magnifyingglass").labelStyle(RemileNavigationLabelStyle())
+                    SymbolLabel("Reference", systemImage: "books.vertical").labelStyle(RemileNavigationLabelStyle())
+                    SymbolLabel("Settings", systemImage: "gearshape").labelStyle(RemileNavigationLabelStyle())
                 }.frame(width: 140, alignment: .leading)
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Reference").font(RemileType.section)

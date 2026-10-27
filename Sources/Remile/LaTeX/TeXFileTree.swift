@@ -94,7 +94,7 @@ struct TeXFileTree: NSViewRepresentable {
             label.font = .systemFont(ofSize: 13); label.lineBreakMode = .byTruncatingMiddle; label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             let ext = ((node.file ?? "") as NSString).pathExtension.lowercased()
             let symbol = ["pdf": "doc.richtext", "png": "photo", "jpg": "photo", "jpeg": "photo", "svg": "photo", "eps": "photo", "bib": "books.vertical", "sty": "curlybraces", "cls": "curlybraces"][ext] ?? "doc.text"
-            icon.image = NSImage(systemSymbolName: node.group != nil ? "square.stack.3d.up" : node.folder ? "folder" : symbol, accessibilityDescription: node.group != nil ? "Virtual collection" : "File")
+            icon.image = SymbolIcon.nativeImage(systemName: node.group != nil ? "square.stack.3d.up" : node.folder ? "folder" : symbol, description: node.group != nil ? "Virtual collection" : "File")
             icon.contentTintColor = node.group != nil ? NSColor(RemileStyle.accent) : .secondaryLabelColor
             let stack = NSStackView(views: [icon, label]); stack.spacing = 6; stack.translatesAutoresizingMaskIntoConstraints = false
             icon.widthAnchor.constraint(equalToConstant: 17).isActive = true
@@ -289,7 +289,7 @@ final class TeXTrashDropView: NSView {
         let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: colour]
         let size = text.size(withAttributes: attributes), width = size.width + 22
         let x = (bounds.width - width) / 2
-        let icon = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)?.withSymbolConfiguration(.init(paletteColors: [colour]))
+        let icon = SymbolIcon.nativeImage(systemName: "trash", description: nil)?.withSymbolConfiguration(.init(paletteColors: [colour]))
         icon?.draw(in: NSRect(x: x, y: (bounds.height - 14) / 2, width: 14, height: 14))
         text.draw(at: NSPoint(x: x + 22, y: (bounds.height - size.height) / 2), withAttributes: attributes)
     }

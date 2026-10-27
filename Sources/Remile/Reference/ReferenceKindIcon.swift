@@ -4,7 +4,7 @@ struct ReferenceKindIcon: View {
     let kind: ReferenceKind
     var hasAttachment = false
     var body: some View {
-        Image(systemName: kind.symbol).font(RemileType.control).symbolRenderingMode(.monochrome)
+        SymbolIcon(systemName: kind.symbol).symbolRenderingMode(.monochrome)
             .frame(width: 18, height: 18).foregroundStyle(RemileStyle.accent)
             .overlay(alignment: .bottomTrailing) {
                 if hasAttachment {

@@ -65,7 +65,7 @@ struct TeXGuidanceCommand: View {
         HStack(alignment: .top, spacing: 8) {
             Text(command).font(.system(size: 12, design: .monospaced)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(command, forType: .string) } label: { Image(systemName: "doc.on.doc").frame(width: 32, height: 32).contentShape(Rectangle()) }
+            Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(command, forType: .string) } label: { SymbolIcon(systemName: "doc.on.doc").frame(width: 32, height: 32).contentShape(Rectangle()) }
                 .buttonStyle(RemileToolStyle()).remileHelp("Copy command").accessibilityLabel("Copy command")
         }.padding(10).overlay(RoundedRectangle(cornerRadius: RemileRadius.control).stroke(RemileStyle.ink.opacity(0.15)))
     }
@@ -127,7 +127,7 @@ struct TeXEnvironmentResult: View {
                 } else if let issue = report.issue {
                     TeXSetupGuide(missing: [], issue: issue, directory: directory, resolution: resolution)
                 } else {
-                    Label(report.ready ? (report.projectChecked ? "LaTeX checks passed" : "Basic TeX tools available") : "Check incomplete", systemImage: report.ready ? "checkmark.circle" : "exclamationmark.triangle")
+                    SymbolLabel(report.ready ? (report.projectChecked ? "LaTeX checks passed" : "Basic TeX tools available") : "Check incomplete", systemImage: report.ready ? "checkmark.circle" : "exclamationmark.triangle")
                         .font(RemileType.heading)
                 }
                 Text(report.projectChecked ? "Checked tools and \(report.checkedFiles) declared files. Compile to verify fonts and other dependencies." : "Basic tools checked. Open a LaTeX project to check its dependencies.")

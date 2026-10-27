@@ -47,13 +47,13 @@ struct UserGuide: View {
     private func workspace(_ title: String, _ symbol: String, _ summary: String, _ path: String) -> some View {
         Link(destination: URL(string: "https://pentagontoy.github.io/remile/" + path)!) {
             HStack(spacing: 12) {
-                Image(systemName: symbol).frame(width: 22).foregroundStyle(RemileStyle.accent).accessibilityHidden(true)
+                SymbolIcon(systemName: symbol).frame(width: 22).foregroundStyle(RemileStyle.accent).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(RemileType.section).foregroundStyle(RemileStyle.ink)
                     Text(summary).font(RemileType.small).foregroundStyle(RemileStyle.secondaryInk).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
-                Image(systemName: "arrow.up.forward").font(RemileType.small).foregroundStyle(RemileStyle.secondaryInk).accessibilityHidden(true)
+                SymbolIcon(systemName: "arrow.up.forward").foregroundStyle(RemileStyle.secondaryInk).accessibilityHidden(true)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 11).contentShape(Rectangle())
         }.buttonStyle(.plain).remileHelp("Open the \(title) guide on the web")
     }

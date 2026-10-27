@@ -34,7 +34,7 @@ struct ReferenceEvidenceView: View {
                         Text("Choose an attachment").tag(Optional<UUID>.none)
                         ForEach(record.attachments) { Text($0.name).tag(Optional($0.id)) }
                     }
-                    Button { state.ask.toggle() } label: { Label("Ask about source", systemImage: "sparkles") }
+                    Button { state.ask.toggle() } label: { SymbolLabel("Ask about source", systemImage: "sparkles") }
                 }
             }
             if let error = state.error { Text(error).font(.callout).foregroundStyle(.secondary) }

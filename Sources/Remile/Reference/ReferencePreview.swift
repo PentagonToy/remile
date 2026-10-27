@@ -39,18 +39,18 @@ struct ReferencePreview: View {
                 if state.loading { ProgressView().frame(height: 150) }
                 else if let document = state.document, let attachment {
                     HStack(spacing: 12) {
-                        Button { move(-1) } label: { Image(systemName: "chevron.left").frame(width: 24, height: 30) }.disabled(state.page == 0).accessibilityLabel("Previous preview page")
+                        Button { move(-1) } label: { SymbolIcon(systemName: "chevron.left").frame(width: 24, height: 30) }.disabled(state.page == 0).accessibilityLabel("Previous preview page")
                         Button { model.readingAttachment = attachment.id; openPDF(model.repository.attachmentURL(attachment), state.page) } label: {
                             if let image = state.thumbnail {
                                 Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: 150, maxHeight: 160).shadow(color: .black.opacity(0.15), radius: 3, y: 2)
                             }
                         }.buttonStyle(.plain).accessibilityLabel("Open PDF").remileHelp("Open PDF")
-                        Button { move(1) } label: { Image(systemName: "chevron.right").frame(width: 24, height: 30) }.disabled(state.page + 1 >= document.pageCount).accessibilityLabel("Next preview page")
+                        Button { move(1) } label: { SymbolIcon(systemName: "chevron.right").frame(width: 24, height: 30) }.disabled(state.page + 1 >= document.pageCount).accessibilityLabel("Next preview page")
                     }.frame(maxWidth: .infinity).frame(height: 165)
                     Text("\(state.page + 1) / \(document.pageCount)").font(RemileType.caption).monospacedDigit().foregroundStyle(.secondary)
                 } else {
                     HStack(spacing: 8) {
-                        Image(systemName: "paperclip").font(RemileType.control).accessibilityHidden(true)
+                        SymbolIcon(systemName: "paperclip").accessibilityHidden(true)
                         Text("Attachment").font(RemileType.small)
                         Spacer(minLength: 4)
                         if record.trashed == nil {

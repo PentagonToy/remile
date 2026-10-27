@@ -60,16 +60,16 @@ struct OverleafLibraryWorkspace: View {
             } message: { Text("The local project, including unpublished edits, moves to Trash. The online project stays in place.") }
     }
     private func header(compact: Bool) -> some View {
-        HStack(spacing: 12) {
-            Button { library.browsing = false } label: { Image(systemName: "chevron.left") }.accessibilityLabel("Back").remileHelp("Return to workspace")
+        HStack(spacing: RemileControl.spacing) {
+            Button { library.browsing = false } label: { SymbolIcon(systemName: "chevron.left") }.accessibilityLabel("Back").remileHelp("Return to workspace")
             Text("Overleaf library").font(RemileType.heading).fixedSize()
             Spacer(minLength: 8)
             Button { Task { await refresh() } } label: {
                 if state.refreshing { ProgressView().controlSize(.small) }
-                else { Image(systemName: "arrow.clockwise") }
+                else { SymbolIcon(systemName: "arrow.clockwise") }
             }.disabled(state.refreshing || library.offlineMode || NetworkAccess.offline).accessibilityLabel("Refresh project tags").remileHelp("Refresh Overleaf tags")
             Button { library.openLibrary(add: true) } label: {
-                if compact { Image(systemName: "plus") } else { Label("Add projects", systemImage: "plus") }
+                SymbolIcon(systemName: "plus")
             }.disabled(library.busy).accessibilityLabel("Add Overleaf projects")
         }.buttonStyle(RemileToolStyle())
     }
@@ -83,7 +83,7 @@ struct OverleafLibraryWorkspace: View {
                         Divider()
                         Button("Manage accounts…") { state.managingAccounts = true }
                     } label: { Text(library.accounts.first(where: { $0.id == state.accountID })?.name ?? "Accounts").lineLimit(1) }
-                    .menuStyle(.borderlessButton).font(RemileType.small).fixedSize()
+                    .menuStyle(.borderlessButton).tint(RemileStyle.ink).font(RemileType.small).fixedSize()
                     .padding(.horizontal, 10).padding(.bottom, 10).accessibilityLabel("Account filter and management")
                 tagButton("All projects", id: "all", count: accountProjects.count)
                 Text("Tags").font(RemileType.caption.weight(.semibold)).foregroundStyle(RemileStyle.secondaryInk).padding(.top, 18).padding(.horizontal, 10)
@@ -101,7 +101,7 @@ struct OverleafLibraryWorkspace: View {
     }
     private func tagButton(_ name: String, id: String, count: Int, color: Color? = nil) -> some View {
         Button { state.selectedTag = id } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: RemileControl.spacing) {
                 if let color { Capsule().fill(color).frame(width: 3, height: 18) }
                 Text(name).lineLimit(1)
                 Spacer(minLength: 4)

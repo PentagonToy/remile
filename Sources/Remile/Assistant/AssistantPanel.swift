@@ -24,7 +24,7 @@ struct AssistantPanel: View {
                 AIProviderButton()
                 Button("Clear") { assistant.clear() }
                     .disabled(assistant.turns.isEmpty && assistant.question.isEmpty).remileHelp("Clear conversation").accessibilityLabel("Clear conversation")
-                Button { assistant.cancel(); close() } label: { Image(systemName: "xmark") }
+                Button { assistant.cancel(); close() } label: { SymbolIcon(systemName: "xmark") }
                     .remileHelp("Close Ask").accessibilityLabel("Close Ask")
             }.buttonStyle(.plain).padding(.horizontal, 14).padding(.vertical, 13)
             Text(assistant.availability.hasPrefix("On-device") ? "Apple Intelligence · " + assistant.availability : assistant.availability.isEmpty ? provider : assistant.availability)
@@ -58,7 +58,7 @@ struct AssistantPanel: View {
             }
             if let selection {
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack { Label("Selected passage", systemImage: "text.quote"); Spacer(); Button { clearSelection?() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).remileHelp("Remove selected passage") }
+                    HStack { SymbolLabel("Selected passage", systemImage: "text.quote"); Spacer(); Button { clearSelection?() } label: { SymbolIcon(systemName: "xmark") }.buttonStyle(.plain).remileHelp("Remove selected passage") }
                     Text(selection).lineLimit(3).foregroundStyle(.secondary)
                 }.font(RemileType.caption).padding(10).background(RemileStyle.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 5)).padding(.horizontal, 12)
             }
@@ -70,7 +70,7 @@ struct AssistantPanel: View {
                     .lineLimit(1...5).textFieldStyle(.plain).padding(.vertical, 7).padding(.leading, 12)
                     .onSubmit { ask() }.accessibilityIdentifier("ask.message")
                 Button { ask() } label: {
-                    Image(systemName: "arrow.up").font(.body.bold()).foregroundStyle(RemileStyle.onAccent)
+                    SymbolIcon(systemName: "arrow.up").foregroundStyle(RemileStyle.onAccent)
                         .frame(width: 28, height: 28).background(RemileStyle.brand, in: Circle())
                 }.buttonStyle(.plain).padding(4)
                     .disabled(assistant.working || (passages.isEmpty && retrieve == nil))
@@ -103,7 +103,7 @@ struct AssistantPanel: View {
                         HStack(spacing: 5) {
                             if turn.generalContext { Text("General context") }
                             else if let note = turn.sourceNote { Text(note) }
-                            else if !turn.sources.isEmpty { Label("Source linked", systemImage: "link") }
+                            else if !turn.sources.isEmpty { SymbolLabel("Source linked", systemImage: "link") }
                         }.font(RemileType.caption).foregroundStyle(.secondary)
                         AssistantAnswerText(text: AssistantAnswerDisplay.clean(turn.answer))
                         if !turn.sources.isEmpty {
@@ -152,7 +152,7 @@ private struct AssistantSources: View {
                 }
             }.padding(.top, 8)
         } label: {
-            Label("\(sources.count) \(sources.count == 1 ? "source" : "sources")", systemImage: "quote.bubble").font(RemileType.caption)
+            SymbolLabel("\(sources.count) \(sources.count == 1 ? "source" : "sources")", systemImage: "quote.bubble").font(RemileType.caption)
         }.tint(RemileStyle.accent).accessibilityIdentifier("ask.sources")
             .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.expanded)
     }

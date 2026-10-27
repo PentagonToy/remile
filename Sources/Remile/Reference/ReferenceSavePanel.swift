@@ -12,7 +12,7 @@ struct ReferenceSavePanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 10) {
-                Image(systemName: "text.book.closed").foregroundStyle(RemileStyle.accent)
+                SymbolIcon(systemName: "text.book.closed").foregroundStyle(RemileStyle.accent)
                 Text("Save reference").font(RemileType.heading)
             }
             Text(filename).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(2).remileHelp(filename)

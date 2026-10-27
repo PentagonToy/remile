@@ -16,26 +16,7 @@ struct WriterWorkspace: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Button(action: goHome) { Image(systemName: "chevron.left") }.buttonStyle(RemileToolStyle()).remileHelp("Back to Home").accessibilityLabel("Back to Home")
-                Text("Writer").font(RemileType.heading)
-                Divider().frame(height: 18)
-                Button { state.tools.toggle() } label: { Image(systemName: "sidebar.left") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).remileHelp("Show or hide writing tools").accessibilityLabel("Writing tools")
-                HStack(spacing: 8) {
-                    Button { model.undo.undo(); model.revisionChanged() } label: { Image(systemName: "arrow.uturn.backward") }
-                        .disabled(!model.undo.canUndo).accessibilityLabel("Undo").remileHelp("Undo")
-                    Button { model.undo.redo(); model.revisionChanged() } label: { Image(systemName: "arrow.uturn.forward") }
-                        .disabled(!model.undo.canRedo).accessibilityLabel("Redo").remileHelp("Redo")
-                }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).padding(.leading, 4)
-
-                Spacer()
-                Text(model.title + (model.dirty ? " · Edited" : "")).font(RemileType.callout.weight(.semibold)).lineLimit(1).padding(.horizontal, 12).padding(.vertical, 5).frame(maxWidth: 360).background(RemileStyle.editorBar, in: RoundedRectangle(cornerRadius: RemileRadius.control))
-                Spacer()
-                Button { model.open() } label: { Image(systemName: "folder") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).remileHelp("Open a DOCX document").accessibilityLabel("Open document")
-                Button { model.save() } label: { DocumentActionIcon(action: .save) }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).accessibilityLabel("Save").remileHelp("Save changes · ⌘S")
-                    .contextMenu { Button("Save As…") { model.saveAs() } }
-                Button { model.exportCopy() } label: { DocumentActionIcon(action: .export) }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).accessibilityLabel("Export").remileHelp("Create a separate PDF or DOCX copy.")
-            }.font(RemileType.control).padding(.horizontal, 12).padding(.vertical, 5).background(RemileStyle.background)
+            toolbar
             Divider()
             GeometryReader { geometry in
                 ReaderSplit(isPresented: state.tools, initial: min(320, max(250, geometry.size.width * 0.22)), minimum: 250, maximum: 340, minimumContent: 380, label: "writer tools", pane: { tools }, content: { document })
@@ -44,12 +25,34 @@ struct WriterWorkspace: View {
                 Text("\(model.pages) \(model.pages == 1 ? "page" : "pages")"); Spacer()
                 if model.loading { ProgressView().controlSize(.mini); Text("Opening…") }
                 if model.rendering { ProgressView().controlSize(.mini); Text("Setting the equation…") }
-                if let error = model.error { Text(error).foregroundStyle(RemileStyle.warning).fixedSize(horizontal: false, vertical: true); Button { model.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss message") }
+                if let error = model.error { Text(error).foregroundStyle(RemileStyle.warning).fixedSize(horizontal: false, vertical: true); Button { model.error = nil } label: { SymbolIcon(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss message") }
                 ReaderThemeButton()
             }.font(RemileType.caption).padding(.horizontal, 12).frame(minHeight: 32).background(RemileStyle.editorBar)
         }.font(RemileType.control).background(RemileStyle.background).tint(RemileStyle.accent)
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.tools)
             .sheet(isPresented: $state.formula) { formula }
+    }
+    private var toolbar: some View {
+            HStack(spacing: RemileControl.spacing) {
+                Button(action: goHome) { SymbolIcon(systemName: "chevron.left") }.buttonStyle(RemileToolStyle()).remileHelp("Back to Home").accessibilityLabel("Back to Home")
+                Text("Writer").font(RemileType.heading)
+                Divider().frame(height: 18)
+                Button { state.tools.toggle() } label: { SymbolIcon(systemName: "sidebar.left") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).remileHelp("Show or hide writing tools").accessibilityLabel("Writing tools")
+                HStack(spacing: RemileControl.spacing) {
+                    Button { model.undo.undo(); model.revisionChanged() } label: { SymbolIcon(systemName: "arrow.uturn.backward") }
+                        .disabled(!model.undo.canUndo).accessibilityLabel("Undo").remileHelp("Undo")
+                    Button { model.undo.redo(); model.revisionChanged() } label: { SymbolIcon(systemName: "arrow.uturn.forward") }
+                        .disabled(!model.undo.canRedo).accessibilityLabel("Redo").remileHelp("Redo")
+                }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).padding(.leading, 4)
+
+                Spacer()
+                Text(model.title + (model.dirty ? " · Edited" : "")).font(RemileType.callout.weight(.semibold)).lineLimit(1).padding(.horizontal, 12).padding(.vertical, 5).frame(maxWidth: 360).background(RemileStyle.editorBar, in: RoundedRectangle(cornerRadius: RemileRadius.control))
+                Spacer()
+                Button { model.open() } label: { SymbolIcon(systemName: "folder") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).remileHelp("Open a DOCX document").accessibilityLabel("Open document")
+                Button { model.save() } label: { DocumentActionIcon(action: .save) }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).accessibilityLabel("Save").remileHelp("Save changes · ⌘S")
+                    .contextMenu { Button("Save As…") { model.saveAs() } }
+                Button { model.exportCopy() } label: { DocumentActionIcon(action: .export) }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).accessibilityLabel("Export").remileHelp("Create a separate PDF or DOCX copy.")
+            }.font(RemileType.control).padding(.horizontal, 12).padding(.vertical, 5).background(RemileStyle.background)
     }
     private func formatting<Value>(_ key: ReferenceWritableKeyPath<WriterModel, Value>) -> Binding<Value> {
         Binding(get: { model[keyPath: key] }, set: { model[keyPath: key] = $0; model.format() })
@@ -60,7 +63,7 @@ struct WriterWorkspace: View {
                 VStack(alignment: .leading, spacing: 16) {
                     if state.settings {
                         HStack {
-                            Button { state.settings = false } label: { Image(systemName: "chevron.left") }.buttonStyle(RemileToolStyle()).accessibilityLabel("Back to formatting").remileHelp("Back to formatting")
+                            Button { state.settings = false } label: { SymbolIcon(systemName: "chevron.left") }.buttonStyle(RemileToolStyle()).accessibilityLabel("Back to formatting").remileHelp("Back to formatting")
                             Text("Page").font(RemileType.caption.weight(.semibold))
                             Spacer()
                         }
@@ -93,14 +96,14 @@ struct WriterWorkspace: View {
             Text(selectionTitle).font(RemileType.caption.weight(.semibold))
             Spacer()
             if model.selectedObject != nil {
-                Button(role: .destructive) { model.deleteShape() } label: { Image(systemName: "trash") }
+                Button(role: .destructive) { model.deleteShape() } label: { SymbolIcon(systemName: "trash") }
                     .buttonStyle(.plain).accessibilityLabel("Delete object").remileHelp("Delete object")
             }
         }
         Divider()
         if let object = model.selectedObject {
             if object.kind == .image {
-                Label("Move freely on the page.", systemImage: "move.3d")
+                SymbolLabel("Move freely on the page.", systemImage: "move.3d")
                     .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text("Drag a corner to resize.").font(RemileType.caption).foregroundStyle(.secondary)
             } else {
@@ -143,7 +146,7 @@ struct WriterWorkspace: View {
     }
     private var typography: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
+            HStack(spacing: RemileControl.spacing) {
                 optionPicker(WriterOptions.fonts, selected: model.font.rawValue, label: "Font") { value in
                     guard let font = WriterFont(rawValue: value) else { return }
                     model.font = font; model.format()
@@ -172,14 +175,14 @@ struct WriterWorkspace: View {
             }
             if model.selectedObject == nil {
                 HStack(spacing: 12) {
-                    Image(systemName: "arrow.up.and.down.text.horizontal").frame(width: 20).accessibilityLabel("Line spacing").remileHelp("Line spacing")
+                    SymbolIcon(systemName: "arrow.up.and.down.text.horizontal").frame(width: 20).accessibilityLabel("Line spacing").remileHelp("Line spacing")
                     optionPicker(WriterOptions.spacing, selected: String(format: "%g", model.leading), label: "Line spacing") { value in
                         guard let spacing = Double(value) else { return }
                         model.leading = spacing; model.format()
                     }
                 }
                 HStack(spacing: 12) {
-                    Image(systemName: "list.bullet").frame(width: 20).accessibilityHidden(true)
+                    SymbolIcon(systemName: "list.bullet").frame(width: 20).accessibilityHidden(true)
                     optionPicker(WriterOptions.lists, selected: model.list.rawValue, label: "List style") { value in
                         if let style = WriterList(rawValue: value) { model.applyList(style) }
                     }
@@ -194,7 +197,7 @@ struct WriterWorkspace: View {
     }
     private func traitButton(_ title: String, icon: String, active: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon).frame(maxWidth: .infinity).frame(height: 28)
+            SymbolIcon(systemName: icon).frame(maxWidth: .infinity).frame(height: 28)
                 .background(active ? RemileStyle.accent.opacity(0.20) : RemileStyle.editorBar, in: RoundedRectangle(cornerRadius: RemileRadius.control))
                 .foregroundStyle(active ? RemileStyle.accent : RemileStyle.ink)
                 .contentShape(Rectangle())
@@ -227,7 +230,7 @@ struct WriterWorkspace: View {
     private var insertTools: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Insert").font(RemileType.caption.weight(.semibold))
-            HStack(spacing: 8) {
+            HStack(spacing: RemileControl.spacing) {
                 traitButton("Shapes", icon: "square.on.circle", active: state.shapes) { state.shapes.toggle() }
                     .popover(isPresented: $state.shapes) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -242,18 +245,18 @@ struct WriterWorkspace: View {
         }
     }
     private func shapeChoice(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button { state.shapes = false; action() } label: { Label(title, systemImage: icon).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(RemileToolStyle())
+        Button { state.shapes = false; action() } label: { SymbolLabel(title, systemImage: icon).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(RemileToolStyle())
     }
     private var document: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 WriterColumns(model: model, compact: true)
                 Spacer()
-                Button { model.setZoom(model.zoom - 0.1) } label: { Image(systemName: "minus") }.disabled(model.zoom <= 0.25).accessibilityLabel("Zoom out")
+                Button { model.setZoom(model.zoom - 0.1) } label: { SymbolIcon(systemName: "minus") }.disabled(model.zoom <= 0.25).accessibilityLabel("Zoom out")
                 Menu {
                     ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { value in Button("\(Int(value * 100))%") { model.setZoom(value) } }
                 } label: { Text("\(Int((model.zoom * 100).rounded()))%").monospacedDigit() }.fixedSize().remileHelp("Zoom")
-                Button { model.setZoom(model.zoom + 0.1) } label: { Image(systemName: "plus") }.disabled(model.zoom >= 2).accessibilityLabel("Zoom in")
+                Button { model.setZoom(model.zoom + 0.1) } label: { SymbolIcon(systemName: "plus") }.disabled(model.zoom >= 2).accessibilityLabel("Zoom in")
                 Button("Fit") { model.fitWidth() }.remileHelp("Fit page width")
             }.buttonStyle(RemileCompactToolStyle()).font(RemileType.small).padding(.horizontal, 10).frame(height: 34).background(RemileStyle.editorBar)
             Divider()

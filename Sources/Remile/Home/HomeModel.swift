@@ -280,14 +280,23 @@ final class HomeModel: ObservableObject {
     }
     var resultPosition: Int? { visibleHits.firstIndex { $0.id == selectedHit?.id } }
 
-    func open(_ url: URL) {
+    private var queuedPDFs: [URL] = []
+    func open(_ url: URL) { open(url, inNewPDFTab: true) }
+    func open(_ url: URL, inNewPDFTab: Bool) {
+        if url.pathExtension.lowercased() == "pdf" {
+            if opening { queuedPDFs.append(url); return }
+            if inNewPDFTab, RemileWindows.shared.openPDFTab(url, from: self) { return }
+        }
         if url.pathExtension.lowercased() == "docx" { openWriter(url); return }
         if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true { openTeX(url); return }
         if url.pathExtension.lowercased() == "tex" { openTeX(url.deletingLastPathComponent()); return }
         guard closeTeX(), !opening else { return }
         opening = true
         Task {
-            defer { opening = false }
+            defer {
+                opening = false
+                if !queuedPDFs.isEmpty { open(queuedPDFs.removeFirst()) }
+            }
             do {
                 let data = try await Task.detached(priority: .userInitiated) { try Data(contentsOf: url) }.value
                 try reader.open(url, data: data)
