@@ -7,8 +7,8 @@ struct ReaderThemeButton: View {
     var body: some View {
         Button { selection = scheme == .dark ? ReaderAppearance.light.rawValue : ReaderAppearance.dark.rawValue } label: {
             Image(systemName: scheme == .dark ? "sun.max" : "moon")
-                .font(.system(size: 16)).frame(width: 28, height: 20).contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel(scheme == .dark ? "Switch to light theme" : "Switch to dark theme")
+                .font(.system(size: 16)).frame(width: 28, height: 28).contentShape(Rectangle())
+        }.buttonStyle(RemileCompactToolStyle()).accessibilityLabel(scheme == .dark ? "Switch to light theme" : "Switch to dark theme")
             .accessibilityValue(selection).remileHelp(scheme == .dark ? "Switch to light theme · System is available in Settings" : "Switch to dark theme · System is available in Settings")
     }
 }

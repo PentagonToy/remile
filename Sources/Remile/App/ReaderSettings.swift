@@ -58,7 +58,7 @@ struct ReaderSettings: View {
     }
     private func category(_ name: String, symbol: String) -> some View {
         Button { presentation.section = name } label: {
-            Label(name, systemImage: symbol).font(RemileType.control).frame(maxWidth: .infinity, alignment: .leading).padding(10)
+            Label(name, systemImage: symbol).labelStyle(RemileNavigationLabelStyle()).font(RemileType.control).frame(maxWidth: .infinity, alignment: .leading).padding(10)
                 .background(presentation.section == name ? RemileStyle.accent.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
         }.buttonStyle(.plain).accessibilityValue(presentation.section == name ? "Selected" : "")
     }
@@ -68,6 +68,7 @@ struct ReaderSettings: View {
 struct LibrarySearchSettings: View {
     @AppStorage(SearchBoostPolicy.preference) private var boostingEnabled = true
     @AppStorage(SearchQuestion.spellingPreference) private var spellingSuggestions = true
+    @AppStorage(SearchScope.bibliographyPreference) private var includeBibliography = false
     var body: some View {
         Form {
             Section("Search boosting") {
@@ -78,6 +79,10 @@ struct LibrarySearchSettings: View {
             Section("Suggestions") {
                 Toggle("Suggest spelling corrections", isOn: $spellingSuggestions)
                 SettingsHint("Choose a correction when no matches are found.")
+            }
+            Section("Search scope") {
+                Toggle("Include bibliography matches", isOn: $includeBibliography)
+                SettingsHint("Search detected reference lists as well as the main text.")
             }
             Section("Your library") {
                 SettingsHint("Manage folders and refresh files in Library.")

@@ -442,10 +442,10 @@ struct ReferenceRepository: Sendable {
             return result
         }
     }
-    func withLibraryLock<T>(_ action: () throws -> T) throws -> T {
+    func withLibraryLock<T>(allowReadOnly: Bool = false, _ action: () throws -> T) throws -> T {
         StoragePaths.gate.lock(); defer { StoragePaths.gate.unlock() }
         try requireStorage()
-        guard !readOnly && !StoragePaths.isReadOnly(root) else { throw ReferenceFailure("This library is read only. Enable editing in Storage on one Mac at a time.") }
+        guard allowReadOnly || (!readOnly && !StoragePaths.isReadOnly(root)) else { throw ReferenceFailure("This library is read only. Enable editing in Storage on one Mac at a time.") }
         let manager = FileManager.default
         try manager.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let descriptor = Darwin.open(root.appendingPathComponent("library.lock").path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)

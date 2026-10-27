@@ -16,7 +16,8 @@ enum RemileStyle {
     static let background = adaptive(light: paper, dark: slate)
     static let ink = adaptive(light: NSColor(srgbRed: 41/255, green: 57/255, blue: 68/255, alpha: 1), dark: ivory)
     static let secondaryInk = adaptive(light: NSColor(srgbRed: 90/255, green: 100/255, blue: 107/255, alpha: 1), dark: NSColor(srgbRed: 188/255, green: 190/255, blue: 187/255, alpha: 1))
-    static let accent = adaptive(light: gold, dark: amber)
+    // Darken the light UI accent slightly for small text on paper. Artwork keeps its canonical gold.
+    static let accent = adaptive(light: NSColor(srgbRed: 138/255, green: 100/255, blue: 46/255, alpha: 1), dark: amber)
     static let onAccent = adaptive(light: .white, dark: slate)
     static let brand = accent
     static let sourceLinked = accent
@@ -123,8 +124,9 @@ struct RemileToolStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(RemileType.control).imageScale(.medium).frame(minWidth: 32, minHeight: 32).background(Color.primary.opacity(0.001)).contentShape(.interaction, Rectangle())
+        configuration.label.font(RemileType.control).imageScale(.medium).symbolRenderingMode(.monochrome).frame(minWidth: 32, minHeight: 32).contentShape(.interaction, Rectangle())
             .background(configuration.isPressed ? RemileStyle.ink.opacity(0.09) : Color.clear, in: RoundedRectangle(cornerRadius: RemileRadius.control))
+            .modifier(RemilePointerFeedback())
             .opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
     }
@@ -134,8 +136,9 @@ struct RemileToolStyle: ButtonStyle {
 struct RemileCompactToolStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(RemileType.control).imageScale(.medium).frame(minWidth: 28, minHeight: 28).contentShape(Rectangle())
+        configuration.label.font(RemileType.control).imageScale(.medium).symbolRenderingMode(.monochrome).frame(minWidth: 28, minHeight: 28).contentShape(Rectangle())
             .background(configuration.isPressed ? RemileStyle.ink.opacity(0.09) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+            .modifier(RemilePointerFeedback())
             .opacity(enabled ? 1 : 0.4)
     }
 }

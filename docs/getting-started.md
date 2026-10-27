@@ -4,9 +4,9 @@ Open a document and begin. Reading, writing and local search need no account.
 
 ## Install
 
-Download the [Apple Silicon DMG](https://github.com/PentagonToy/remile/releases/download/v0.1.3/remile-0.1.3-arm64.dmg), open it and drag **remile.app** into **Applications**. You need an Apple Silicon Mac with macOS 14 or later.
+Download the [Apple Silicon DMG](https://github.com/PentagonToy/remile/releases/download/v0.2.0/remile-0.2.0-arm64.dmg), open it and drag **remile.app** into **Applications**. You need an Apple Silicon Mac with macOS 14 or later.
 
-The download is not Apple-notarised. If macOS blocks first launch, follow [Apple's downloaded-app guidance](https://support.apple.com/en-au/102445). See [installation](distribution.md) for Homebrew and updates.
+The app is Developer ID signed and Apple-notarised. See [installation](distribution.md) for Homebrew and updates.
 
 ## Choose your first task
 
@@ -23,7 +23,7 @@ The download is not Apple-notarised. If macOS blocks first launch, follow [Apple
 
 Settings controls appearance, reading and editing. In Storage, save a preset to bring supported preferences to another Mac. Your account connections and library paths stay local.
 
-To share a Reference library through Dropbox or iCloud Drive, move it into a synced folder. On another Mac, wait for the folder to download, then use **Storage → Change → Open library**. It opens read only. See [storage and other Macs](reference.md#storage-and-other-macs) before enabling editing.
+To share a Reference library through Dropbox or iCloud Drive, use Move storage to put it in a synced folder. On another Mac, wait for the folder to download, then use **Storage → Change → Open storage**. Restart remile to apply the change. Reference opens read only. See [storage and other Macs](reference.md#storage-and-other-macs) before enabling editing.
 
 ## Connect when you need to
 

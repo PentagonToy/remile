@@ -100,13 +100,9 @@ struct MarkdownWorkspace: View {
         .alert("Unable to export or print", isPresented: Binding(get: { presentation.error != nil }, set: { if !$0 { presentation.error = nil } })) {
             Button("OK") { presentation.error = nil }
         } message: { Text(presentation.error ?? "") }
-        .toolbar {
-            ToolbarItem(placement: .navigation) { Button { presentation.outline.toggle() } label: { Label("Outline", systemImage: "list.bullet.indent") }.remileHelp("Show document outline") }
-            if #available(macOS 26.0, *) {
-                ToolbarItem(placement: .primaryAction) { ReaderZoomControls(zoom: zoom, text: true) }.sharedBackgroundVisibility(.hidden)
-            } else { ToolbarItem(placement: .primaryAction) { ReaderZoomControls(zoom: zoom, text: true) } }
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
+    }
+    private var formatMenu: some View {
+        Menu {
                     Button("Bold") { editor.wrap("**", "**", name: "Bold") }.keyboardShortcut("b")
                     Button("Italic") { editor.wrap("*", "*", name: "Italic") }.keyboardShortcut("i")
                     Button("Inline code") { editor.wrap("`", "`", name: "Code") }
@@ -120,37 +116,51 @@ struct MarkdownWorkspace: View {
                     Button("Paste as Markdown") { editor.pasteMarkdown() }.keyboardShortcut("v", modifiers: [.command, .shift])
                     Button("Math block") { editor.wrap("$$\n", "\n$$", name: "Math") }
                     Button("Code block") { editor.wrap("```\n", "\n```", name: "Code Block") }
-                } label: { Label("Format", systemImage: "textformat") }.disabled(presentation.mode == .read)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    if presentation.mode == .read { presentation.mode = .edit }
-                    Task { @MainActor in try? await Task.sleep(for: .milliseconds(60)); editor.find() }
-                } label: { Label("Find", systemImage: "magnifyingglass") }.keyboardShortcut("f")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                RemileSegmentedControl(title: "Document mode", selection: $presentation.mode, options: Mode.allCases, label: { $0.rawValue }).frame(width: 225)
-            }
-            ToolbarItem(placement: .primaryAction) { OfflineModeButton() }
-        }
+                } label: { Label("Format", systemImage: "textformat") }.menuStyle(.borderlessButton).menuIndicator(.hidden).buttonStyle(.plain).disabled(presentation.mode == .read)
     }
     private func editorToolbar(compact: Bool) -> some View {
         HStack(spacing: compact ? 8 : 12) {
                 Text("Markdown").font(RemileType.heading)
+                Button { presentation.outline.toggle() } label: { Image(systemName: "list.bullet.indent") }.remileHelp("Show document outline").accessibilityLabel("Document outline")
+                if !compact { ReaderZoomControls(zoom: zoom, text: true) }
                 Spacer()
+                if !compact {
+                formatMenu
+                Button {
+                    if presentation.mode == .read { presentation.mode = .edit }
+                    Task { @MainActor in try? await Task.sleep(for: .milliseconds(60)); editor.find() }
+                } label: { Image(systemName: "magnifyingglass") }.keyboardShortcut("f").remileHelp("Find in document")
+                }
+                if compact {
+                    Menu {
+                        ForEach(Mode.allCases) { mode in Button(mode.rawValue) { presentation.mode = mode } }
+                    } label: { Text(presentation.mode.rawValue) }.menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Document mode")
+                } else {
+                    RemileSegmentedControl(title: "Document mode", selection: $presentation.mode, options: Mode.allCases, label: { $0.rawValue }).frame(width: 210)
+                }
                 if presentation.mode == .split && !compact {
                     Button { preview.revealSource() } label: { Image(systemName: "arrow.left") }.remileHelp("Show preview selection in source")
                     Button { preview.reveal(line: editor.selectedLine) } label: { Image(systemName: "arrow.right") }.remileHelp("Show source in preview")
                 }
                 AIToolGroup {
                 AIProviderButton()
-                EditorWritingReviewButton(review: writing, editor: editor)
+                EditorWritingReviewButton(review: writing, editor: editor, reveal: { if presentation.mode == .read { presentation.mode = .edit } })
                 }
 
                 WorkspaceAskButton(isPresented: presentation.ask) { presentation.ask.toggle() }.labelStyle(.iconOnly)
                 WorkspaceReferenceButton { presentation.references = true }
+                if !compact { Button { NotificationCenter.default.post(name: Notification.Name("remile.exportMarkdownPDF"), object: session) } label: { DocumentActionIcon(action: .export) }.accessibilityLabel("Export PDF").remileHelp("Export PDF…") }
                 if !compact { Button { showExternalEdits.toggle() } label: { Image(systemName: showExternalEdits ? "eye" : "eye.slash") }.remileHelp(RemileHints.edits(showExternalEdits)).accessibilityLabel("Show AI and CLI edits").accessibilityValue(showExternalEdits ? "On" : "Off") }
                 Menu {
+                    if compact {
+                        formatMenu
+                        Button("Find in document") {
+                            if presentation.mode == .read { presentation.mode = .edit }
+                            Task { @MainActor in try? await Task.sleep(for: .milliseconds(60)); editor.find() }
+                        }.keyboardShortcut("f")
+                        Menu("Zoom") { ReaderZoomMenuItems(zoom: zoom, text: true) }
+                        Button("Export PDF…") { NotificationCenter.default.post(name: Notification.Name("remile.exportMarkdownPDF"), object: session) }
+                    }
                     Toggle("Focus paragraph", isOn: $focusMode)
                     Toggle("Show AI and CLI edits", isOn: $showExternalEdits)
                     if compact && presentation.mode == .split {
@@ -159,7 +169,7 @@ struct MarkdownWorkspace: View {
                     }
                     Divider()
                     Button("Settings…") { presentation.settings = true }
-                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize().remileHelp("Focus mode and Markdown settings")
+                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize().remileHelp("Focus mode and Markdown settings").accessibilityLabel("Markdown options")
                 Button { render() } label: { if compact { Image(systemName: "arrow.clockwise") } else { Label(livePreview ? "Refresh" : "Render", systemImage: "arrow.clockwise") } }.accessibilityLabel("Refresh preview").keyboardShortcut(.return, modifiers: [.command])
             }.font(RemileType.control).buttonStyle(RemileToolStyle()).padding(.horizontal, 16).padding(.vertical, 6).background(RemileStyle.editorBar)
     }

@@ -15,7 +15,7 @@ struct ReferenceSettings: View {
                     .font(.system(.callout, design: .monospaced)).foregroundStyle(RemileStyle.accent)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(12)
                     .background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 6))
-                    .remileHelp("Uses the first author's surname. Existing keys change only when regenerated.")
+                    .remileHelp("Uses the first author or editor's surname. Existing keys change only when regenerated.")
                 Text("Existing keys stay unchanged.").font(RemileType.caption).foregroundStyle(.secondary)
                 Divider()
                 HStack { Text("List columns").font(RemileType.section); Spacer(); Button("Reset widths") { columnWidths = "{}" }.buttonStyle(RemileActionStyle()) }

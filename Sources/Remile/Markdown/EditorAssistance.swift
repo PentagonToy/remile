@@ -44,12 +44,19 @@ import SwiftUI
 }
 
 struct EditorLanguageSettings: View {
+    static func languageTitle(_ value: String) -> String {
+        switch value.replacingOccurrences(of: "-", with: "_") {
+        case "en", "en_US": return "English (US)"
+        case "en_GB": return "English (UK)"
+        default: return Locale.current.localizedString(forIdentifier: value) ?? value
+        }
+    }
     @AppStorage("editor.language") private var language = "Automatic"
     @AppStorage("editor.spellcheck") private var spellcheck = true
     var body: some View {
         Picker("Writing language", selection: $language) {
             Text("Automatic").tag("Automatic")
-            ForEach(NSSpellChecker.shared.availableLanguages.sorted(), id: \.self) { value in Text(Locale.current.localizedString(forIdentifier: value) ?? value).tag(value) }
+            ForEach(NSSpellChecker.shared.availableLanguages.sorted(), id: \.self) { value in Text(Self.languageTitle(value)).tag(value) }
         }
         Toggle("Check spelling", isOn: $spellcheck)
     }

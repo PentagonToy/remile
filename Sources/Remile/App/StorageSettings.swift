@@ -2,28 +2,37 @@ import SwiftUI
 import AppKit
 
 struct StorageSettings: View {
+    @AppStorage(StorageLocation.preference) private var storagePath = ""
+    @AppStorage(StorageLocation.pendingPreference) private var pendingPath = ""
     @AppStorage(StoragePaths.referencePreference) private var referencePath = ""
     @AppStorage(StoragePaths.settingsPreference) private var settingsPath = ""
     @AppStorage(StoragePaths.readOnlyPreference) private var readOnlyPath = ""
     @StateObject private var state = Presentation()
-    private final class Presentation: ObservableObject { @Published var busy = false; @Published var message: String?; @Published var previous: URL?; @Published var showsLocations = false }
+    private final class Presentation: ObservableObject { @Published var message: String?; @Published var showsLocations = false }
     var body: some View {
         let root = StoragePaths.reference()
         let preferences = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences/local.remile.app.plist")
         Form {
-            Section("Reference") {
+            Section("Storage") {
                 HStack(spacing: 10) {
                     Image(systemName: "folder").foregroundStyle(RemileStyle.accent)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Library folder").font(RemileType.callout.weight(.medium))
-                        Text((root.path as NSString).abbreviatingWithTildeInPath).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                    }.frame(maxWidth: .infinity, alignment: .leading).remileHelp(root.path)
-                    if state.busy { ProgressView().controlSize(.small) }
+                        Text("Storage folder").font(RemileType.callout.weight(.medium))
+                        Text((StorageLocation.root().path as NSString).abbreviatingWithTildeInPath).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    }.frame(maxWidth: .infinity, alignment: .leading).remileHelp(StorageLocation.root().path)
                     Menu("Change…") {
-                        Button("Move library…", action: relocate)
-                        Button("Open library…", action: openLibrary)
-                    }.fixedSize().disabled(state.busy)
-                    reveal(root, directory: true)
+                        Button("Move storage…") { chooseStorage(existing: false) }
+                        Button("Open storage…") { chooseStorage(existing: true) }
+                    }.fixedSize()
+                    reveal(StorageLocation.root(), directory: true)
+                }
+                Text("Reference and search data. Search indexes stay separate for each Mac.").font(RemileType.caption).foregroundStyle(.secondary)
+                if !pendingPath.isEmpty {
+                    HStack {
+                        Text("Restart remile to apply the storage change.").font(RemileType.caption)
+                        Spacer()
+                        Button("Cancel change") { pendingPath = ""; state.message = nil }
+                    }
                 }
                 if !referencePath.isEmpty {
                     Toggle("Read only", isOn: Binding(get: { StoragePaths.isReadOnly(root) }, set: { value in
@@ -45,6 +54,7 @@ struct StorageSettings: View {
                 DisclosureGroup("Locations", isExpanded: $state.showsLocations) {
                     VStack(alignment: .leading, spacing: 10) {
                         location("Reference", url: root, directory: true)
+                        location("Search index", url: StorageLocation.search())
                         location("Preferences", url: preferences)
                         if !settingsPath.isEmpty { location("Settings export", url: URL(fileURLWithPath: settingsPath)) }
                     }.padding(.top, 10).padding(.leading, 18)
@@ -53,7 +63,6 @@ struct StorageSettings: View {
             if let message = state.message {
                 Section {
                     Text(message).font(RemileType.caption).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                    if let previous = state.previous { Button("Show previous copy") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: previous.path) } }
                 }
             }
         }.formStyle(.grouped).scrollContentBackground(.hidden).font(RemileType.control).toggleStyle(.switch)
@@ -71,66 +80,16 @@ struct StorageSettings: View {
             Text((url.path as NSString).abbreviatingWithTildeInPath).font(RemileType.caption).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true).remileHelp(url.path)
         }.padding(.vertical, 4)
     }
-    private func relocate() {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false; panel.prompt = "Choose"
-        guard panel.runModal() == .OK, let parent = panel.url else { return }
-        state.busy = true; state.message = nil; state.previous = nil
-        Task { @MainActor in
-            defer { state.busy = false }
-            do {
-                let old = StoragePaths.reference()
-                let destination = try await Task.detached(priority: .userInitiated) {
-                    let repository = ReferenceRepository()
-                    return try repository.withLibraryLock {
-                        guard repository.root.standardizedFileURL == old.standardizedFileURL else { throw StoragePaths.Failure("The storage location changed. Open Storage again.") }
-                        _ = try repository.snapshot()
-                        return try StoragePaths.relocate(from: old, into: parent, commit: { publish in
-                            try DispatchQueue.main.sync {
-                                try MainActor.assumeIsolated {
-                                    let opened = RemileWindows.shared.models.contains { model in
-                                        model.reader.url.map { $0.standardizedFileURL.path.hasPrefix(old.standardizedFileURL.path + "/") } == true
-                                    }
-                                    guard !opened else { throw StoragePaths.Failure("Close PDFs opened from Reference before moving the library.") }
-                                    try publish()
-                                }
-                            }
-                        })
-                    }
-                }.value
-                referencePath = destination.path
-                NotificationCenter.default.post(name: StoragePaths.changed, object: nil)
-                state.previous = old; state.message = "Library moved. Previous copy kept."
-            } catch { state.message = error.localizedDescription }
-        }
-    }
-    private func openLibrary() {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false; panel.prompt = "Open"
-        guard panel.runModal() == .OK, let folder = panel.url else { return }
-        state.busy = true; state.message = nil; state.previous = nil
-        Task { @MainActor in
-            defer { state.busy = false }
-            do {
-                let current = StoragePaths.reference()
-                guard !RemileWindows.shared.models.contains(where: { $0.reader.url?.standardizedFileURL.path.hasPrefix(current.standardizedFileURL.path + "/") == true }) else {
-                    throw StoragePaths.Failure("Close PDFs opened from Reference before switching libraries.")
-                }
-                try await Task.detached(priority: .userInitiated) {
-                    try StoragePaths.connect(to: folder, commit: { publish in
-                        try DispatchQueue.main.sync {
-                            try MainActor.assumeIsolated {
-                                guard StoragePaths.reference() == current,
-                                      !RemileWindows.shared.models.contains(where: { $0.reader.url?.standardizedFileURL.path.hasPrefix(current.standardizedFileURL.path + "/") == true }) else {
-                                    throw StoragePaths.Failure("Close Reference PDFs and try switching libraries again.")
-                                }
-                                try publish()
-                            }
-                        }
-                    })
-                }.value
-                referencePath = StoragePaths.reference().path; readOnlyPath = referencePath
-                NotificationCenter.default.post(name: StoragePaths.changed, object: nil)
-                state.message = "Library opened read only."
-            } catch { state.message = error.localizedDescription }
-        }
+    private func chooseStorage(existing: Bool) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
+        panel.prompt = existing ? "Open" : "Choose"
+        guard panel.runModal() == .OK, let selected = panel.url else { return }
+        do {
+            let destination = existing ? selected : selected.appendingPathComponent("remile-storage", isDirectory: true)
+            try StoragePaths.scheduleStorage(destination)
+            pendingPath = destination.path
+            state.message = nil
+        } catch { state.message = error.localizedDescription }
     }
 }

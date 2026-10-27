@@ -5,7 +5,7 @@ enum PDFDrawingTool: String, CaseIterable, Identifiable {
     case ink = "Draw", rectangle = "Rectangle", ellipse = "Ellipse"
     var id: Self { self }
     var symbol: String {
-        switch self { case .ink: return "pencil.tip"; case .rectangle: return "rectangle"; case .ellipse: return "circle" }
+        switch self { case .ink: return "pencil.line"; case .rectangle: return "rectangle"; case .ellipse: return "circle" }
     }
     func annotation(points: [CGPoint], on page: PDFPage, color: NSColor) -> PDFAnnotation? {
         guard points.count >= 2, points.count <= 10_000, points.allSatisfy({ $0.x.isFinite && $0.y.isFinite }),

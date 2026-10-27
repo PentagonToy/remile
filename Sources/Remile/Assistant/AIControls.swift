@@ -39,7 +39,7 @@ struct AIProviderButton: View {
             Divider()
             Button("AI settings…") { state.settings = true }
         } label: { AIProviderSymbol().frame(width: 32, height: 32) }
-            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).frame(width: 32, height: 32, alignment: .center)
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).buttonStyle(.plain).frame(width: 32, height: 32, alignment: .center)
             .remileHelp(hint).accessibilityLabel("AI provider").accessibilityValue(provider == "ChatGPT" && fallback && AppleIntelligence.status().ready && usage.reason != nil ? (usage.needsConnection ? "ChatGPT · connection needed" : "Apple Intelligence · automatic fallback") : provider == "Off" ? "Manual · AI off" : provider)
             .sheet(isPresented: $state.settings) { ChatGPTSettings() }
     }
@@ -82,7 +82,7 @@ extension AssistantEngine {
 /// Visually groups provider and explicit AI actions throughout the app.
 struct AIToolGroup<Content: View>: View {
     @ViewBuilder var content: () -> Content
-    var body: some View { HStack(spacing: 2) { content() }.padding(.horizontal, 3).background(RemileStyle.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 7)).accessibilityElement(children: .contain) }
+    var body: some View { HStack(spacing: 2) { content() }.buttonStyle(RemileToolStyle()).accessibilityElement(children: .contain) }
 }
 struct AISettingsRow: View {
     @StateObject private var state = Presentation()

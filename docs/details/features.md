@@ -54,7 +54,7 @@ Create a token in Overleaf → Account → Account settings → Git integration.
 
 The connection screen checks access before reporting success. It offers recovery for expired sessions, Keychain approval, browser verification and server errors. Removing a project moves its local copy to Trash. The online project stays available.
 
-Connected projects use the native LaTeX editor and local compiler. Local edits sync automatically. Remote changes wait for review. Online publishes saved local edits after a two-second pause while the project is open. Remote checks run every 30 seconds. New remote revisions pause publishing for review in Check changes. Resolve conflicts before updating or publishing. Offline and leaving the project stop remote work. Git access and a local TeX installation are required.
+Connected projects use the native LaTeX editor. Live synchronises text while you work. Private keeps changes local until you review and publish them. Check changes handles differences that need your attention. Git access and a local TeX installation are required for the private workspace.
 
 Live sync shares existing text edits in both directions while the project is open. It pauses Git publication. File changes and overlapping edits may need review. See [live synchronisation](../overleaf-realtime.md) for its current limits.
 
@@ -62,11 +62,22 @@ Project tags appear as muted stripes. Click to read their names. Sync ages use w
 
 ## Library search
 
-Add PDF or Markdown folders to Library. Update Index scans changed files. The refresh beside a folder rereads that folder completely. Index coverage reports files without searchable text and indexing failures.
+Add PDF or Markdown folders to Library, then press Return to search. Update Index checks changed files. Refresh beside a folder rebuilds that folder. Index coverage shows unreadable files and pages without searchable text.
 
-Press Return to search. Keywords use local page/passage ranking with term coverage, proximity and headings. Quoted phrases are mandatory. Boost search with Apple Intelligence optionally expands natural-language questions on this Mac. Work offline, Manual mode or an unavailable model uses standard local ranking.
+Keyword results appear first. Optional Apple Intelligence refinement follows for questions. Offline and Manual modes keep search local. Use quotation marks for an exact phrase.
 
-Relevance groups results by document. Rank shows the global order. Results retain page context and offer PDF preview, highlights and document questions. Narrow windows use Results and Preview tabs. Returning from a document preserves results until the query, settings or index changes. Results are paged in groups of up to 200 ranked locations. Only the current page's excerpts are loaded. Sorting and document filters apply within that page. Identical passages are collapsed within each page, so a page may show fewer matches. The same wording can appear at another location on a later page. Keyword results appear before optional Apple Intelligence refinement. The first search may also need to prepare the resident index.
+| Control | Use it to |
+| --- | --- |
+| Relevance | Group matching passages by document. |
+| Rank | Read matches in relevance order. |
+| Page arrows | Browse beyond the current 200 results. |
+| Include bibliography matches | Search detected reference lists as well as the main text. |
+
+Sorting and filters apply to the current results page. Identical passages may be grouped, so a page can contain fewer than 200 matches. PDF preview and Ask stay beside the result. Narrow windows use Results and Preview tabs.
+
+Search recognises scientific spellings such as `H₂` / `H2` and `ε` / `epsilon`. Repeated PDF margins do not raise a page's relevance. Bibliography detection is conservative. Uncertain sections remain searchable, and exact phrases split across PDF line breaks may still be missed. Original documents are unchanged.
+
+[Search guide](../workspace/search.md) · [Local automation](../cli.md#common-workflows)
 
 ## AI and local tools
 

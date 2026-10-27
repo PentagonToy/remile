@@ -63,3 +63,5 @@ The terminal and PDF share one button. Open logs, then click the PDF icon to ret
 During compilation, the terminal dot waits for the new result. Your source stays editable when a build fails.
 
 [Compiler, files and history details](../details/features.md#latex) · [Review a manuscript](../manuscript-review.md) · [LaTeX assistance](../details/assistant.md#writing)
+
+New drafts and opened projects start their first compile automatically. You can keep editing if compilation reports an error.

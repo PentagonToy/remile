@@ -32,6 +32,13 @@ struct RemileEntry {
         if CommandLine.arguments.dropFirst().first == "--cli" { exit(EditorCLI.run(Array(CommandLine.arguments.dropFirst(2)))) }
         do { try LegacyMigration.run() }
         catch { let alert = NSAlert(); alert.messageText = "Could not migrate your library"; alert.informativeText = error.localizedDescription + " Your previous data is unchanged."; alert.runModal(); return }
+        do { try StoragePaths.applyPendingStorage() }
+        catch {
+            let alert = NSAlert(); alert.messageText = "Storage was not changed"
+            alert.informativeText = error.localizedDescription + " Your current storage is unchanged."
+            alert.addButton(withTitle: "Use current storage"); alert.addButton(withTitle: "Try next launch")
+            if alert.runModal() == .alertFirstButtonReturn { UserDefaults.standard.removeObject(forKey: StorageLocation.pendingPreference) }
+        }
         RemileApp.main()
     }
 }

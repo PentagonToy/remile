@@ -196,24 +196,11 @@ struct TeXWorkspace: View {
     private var toolbar: some View {
         VStack(spacing: 2) {
             GeometryReader { geometry in
-                HStack(spacing: 12) {
-                    HStack(spacing: 10) {
-                        Button(action: close) { Image(systemName: "chevron.left") }.remileHelp("Home")
-                        Text(title).font(RemileType.heading).lineLimit(1)
-                    }.frame(width: 140, alignment: .leading)
-                    projectName(width: min(340, max(100, geometry.size.width - 304))).frame(maxWidth: .infinity)
-                    Group {
-                        if let message = project.message, message != "Compilation failed", message != "Edited · recompile" {
-                            Button { presentation.notice.toggle() } label: { Text(noticeTitle(message)).font(RemileType.small).lineLimit(1) }
-                                .buttonStyle(.plain).remileHelp(message)
-                                .popover(isPresented: $presentation.notice) { Text(message).font(RemileType.control).textSelection(.enabled).fixedSize(horizontal: false, vertical: true).padding(16).frame(width: 300, alignment: .leading).background(RemileStyle.background) }
-                        } else { Color.clear.frame(height: 1).accessibilityHidden(true) }
-                    }.frame(width: 140, alignment: .trailing)
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            }.frame(height: 32)
-            GeometryReader { geometry in
             ZStack {
             HStack(alignment: .center, spacing: 8) {
+                Button(action: close) { Image(systemName: "chevron.left") }.remileHelp("Home")
+                Text(title).font(RemileType.heading).fixedSize()
+                Divider().frame(height: 18)
                 Button { project.goBack() } label: { Image(systemName: "arrow.backward") }.disabled(project.backFiles.isEmpty).remileHelp("Return to the previous source location")
                 Button { project.goForward() } label: { Image(systemName: "arrow.forward") }.disabled(project.forwardFiles.isEmpty).remileHelp("Go to the next source location")
                 if geometry.size.width >= 900 {
@@ -226,7 +213,7 @@ struct TeXWorkspace: View {
                         Button(showExternalEdits ? "Hide AI and CLI edits" : "Show AI and CLI edits") { showExternalEdits.toggle() }
                         Button("History") { project.captureHistory(file: project.selected); project.showsHistory.toggle(); project.showsLog = false; presentation.pane = "Preview" }
                     } label: { Image(systemName: "ellipsis").frame(width: 32, height: 32) }
-                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).accessibilityLabel("Editor options")
+                    .menuStyle(.borderlessButton).buttonStyle(.plain).menuIndicator(.hidden).accessibilityLabel("Editor options")
                     .popover(isPresented: $presentation.compactTools) { EditorToolsMenu(project: project, editor: editor).padding(12) }
                 }
                 let logSeverity = project.compiling ? nil : TeXDiagnostics.logSeverity(project.diagnostics, failed: project.compileFailed || project.setupNeeded || project.setupIssue != nil)
@@ -245,10 +232,15 @@ struct TeXWorkspace: View {
                     }
                 }.remileHelp(showingPanel ? (project.pdf == nil ? "Return to PDF preview" : "Show the last successful PDF") : logLabel)
                     .accessibilityLabel(showingPanel ? "Show PDF" : logLabel)
-                Spacer(minLength: 0)
+                if geometry.size.width >= 1100 { projectName(width: min(280, max(100, geometry.size.width - 850))).frame(maxWidth: .infinity) }
+                else { Spacer(minLength: 0) }
+                if let message = project.message, message != "Compilation failed", message != "Edited · recompile" {
+                    Button { presentation.notice.toggle() } label: { Image(systemName: "info.circle") }.remileHelp(message)
+                        .popover(isPresented: $presentation.notice) { Text(message).font(RemileType.control).padding(16).frame(width: 300).background(RemileStyle.background) }
+                }
                 WorkspaceAskButton(isPresented: project.showsAssistant) { project.showsAssistant.toggle() }.labelStyle(.iconOnly)
                 WorkspaceReferenceButton { presentation.references = true }
-                TeXExportButton(project: project).frame(width: 32, height: 32).remileHelp("Export")
+                TeXExportButton(project: project).frame(height: 32).remileHelp("Export")
                 if !project.compiling, project.compileFailed || project.setupNeeded || project.setupIssue != nil || project.diagnostics.contains(where: { $0.severity == .error }) {
                     Button { project.setupNeeded = false; project.showsHistory = false; project.showsLog = true; presentation.pane = "Preview" } label: { Image(systemName: "exclamationmark.circle.fill").accessibilityLabel("Errors").font(RemileType.caption).foregroundStyle(RemileStyle.warning) }
                         .remileHelp("Show errors")

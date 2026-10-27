@@ -18,6 +18,7 @@ struct RemileActionStyle: ButtonStyle {
             .foregroundStyle(configuration.role == .destructive ? RemileStyle.warning : emphasis == .primary ? RemileStyle.onAccent : RemileStyle.ink)
             .background(emphasis == .primary ? RemileStyle.accent : emphasis == .quiet ? .clear : RemileStyle.surface, in: RoundedRectangle(cornerRadius: RemileRadius.control))
             .contentShape(RoundedRectangle(cornerRadius: RemileRadius.control))
+            .modifier(RemilePointerFeedback())
             .opacity(enabled ? (configuration.isPressed ? 0.72 : 1) : 0.4)
     }
 }
@@ -25,6 +26,7 @@ struct RemileActionStyle: ButtonStyle {
 /// A short, mutually exclusive choice. Real buttons retain focus, keyboard and accessibility support.
 struct RemileSegmentedControl<Selection: Hashable>: View {
     let title: String
+    var inToolbar = false
     @Binding var selection: Selection
     let options: [Selection]
     let label: (Selection) -> String
@@ -34,11 +36,12 @@ struct RemileSegmentedControl<Selection: Hashable>: View {
                 Button { selection = option } label: {
                     Text(label(option)).font(RemileType.control).lineLimit(1)
                         .frame(maxWidth: .infinity).frame(height: RemileControl.height)
-                        .background(selection == option ? RemileStyle.accent.opacity(0.22) : .clear, in: RoundedRectangle(cornerRadius: RemileRadius.control))
+                        .background(selection == option ? RemileStyle.accent.opacity(inToolbar ? 0.16 : 0.22) : .clear, in: RoundedRectangle(cornerRadius: inToolbar ? 14 : RemileRadius.control))
                 }.buttonStyle(.plain).accessibilityLabel(label(option))
                     .accessibilityAddTraits(selection == option ? .isSelected : [])
             }
-        }.background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: RemileRadius.control))
+        }.padding(inToolbar ? 3 : 0)
+            .background(inToolbar ? Color.clear : RemileStyle.surface, in: RoundedRectangle(cornerRadius: inToolbar ? 16 : RemileRadius.control))
             .accessibilityElement(children: .contain).accessibilityLabel(title)
     }
 }
@@ -59,5 +62,54 @@ struct RemileSettingsStepper<Value: Strideable & Comparable>: View where Value.S
                     .accessibilityLabel(title).accessibilityValue(formatted)
             }.fixedSize()
         }
+    }
+}
+
+/// App-owned toolbar controls draw one surface, without an extra system glass group.
+struct RemileToolbarItem<Content: View>: ToolbarContent {
+    let placement: ToolbarItemPlacement
+    @ViewBuilder let content: () -> Content
+    var body: some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            ToolbarItem(placement: placement) { content().buttonStyle(.plain) }.sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: placement) { content().buttonStyle(.plain) }
+        }
+    }
+}
+
+struct RemileNavigationLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 10) {
+            configuration.icon.frame(width: 20, height: 20)
+            configuration.title
+        }
+    }
+}
+
+/// Pointer feedback is transient and local to each rendered control.
+struct RemilePointerFeedback: ViewModifier {
+    private final class Pointer: ObservableObject { @Published var hovering = false }
+    @StateObject private var pointer = Pointer()
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content: Content) -> some View {
+        content.overlay {
+            RoundedRectangle(cornerRadius: RemileRadius.control)
+                .fill(RemileStyle.ink.opacity(enabled && pointer.hovering ? 0.045 : 0)).allowsHitTesting(false)
+        }.onHover { pointer.hovering = $0 }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: pointer.hovering)
+    }
+}
+
+/// Optical adjustments keep document actions balanced within fixed hit areas.
+struct DocumentActionIcon: View {
+    enum Action { case save, export }
+    let action: Action
+    var body: some View {
+        Image(systemName: action == .save ? "square.and.arrow.down" : "tray.and.arrow.up")
+            .font(.system(size: action == .save ? 15 : 13, weight: .regular)).imageScale(.medium).symbolRenderingMode(.monochrome)
+            .offset(y: action == .save ? -1.5 : 0)
+            .foregroundStyle(RemileStyle.ink).frame(width: 20, height: 20).accessibilityHidden(true)
     }
 }

@@ -172,18 +172,16 @@ struct ReadingShell: View {
                     .id(url).transition(.opacity.combined(with: .offset(x: 12)))
                     .navigationTitle((home.references.title(for: url) ?? url.deletingPathExtension().lastPathComponent) + (reader.dirty ? " •" : ""))
                     .toolbar {
-                        ToolbarItem(placement: .navigation) {
+                        RemileToolbarItem(placement: .navigation) {
                             Button { reader.close() } label: { Label(home.page == .reference ? "Reference" : "Home", systemImage: "chevron.left") }.remileHelp(home.page == .reference ? "Return to Reference" : "Return to Home")
                         }
-                        ToolbarItem(placement: .primaryAction) {
-                            if case .markdown = reader.document.content {
-                                Button { NotificationCenter.default.post(name: Notification.Name("remile.exportMarkdownPDF"), object: reader) } label: { Image(systemName: "square.and.arrow.up").frame(width: 30, height: 30) }.remileHelp("Export PDF…")
-                            } else { Menu {
+                        if !markdownActive { RemileToolbarItem(placement: .primaryAction) {
+                            Menu {
                                 Button("Convert to PDF…") { home.presentConversion() }
                                 Button("Compress PDF…") { home.presentCompression(!reader.dirty && url.pathExtension.lowercased() == "pdf" ? url : nil) }
                                 Button("Combine PDFs…") { home.create(.combine, open: home.open) }
-                            } label: { Image(systemName: "plus").frame(width: 30, height: 30) }.remileHelp("Document tools") }
-                        }
+                            } label: { Image(systemName: "plus").frame(width: 30, height: 30) }.remileHelp("Document tools")
+                        } }
                     }
             } else { HomeWorkspace(model: home).transition(.opacity) }
         }
@@ -192,7 +190,7 @@ struct ReadingShell: View {
         .frame(minWidth: 560, minHeight: 450)
         .overlay { if home.opening { ProgressView("Opening document…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
         .toolbar {
-            if !markdownActive { ToolbarItem(placement: .automatic) { OfflineModeButton() } }
+            RemileToolbarItem(placement: .automatic) { OfflineModeButton() }
         }
         .toolbarBackground(RemileStyle.background, for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)

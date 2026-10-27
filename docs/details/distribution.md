@@ -1,8 +1,6 @@
 # Installation and updates
 
-remile. 0.1.3 targets macOS 14 and later. The published DMG contains an Apple Silicon app and its [CLI](../cli.md).
-
-Version **0.1.4-beta.1** is an optional [prerelease](https://github.com/PentagonToy/remile/releases/tag/v0.1.4-beta.1). Its arm64 DMG is ad hoc signed and is not Apple-notarised. Stable installations do not offer beta releases through Check for updates. A beta installation can still find a later stable version.
+remile. 0.2.0 targets macOS 14 and later. The published DMG contains an Apple Silicon app and its [CLI](../cli.md).
 
 ## Install
 
@@ -13,7 +11,7 @@ brew install --cask PentagonToy/tap/remile
 brew upgrade --cask remile
 ```
 
-The 0.1.3 package is ad hoc signed and is not Apple-notarised. If macOS blocks its first launch, verify the download source and follow [Apple’s downloaded-app guidance](https://support.apple.com/en-au/102445). Homebrew verifies the DMG checksum and installs the app and CLI. It does not bypass macOS security checks.
+The 0.2.0 app and DMG are Developer ID signed and Apple-notarised. Homebrew verifies the DMG checksum and installs the app and CLI. It does not bypass macOS security checks.
 
 ## Updates
 

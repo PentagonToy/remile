@@ -8,7 +8,7 @@ struct SearchMarkdown {
         return source
     }
     static func searchText(_ source: String) -> String {
-        let parsed = try? AttributedString(markdown: source, options: .init(interpretedSyntax: .full))
+        let parsed = try? AttributedString(markdown: source.replacingOccurrences(of: "\n", with: "  \n"), options: .init(interpretedSyntax: .full))
         guard let parsed else { return source }
         var result = "", previous: Int?
         for run in parsed.runs {

@@ -27,7 +27,7 @@ struct RemileOptionPicker: NSViewRepresentable {
     func makeNSView(context: Context) -> NSPopUpButton {
         let button = NSPopUpButton(frame: .zero, pullsDown: false)
         button.isBordered = false; button.bezelStyle = .rounded; button.controlSize = .small
-        button.font = .systemFont(ofSize: 14); button.contentTintColor = NSColor(RemileStyle.accent)
+        button.font = .systemFont(ofSize: 14); button.contentTintColor = NSColor(RemileStyle.ink)
         button.setContentHuggingPriority(.defaultLow, for: .horizontal)
         button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         button.target = context.coordinator; button.action = #selector(Coordinator.changed(_:))

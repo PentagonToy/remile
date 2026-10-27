@@ -21,7 +21,7 @@ enum PortableSettings {
         "latex.fontSize": .number(17), "latex.theme": .string("remile."), "latex.engine": .string("Automatic"), "latex.bibliography": .bool(true), "latex.compileTimeLimit": .number(180), "latex.historyMinutes": .number(3),
         "editor.language": .string("Automatic"), "editor.spellcheck": .bool(true), "editor.focusMode": .bool(false), "editor.showExternalEdits": .bool(false), "editor.toolSounds": .bool(true),
         "reader.elasticScrolling": .bool(true), "reader.markdownSerif": .bool(false), "markdown.autoPair": .bool(true), "markdown.livePreview": .bool(true),
-        "search.boosting": .bool(true), "search.spellingSuggestions": .bool(true),
+        "search.includeBibliography": .bool(false), "search.boosting": .bool(true), "search.spellingSuggestions": .bool(true),
         ReferenceKeyRule.preference: .string(ReferenceKeyRule.surnameYearWord.rawValue), ReferenceColumn.preference: .string(ReferenceColumn.defaults), ReferenceColumnWidths.preference: .string("{}"), ReferenceExport.abstractPreference: .bool(false)
     ]
     static func snapshot(_ store: UserDefaults = .standard) -> Snapshot {

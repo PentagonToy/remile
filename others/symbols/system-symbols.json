@@ -9,18 +9,6 @@
       ]
     },
     {
-      "name": "airplane.circle",
-      "sources": [
-        "Sources/Remile/App/NetworkAccessControls.swift"
-      ]
-    },
-    {
-      "name": "airplane.circle.fill",
-      "sources": [
-        "Sources/Remile/App/NetworkAccessControls.swift"
-      ]
-    },
-    {
       "name": "apple.intelligence",
       "sources": [
         "Sources/Remile/Assistant/AIControls.swift"
@@ -36,9 +24,10 @@
       "name": "arrow.clockwise",
       "sources": [
         "Sources/Remile/Markdown/MarkdownWorkspace.swift",
-        "Sources/Remile/Overleaf/OverleafComments.swift",
         "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafProjects.swift",
+        "Sources/Remile/Overleaf/OverleafReviewPanel.swift",
+        "Sources/Remile/Overleaf/OverleafViews.swift",
         "Sources/Remile/Search/LibraryManager.swift",
         "Sources/Remile/Search/SearchPDFPreview.swift"
       ]
@@ -61,14 +50,14 @@
       "sources": [
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
         "Sources/Remile/Markdown/MarkdownWorkspace.swift",
-        "Sources/Remile/Overleaf/OverleafProjects.swift",
         "Sources/Remile/Search/LibrarySearchView.swift"
       ]
     },
     {
       "name": "arrow.triangle.2.circlepath",
       "sources": [
-        "Sources/Remile/Overleaf/OverleafViews.swift"
+        "Sources/Remile/Overleaf/OverleafViews.swift",
+        "Sources/Remile/Reference/ReferenceWorkspace.swift"
       ]
     },
     {
@@ -81,6 +70,24 @@
       "name": "arrow.up",
       "sources": [
         "Sources/Remile/Assistant/AssistantPanel.swift"
+      ]
+    },
+    {
+      "name": "arrow.up.and.down.text.horizontal",
+      "sources": [
+        "Sources/Remile/Writer/WriterWorkspace.swift"
+      ]
+    },
+    {
+      "name": "arrow.up.forward",
+      "sources": [
+        "Sources/Remile/Home/UserGuide.swift"
+      ]
+    },
+    {
+      "name": "arrow.up.forward.square",
+      "sources": [
+        "Sources/Remile/App/StorageSettings.swift"
       ]
     },
     {
@@ -101,50 +108,50 @@
       "sources": [
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift",
-        "Sources/Remile/Search/SearchPDFPreview.swift"
+        "Sources/Remile/Search/SearchPDFPreview.swift",
+        "Sources/Remile/Writer/WriterWorkspace.swift"
       ]
     },
     {
       "name": "arrow.uturn.forward",
       "sources": [
-        "Sources/Remile/LaTeX/TeXWorkspace.swift"
-      ]
-    },
-    {
-      "name": "book",
-      "sources": [
-        "Sources/Remile/PDF/PDFWorkspace.swift"
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Reference/ReferenceWorkspace.swift",
+        "Sources/Remile/Writer/WriterWorkspace.swift"
       ]
     },
     {
       "name": "book.closed",
       "sources": [
-        "Sources/Remile/Home/HomeWorkspace.swift"
+        "Sources/Remile/Home/HomeWorkspace.swift",
+        "Sources/Remile/Reference/ReferenceKind.swift"
       ]
     },
     {
       "name": "books.vertical",
       "sources": [
+        "Sources/Remile/App/WorkspaceCommands.swift",
         "Sources/Remile/Home/HomeWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafProjects.swift",
-        "Sources/Remile/Overleaf/OverleafViews.swift",
-        "Sources/Remile/Reference/ReferenceWorkspace.swift",
-        "Sources/Remile/Search/LibraryManager.swift",
-        "Sources/Remile/Search/LibrarySearchView.swift"
+        "Sources/Remile/Reference/ReferencePicker.swift",
+        "Sources/Remile/Reference/ReferenceWorkspace.swift"
       ]
     },
     {
       "name": "checkmark",
       "sources": [
+        "Sources/Remile/LaTeX/TeXAskPanel.swift",
+        "Sources/Remile/Overleaf/OverleafAccountManager.swift",
         "Sources/Remile/Overleaf/OverleafViews.swift",
-        "Sources/Remile/PDF/PDFWorkspace.swift"
+        "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Reference/ReferenceSaveButton.swift"
       ]
     },
     {
       "name": "checkmark.bubble",
       "sources": [
-        "Sources/Remile/Overleaf/OverleafComments.swift"
+        "Sources/Remile/Overleaf/OverleafReviewPanel.swift"
       ]
     },
     {
@@ -176,7 +183,9 @@
         "Sources/Remile/Home/HomeWorkspace.swift",
         "Sources/Remile/LaTeX/TeXProjectSidebar.swift",
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafProjects.swift",
         "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Reference/ReferenceWorkspace.swift",
         "Sources/Remile/Search/LibrarySearchView.swift"
       ]
     },
@@ -185,11 +194,13 @@
       "sources": [
         "Sources/Remile/Convert/ConvertWorkspace.swift",
         "Sources/Remile/Documents/ReadingSession.swift",
+        "Sources/Remile/LaTeX/TeXAskPanel.swift",
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
         "Sources/Remile/Reference/ReferencePreview.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift",
-        "Sources/Remile/Search/LibrarySearchView.swift"
+        "Sources/Remile/Search/LibrarySearchView.swift",
+        "Sources/Remile/Writer/WriterWorkspace.swift"
       ]
     },
     {
@@ -200,7 +211,8 @@
         "Sources/Remile/Home/HomeWorkspace.swift",
         "Sources/Remile/LaTeX/TeXProjectSidebar.swift",
         "Sources/Remile/Reference/ReferenceCleanupReview.swift",
-        "Sources/Remile/Reference/ReferencePreview.swift"
+        "Sources/Remile/Reference/ReferencePreview.swift",
+        "Sources/Remile/Search/LibrarySearchView.swift"
       ]
     },
     {
@@ -208,13 +220,15 @@
       "sources": [
         "Sources/Remile/Home/CombineWorkspace.swift",
         "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Reference/ReferenceWorkspace.swift",
         "Sources/Remile/Search/LibrarySearchView.swift"
       ]
     },
     {
       "name": "circle",
       "sources": [
-        "Sources/Remile/Overleaf/OverleafViews.swift"
+        "Sources/Remile/Overleaf/OverleafViews.swift",
+        "Sources/Remile/PDF/PDFDrawing.swift"
       ]
     },
     {
@@ -228,6 +242,12 @@
       "sources": [
         "Sources/Remile/Overleaf/OverleafViews.swift",
         "Sources/Remile/Search/SearchPDFPreview.swift"
+      ]
+    },
+    {
+      "name": "circle.lefthalf.filled",
+      "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift"
       ]
     },
     {
@@ -255,8 +275,7 @@
       "sources": [
         "Sources/Remile/Convert/ConvertWorkspace.swift",
         "Sources/Remile/LaTeX/TeXAssetPreview.swift",
-        "Sources/Remile/PDF/PDFWorkspace.swift",
-        "Sources/Remile/Reference/ReferenceKindIcon.swift"
+        "Sources/Remile/Reference/ReferenceKind.swift"
       ]
     },
     {
@@ -281,6 +300,12 @@
       ]
     },
     {
+      "name": "doc.plaintext",
+      "sources": [
+        "Sources/Remile/Reference/ReferenceKind.swift"
+      ]
+    },
+    {
       "name": "doc.richtext",
       "sources": [
         "Sources/Remile/Convert/ConvertWorkspace.swift",
@@ -288,7 +313,7 @@
         "Sources/Remile/LaTeX/TeXHistoryPanel.swift",
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
         "Sources/Remile/Reference/ReferenceAttachments.swift",
-        "Sources/Remile/Reference/ReferencePreview.swift"
+        "Sources/Remile/Reference/ReferenceEvidenceView.swift"
       ]
     },
     {
@@ -300,15 +325,23 @@
         "Sources/Remile/Home/RecentReadingRow.swift",
         "Sources/Remile/LaTeX/TeXProjectSidebar.swift",
         "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Reference/ReferenceKind.swift",
         "Sources/Remile/Search/SearchCover.swift"
       ]
     },
     {
       "name": "doc.text.magnifyingglass",
       "sources": [
-        "Sources/Remile/LaTeX/TeXWorkspace.swift",
+        "Sources/Remile/Reference/ReferenceWorkspace.swift",
         "Sources/Remile/Review/ManuscriptReviewPanel.swift",
+        "Sources/Remile/Search/LibrarySearchView.swift",
         "Sources/Remile/Search/SearchPDFPreview.swift"
+      ]
+    },
+    {
+      "name": "doc.text.viewfinder",
+      "sources": [
+        "Sources/Remile/Reference/ReferenceWorkspace.swift"
       ]
     },
     {
@@ -363,9 +396,13 @@
     {
       "name": "folder",
       "sources": [
+        "Sources/Remile/App/StorageSettings.swift",
         "Sources/Remile/Home/HomeWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafViews.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift",
-        "Sources/Remile/Search/LibraryManager.swift"
+        "Sources/Remile/Search/LibraryManager.swift",
+        "Sources/Remile/Search/LibrarySearchView.swift",
+        "Sources/Remile/Writer/WriterWorkspace.swift"
       ]
     },
     {
@@ -381,6 +418,12 @@
         "Sources/Remile/App/EditorSidebarBrand.swift",
         "Sources/Remile/Home/HomeWorkspace.swift",
         "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "globe",
+      "sources": [
+        "Sources/Remile/Reference/ReferenceKind.swift"
       ]
     },
     {
@@ -405,6 +448,7 @@
     {
       "name": "info.circle",
       "sources": [
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
         "Sources/Remile/Search/LibrarySearchView.swift"
       ]
     },
@@ -412,6 +456,12 @@
       "name": "key",
       "sources": [
         "Sources/Remile/Reference/ReferenceWorkspace.swift"
+      ]
+    },
+    {
+      "name": "key.fill",
+      "sources": [
+        "Sources/Remile/Overleaf/OverleafSignIn.swift"
       ]
     },
     {
@@ -447,7 +497,8 @@
     {
       "name": "list.bullet",
       "sources": [
-        "Sources/Remile/PDF/PDFNavigationPanel.swift"
+        "Sources/Remile/PDF/PDFNavigationPanel.swift",
+        "Sources/Remile/Writer/WriterWorkspace.swift"
       ]
     },
     {
@@ -492,14 +543,15 @@
     {
       "name": "minus",
       "sources": [
-        "Sources/Remile/App/ReaderZoom.swift"
+        "Sources/Remile/App/ReaderZoom.swift",
+        "Sources/Remile/Overleaf/OverleafReviewPanel.swift",
+        "Sources/Remile/Writer/WriterWorkspace.swift"
       ]
     },
     {
       "name": "minus.circle",
       "sources": [
         "Sources/Remile/Markdown/MarkdownTableEditor.swift",
-        "Sources/Remile/Overleaf/OverleafProjects.swift",
         "Sources/Remile/Search/LibraryManager.swift"
       ]
     },
@@ -510,8 +562,21 @@
       ]
     },
     {
+      "name": "move.3d",
+      "sources": [
+        "Sources/Remile/Writer/WriterWorkspace.swift"
+      ]
+    },
+    {
+      "name": "newspaper",
+      "sources": [
+        "Sources/Remile/Reference/ReferenceKind.swift"
+      ]
+    },
+    {
       "name": "paperclip",
       "sources": [
+        "Sources/Remile/Reference/ReferencePreview.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift"
       ]
     },
@@ -522,28 +587,28 @@
       ]
     },
     {
-      "name": "passed",
-      "sources": [
-        "Sources/Remile/LaTeX/TeXSubmissionCheck.swift"
-      ]
-    },
-    {
       "name": "pause.circle",
       "sources": [
         "Sources/Remile/PDF/PDFPageOCR.swift"
       ]
     },
     {
-      "name": "pencil",
+      "name": "pencil.line",
       "sources": [
-        "Sources/Remile/Reference/ReferenceWorkspace.swift"
+        "Sources/Remile/PDF/PDFDrawing.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift"
       ]
     },
     {
       "name": "pencil.tip",
       "sources": [
-        "Sources/Remile/Assistant/AIControls.swift",
-        "Sources/Remile/PDF/PDFWorkspace.swift"
+        "Sources/Remile/Assistant/AIControls.swift"
+      ]
+    },
+    {
+      "name": "person.3",
+      "sources": [
+        "Sources/Remile/Reference/ReferenceKind.swift"
       ]
     },
     {
@@ -566,8 +631,17 @@
         "Sources/Remile/Documents/ReadingSession.swift",
         "Sources/Remile/Home/CombineWorkspace.swift",
         "Sources/Remile/LaTeX/TeXProjectSidebar.swift",
+        "Sources/Remile/Overleaf/OverleafAccountManager.swift",
         "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
-        "Sources/Remile/Reference/ReferenceWorkspace.swift"
+        "Sources/Remile/Overleaf/OverleafReviewPanel.swift",
+        "Sources/Remile/Reference/ReferenceWorkspace.swift",
+        "Sources/Remile/Writer/WriterWorkspace.swift"
+      ]
+    },
+    {
+      "name": "plus.circle",
+      "sources": [
+        "Sources/Remile/Overleaf/OverleafProjects.swift"
       ]
     },
     {
@@ -580,6 +654,21 @@
       "name": "quote.bubble",
       "sources": [
         "Sources/Remile/Assistant/AssistantPanel.swift"
+      ]
+    },
+    {
+      "name": "rectangle",
+      "sources": [
+        "Sources/Remile/PDF/PDFDrawing.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Writer/WriterColumns.swift"
+      ]
+    },
+    {
+      "name": "rectangle.split.2x1",
+      "sources": [
+        "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Writer/WriterColumns.swift"
       ]
     },
     {
@@ -611,7 +700,8 @@
       "sources": [
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafViews.swift",
-        "Sources/Remile/PDF/PDFWorkspace.swift"
+        "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/Writer/WriterWorkspace.swift"
       ]
     },
     {
@@ -624,14 +714,20 @@
       "name": "sparkles",
       "sources": [
         "Sources/Remile/LaTeX/TeXDiagnosticAdviceView.swift",
+        "Sources/Remile/Reference/ReferenceEvidenceView.swift",
         "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "square.and.arrow.down",
+      "sources": [
+        "Sources/Remile/App/RemileControls.swift"
       ]
     },
     {
       "name": "square.and.arrow.up",
       "sources": [
-        "Sources/Remile/Documents/ReadingSession.swift",
-        "Sources/Remile/Overleaf/OverleafComments.swift",
+        "Sources/Remile/Overleaf/OverleafReviewPanel.swift",
         "Sources/Remile/PDF/PDFCommentExportMenu.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift",
         "Sources/Remile/Review/ManuscriptReviewPanel.swift"
@@ -640,7 +736,8 @@
     {
       "name": "square.and.pencil",
       "sources": [
-        "Sources/Remile/Home/HomeWorkspace.swift"
+        "Sources/Remile/Home/HomeWorkspace.swift",
+        "Sources/Remile/Reference/ReferenceWorkspace.swift"
       ]
     },
     {
@@ -674,19 +771,35 @@
       ]
     },
     {
+      "name": "text.alignleft",
+      "sources": [
+        "Sources/Remile/Home/HomeWorkspace.swift"
+      ]
+    },
+    {
       "name": "text.badge.checkmark",
       "sources": [
         "Sources/Remile/Markdown/EditorWritingReview.swift"
       ]
     },
     {
+      "name": "text.book.closed",
+      "sources": [
+        "Sources/Remile/Reference/ReferenceSaveButton.swift",
+        "Sources/Remile/Reference/ReferenceSavePanel.swift"
+      ]
+    },
+    {
       "name": "text.bubble",
       "sources": [
-        "Sources/Remile/Markdown/MarkdownWorkspace.swift",
-        "Sources/Remile/Overleaf/OverleafComments.swift",
-        "Sources/Remile/Overleaf/OverleafViews.swift",
-        "Sources/Remile/PDF/PDFWorkspace.swift",
-        "Sources/Remile/Search/LibrarySearchView.swift"
+        "Sources/Remile/App/WorkspaceCommands.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift"
+      ]
+    },
+    {
+      "name": "text.bubble.fill",
+      "sources": [
+        "Sources/Remile/App/WorkspaceCommands.swift"
       ]
     },
     {
@@ -710,15 +823,25 @@
     {
       "name": "trash",
       "sources": [
+        "Sources/Remile/Overleaf/OverleafAccountManager.swift",
+        "Sources/Remile/Overleaf/OverleafProjects.swift",
         "Sources/Remile/Reference/ReferenceAttachments.swift",
         "Sources/Remile/Reference/ReferencePreview.swift",
-        "Sources/Remile/Reference/ReferenceWorkspace.swift"
+        "Sources/Remile/Reference/ReferenceWorkspace.swift",
+        "Sources/Remile/Writer/WriterWorkspace.swift"
       ]
     },
     {
       "name": "tray.and.arrow.up",
       "sources": [
+        "Sources/Remile/App/RemileControls.swift",
         "Sources/Remile/LaTeX/TeXProjectSidebar.swift"
+      ]
+    },
+    {
+      "name": "tray.full",
+      "sources": [
+        "Sources/Remile/Reference/ReferenceWorkspace.swift"
       ]
     },
     {
@@ -735,8 +858,10 @@
         "Sources/Remile/Assistant/AssistantPanel.swift",
         "Sources/Remile/Convert/ConvertWorkspace.swift",
         "Sources/Remile/Home/CombineWorkspace.swift",
+        "Sources/Remile/LaTeX/TeXAskPanel.swift",
         "Sources/Remile/PDF/PDFWorkspace.swift",
-        "Sources/Remile/Reference/ReferenceWorkspace.swift"
+        "Sources/Remile/Reference/ReferenceWorkspace.swift",
+        "Sources/Remile/Writer/WriterWorkspace.swift"
       ]
     },
     {

@@ -46,8 +46,6 @@ The editor bridge exposes Writer as a target. Its `status` and `read` operations
 
 `save` writes the selected destination. An unsaved document must first be saved in Writer or exported. `export` takes a new absolute `.docx` or `.pdf` path and refuses to overwrite an existing file.
 
-## Resource limits and validation
+## Document limits
 
 Writer creates its native text layout only while open. Pagination follows edits rather than a repeating timer. Limits are 40 pages, 200,000 UTF-16 text units, 100 objects and 20 images. Photos are reduced to at most 1,600 pixels per edge, with a 10 MB combined image budget. The undo history is limited to 30 groups. Undo and Redo sit in the top bar.
-
-Run `tools/check_writer.sh` with an external output directory to check native text and object undo, formatting, pagination, PDF output, DOCX round-trips, equation rendering and revision-checked automation. This interpreted harness does not build or install the application. It uses synthetic documents. Runtime memory and CPU benchmarks and live Word/Pages interoperability remain separate checks.
