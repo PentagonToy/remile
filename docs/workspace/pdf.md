@@ -8,7 +8,7 @@ Keep the page in view, and leave a few useful marks for later.
 2. Use the page field, thumbnails or outline to move through it.
 3. Open the sidebar to find text, highlights or comments.
 
-Open another PDF to keep both in the bottom tab bar. Select a tab to return to it, or close it when finished. Reopening a PDF restores its last reading position. Search results still open at the matching passage.
+New PDFs start with the whole page fitted to the window. Use Fit to return to that view, or choose Fit width from the zoom menu.
 
 Use the single-rectangle or split-rectangle button to switch between one and two pages. New reading sessions start with one page.
 
@@ -53,8 +53,10 @@ Editing can affect digital signatures. Signed or restricted PDFs show an editing
 
 ## Add a PDF and keep reading
 
-Use the plus beside the last bottom tab, or drop another PDF onto the document canvas. The new PDF opens in another tab and becomes active. Dropping an already open PDF selects its existing tab. The previous document keeps its session, reading position and pending edits.
+Double-click another PDF in Finder, use the plus beside the last bottom tab, or drop a PDF onto the document. It opens in the same bottom tab group. Opening an already open PDF selects its existing tab.
 
-Click the document before using the arrow keys. Left and right turn pages. Up and down retain continuous scrolling. Submitting a page number or using a page button returns the keyboard to the document. Arrows in search fields, page-number fields and editable form controls keep their normal text behaviour.
+Drag a tab left or right to change the order. The insertion line shows where it will go. Drop it on a tab in another remile window to move it there, or onto the desktop to open a separate window. Press Escape to cancel.
 
-Reading positions are stored separately from PDF contents, for the most recently read 512 files. Reopening the same file restores its page and position on the page. Explicit search destinations take priority. The PDF itself is unchanged.
+Selecting a tab keeps its document, reading position and pending edits. Close it when finished. Closing a changed document offers Save, Cancel and Don’t Save.
+
+Reopening a PDF restores its last page and position. Search results open at the matching passage. Reading positions are stored separately, without changing the PDF.

@@ -11,6 +11,13 @@ final class ReaderZoom: ObservableObject {
     private weak var web: WKWebView?
     private var observers: [NSObjectProtocol] = []
     private var fitting: Bool? // true: width, false: page, nil: manual
+    private struct FitGeometry: Equatable {
+        let viewport: CGSize
+        let page: CGSize
+        let width: Bool
+        let mode: PDFDisplayMode
+    }
+    private var lastFit: FitGeometry?
     init(text: Bool = false) {
         let saved = UserDefaults.standard.double(forKey: Self.preference)
         scale = text && saved > 0 ? min(3, max(0.5, saved / 100)) : 1
@@ -19,7 +26,9 @@ final class ReaderZoom: ObservableObject {
     func attach(_ view: PDFView) {
         guard pdf !== view else { return }
         observers.forEach(NotificationCenter.default.removeObserver); observers = []
-        pdf = view; scale = view.scaleFactor
+        pdf = view; scale = view.scaleFactor; lastFit = nil
+        if fitting == nil { fitting = false }
+        fit(width: fitting ?? false)
         view.postsFrameChangedNotifications = true
         observers.append(NotificationCenter.default.addObserver(forName: .PDFViewScaleChanged, object: view, queue: .main) { [weak self, weak view] _ in
             Task { @MainActor [weak self, weak view] in
@@ -27,9 +36,11 @@ final class ReaderZoom: ObservableObject {
             }
         })
         for name in [NSView.frameDidChangeNotification, Notification.Name.PDFViewPageChanged] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: view, queue: .main) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    guard let self, let width = self.fitting else { return }; self.fit(width: width)
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: view, queue: .main) { [weak self, weak view] _ in
+                let selecting = NSEvent.pressedMouseButtons & 1 != 0
+                Task { @MainActor [weak self, weak view] in
+                    guard let self, let view, self.pdf === view else { return }
+                    self.updateFitForLayout(pageChanged: name == .PDFViewPageChanged, selecting: selecting)
                 }
             })
         }
@@ -37,18 +48,28 @@ final class ReaderZoom: ObservableObject {
     func attach(_ view: WKWebView) { web = view; view.pageZoom = scale }
     func step(_ direction: CGFloat, fine: Bool = false) { change(scale + direction * (fine ? 0.02 : 0.1)) }
     func change(_ value: CGFloat) {
-        fitting = nil; scale = min(5, max(0.25, value))
+        fitting = nil; lastFit = nil; scale = min(5, max(0.25, value))
         if let pdf { pdf.autoScales = false; pdf.scaleFactor = scale }
         web?.pageZoom = scale
     }
-    func fit(width: Bool) {
+    /// Selection can change PDFKit's current page without a reader navigation action.
+    func updateFitForLayout(pageChanged: Bool, selecting: Bool) {
+        guard let width = fitting, !(pageChanged && selecting) else { return }
+        applyFit(width: width, force: false)
+    }
+    func fit(width: Bool) { applyFit(width: width, force: true) }
+    private func applyFit(width: Bool, force: Bool) {
         wide = width
         guard let pdf, let page = pdf.currentPage else { change(1); return }
         fitting = width
-        let displayed = pdf.convert(page.bounds(for: pdf.displayBox), from: page)
-        let unitWidth = displayed.width / max(0.01, pdf.scaleFactor)
-        let unitHeight = displayed.height / max(0.01, pdf.scaleFactor)
-        guard unitWidth > 0, unitHeight > 0 else { return }
+        let bounds = page.bounds(for: pdf.displayBox)
+        let rotated = abs(page.rotation % 180) == 90
+        let unitWidth = rotated ? bounds.height : bounds.width
+        let unitHeight = rotated ? bounds.width : bounds.height
+        guard unitWidth > 0, unitHeight > 0, pdf.bounds.width > 32, pdf.bounds.height > 24 else { return }
+        let geometry = FitGeometry(viewport: pdf.bounds.size, page: CGSize(width: unitWidth, height: unitHeight), width: width, mode: pdf.displayMode)
+        guard force || geometry != lastFit else { return }
+        lastFit = geometry
         let x = max(1, pdf.bounds.width - 32) / unitWidth
         let y = max(1, pdf.bounds.height - 24) / unitHeight
         let target = min(5, max(0.1, width ? x : min(x, y)))

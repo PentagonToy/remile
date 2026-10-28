@@ -17,6 +17,18 @@ remile status
 
 Keep an existing command if that name is already in use. Homebrew manages its CLI link through the cask. The bundled launcher resolves the installed app location and calls the same native CLI used by `tools/remile`.
 
+## Open a document
+
+```sh
+remile open /absolute/document.pdf
+remile documents
+remile status --target TARGET_UUID
+```
+
+`open` acknowledges the request while the document loads. It does not mean loading has finished. Use `documents` to find the new session, then check its `status`. For PDFs, `pages` becomes positive when a readable document is loaded.
+
+A timeout does not prove that an operation failed. Read the current document or status before retrying a write.
+
 ## Common workflows
 
 Use IDs returned by the preceding command in place of `LIBRARY_UUID`, `RECORD_UUID` and `overleaf:PROJECT_ID`.

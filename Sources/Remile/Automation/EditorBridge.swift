@@ -52,31 +52,45 @@ enum EditorBridge {
                         guard !Task.isCancelled else { return }
                         do {
                             let attributes = try manager.attributesOfItem(atPath: file.path)
-                            guard attributes[.type] as? FileAttributeType == .typeRegular, (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(), (attributes[.size] as? Int ?? Int.max) < 5_000_000 else { continue }
+                            guard attributes[.type] as? FileAttributeType == .typeRegular, (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(), (attributes[.size] as? Int ?? Int.max) < 5_000_000 else { throw CocoaError(.fileReadCorruptFile) }
                             let request = try JSONDecoder().decode(Request.self, from: Data(contentsOf: file))
                             guard file.lastPathComponent == request.id.uuidString + ".request.json" else { try manager.removeItem(at: file); continue }
                             let output = folder.appendingPathComponent(request.id.uuidString + ".response.json")
                             if manager.fileExists(atPath: output.path) { try manager.removeItem(at: file); continue }
                             // A pending CLI command may need the first window to finish registering.
-                            let homes = RemileWindows.shared.models
                             var home: HomeModel?
                             if let target = request.target {
-                                home = homes.first { $0.automationTarget == target }
+                                home = RemileWindows.shared.models.first { $0.automationTarget == target }
                                 if home == nil, currentHome()?.automationTarget == target { home = currentHome() }
                             } else { home = currentHome() }
                             for _ in 0..<100 where home == nil && request.target == nil && request.operation != "documents" {
                                 try await Task.sleep(for: .milliseconds(50)); home = currentHome()
                             }
+                            guard manager.fileExists(atPath: file.path) else { continue }
+                            let homes = RemileWindows.shared.models
                             let response: [String: Any]
                             if request.operation == "overleaf" { response = await OverleafCommands.handle(request, homes: homes, current: currentHome()) }
                             else if request.operation == "documents" { response = ["ok": true, "documents": homes.compactMap { $0.automationDescription }] }
                             else if let home { response = await handle(request, home: home) }
                             else if request.target != nil { response = ["ok": false, "error": "The target document is no longer open. Run documents again."] }
                             else { response = ["ok": false, "error": "The document window is not ready. Try again."] }
+                            // A timed-out client removes its request. Do not retain a late response.
+                            guard manager.fileExists(atPath: file.path) else { continue }
                             let bytes = try JSONSerialization.data(withJSONObject: response, options: [.sortedKeys])
-                            try bytes.write(to: output, options: [.atomic]); try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: output.path); try manager.removeItem(at: file)
+                            try bytes.write(to: output, options: [.atomic]); try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: output.path)
+                            // Cover a client timing out between the check and atomic publication.
+                            if !manager.fileExists(atPath: file.path) { try? manager.removeItem(at: output) }
+                            try? manager.removeItem(at: file)
                         } catch is CancellationError { return }
-                        catch { try? manager.removeItem(at: file) }
+                        catch {
+                            let reply = folder.appendingPathComponent(String(file.lastPathComponent.dropLast(".request.json".count)) + ".response.json")
+                            if manager.fileExists(atPath: file.path), !manager.fileExists(atPath: reply.path),
+                               let bytes = try? JSONSerialization.data(withJSONObject: ["ok": false, "error": "The automation request could not be read or completed."]) {
+                                try? bytes.write(to: reply, options: [.atomic])
+                                try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: reply.path)
+                            }
+                            try? manager.removeItem(at: file)
+                        }
                         await Task.yield()
                     }
                 }

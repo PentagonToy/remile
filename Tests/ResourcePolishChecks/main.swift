@@ -53,6 +53,28 @@ Task { @MainActor in
                 try bitmap.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent("pdf-pages-" + (dark ? "dark" : "light") + ".png"))
             }
         }
+        let selectionSession = PDFSession()
+        selectionSession.load(pdfImageFixture(rotation: 0))
+        let selectionView = PDFView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
+        selectionView.document = selectionSession.document; selectionSession.attach(selectionView)
+        let selectionPage = selectionSession.document!.page(at: 0)!
+        var selectionUpdates = 0
+        let selectionObserver = selectionSession.objectWillChange.sink { selectionUpdates += 1 }
+        selectionView.setCurrentSelection(selectionPage.selection(for: NSRange(location: 0, length: 6)), animate: false)
+        NotificationCenter.default.post(name: .PDFViewSelectionChanged, object: selectionView)
+        check(selectionSession.canHighlight, "A text selection still enables Highlight")
+        let firstSelectionUpdates = selectionUpdates
+        for _ in 0..<100 { NotificationCenter.default.post(name: .PDFViewSelectionChanged, object: selectionView) }
+        check(selectionUpdates == firstSelectionUpdates, "Repeated valid selection notifications do not republish the workspace")
+        selectionView.setCurrentSelection(selectionPage.selection(for: NSRange(location: 7, length: 5)), animate: false)
+        NotificationCenter.default.post(name: .PDFViewSelectionChanged, object: selectionView)
+        check(selectionUpdates == firstSelectionUpdates && selectionSession.assistantSelection?.text == "title", "Actions read the current selection without requiring a workspace refresh")
+        selectionView.clearSelection(); NotificationCenter.default.post(name: .PDFViewSelectionChanged, object: selectionView)
+        check(!selectionSession.canHighlight && selectionUpdates == firstSelectionUpdates + 1, "Clearing a selection updates toolbar availability once")
+        let pageUpdates = selectionUpdates
+        for _ in 0..<50 { NotificationCenter.default.post(name: .PDFViewPageChanged, object: selectionView) }
+        check(selectionUpdates == pageUpdates, "Repeated notifications for the current page do not republish navigation")
+        selectionObserver.cancel(); selectionSession.stop()
         let reference = ReferenceRecord(fields: ["title": "A concise reference", "author": "Writer, Example", "year": "2026", "abstract": "This abstract remains visible while BibTeX export omits it. It explains the method and its limits without a generated summary."])
         let referenceModel = ReferenceModel(repository: ReferenceRepository(root: output.appendingPathComponent("reference-preview")))
         for dark in [false, true] {
@@ -101,6 +123,7 @@ Task { @MainActor in
         let transport = output.appendingPathComponent("transport")
         try fm.createDirectory(at: transport, withIntermediateDirectories: true)
         var ready: HomeModel?
+        var homeLookups = 0
         let queued = EditorBridge.Request(operation: "status")
         func publish(_ request: EditorBridge.Request) throws -> URL {
             let url = transport.appendingPathComponent(request.id.uuidString + ".request.json")
@@ -108,7 +131,7 @@ Task { @MainActor in
             try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path); return url
         }
         _ = try publish(queued)
-        let service = Task { @MainActor in await EditorBridge.serve({ ready }, directory: transport) }
+        let service = Task { @MainActor in await EditorBridge.serve({ homeLookups += 1; return ready }, directory: transport) }
         let response = transport.appendingPathComponent(queued.id.uuidString + ".response.json")
         try await Task.sleep(for: .milliseconds(80)); ready = home
         try await until { fm.fileExists(atPath: response.path) }
@@ -121,7 +144,10 @@ Task { @MainActor in
         let burst = (0..<25).map { _ in EditorBridge.Request(operation: "status") }
         for request in burst { _ = try publish(request) }
         try await until { burst.allSatisfy { fm.fileExists(atPath: transport.appendingPathComponent($0.id.uuidString + ".response.json").path) } }
+        try await until { !fm.fileExists(atPath: malformed.path) }
         check(!fm.fileExists(atPath: malformed.path), "Malformed owned requests cannot starve a burst of valid commands")
+        let malformedReply = transport.appendingPathComponent(malformed.lastPathComponent.replacingOccurrences(of: ".request.json", with: ".response.json"))
+        check(try (JSONSerialization.jsonObject(with: Data(contentsOf: malformedReply)) as? [String: Any])?["ok"] as? Bool == false, "Malformed requests receive a correlated error instead of a CLI timeout")
         check(burst.count == 25, "A coalesced directory event drains more than one request batch")
         var resourceRequest = EditorBridge.Request(operation: "diagnostics"); resourceRequest.id = UUID()
         _ = try publish(resourceRequest)
@@ -129,6 +155,25 @@ Task { @MainActor in
         try await until { fm.fileExists(atPath: diagnosticResponse.path) }
         let diagnosticJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: diagnosticResponse)) as! [String: Any]
         check(diagnosticJSON["ok"] as? Bool == true && (diagnosticJSON["memory"] as? [String: Any])?["scope"] as? String == "mainProcessOnly", "The actual mailbox exposes scoped resource diagnostics")
+        ready = nil
+        let abandoned = EditorBridge.Request(operation: "status")
+        let previousLookups = homeLookups
+        let abandonedFile = try publish(abandoned)
+        try await until { homeLookups > previousLookups }
+        try fm.removeItem(at: abandonedFile); ready = home
+        let following = EditorBridge.Request(operation: "status"); _ = try publish(following)
+        try await until { fm.fileExists(atPath: transport.appendingPathComponent(following.id.uuidString + ".response.json").path) }
+        check(!fm.fileExists(atPath: transport.appendingPathComponent(abandoned.id.uuidString + ".response.json").path), "A cancelled client does not leave a late response file")
+        let opener = HomeModel(index: LibraryIndex(location: output.appendingPathComponent("opener.sqlite")), overleaf: OverleafLibrary(directory: output.appendingPathComponent("opener-account")))
+        opener.error = "A previous operation failed"; opener.overleaf.browsing = true; ready = opener
+        let openURL = output.appendingPathComponent("open-fixture.md")
+        try "# A fresh request".write(to: openURL, atomically: true, encoding: .utf8)
+        let openRequest = EditorBridge.Request(operation: "open", file: openURL.path); _ = try publish(openRequest)
+        let openReply = transport.appendingPathComponent(openRequest.id.uuidString + ".response.json")
+        try await until { fm.fileExists(atPath: openReply.path) && opener.reader.url == openURL }
+        check(try (JSONSerialization.jsonObject(with: Data(contentsOf: openReply)) as? [String: Any])?["ok"] as? Bool == true && opener.error == nil && !opener.overleaf.browsing, "CLI open clears stale errors and reveals the requested reader instead of the Overleaf list")
+        opener.overleaf.browsing = true; opener.newMarkdown()
+        check(opener.reader.isUntitled && !opener.overleaf.browsing, "New Markdown leaves the Overleaf list and reveals the new document")
         service.cancel(); await service.value
         func hit(_ path: String, _ excerpt: String) -> LibraryHit { LibraryHit(path: path, folderID: "fixture", page: 1, excerpt: excerpt, score: 1) }
         home.results = [hit("/a.tex", "first"), hit("/b.tex", "second")]

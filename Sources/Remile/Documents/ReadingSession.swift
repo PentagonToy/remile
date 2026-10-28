@@ -196,7 +196,7 @@ struct ReadingShell: View {
         .toolbarBackground(RemileStyle.background, for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
         .background(WindowCloseGuard(reader: reader, home: home))
-        .onOpenURL { home.open($0) }
+        .onOpenURL { RemileWindows.shared.openExternalDocument($0) }
         .sheet(isPresented: $home.guidePresented) { UserGuide() }
         .sheet(isPresented: $home.convertPresented) { ConvertWorkspace(model: home.conversion) }
         .sheet(isPresented: $home.compressPresented) { CompressWorkspace(model: home.compression) }
@@ -269,6 +269,7 @@ final class RemileWindows: ObservableObject {
     var models: [HomeModel] { entries.values.map { $0.1 } }
     func register(_ model: HomeModel, window: NSWindow) {
         let isNew = entries[ObjectIdentifier(window)] == nil
+        window.animationBehavior = .none
         entries[ObjectIdentifier(window)] = (window, model)
         if window.isKeyWindow || active == nil { active = model }
         opening = false
@@ -282,9 +283,9 @@ final class RemileWindows: ObservableObject {
             else { pdfGroups.append([parentID, windowID]) }
             parent.tabbingMode = .disallowed
             window.tabbingMode = .disallowed
-            window.setFrame(parent.frame, display: false)
+            if window.frame != parent.frame { window.setFrame(parent.frame, display: false) }
+            window.orderFront(nil); window.makeKey()
             parent.orderOut(nil)
-            window.makeKeyAndOrderFront(nil)
             active = model
             model.open(url, inNewPDFTab: false)
             if !pdfTabs.isEmpty { DispatchQueue.main.async { self.createWindow?() } }
@@ -307,16 +308,16 @@ final class RemileWindows: ObservableObject {
     }
     func selectDocumentTab(_ id: ObjectIdentifier) {
         guard let window = entries[id]?.0 else { return }
-        if let group = pdfGroups.first(where: { $0.contains(id) }) {
-            for otherID in group where otherID != id {
-                if let other = entries[otherID]?.0, other.isVisible {
-                    entries[otherID]?.1.reader.pdfSession?.persistReadingPosition()
-                    window.setFrame(other.frame, display: false)
-                    other.orderOut(nil)
-                }
-            }
+        window.animationBehavior = .none
+        let others = (pdfGroups.first(where: { $0.contains(id) }) ?? [])
+            .filter { $0 != id }.compactMap { entries[$0] }.filter { $0.0.isVisible }
+        for (other, home) in others {
+            home.reader.pdfSession?.persistReadingPosition()
+            if window.frame != other.frame { window.setFrame(other.frame, display: false) }
         }
-        window.makeKeyAndOrderFront(nil)
+        // Swap the retained surfaces in one flush, without native window expansion.
+        window.orderFront(nil); window.makeKey()
+        for (other, _) in others { other.animationBehavior = .none; other.orderOut(nil) }
         active = entries[id]?.1
     }
     func closeDocumentTab(_ id: ObjectIdentifier) { entries[id]?.0.performClose(nil) }
@@ -345,6 +346,46 @@ final class RemileWindows: ObservableObject {
         pdfTabs.append((url, parent))
         if pdfTabs.count == 1 { createWindow() }
         return true
+    }
+    /// Finder opens join the frontmost PDF group, even when another workspace is active.
+    func openExternalDocument(_ url: URL) {
+        let pdfHome = NSApp.orderedWindows.compactMap { entries[ObjectIdentifier($0)]?.1 }
+            .first { $0.reader.url?.pathExtension.lowercased() == "pdf" }
+        if url.pathExtension.lowercased() == "pdf", let pdfHome { pdfHome.open(url) }
+        else { perform { $0.open(url) } }
+    }
+    func tabID(for token: String) -> ObjectIdentifier? {
+        entries.keys.first { String(describing: $0) == token }
+    }
+    func moveDocumentTab(_ id: ObjectIdentifier, to target: ObjectIdentifier, after: Bool) {
+        guard id != target, entries[id] != nil, entries[target] != nil else { return }
+        objectWillChange.send()
+        let sourceGroup = pdfGroups.first(where: { $0.contains(id) }) ?? [id]
+        let destination = pdfGroups.first(where: { $0.contains(target) }) ?? [target]
+        pdfGroups.removeAll { $0.contains(id) || $0.contains(target) }
+        if !destination.contains(id) {
+            let remainder = sourceGroup.filter { $0 != id }
+            if !remainder.isEmpty { pdfGroups.append(remainder) }
+        }
+        var reordered = destination.filter { $0 != id }
+        guard let index = reordered.firstIndex(of: target) else { return }
+        reordered.insert(id, at: index + (after ? 1 : 0))
+        pdfGroups.append(reordered)
+        if !destination.contains(id), let next = sourceGroup.first(where: { $0 != id }) {
+            selectDocumentTab(next)
+        }
+        selectDocumentTab(id)
+    }
+    func detachDocumentTab(_ id: ObjectIdentifier, at point: NSPoint) {
+        guard let window = entries[id]?.0,
+              let groupIndex = pdfGroups.firstIndex(where: { $0.contains(id) }),
+              pdfGroups[groupIndex].count > 1 else { return }
+        objectWillChange.send()
+        pdfGroups[groupIndex].removeAll { $0 == id }
+        if let next = pdfGroups[groupIndex].first { selectDocumentTab(next) }
+        window.setFrameTopLeftPoint(NSPoint(x: point.x - min(120, window.frame.width / 2), y: point.y + 40))
+        window.makeKeyAndOrderFront(nil)
+        active = entries[id]?.1
     }
     func remove(_ window: NSWindow) {
         objectWillChange.send()

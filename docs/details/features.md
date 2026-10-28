@@ -83,7 +83,7 @@ Search recognises scientific spellings such as `H₂` / `H2` and `ε` / `epsilon
 
 Apple Intelligence, ChatGPT and Manual share one provider selector. Ask works with PDFs, Markdown, LaTeX projects and search results. Proofreading and LaTeX suggestions present changes for review and support Undo. The eye control shows AI and CLI edits. See [AI and writing](../assistant.md) for connections, context and privacy, and [CLI](../cli.md) for local automation.
 
-Compilation uses temporary snapshots. Replaced and failed builds are removed. Abandoned build folders are pruned after seven days or above a combined 512 MB, excluding active builds. Text history keeps up to 120 entries and 32 MB per project. Search indexes, project copies and editor drafts remain separate from these disposable caches.
+Compilation uses temporary copies, which are cleared automatically when no longer needed. Editing history, search indexes, project copies and drafts are kept separately.
 
 
 The LaTeX and Overleaf build-log button stays visible in narrow windows. A dot above the terminal is red for errors or a failed build and yellow for warnings alone. Clean builds show the terminal without a dot. During compilation, the dot waits for the new result.
