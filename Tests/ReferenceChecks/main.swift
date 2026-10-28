@@ -191,6 +191,13 @@ let scoped = try ReferenceCLI.response(["list", "--library", library.id.uuidStri
 try check(scoped["total"] as? Int == 1, "CLI scopes reference listing")
 let groups = ReferenceDuplicates.lookup(try repository.records())
 try check(groups[copy.id]?.contains(attached.id) == true, "Shared PDF identifies duplicates across libraries")
+let chainAttachments = (0..<64).map { ReferenceAttachment(name: "fixture.pdf", sha256: String(format: "%064x", $0), bytes: 100) }
+var chainRecords = chainAttachments.map { ReferenceRecord(attachments: [$0]) }
+for index in 1..<chainAttachments.count { chainRecords.append(ReferenceRecord(attachments: [chainAttachments[0], chainAttachments[index]])) }
+var trashedChain = ReferenceRecord(attachments: [chainAttachments[0]]); trashedChain.trashed = Date()
+let chainGroups = ReferenceDuplicates.lookup(chainRecords + [trashedChain])
+try check(chainRecords.allSatisfy { chainGroups[$0.id] == chainRecords.map(\.id) }, "Transitive duplicate chains preserve all members and their original order")
+try check(chainGroups[trashedChain.id] == nil, "Duplicate chains exclude trashed records")
 let samePDF = try repository.importFiles([pdfURL], libraryID: library.id).first!
 try check(samePDF.attachments.first?.id == copy.attachments.first?.id, "Repeated PDF import reuses stored bytes")
 let snapshots = try repository.records().filter { groups[copy.id]?.contains($0.id) == true }

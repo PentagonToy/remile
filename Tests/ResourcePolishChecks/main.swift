@@ -16,6 +16,19 @@ app.setActivationPolicy(.prohibited)
 Task { @MainActor in
     do {
         let fm = FileManager.default; try fm.createDirectory(at: output, withIntermediateDirectories: true)
+        let coverStore = SearchCoverStore()
+        for rotation in [0, 90, 180, 270] {
+            let url = output.appendingPathComponent("cover-\(rotation).pdf"), bytes = pdfImageFixture(rotation: rotation)
+            try bytes.write(to: url)
+            let document = PDFDocument(data: bytes)!
+            let image = document.page(at: 0)!.thumbnail(of: NSSize(width: 96, height: 128), for: .cropBox)
+            let expected = NSBitmapImageRep(data: image.tiffRepresentation!)!.representation(using: .png, properties: [:])!
+            let revision = UUID(), actual = try await coverStore.image(path: url.path, revision: revision)
+            check(actual == expected, "Search cover PNG stays identical at \(rotation) degrees")
+            try fm.removeItem(at: url)
+            check(try await coverStore.image(path: url.path, revision: revision) == actual, "Search cover reuses its cached PNG after generation")
+            check(try await coverStore.image(path: url.path, revision: UUID()) == nil, "A refreshed unavailable cover retains its existing fallback")
+        }
         check(SourceDigest.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "SHA-256 preserves the automation protocol vector")
         check(SourceDigest.sha256("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "Empty-source SHA-256 stays compatible")
         let markdown = MarkdownPreviewModel(), markdownURL = output.appendingPathComponent("source.md")
