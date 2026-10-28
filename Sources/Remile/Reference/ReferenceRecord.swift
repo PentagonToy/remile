@@ -12,6 +12,7 @@ struct ReferenceRecord: Codable, Identifiable, Equatable, Sendable {
     var id: UUID = UUID()
     var revision: UUID = UUID()
     var key: String = ""
+    var citationKeyLocked: Bool?
     var type: String = "article"
     var fields: [String: String] = [:]
     var attachments: [ReferenceAttachment] = []

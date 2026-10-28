@@ -24,7 +24,7 @@ Detected reference lists are left out by default. To search them too, enable **I
 
 Search recognises forms such as `H₂` / `H2`, `ε` / `epsilon` and typographic ligatures. Search can also join words split across PDF line breaks. Original documents are unchanged.
 
-Use Update Index once after this update to refresh older Markdown text. Search reuses a local cache between launches.
+Search reuses its prepared index between launches.
 
 ## Buttons at a glance
 

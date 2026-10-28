@@ -21,4 +21,14 @@ precondition((result["annotations"] as? [[String: Any]])?.contains { $0["text"] 
 precondition(FileManager.default.fileExists(atPath: root.appendingPathComponent("page.png").path))
 for page in [0, 2] { do { _ = try PDFInspection.read(document, page: page); fatalError("invalid page accepted") } catch {} }
 do { _ = try PDFInspection.read(document, page: 1, render: root.appendingPathComponent("page.png").path); fatalError("overwrote image") } catch {}
+for rotation in [0, 90, 180, 270] {
+    let page = document.page(at: 0)!; page.rotation = rotation
+    page.setBounds(CGRect(x: 10, y: 20, width: 460, height: 640), for: .cropBox)
+    let image = page.thumbnail(of: NSSize(width: 1600, height: 1600), for: .cropBox)
+    let expected = NSBitmapImageRep(data: image.tiffRepresentation!)!.representation(using: .png, properties: [:])!
+    let url = root.appendingPathComponent("rotated-\(rotation).png")
+    _ = try PDFInspection.read(document, page: 1, render: url.path)
+    let actual = try Data(contentsOf: url)
+    precondition(actual == expected, "Page export must preserve the existing PNG at every rotation")
+}
 print("Passed PDF page text, source bounds, live annotation, page image and invalid request checks")

@@ -321,7 +321,8 @@
         "Sources/Remile/LaTeX/TeXHistoryPanel.swift",
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
         "Sources/Remile/Reference/ReferenceAttachments.swift",
-        "Sources/Remile/Reference/ReferenceEvidenceView.swift"
+        "Sources/Remile/Reference/ReferenceEvidenceView.swift",
+        "Sources/Remile/Reference/ReferenceKind.swift"
       ]
     },
     {
@@ -612,12 +613,6 @@
       "name": "pencil.tip",
       "sources": [
         "Sources/Remile/Assistant/AIControls.swift"
-      ]
-    },
-    {
-      "name": "person.3",
-      "sources": [
-        "Sources/Remile/Reference/ReferenceKind.swift"
       ]
     },
     {

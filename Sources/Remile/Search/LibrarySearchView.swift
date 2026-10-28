@@ -18,20 +18,7 @@ struct LibrarySearchView: View {
         Binding(get: { model.selectedHit?.id }, set: { id in selectResult(model.results.first { $0.id == id }) })
     }
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            GeometryReader { geometry in
-                if model.searching || model.exploring {
-                    SearchWaitingView(startedAt: model.searchStartedAt).frame(width: geometry.size.width, height: geometry.size.height)
-                } else if geometry.size.width < 780 {
-                    VStack(spacing: 0) {
-                        RemileSegmentedControl(title: "Search pane", selection: $citationState.compactPreview, options: [false, true], label: { $0 ? "Preview" : "Results" }).padding(10)
-                        if citationState.compactPreview { previewAndAsk } else { sidebar }
-                    }
-                } else { ReaderSplit(sizing: .results, minimum: 260, maximum: 520, minimumContent: model.askPresented ? 600 : 420, label: "search results", revealToken: citationState.paneReset.uuidString, pane: { sidebar }, content: { previewAndAsk }) }
-            }
-        }.focusedSceneValue(\.workspaceActions, WorkspaceActions(ask: toggleAssistant, references: { citationState.references = true }, restorePanes: { citationState.paneReset = UUID() }))
+        searchContent.focusedSceneValue(\.workspaceActions, WorkspaceActions(ask: toggleAssistant, references: { citationState.references = true }, restorePanes: { citationState.paneReset = UUID() }))
         .sheet(isPresented: $model.libraryPresented) { LibraryManager(model: model) }
             .sheet(isPresented: $citationState.references) { ReferencePicker(format: .markdown) }
             .sheet(isPresented: $citationState.settingsPresented) { searchSettings }
@@ -49,8 +36,28 @@ struct LibrarySearchView: View {
             .onChange(of: model.documentFilter) { assistant.cancel(); citationState.focus = nil }
             .onChange(of: model.results.map(\.id)) { assistant.cancel(); citationState.focus = nil }
             .onChange(of: model.selectedHit?.path) { citationState.selectedPassages = [] }
-            .onChange(of: model.selectedHit?.id) { if citationState.focus?.location.id != model.selectedHit?.id { citationState.focus = nil } }
+            .onChange(of: model.selectedHit?.id) { _, id in selectedHitChanged(id) }
             .font(RemileType.control).background(RemileStyle.background).tint(RemileStyle.accent).frame(minWidth: 560, minHeight: 450)
+    }
+    private var searchContent: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            GeometryReader { geometry in
+                if model.searching || model.exploring {
+                    SearchWaitingView(startedAt: model.searchStartedAt).frame(width: geometry.size.width, height: geometry.size.height)
+                } else if geometry.size.width < 780 {
+                    VStack(spacing: 0) {
+                        RemileSegmentedControl(title: "Search pane", selection: $citationState.compactPreview, options: [false, true], label: { $0 ? "Preview" : "Results" }).padding(10)
+                        if citationState.compactPreview { previewAndAsk } else { sidebar }
+                    }
+                } else { ReaderSplit(sizing: .results, minimum: 260, maximum: 520, minimumContent: model.askPresented ? 600 : 420, label: "search results", revealToken: citationState.paneReset.uuidString, pane: { sidebar }, content: { previewAndAsk }) }
+            }
+        }
+    }
+    private func selectedHitChanged(_ id: String?) {
+        let focusedID: String? = citationState.focus?.location.id
+        if focusedID != id { citationState.focus = nil }
     }
 
     private var searchSettings: some View {

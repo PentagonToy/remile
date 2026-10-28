@@ -157,10 +157,10 @@ import UniformTypeIdentifiers
     private func refreshAfterRecognition() {
         if busy { reloadRequested = true } else { load() }
     }
-    func save(_ record: ReferenceRecord, existing: Bool, selectAfterSave: Bool = true, onFailure: @escaping () -> Void = {}, onSaved: @escaping () -> Void = {}) {
+    func save(_ record: ReferenceRecord, existing: Bool, selectAfterSave: Bool = true, renameKey: Bool = false, onFailure: @escaping () -> Void = {}, onSaved: @escaping () -> Void = {}) {
         let library = selectedLibrary
         perform(completion: onSaved, failure: onFailure, queueIfBusy: !selectAfterSave, selectResult: selectAfterSave) { repository in
-            if existing { return try repository.update(record, expected: record.revision).id }
+            if existing { return try repository.update(record, expected: record.revision, renameKey: renameKey).id }
             return try repository.add([record], libraryID: library).first?.id
         }
     }
@@ -168,6 +168,9 @@ import UniformTypeIdentifiers
     func regenerate(_ record: ReferenceRecord? = nil) {
         let rule = ReferenceKeyRule.current, library = selectedLibrary
         perform { _ = try $0.regenerate(id: record?.id, expected: record?.revision, libraryID: library, rule: rule); return record?.id }
+    }
+    func setKeyLock(_ records: [ReferenceRecord], locked: Bool) {
+        perform(selectResult: false) { try $0.setKeyLock(records, locked: locked); return nil }
     }
     func duplicate(_ record: ReferenceRecord, to library: UUID? = nil) { perform { try $0.duplicate(record.id, to: library).id } }
     func move(_ record: ReferenceRecord, to collection: UUID?) { perform { try $0.move(record.id, to: collection); return record.id } }

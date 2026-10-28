@@ -23,6 +23,11 @@ class Page(HTMLParser):
 def check(root):
     pages = {path.resolve(): Page(path) for path in root.rglob("*.html")}
     failures = []
+    version = (Path(__file__).resolve().parents[2] / "VERSION").read_text().strip()
+    home = pages.get((root / "index.html").resolve())
+    download = f"https://github.com/PentagonToy/remile/releases/download/v{version}/remile-{version}-arm64.dmg"
+    if home is None or download not in home.links:
+        failures.append("Homepage download must match VERSION.")
     count = 0
     for source, page in pages.items():
         for link in page.links:

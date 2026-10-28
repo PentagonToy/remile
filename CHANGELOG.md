@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add full-screen PDF Slide View and refine bottom-tab movement, Fit and window navigation.
+- Edit Reference keys and types, lock keys during regeneration and carry edits between Details and BibTeX. Recognise web, news and report types and use a podium for conference papers.
+- Reduce repeated PDF, search, Reference and Overleaf text-processing work. Harden CLI request cancellation and completion.
+- Add macOS build CI and standard XCTest coverage for CLI validation, Markdown rendering and Reference types.
+
 ## 0.2.1 — 27 October 2026
 
 - Add source Find and Replace with case, whole-word and regular-expression options, plus broader local LaTeX completion.

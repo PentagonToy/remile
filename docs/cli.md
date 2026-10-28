@@ -17,6 +17,18 @@ remile status
 
 Keep an existing command if that name is already in use. Homebrew manages its CLI link through the cask. The bundled launcher resolves the installed app location and calls the same native CLI used by `tools/remile`.
 
+## Open a document
+
+```sh
+remile open /absolute/document.pdf
+remile documents
+remile status --target TARGET_UUID
+```
+
+`open` acknowledges the request while the document loads. It does not mean loading has finished. Use `documents` to find the new session, then check its `status`. For PDFs, `pages` becomes positive when a readable document is loaded.
+
+A timeout does not prove that an operation failed. Read the current document or status before retrying a write.
+
 ## Common workflows
 
 Use IDs returned by the preceding command in place of `LIBRARY_UUID`, `RECORD_UUID` and `overleaf:PROJECT_ID`.
@@ -98,7 +110,7 @@ Reference writes use the same transaction service as the native workspace:
 | `reference detach --id UUID --expected-revision UUID --attachment UUID` | Remove an attachment link. Shared bytes remain until unused-file cleanup |
 | `reference trash --id UUID --expected-revision UUID` | Move the record to Reference Trash |
 | `reference restore --id UUID --expected-revision UUID` | Restore the record |
-| `reference regenerate-key --id UUID --expected-revision UUID` | Apply the current citation-key rule |
+| `reference regenerate-key --id UUID --expected-revision UUID` | Apply the current citation-key rule unless the key is locked |
 
 Read `show` immediately before a mutation and supply its revision. A stale revision fails without applying the change. The native workspace reloads external catalogue changes through directory events. Permanent deletion, library creation, merge and network lookup remain native actions. If a write is interrupted, inspect the catalogue before retrying. Import is not idempotent.
 

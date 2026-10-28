@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def build(workspace, output):
+    version = (ROOT / "VERSION").read_text().strip()
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:-beta\.\d+)?", version):
+        raise ValueError("Use a valid package version for the website download.")
     for path in (workspace, output):
         if path == ROOT or path.is_relative_to(ROOT) or ROOT.is_relative_to(path):
             raise ValueError("Keep generated files outside the source checkout.")
@@ -49,7 +52,10 @@ def build(workspace, output):
                     return match.group(1) + "https://github.com/PentagonToy/remile/blob/main/" + str(original.relative_to(ROOT)) + suffix
                 return match.group(0)
 
-            target.write_text(re.sub(r'''(\]\(|src=["']|srcset=["'])([^"'\s)>]+)''', link, source.read_text()))
+            rendered = re.sub(r'''(\]\(|src=["']|srcset=["'])([^"'\s)>]+)''', link, source.read_text())
+            if source == ROOT / "docs/index.md":
+                rendered = rendered.replace("---\n", f'---\nrelease_version: "{version}"\n', 1)
+            target.write_text(rendered)
         shutil.copy2(ROOT / "zensical.toml", stage / "zensical.toml")
         subprocess.run([sys.executable, "-m", "zensical", "build", "--strict", "-f", str(stage / "zensical.toml")], cwd=stage, check=True)
         output.parent.mkdir(parents=True, exist_ok=True)

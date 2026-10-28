@@ -80,7 +80,7 @@ Add PDFs through Add PDF or by dropping them onto a reference. Clean up does not
 
 ## Storage and other Macs
 
-Settings → Storage offers one location for Reference and search data. Change → Move storage creates a `remile-storage` folder at the chosen location. The change runs before workspaces open on the next launch. Reference copies are verified and the search database is copied through SQLite's snapshot API, including committed changes in its write-ahead log. Previous files remain intact.
+Settings → Storage offers one location for Reference and search data. Change → Move storage creates a `remile-storage` folder at the chosen location. The change runs before workspaces open on the next launch. remile copies Reference and search data before switching locations and verifies the copied Reference files. Previous files remain intact.
 
 Reference uses `Reference/` and relative attachment paths. Search uses `Search/<Mac identity>/`. Another Mac opens the shared storage through Change → Open storage and keeps a separate search database. Machine identity and storage paths are excluded from presets. Existing customised Reference locations keep working until a storage move is requested.
 

@@ -3,6 +3,10 @@ import SwiftUI
 /// Only tab labels are rendered here. Existing window sessions own the PDF data.
 struct PDFDocumentTabs: View {
     let reader: ReadingSession?
+    @ObservedObject private var drag = PDFTabDragState.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(AnimationPolicy.preference) private var animations = true
+    private var tabAnimation: Animation? { reduceMotion || !animations ? nil : .easeInOut(duration: 0.18) }
     @ObservedObject private var windows = RemileWindows.shared
 
     var body: some View {
@@ -35,13 +39,11 @@ struct PDFDocumentTabs: View {
                     HStack(spacing: spacing) {
                         ForEach(tabs) { tab in
                             HStack(spacing: 2) {
-                                Button { windows.selectDocumentTab(tab.id) } label: {
-                                    Text(tab.title).font(RemileType.control).lineLimit(1).truncationMode(.middle)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.leading, 10).frame(height: 30).contentShape(Rectangle())
-                                }.buttonStyle(.plain).remileHelp(tab.url.path)
-                                    .accessibilityLabel(tab.title)
-                                    .accessibilityAddTraits(tab.selected ? .isSelected : [])
+                                Text(tab.title).font(RemileType.control).lineLimit(1).truncationMode(.middle)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.leading, 10).frame(height: 30).contentShape(Rectangle())
+                                    .accessibilityHidden(true)
+                                    .overlay { PDFTabDragSurface(id: tab.id, title: tab.title) }
                                 Button { windows.closeDocumentTab(tab.id) } label: {
                                     SymbolIcon(systemName: "xmark")
                                         .foregroundStyle(.secondary).frame(width: RemileControl.toolHit, height: RemileControl.toolHit).contentShape(Rectangle())
@@ -50,9 +52,23 @@ struct PDFDocumentTabs: View {
                             .frame(width: tabWidth)
                             .foregroundStyle(tab.selected ? RemileStyle.ink : RemileStyle.ink.opacity(0.65))
                             .background(tab.selected ? RemileStyle.ink.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(RemileStyle.accent, lineWidth: 1)
+                                    .opacity(drag.feedback?.target == tab.id ? 0.65 : 0)
+                                    .allowsHitTesting(false)
+                            }
+                            .overlay(alignment: drag.feedback?.after == true ? .trailing : .leading) {
+                                Capsule().fill(RemileStyle.accent).frame(width: 3, height: 24)
+                                    .opacity(drag.feedback?.target == tab.id ? 1 : 0)
+                                    .allowsHitTesting(false)
+                            }
+                            .opacity(drag.feedback?.source == tab.id ? 0.45 : 1)
+                            .animation(tabAnimation, value: drag.feedback)
                             .id(tab.id)
                         }
                     }.padding(.vertical, 4)
+                        .animation(tabAnimation, value: tabs.map(\.id))
                 }
                 .frame(width: min(contentWidth, viewportWidth))
                 .onAppear { if let selectedID { proxy.scrollTo(selectedID) } }

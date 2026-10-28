@@ -25,6 +25,7 @@ struct PDFWorkspace: View {
     @Environment(\.undoManager) private var undoManager
     @FocusState private var searchFocused: Bool
     @StateObject private var zoom = ReaderZoom()
+    @StateObject private var slides = PDFSlidePresentation()
 
     init(data: Data, fileURL: URL? = nil, session: PDFSession? = nil, showAsk: Bool = false, readingSession: ReadingSession? = nil, updateDocument: @escaping (Data) -> Void) {
         self.data = data; self.fileURL = fileURL; self.readingSession = readingSession; self.updateDocument = updateDocument
@@ -46,12 +47,13 @@ struct PDFWorkspace: View {
             }
             PDFDocumentTabs(reader: readingSession)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        .focusedSceneValue(\.pdfSlideAction, session.document.map { !$0.isLocked && $0.pageCount > 0 } == true ? presentSlides : nil)
         .onAppear { readingSession?.pdfSession = session; readingSession?.pdfInspection = { [weak session = session] page, find, render in guard let session, let document = session.document else { throw CocoaError(.fileReadUnknown) }; return try PDFInspection.read(document, page: page ?? max(1, session.currentPage), find: find, render: render) }; readingSession?.commentsExport = { [weak session = session] in guard let session else { throw CocoaError(.fileReadUnknown) }; return try session.exportComments(name: fileURL?.lastPathComponent ?? "Untitled.pdf") }; assistant.useHistory(fileURL.map { "pdf:" + $0.path }); session.undoManager = undoManager; session.readingURL = fileURL; session.load(data); session.loadComments(); revealLibraryPage(); if !session.query.isEmpty { session.search() } }
         .onChange(of: session.showsSidebar, initial: true) { _, shown in sidebarPresentation.setShown(shown, animated: !reduceMotion && animations) }
-        .onChange(of: data) { _, data in assistant.cancel(); presentation.selectedPassages = []; session.load(data) }
+        .onChange(of: data) { _, data in slides.finish(); assistant.cancel(); presentation.selectedPassages = []; session.load(data) }
         .onChange(of: fileURL) { assistant.useHistory(fileURL.map { "pdf:" + $0.path }) }
         .onChange(of: navigation.request?.id) { revealLibraryPage() }
-        .onDisappear { sidebarPresentation.cancel(); session.persistReadingPosition(); assistant.cancel(); session.stop(); session.protection.finish(); readingSession?.commentsExport = nil; readingSession?.pdfInspection = nil; readingSession?.pdfSession = nil }
+        .onDisappear { slides.finish(); sidebarPresentation.cancel(); session.persistReadingPosition(); assistant.cancel(); session.stop(); session.protection.finish(); readingSession?.commentsExport = nil; readingSession?.pdfInspection = nil; readingSession?.pdfSession = nil }
         .onChange(of: session.query) { session.search() }
         .onChange(of: session.caseSensitive) { session.search() }
         .onChange(of: session.pendingAnnotationRevision) { readingSession?.objectWillChange.send() }
@@ -59,6 +61,11 @@ struct PDFWorkspace: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.print"))) { event in if event.object as? ReadingSession === readingSession { session.printDocument() } }
         .modifier(SelectionTranslationModifier(request: $presentation.translation))
         .sheet(isPresented: $presentation.ocr) { PDFDocumentOCRSheet(data: session.committedData ?? data, password: session.assistantPassword) }
+    }
+
+    private func presentSlides() {
+        guard let document = session.document else { return }
+        slides.start(document: document, page: session.currentPage) { [weak session] page in session?.goToPage(page) }
     }
 
     // Keep the PDFReader at a stable structural position when either pane opens.

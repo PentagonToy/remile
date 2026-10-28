@@ -16,7 +16,7 @@ enum ReferenceDuplicates {
     static func lookup(_ records: [ReferenceRecord]) -> [UUID: [UUID]] {
         let active = records.filter { $0.trashed == nil }
         var parent = Array(active.indices), seen: [String: Int] = [:]
-        func root(_ i: Int) -> Int { var x = i; while parent[x] != x { x = parent[x] }; return x }
+        func root(_ i: Int) -> Int { var x = i; while parent[x] != x { parent[x] = parent[parent[x]]; x = parent[x] }; return x }
         for (i, record) in active.enumerated() {
             var keys = record.attachments.map { "pdf:" + $0.sha256 }
             for field in ["doi", "url"] {

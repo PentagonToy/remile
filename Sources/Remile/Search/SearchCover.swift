@@ -12,8 +12,8 @@ actor SearchCoverStore {
         let data: Data? = autoreleasepool {
             guard let pdf = PDFDocument(url: URL(fileURLWithPath: path)), !pdf.isLocked, let page = pdf.page(at: 0) else { return nil }
             let image = page.thumbnail(of: NSSize(width: 96, height: 128), for: .cropBox)
-            guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
-            return bitmap.representation(using: .png, properties: [:])
+            guard let bitmap = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+            return NSBitmapImageRep(cgImage: bitmap).representation(using: .png, properties: [:])
         }
         try Task.checkCancellation()
         if let data {

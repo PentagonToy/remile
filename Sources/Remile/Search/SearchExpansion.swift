@@ -54,8 +54,17 @@ struct SearchExpansion {
                 }
             }
         }
-        return representatives.values.map { hit in
-            LibraryHit(path: hit.path, folderID: hit.folderID, page: hit.page, excerpt: hit.excerpt, score: -scores[hit.id]!, sectionTitle: hit.sectionTitle, matchQuery: hit.matchQuery)
-        }.sorted { $0.score == $1.score ? $0.id < $1.id : $0.score < $1.score }.prefix(200).map { $0 }
+        var ranked: [LibraryHit] = []
+        ranked.reserveCapacity(representatives.count)
+        for hit in representatives.values {
+            let score: Double = -scores[hit.id]!
+            let fused = LibraryHit(path: hit.path, folderID: hit.folderID, page: hit.page, excerpt: hit.excerpt, score: score, sectionTitle: hit.sectionTitle, matchQuery: hit.matchQuery)
+            ranked.append(fused)
+        }
+        ranked.sort { (first: LibraryHit, second: LibraryHit) -> Bool in
+            if first.score == second.score { return first.id < second.id }
+            return first.score < second.score
+        }
+        return Array(ranked.prefix(200))
     }
 }

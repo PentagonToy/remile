@@ -2,6 +2,14 @@ import Foundation
 
 /// A bounded BibTeX reader. Unsupported expressions fail without importing a partial bibliography.
 enum ReferenceBibTeX {
+    static func applying(_ source: String, to record: ReferenceRecord) throws -> ReferenceRecord {
+        let entries = try parse(source)
+        guard entries.count == 1 else { throw ReferenceFailure("Use one BibTeX entry for this reference.") }
+        var result = record
+        result.fields = entries[0].fields; result.key = entries[0].key; result.type = entries[0].type
+        result.originalCitation = source
+        return result
+    }
     static func parse(_ source: String) throws -> [ReferenceRecord] {
         guard source.utf8.count <= 4_000_000 else { throw ReferenceFailure("Use a bibliography smaller than 4 MB.") }
         var reader = Parser(source)

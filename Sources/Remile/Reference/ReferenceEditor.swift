@@ -19,16 +19,17 @@ struct ReferenceEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack { Text(existing ? "Edit reference" : "Add reference").font(.title2.weight(.semibold)); Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
-            Picker("Entry", selection: $state.citationMode) { Text("Details").tag(false); Text("BibTeX").tag(true) }.pickerStyle(.segmented).labelsHidden()
+            Picker("Entry", selection: Binding(get: { state.citationMode }, set: { selectMode($0) })) { Text("Details").tag(false); Text("BibTeX").tag(true) }.pickerStyle(.segmented).labelsHidden()
             if state.citationMode {
                 TextEditor(text: $state.citation).font(.system(size: 13, design: .monospaced)).frame(minHeight: 250).scrollContentBackground(.hidden).padding(8).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 8))
-                Text("Paste one BibTeX entry.").font(RemileType.caption).foregroundStyle(.secondary)
+                Text("Edit one BibTeX entry.").font(RemileType.caption).foregroundStyle(.secondary)
             } else {
                 ScrollView { Form {
                     TextField("Title", text: field("title"))
                     TextField("Authors", text: field("author"), prompt: Text("Separate names with and"))
                     TextField("Year", text: field("year"))
-                    LabeledContent("Citation key", value: existing ? state.draft.citationKey : ReferenceKeyRule.current.key(for: state.draft)).font(RemileType.caption)
+                    if existing { TextField("Citation key", text: $state.draft.key) }
+                    else { LabeledContent("Citation key", value: ReferenceKeyRule.current.key(for: state.draft)).font(RemileType.caption) }
                     TextField("Journal / book", text: field("journal"))
                     DisclosureGroup("Publication details") {
                         ForEach(["publisher", "booktitle", "editor", "date", "volume", "number", "pages", "edition", "series", "address", "institution", "organization"], id: \.self) { name in
@@ -60,16 +61,22 @@ struct ReferenceEditor: View {
         }.padding(24).frame(width: 560).background(RemileStyle.background).tint(RemileStyle.accent)
     }
     private func field(_ name: String) -> Binding<String> { Binding(get: { state.draft.fields[name] ?? "" }, set: { state.draft.fields[name] = $0 }) }
+    private func selectMode(_ citationMode: Bool) {
+        guard citationMode != state.citationMode else { return }
+        do {
+            if citationMode { state.citation = try ReferenceBibTeX.export([state.draft]) }
+            else { state.draft = try ReferenceBibTeX.applying(state.citation, to: state.draft) }
+            state.error = nil; state.citationMode = citationMode
+        } catch { state.error = error.localizedDescription }
+    }
     private func save() {
         do {
             if state.citationMode {
-                let records = try ReferenceBibTeX.parse(state.citation)
-                guard records.count == 1 else { throw ReferenceFailure("Use Import files to add a bibliography with several entries.") }
-                state.draft.fields = records[0].fields; state.draft.key = records[0].key; state.draft.type = records[0].type; state.draft.originalCitation = state.citation
+                state.draft = try ReferenceBibTeX.applying(state.citation, to: state.draft)
             }
             guard !state.draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, state.draft.fields["title"]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { throw ReferenceFailure("Add a title before saving.") }
             _ = try ReferenceBibTeX.export([state.draft]); state.error = nil
-            model.save(state.draft, existing: existing, onSaved: { dismiss() })
+            model.save(state.draft, existing: existing, renameKey: existing, onSaved: { dismiss() })
         } catch { state.error = error.localizedDescription }
     }
 }

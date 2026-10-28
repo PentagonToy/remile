@@ -175,10 +175,12 @@ final class PDFSession: NSObject, ObservableObject {
         let delegate = SearchDelegate(); searchDelegate = delegate; document?.delegate = delegate
     }
 
+    private var selectionHighlightAvailable = false
     func attach(_ view: PDFView) {
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
         self.view = view
+        selectionHighlightAvailable = canHighlight
         applyLibraryDestination()
         restoreReadingPosition()
         let center = NotificationCenter.default
@@ -187,10 +189,16 @@ final class PDFSession: NSObject, ObservableObject {
                   view.document === document, page.document === document else { return }
             let index = document.index(for: page)
             guard index != NSNotFound else { return }
-            self.currentPage = index + 1
+            if self.currentPage != index + 1 { self.currentPage = index + 1 }
             self.persistReadingPosition()
         })
-        observers.append(center.addObserver(forName: .PDFViewSelectionChanged, object: view, queue: .main) { [weak self] _ in self?.objectWillChange.send() })
+        observers.append(center.addObserver(forName: .PDFViewSelectionChanged, object: view, queue: .main) { [weak self, weak view] _ in
+            guard let self, let view, self.view === view else { return }
+            let available = self.canHighlight
+            guard available != self.selectionHighlightAvailable else { return }
+            self.selectionHighlightAvailable = available
+            self.objectWillChange.send()
+        })
         observers.append(center.addObserver(forName: .PDFViewAnnotationHit, object: view, queue: .main) { [weak self] notification in
             guard let self, let annotation = notification.userInfo?["PDFAnnotationHit"] as? PDFAnnotation,
                   Self.isReviewComment(annotation) else { return }
@@ -764,9 +772,6 @@ final class PDFSession: NSObject, ObservableObject {
         libraryDestination = (currentPage, [], nil, false)
         view?.go(to: destination)
     }
-    func zoomIn() { view?.zoomIn(nil) }
-    func zoomOut() { view?.zoomOut(nil) }
-    func fitPage() { view?.autoScales = true }
     func unlock() {
         guard let document else { return }
         let candidate = password

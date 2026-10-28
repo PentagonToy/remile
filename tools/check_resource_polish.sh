@@ -13,6 +13,7 @@ source_paths=("${(@)source_paths:#*/App/RemileApp.swift}")
         print
     done
     print -r -- '#sourceLocation()'
+    cat "$project_directory/Tests/PDFRegionChecks/Fixture.swift"
     cat "$project_directory/Tests/ResourcePolishChecks/main.swift"
 } > "$check_directory/resource-polish-checks.swift"
 swift -module-cache-path "$check_directory/module-cache" "$check_directory/resource-polish-checks.swift" "$check_directory" "${@[2,-1]}"

@@ -75,7 +75,16 @@ struct ReferencePreview: View {
                             HStack(alignment: .top, spacing: 10) {
                                 Text(row.label).font(RemileType.small).foregroundStyle(.secondary)
                                     .lineLimit(1).fixedSize(horizontal: true, vertical: false).frame(width: 78, alignment: .trailing)
-                                if state.editingField == row.id {
+                                if row.id == "kind", record.trashed == nil, !model.showingTrash {
+                                    Menu {
+                                        ForEach(ReferenceKind.allCases, id: \.self) { kind in
+                                            Button(kind.label) { model.save(kind.applying(to: record), existing: true, selectAfterSave: false) }
+                                        }
+                                    } label: {
+                                        Text(row.value).frame(maxWidth: .infinity, alignment: .leading)
+                                    }.menuStyle(.borderlessButton).disabled(model.busy || state.editingField != nil || state.saving)
+                                        .accessibilityLabel("Type").remileHelp("Change reference type")
+                                } else if state.editingField == row.id {
                                     TextField(row.label, text: $state.draft).textFieldStyle(.roundedBorder)
                                         .focused($editingFocus, equals: row.id).disabled(model.busy)
                                         .onAppear { editingFocus = row.id }
@@ -121,19 +130,22 @@ struct ReferencePreview: View {
         if let row = ReferenceMetadata.rows(record).first(where: { $0.id == "title" }) { edit(row) }
     }
     private func edit(_ row: ReferenceMetadataRow) {
-        guard record.trashed == nil, !model.showingTrash, !model.busy, !state.saving, record.fields[row.id] != nil else { return }
-        state.snapshot = record; state.draft = record.fields[row.id] ?? ""; state.editingField = row.id
+        guard record.trashed == nil, !model.showingTrash, !model.busy, !state.saving, row.id == "key" || record.fields[row.id] != nil else { return }
+        state.snapshot = record; state.draft = row.id == "key" ? record.citationKey : record.fields[row.id] ?? ""; state.editingField = row.id
     }
     private func commit() {
         guard var draft = state.snapshot, let field = state.editingField, !state.saving else { return }
         do {
             let value = state.draft.trimmingCharacters(in: .whitespacesAndNewlines)
             if field == "title", value.isEmpty { throw ReferenceFailure("Add a title before saving.") }
-            draft.fields[field] = value.isEmpty ? nil : value
+            if field == "key" {
+                guard !value.isEmpty, ReferenceBibTeX.validToken(value) else { throw ReferenceFailure("Enter a valid citation key.") }
+                draft.key = value
+            } else { draft.fields[field] = value.isEmpty ? nil : value }
             _ = try ReferenceBibTeX.export([draft])
-            if draft.fields == state.snapshot?.fields { state.editingField = nil; state.snapshot = nil; return }
+            if draft.fields == state.snapshot?.fields && draft.key == state.snapshot?.key { state.editingField = nil; state.snapshot = nil; return }
             state.saving = true
-            model.save(draft, existing: true, selectAfterSave: false, onFailure: { state.saving = false }) {
+            model.save(draft, existing: true, selectAfterSave: false, renameKey: field == "key", onFailure: { state.saving = false }) {
                 state.saving = false; state.editingField = nil; state.snapshot = nil
             }
         } catch { model.error = error.localizedDescription }

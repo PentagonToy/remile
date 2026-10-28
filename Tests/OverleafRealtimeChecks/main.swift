@@ -154,6 +154,22 @@ require(decoded.text == "café\nend" && decoded.version == 4, "Legacy Latin-1 wr
 func op(_ offset: Int, insert: String) -> OverleafLiveWire.JSON { .object(["p": .int(offset), "i": .string(insert)]) }
 require(try OverleafLiveText.applying([op(3, insert:"!")],to:"a🧭b") == "a🧭!b", "Incoming operations use UTF-16 offsets")
 refuses("An operation cannot split a surrogate pair") { _ = try OverleafLiveText.applying([op(2,insert:"!")],to:"a🧭b") }
+for text in ["", "ASCII", "한글 αβ", "e\u{301}", "👩🏽‍💻", "a\r\nb"] {
+    let units = Array(text.utf16)
+    for offset in 0...text.utf16.count {
+        let range = Range(NSRange(location: offset, length: 0), in: text)
+        let splitsSurrogate = offset > 0 && offset < units.count && (0xD800...0xDBFF).contains(units[offset - 1]) && (0xDC00...0xDFFF).contains(units[offset])
+        if let range, !splitsSurrogate {
+            var expected = text; expected.replaceSubrange(range, with: "!")
+            require(try OverleafLiveText.applying([op(offset, insert: "!")], to: text) == expected, "Incoming edits retain Unicode and grapheme boundaries")
+        } else {
+            refuses("Incoming edits reject invalid UTF-16 boundaries") { _ = try OverleafLiveText.applying([op(offset, insert: "!")], to: text) }
+        }
+    }
+}
+let batchText = String(repeating: "한글 🧭 ", count: 1000)
+let batch = (0..<100).map { op(batchText.utf16.count + $0, insert: "x") }
+require(try OverleafLiveText.applying(batch, to: batchText) == batchText + String(repeating: "x", count: 100), "A remote edit batch keeps sequential UTF-16 offsets")
 refuses("Mismatched deletion text cannot corrupt a document") { _ = try OverleafLiveText.applying([.object(["p":.int(0),"d":.string("wrong")])],to:"right") }
 require(try OverleafLiveText.merge(base:"alpha beta gamma",local:"ALPHA beta gamma",remote:"alpha beta GAMMA") == "ALPHA beta GAMMA", "Non-overlapping edits on the same line reconcile in both directions")
 require(try OverleafLiveText.merge(base:"a🧭b",local:"A🧭b",remote:"a🧭B") == "A🧭B", "Concurrent edits preserve astral text between changes")

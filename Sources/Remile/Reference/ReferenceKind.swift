@@ -1,14 +1,15 @@
 import Foundation
 
 enum ReferenceKind: String, CaseIterable {
-    case article, book, newspaper, webpage, conference, preprint, other
+    case article, book, newspaper, webpage, conference, report, preprint, other
     var symbol: String {
         switch self {
         case .article: return "doc.text"
         case .book: return "book.closed"
         case .newspaper: return "newspaper"
         case .webpage: return "globe"
-        case .conference: return "person.3"
+        case .conference: return "doc" // Fallback when the custom podium asset is unavailable.
+        case .report: return "doc.richtext"
         case .preprint: return "doc.plaintext"
         case .other: return "doc"
         }
@@ -20,6 +21,7 @@ enum ReferenceKind: String, CaseIterable {
         case .newspaper: return "Newspaper article"
         case .webpage: return "Web page"
         case .conference: return "Conference paper"
+        case .report: return "Report"
         case .preprint: return "Preprint"
         case .other: return "Other"
         }
@@ -30,6 +32,7 @@ enum ReferenceKind: String, CaseIterable {
         case .book: return "book"
         case .webpage: return "online"
         case .conference: return "inproceedings"
+        case .report: return "techreport"
         case .preprint, .other: return "misc"
         }
     }
@@ -38,8 +41,10 @@ enum ReferenceKind: String, CaseIterable {
         let type = record.type.lowercased()
         if type == "article" { return record.fields["entrysubtype"]?.lowercased() == "newspaper" ? .newspaper : .article }
         if ["book", "inbook", "incollection", "booklet"].contains(type) { return .book }
-        if ["online", "www", "electronic"].contains(type) { return .webpage }
+        if ["online", "www", "electronic", "webpage", "website", "url"].contains(type) { return .webpage }
+        if ["newspaper", "news"].contains(type) { return .newspaper }
         if ["inproceedings", "conference", "proceedings"].contains(type) { return .conference }
+        if ["report", "techreport"].contains(type) { return .report }
         return .other
     }
     func applying(to record: ReferenceRecord, customType: String = "") -> ReferenceRecord {

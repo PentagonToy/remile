@@ -16,7 +16,13 @@ Search by the details you remember. Click a column heading to sort, then click a
 
 PDFs are saved locally first. While online, remile uses a detected DOI or arXiv ID to fill missing details without AI. The airplane button pauses these lookups.
 
-Double-click a metadata value to edit it. **Read metadata** reviews details extracted from the PDF. **Look up metadata** fills missing fields and available abstracts online by DOI, arXiv ID or an exact title match. Existing values stay unchanged, and no PDF is uploaded. Available abstracts appear below the dates in a collapsed Abstract section. [Metadata lookup details →](details/reference.md#metadata-lookup)
+Double-click a metadata value or citation key to edit it. Click **Type** to choose a reference type. **Read metadata** reviews details extracted from the PDF. **Look up metadata** fills missing fields and available abstracts online by DOI, arXiv ID or an exact title match. Existing values stay unchanged, and no PDF is uploaded. Available abstracts appear below the dates in a collapsed Abstract section. [Metadata lookup details →](details/reference.md#metadata-lookup)
+
+Web pages use a globe, newspaper articles use a newspaper, conference papers use a podium, and reports use a document icon. Imported website, news and report types are recognised alongside standard BibTeX types such as `online` and `techreport`. A URL alone does not change a paper's type.
+
+In **Edit reference**, the **BibTeX** tab shows the current entry. Changes carry between **Details** and **BibTeX**.
+
+Right-click a reference and choose **Lock citation key** to keep its key during regeneration. **Unlock citation key** allows regeneration again. Both actions work on a mixed selection of locked and unlocked references. You can still edit a locked key manually.
 
 Edited books can list editors instead of authors. **Author / Editor** shows their names with `(ed.)` or `(eds.)`. New citation keys use the first editor's surname when no author is recorded. [Names and keys →](details/reference.md#columns-and-keys)
 

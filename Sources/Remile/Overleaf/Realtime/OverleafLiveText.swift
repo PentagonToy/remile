@@ -10,9 +10,9 @@ enum OverleafLiveText {
             let deleted = op["d"].string, inserted = op["i"].string, comment = op["c"].string
             guard [deleted, inserted, comment].compactMap({ $0 }).count == 1 else { throw OverleafLiveWire.Failure.protocolMismatch }
             let length = (deleted ?? comment)?.utf16.count ?? 0
-            let units = Array(value.utf16)
+            let units = value as NSString
             func boundary(_ index: Int) -> Bool {
-                index == 0 || index == units.count || !((0xD800...0xDBFF).contains(units[index - 1]) && (0xDC00...0xDFFF).contains(units[index]))
+                index == 0 || index == units.length || !((0xD800...0xDBFF).contains(units.character(at: index - 1)) && (0xDC00...0xDFFF).contains(units.character(at: index)))
             }
             guard length <= value.utf16.count - offset,
                   boundary(offset), boundary(offset + length),

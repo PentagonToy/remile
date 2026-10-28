@@ -26,7 +26,7 @@ Ask sends the question and selected document evidence to the chosen provider. Cl
 
 Explicit selections and relevant visible pages take priority. Source links return to the passage. Evidence is extracted text. It does not cover every page image or establish that an answer or formula is correct. Low, Mid and High select response budgets.
 
-Prompt templates live in `Sources/Remile/Assistant/Prompts`. Document content is passed separately as untrusted input. Source edits require exact matches and remain undoable. remile. requests do not create ChatGPT conversation history.
+Document passages are treated as evidence rather than instructions. Source edits must match the current text and remain undoable. remile. requests do not create ChatGPT conversation history.
 
 ## Work offline
 
@@ -40,4 +40,4 @@ LaTeX diagnostics put document structure and dependency failures before ordinary
 LaTeX repair requests include the selected diagnostic, the leading cause candidates, the earliest compiler errors and a bounded main-file preamble. When there is an earlier structural failure, the editable excerpt follows that failure. The prompt asks for evidence before a minimal repair and prohibits replacing custom macros merely to suppress symptoms. If evidence is insufficient, the explanation can be shown without an applicable edit. Suggestions are invalidated when source buffers, the main file or the build log change. No extra model call is made for ordering or context preparation.
 
 
-PDF-to-LaTeX navigation first uses SyncTeX. A double-click adds a bounded PDF text hint at the actual clicked character without consuming PDFKit's selection gesture. A background comparison checks at most 16,000 UTF-16 source units near the reported line. It normalises words and skips command names while retaining source offsets. A unique strong context match selects the word in the editor, making its sentence visible. Weak, repeated or non-text matches retain the original line jump. This adds no model call, OCR, background scan or extra SyncTeX process. Source/build identity checks remain in place.
+Double-click a passage in the compiled PDF to return to its LaTeX source. SyncTeX provides the line, and a nearby text match can select the word. Ambiguous or non-text passages keep the line jump. This navigation does not make an AI request.

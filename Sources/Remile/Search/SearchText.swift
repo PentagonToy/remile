@@ -29,10 +29,16 @@ struct SearchText {
         let groups = (try? LibraryIndex.queryTerms(query).count) ?? 0
         guard let first = matches.first else { return (String(text.prefix(360)), 0) }
         var best = first.range, bestLength = Int.max, counts: [Int: Int] = [:], left = 0
+        // Keep the longest active end first, including phrases that overlap later words.
+        var ends: [Int] = [], head = 0
         for right in matches.indices {
+            let end = NSMaxRange(matches[right].range)
+            while ends.count > head, NSMaxRange(matches[ends.last!].range) <= end { ends.removeLast() }
+            ends.append(right)
             counts[matches[right].group, default: 0] += 1
             while counts.count == groups, left <= right {
-                let end = matches[left...right].map { NSMaxRange($0.range) }.max()!
+                while ends[head] < left { head += 1 }
+                let end = NSMaxRange(matches[ends[head]].range)
                 let span = NSRange(location: matches[left].range.location, length: end - matches[left].range.location)
                 if span.length < bestLength { best = span; bestLength = span.length }
                 let group = matches[left].group

@@ -61,9 +61,23 @@ See [installation and updates](docs/distribution.md) for package details and the
 
 ## Development
 
+The source branch includes changes after the latest packaged release, including PDF Slide View, Reference key locks and additional reference types. See [Unreleased changes](CHANGELOG.md#unreleased). Download links above continue to select the published 0.2.1 package.
+
 remile. is a native Swift application with no external Swift package dependencies.
 
-Sources live in `Sources/Remile`. `tools/prepare_app.sh` builds and packages `remile.app`. Set `REMILE_BUILD_DIRECTORY` to an external output directory. Focused checks live in `Tests` and `tools/check_*.sh`.
+Sources live in `Sources/Remile`. `tools/prepare_app.sh` builds and packages `remile.app`. Set `REMILE_BUILD_DIRECTORY` to an external output directory.
+
+Use a full Xcode installation for XCTest. Command Line Tools alone do not include it. Run the standard tests with an external build directory:
+
+```sh
+swift test --build-system native --scratch-path /absolute/path/to/remile-tests --jobs 2
+```
+
+If Command Line Tools are selected, prefix the command with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`, using your Xcode installation path. This selects Xcode for that command without changing the system setting.
+
+`Tests/RemileTests` covers CLI argument validation, reference types and Markdown rendering, resource confinement and MathML. It imports the app module directly and uses isolated temporary fixtures. Open `Package.swift` in Xcode to run these XCTest cases there. The existing `tools/check_cli_arguments.sh` and `tools/check_markdown.sh` entry points run the corresponding tests.
+
+The Swift workflow builds the release executable and runs the standard tests and Live sync regression checks on macOS for relevant pushes to `main` or `dev`, and for pull requests. It does not sign, notarise or publish the app. Other focused checks remain in `Tests` and `tools/check_*.sh`. Run the checks for the behaviour you change. The CI selection does not replace the full regression suite or interactive release checks.
 
 ## Licence and acknowledgements
 

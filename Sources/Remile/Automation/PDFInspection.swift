@@ -26,7 +26,7 @@ enum PDFInspection {
         if let render {
             guard render.hasPrefix("/"), URL(fileURLWithPath: render).pathExtension.lowercased() == "png", !FileManager.default.fileExists(atPath: render) else { throw Failure("Choose a new absolute .png path for the page image.") }
             let image = page.thumbnail(of: NSSize(width: 1600, height: 1600), for: .cropBox)
-            guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let png = bitmap.representation(using: .png, properties: [:]) else { throw Failure("Could not render this PDF page.") }
+            guard let bitmap = image.cgImage(forProposedRect: nil, context: nil, hints: nil), let png = NSBitmapImageRep(cgImage: bitmap).representation(using: .png, properties: [:]) else { throw Failure("Could not render this PDF page.") }
             try png.write(to: URL(fileURLWithPath: render), options: .withoutOverwriting); result["image"] = render
         }
         return result

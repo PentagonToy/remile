@@ -283,6 +283,7 @@ final class HomeModel: ObservableObject {
     private var queuedPDFs: [URL] = []
     func open(_ url: URL) { open(url, inNewPDFTab: true) }
     func open(_ url: URL, inNewPDFTab: Bool) {
+        error = nil
         if url.pathExtension.lowercased() == "pdf" {
             if opening { queuedPDFs.append(url); return }
             if inNewPDFTab, RemileWindows.shared.openPDFTab(url, from: self) { return }
@@ -300,7 +301,7 @@ final class HomeModel: ObservableObject {
             do {
                 let data = try await Task.detached(priority: .userInitiated) { try Data(contentsOf: url) }.value
                 try reader.open(url, data: data)
-                if reader.url == url { recordRecent(url) }
+                if reader.url == url { overleaf.browsing = false; recordRecent(url) }
             } catch { self.error = error.localizedDescription }
         }
     }
@@ -385,7 +386,7 @@ final class HomeModel: ObservableObject {
             texProject = warm; overleaf.browsing = false; recordRecent(warm.root)
             if warm.pdf == nil && !warm.compileFailed { warm.compile() }; return
         }
-        do { let connection = overleaf.connection(for: root); let project = try TeXProject(root, historyEnabled: connection == nil, displayName: connection?.name); guard reader.close(), closeTeX() else { return }; texProject = project
+        do { let connection = overleaf.connection(for: root); let project = try TeXProject(root, historyEnabled: connection == nil, displayName: connection?.name); guard reader.close(), closeTeX() else { return }; texProject = project; overleaf.browsing = false
             if let connection { project.renameConnectedProject = { [weak library = overleaf] name in
                 guard let library else { throw OverleafProjectRename.Failure.unavailable }
                 try await library.renameProject(connection.id, to: name)
@@ -424,7 +425,7 @@ final class HomeModel: ObservableObject {
         if writer == nil { writer = makeWriter() }
         page = .writer
     }
-    func newMarkdown() { guard closeTeX(), !opening else { return }; if reader.newMarkdown() { page = .home } }
+    func newMarkdown() { guard closeTeX(), !opening else { return }; if reader.newMarkdown() { overleaf.browsing = false; page = .home } }
 
     func chooseDocument() -> URL? {
         let panel = NSOpenPanel()
