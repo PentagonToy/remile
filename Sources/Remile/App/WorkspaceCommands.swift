@@ -11,7 +11,12 @@ struct WorkspaceActions {
     var complete: (() -> Void)? = nil
 }
 private struct WorkspaceActionsKey: FocusedValueKey { typealias Value = WorkspaceActions }
+private struct PDFSlideActionKey: FocusedValueKey { typealias Value = () -> Void }
 extension FocusedValues {
+    var pdfSlideAction: (() -> Void)? {
+        get { self[PDFSlideActionKey.self] }
+        set { self[PDFSlideActionKey.self] = newValue }
+    }
     var workspaceActions: WorkspaceActions? {
         get { self[WorkspaceActionsKey.self] }
         set { self[WorkspaceActionsKey.self] = newValue }
@@ -19,7 +24,11 @@ extension FocusedValues {
 }
 struct WorkspaceCommands: Commands {
     @FocusedValue(\.workspaceActions) private var actions
+    @FocusedValue(\.pdfSlideAction) private var slideAction
     var body: some Commands {
+        CommandGroup(after: .toolbar) {
+            Button("Slide View") { slideAction?() }.disabled(slideAction == nil)
+        }
         CommandGroup(after: .textEditing) {
             Menu("Find") {
                 Button("Find in Document…") { actions?.find?(.showFindInterface) }.keyboardShortcut("f")

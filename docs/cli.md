@@ -110,7 +110,7 @@ Reference writes use the same transaction service as the native workspace:
 | `reference detach --id UUID --expected-revision UUID --attachment UUID` | Remove an attachment link. Shared bytes remain until unused-file cleanup |
 | `reference trash --id UUID --expected-revision UUID` | Move the record to Reference Trash |
 | `reference restore --id UUID --expected-revision UUID` | Restore the record |
-| `reference regenerate-key --id UUID --expected-revision UUID` | Apply the current citation-key rule |
+| `reference regenerate-key --id UUID --expected-revision UUID` | Apply the current citation-key rule unless the key is locked |
 
 Read `show` immediately before a mutation and supply its revision. A stale revision fails without applying the change. The native workspace reloads external catalogue changes through directory events. Permanent deletion, library creation, merge and network lookup remain native actions. If a write is interrupted, inspect the catalogue before retrying. Import is not idempotent.
 

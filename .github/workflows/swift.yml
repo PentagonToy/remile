@@ -1,0 +1,44 @@
+name: Swift
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'Package.swift'
+      - 'README.md'
+      - 'others/brand/**'
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'tools/check_*.sh'
+      - '.github/workflows/swift.yml'
+  pull_request:
+    paths:
+      - 'Package.swift'
+      - 'README.md'
+      - 'others/brand/**'
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'tools/check_*.sh'
+      - '.github/workflows/swift.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: swift-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: swift --version
+      - name: Build release executable
+        run: swift build --build-system native --scratch-path "$RUNNER_TEMP/remile-build" --jobs 2 -c release --product Remile
+      - name: Standard tests
+        run: swift test --build-system native --scratch-path "$RUNNER_TEMP/remile-tests" --jobs 2
+      - name: Live sync regression checks
+        run: zsh tools/check_overleaf_realtime.sh "$RUNNER_TEMP/remile-live-checks"

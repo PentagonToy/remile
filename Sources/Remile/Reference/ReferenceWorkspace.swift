@@ -349,6 +349,14 @@ struct ReferenceWorkspace: View {
                     Button("Review duplicates…", systemImage: "square.stack") { state.duplicateReview = DuplicateGroup(records: model.records.filter { ids.contains($0.id) }) }
                 }
                 Button("Regenerate citation key", systemImage: "key") { model.regenerate(record) }
+                if chosen.count > 1 {
+                    Button("Lock citation key") { model.setKeyLock(chosen, locked: true) }
+                    Button("Unlock citation key") { model.setKeyLock(chosen, locked: false) }
+                } else {
+                    Button(record.citationKeyLocked == true ? "Unlock citation key" : "Lock citation key") {
+                        model.setKeyLock([record], locked: record.citationKeyLocked != true)
+                    }
+                }
                 Button("Add files…", systemImage: "paperclip") { model.chooseFiles(target: record) }
                 if !record.attachments.isEmpty { Button(record.attachments.count == 1 ? "Remove attachment" : "Remove attachments…", systemImage: "paperclip.badge.ellipsis") { removeAttachments(record) } }
                 Divider()

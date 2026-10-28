@@ -51,6 +51,12 @@ Editing can affect digital signatures. Signed or restricted PDFs show an editing
 
 [Page tools, OCR and signature details](../details/features.md#pdf) · [Find passages across files](search.md)
 
+## Present a PDF as slides
+
+Choose **View → Slide View** to show the current PDF page in full screen. Each page fits the screen, with black space around it when needed.
+
+Click, press Right or Down, or press Space for the next page. Right-click, press Left or Up, or press Shift-Space for the previous page. Press Escape to return to the last page shown in your reader. Your reading zoom, layout and PDF contents stay unchanged.
+
 ## Add a PDF and keep reading
 
 Double-click another PDF in Finder, use the plus beside the last bottom tab, or drop a PDF onto the document. It opens in the same bottom tab group. Opening an already open PDF selects its existing tab.

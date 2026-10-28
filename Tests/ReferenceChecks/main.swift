@@ -1123,3 +1123,75 @@ print("Passed \(checks) Reference checks including edited books")
 
 let expandedColumns = ReferenceColumnWidths.fitted(available: 1800, columns: compactColumns, saved: ["title": 300])
 try check(abs(compactColumns.reduce(130.0) { $0 + (expandedColumns[$1.rawValue] ?? 0) } - 1800) < 0.01 && expandedColumns["publication"]! > 150, "A manual Title width leaves remaining space to automatic metadata columns")
+
+let keyEditRepository = ReferenceRepository(root: root.appendingPathComponent("manual-key-edit"), history: ReferenceRepository.History())
+var keyEditSource = ReferenceRecord(); keyEditSource.fields = ["title": "Manual key fixture", "author": "Example", "year": "2026", "journal": "Fixture journal"]
+let keyEditOriginal = try keyEditRepository.add([keyEditSource])[0]
+var keyEditDraft = keyEditOriginal; keyEditDraft.key = "Chosen_2026"
+let keyEditSaved = try keyEditRepository.update(keyEditDraft, expected: keyEditDraft.revision, renameKey: true)
+try check(keyEditSaved.key == "Chosen_2026" && keyEditSaved.id == keyEditOriginal.id && keyEditSaved.fields == keyEditOriginal.fields, "Explicit key edit preserves identity and metadata")
+try check(try ReferenceRepository(root: root.appendingPathComponent("manual-key-edit")).records()[0].key == "Chosen_2026", "Manual key survives reload")
+for invalidKey in ["", " ", "bad key", "x,y", "x{y"] {
+ var invalid = keyEditSaved; invalid.key = invalidKey
+ rejects("Invalid manual key") { _ = try keyEditRepository.update(invalid, expected: invalid.revision, renameKey: true) }
+}
+var collisionSource = ReferenceRecord(); collisionSource.fields["title"] = "Collision fixture"
+let collisionSaved = try keyEditRepository.add([collisionSource])[0]
+var collisionEdit = collisionSaved; collisionEdit.key = "chosen_2026"
+rejects("Manual key collision ignores case") { _ = try keyEditRepository.update(collisionEdit, expected: collisionEdit.revision, renameKey: true) }
+let typeEdit = ReferenceKind.book.applying(to: keyEditSaved)
+let typeSaved = try keyEditRepository.update(typeEdit, expected: typeEdit.revision)
+try check(typeSaved.type == "book" && typeSaved.key == keyEditSaved.key && typeSaved.fields == keyEditSaved.fields, "Type edit preserves fields and key")
+try keyEditRepository.undo()
+try check(try keyEditRepository.records().first { $0.id == keyEditSaved.id }?.type == keyEditSaved.type, "Type edit supports undo")
+print("Passed \(checks) Reference checks including manual key and type edits")
+let beforeKeyRegeneration = try keyEditRepository.records().first { $0.id == keyEditSaved.id }!
+_ = try keyEditRepository.regenerate(id: beforeKeyRegeneration.id, expected: beforeKeyRegeneration.revision, rule: .current)
+let afterKeyRegeneration = try keyEditRepository.records().first { $0.id == keyEditSaved.id }!
+try check(afterKeyRegeneration.key == ReferenceKeyRule.current.key(for: afterKeyRegeneration) && afterKeyRegeneration.key != "Chosen_2026", "Regeneration replaces a manual key using the current rule")
+print("Passed \(checks) Reference checks including manual key regeneration")
+var lockDraft = afterKeyRegeneration; lockDraft.citationKeyLocked = true
+let lockedKeyRecord = try keyEditRepository.update(lockDraft, expected: lockDraft.revision)
+try check(try ReferenceRepository(root: root.appendingPathComponent("manual-key-edit")).records().first { $0.id == lockedKeyRecord.id }?.citationKeyLocked == true, "Key lock survives reload")
+var lockedManual = lockedKeyRecord; lockedManual.key = "Locked_manual"
+let lockedManualSaved = try keyEditRepository.update(lockedManual, expected: lockedManual.revision, renameKey: true)
+try check(lockedManualSaved.key == "Locked_manual" && lockedManualSaved.citationKeyLocked == true, "Locked key remains manually editable")
+try check(try keyEditRepository.regenerate(id: lockedManualSaved.id, expected: lockedManualSaved.revision, rule: .current) == 0, "Individual regeneration skips locked keys")
+_ = try keyEditRepository.regenerate(rule: .current)
+let afterLockedBatch = try keyEditRepository.records().first { $0.id == lockedManualSaved.id }!
+try check(afterLockedBatch.key == "Locked_manual", "Batch regeneration reserves and preserves locked keys")
+var unlockedDraft = afterLockedBatch; unlockedDraft.citationKeyLocked = false
+let unlockedSaved = try keyEditRepository.update(unlockedDraft, expected: unlockedDraft.revision)
+_ = try keyEditRepository.regenerate(id: unlockedSaved.id, expected: unlockedSaved.revision, rule: .current)
+try check(try keyEditRepository.records().first { $0.id == unlockedSaved.id }?.key != "Locked_manual", "Unlock restores regeneration")
+print("Passed \(checks) Reference checks including key locks")
+let batchInitial = try keyEditRepository.records()
+try keyEditRepository.setKeyLock([batchInitial[0]], locked: true)
+let batchMixed = try keyEditRepository.records()
+try check(batchMixed.filter { $0.citationKeyLocked == true }.count == 1, "Mixed lock fixture")
+try keyEditRepository.setKeyLock(batchMixed, locked: false)
+try check(try keyEditRepository.records().allSatisfy { $0.citationKeyLocked != true }, "Batch unlock handles mixed states")
+try keyEditRepository.undo()
+try check(try keyEditRepository.records().filter { $0.citationKeyLocked == true }.count == 1, "Batch lock change undoes as one operation")
+let batchBeforeLock = try keyEditRepository.records()
+try keyEditRepository.setKeyLock(batchBeforeLock, locked: true)
+let batchAllLocked = try keyEditRepository.records()
+try check(batchAllLocked.allSatisfy { $0.citationKeyLocked == true }, "Batch lock handles mixed states")
+let unchangedLocked = batchBeforeLock.first { $0.citationKeyLocked == true }!
+try check(batchAllLocked.first { $0.id == unchangedLocked.id }?.revision == unchangedLocked.revision, "Already locked record retains its revision")
+rejects("Stale batch lock is rejected atomically") { try keyEditRepository.setKeyLock(batchBeforeLock, locked: false) }
+try check(try keyEditRepository.records() == batchAllLocked, "Failed batch leaves every selection unchanged")
+print("Passed \(checks) Reference checks including mixed batch locks")
+var editorRoundTrip = lockedManualSaved
+editorRoundTrip.fields["abstract"] = "Stored abstract"
+let editorBibTeX = try ReferenceBibTeX.export([editorRoundTrip])
+try check(editorBibTeX.contains("@" + editorRoundTrip.type + "{" + editorRoundTrip.citationKey) && editorBibTeX.contains("Stored abstract"), "Editor BibTeX reflects current fields including abstract")
+let editorDecoded = try ReferenceBibTeX.applying(editorBibTeX, to: editorRoundTrip)
+try check(editorDecoded.id == editorRoundTrip.id && editorDecoded.revision == editorRoundTrip.revision && editorDecoded.citationKeyLocked == true && editorDecoded.attachments == editorRoundTrip.attachments && editorDecoded.library == editorRoundTrip.library, "BibTeX edits preserve record identity, lock and attachment ownership")
+try check(editorDecoded.fields == editorRoundTrip.fields && editorDecoded.key == editorRoundTrip.key, "Details and BibTeX round trip")
+let editorChanged = try ReferenceBibTeX.applying("@book{Changed_key,title={Changed title},editor={Example}}", to: editorRoundTrip)
+try check(editorChanged.key == "Changed_key" && editorChanged.type == "book" && editorChanged.title == "Changed title" && editorChanged.citationKeyLocked == true, "BibTeX edits update key, type and metadata")
+for invalidSource in ["", "@book{x,title={broken}", editorBibTeX + editorBibTeX.replacingOccurrences(of: editorRoundTrip.citationKey, with: "Another_key")] {
+ rejects("Editor rejects invalid or multiple BibTeX entries") { _ = try ReferenceBibTeX.applying(invalidSource, to: editorRoundTrip) }
+}
+print("Passed \(checks) Reference checks including editor BibTeX")

@@ -224,12 +224,28 @@ struct ReferenceRepository: Sendable {
             try append(drafts.map { var record = $0; record.libraryID = destination.parentID ?? destination.id; record.collectionID = destination.parentID == nil ? nil : destination.id; return record }, to: &records)
         }
     }
-    @discardableResult func update(_ replacement: ReferenceRecord, expected: UUID) throws -> ReferenceRecord {
+    @discardableResult func update(_ replacement: ReferenceRecord, expected: UUID, renameKey: Bool = false) throws -> ReferenceRecord {
         try transaction { records in
             guard let index = records.firstIndex(where: { $0.id == replacement.id }), records[index].revision == expected else { throw ReferenceFailure("The reference changed. Open it again before saving.") }
             guard replacement.attachments == records[index].attachments, replacement.trashed == records[index].trashed, replacement.library == records[index].library, replacement.collectionID == records[index].collectionID else { throw ReferenceFailure("Use the attachment or Trash action for this change.") }
-            var record = replacement; record.key = records[index].key; record.revision = UUID(); record.modified = Date()
+            var record = replacement
+            if renameKey {
+                record.key = record.key.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !record.key.isEmpty, ReferenceBibTeX.validToken(record.key) else { throw ReferenceFailure("Enter a valid citation key.") }
+                guard !records.contains(where: { $0.id != record.id && $0.library == record.library && $0.citationKey.lowercased() == record.key.lowercased() }) else { throw ReferenceFailure("This citation key is already in use.") }
+            } else { record.key = records[index].key }
+            record.revision = UUID(); record.modified = Date()
             records[index] = record; return record
+        }
+    }
+    func setKeyLock(_ selected: [ReferenceRecord], locked: Bool) throws {
+        let expected = Dictionary(selected.map { ($0.id, $0.revision) }, uniquingKeysWith: { first, _ in first })
+        try transaction { records in
+            let indices = records.indices.filter { expected[records[$0].id] != nil }
+            guard indices.count == expected.count, indices.allSatisfy({ records[$0].trashed == nil && records[$0].revision == expected[records[$0].id] }) else { throw ReferenceFailure("The references changed. Select them again before saving.") }
+            for index in indices where (records[index].citationKeyLocked == true) != locked {
+                records[index].citationKeyLocked = locked; records[index].revision = UUID(); records[index].modified = Date()
+            }
         }
     }
     @discardableResult func duplicate(_ id: UUID, to libraryID: UUID? = nil) throws -> ReferenceRecord {
@@ -260,7 +276,7 @@ struct ReferenceRepository: Sendable {
             if let id {
                 guard records.contains(where: { $0.id == id && $0.trashed == nil && $0.revision == expected }) else { throw ReferenceFailure("The reference changed. Select it again before regenerating its key.") }
             }
-            let selected = records.indices.filter { records[$0].trashed == nil && (id == nil || records[$0].id == id) && (target == nil || records[$0].library == (target?.parentID ?? target?.id)) && (target?.parentID == nil || records[$0].collectionID == target?.id) && !hidden.contains(records[$0].library) && records[$0].collectionID.map(hidden.contains) != true }.sorted {
+            let selected = records.indices.filter { records[$0].citationKeyLocked != true && records[$0].trashed == nil && (id == nil || records[$0].id == id) && (target == nil || records[$0].library == (target?.parentID ?? target?.id)) && (target?.parentID == nil || records[$0].collectionID == target?.id) && !hidden.contains(records[$0].library) && records[$0].collectionID.map(hidden.contains) != true }.sorted {
                 if records[$0].created != records[$1].created { return records[$0].created < records[$1].created }
                 return records[$0].id.uuidString < records[$1].id.uuidString
             }
