@@ -13,10 +13,10 @@ A local workspace for PDF, Markdown and LaTeX documents.
 
 - **Writer** — Write paged documents, edit supported DOCX content and export a PDF copy.
 - **Markdown** — Write in Edit, read the rendered document, or keep both together in Split.
-- **PDF** — Read, annotate and search across your local PDF library, with matching passages beside the page.
+- **PDF** — Read and annotate PDFs in bottom tabs, present pages in Slide View and find matching passages across your local library.
 - **LaTeX** — Edit multi-file projects, navigate their outline, compile and preview the PDF.
 - **Overleaf** — Start in Live for online editing, or use Private to review local changes before publishing.
-- **Reference** — Organise PDF/BibTeX records, review duplicates and keep citation keys with shared attachments. See [Reference](docs/reference.md).
+- **Reference** — Organise PDF/BibTeX records, review duplicates, edit or lock citation keys and keep shared attachments. See [Reference](docs/reference.md).
 - **AI** — Use Apple Intelligence on your Mac or connect ChatGPT for document questions, [manuscript review](docs/manuscript-review.md), grammar suggestions and reviewed LaTeX repairs.
 
 Convert, compress, combine and export documents when you need to. Suggested source changes stay reviewable and undoable.
@@ -41,7 +41,7 @@ Update with `brew upgrade --cask remile`. The cask installs the app and the `rem
 
 ### Download
 
-Download [remile. 0.2.1 for Apple Silicon](https://github.com/PentagonToy/remile/releases/download/v0.2.1/remile-0.2.1-arm64.dmg), open the DMG and drag **remile.app** into **Applications**. Checksums are included with the [release](https://github.com/PentagonToy/remile/releases/tag/v0.2.1).
+Download [remile. 0.2.2 for Apple Silicon](https://github.com/PentagonToy/remile/releases/download/v0.2.2/remile-0.2.2-arm64.dmg), open the DMG and drag **remile.app** into **Applications**. Checksums are included with the [release](https://github.com/PentagonToy/remile/releases/tag/v0.2.2).
 
 ### Requirements
 
@@ -60,8 +60,6 @@ Download [remile. 0.2.1 for Apple Silicon](https://github.com/PentagonToy/remile
 See [installation and updates](docs/distribution.md) for package details and the optional CLI setup after a DMG install.
 
 ## Development
-
-The source branch includes changes after the latest packaged release, including PDF Slide View, Reference key locks and additional reference types. See [Unreleased changes](CHANGELOG.md#unreleased). Download links above continue to select the published 0.2.1 package.
 
 remile. is a native Swift application with no external Swift package dependencies.
 

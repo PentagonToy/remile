@@ -4,7 +4,7 @@ Open a document and begin. Reading, writing and local search need no account.
 
 ## Install
 
-Download the [Apple Silicon DMG](https://github.com/PentagonToy/remile/releases/download/v0.2.1/remile-0.2.1-arm64.dmg), open it and drag **remile.app** into **Applications**. You need an Apple Silicon Mac with macOS 14 or later.
+Download the [Apple Silicon DMG](https://github.com/PentagonToy/remile/releases/download/v0.2.2/remile-0.2.2-arm64.dmg), open it and drag **remile.app** into **Applications**. You need an Apple Silicon Mac with macOS 14 or later.
 
 The app is Developer ID signed and Apple-notarised. See [installation](distribution.md) for Homebrew and updates.
 
