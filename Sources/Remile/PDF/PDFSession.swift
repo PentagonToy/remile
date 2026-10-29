@@ -580,6 +580,15 @@ final class PDFSession: NSObject, ObservableObject {
         return !document.isLocked && !document.isEncrypted && document.allowsDocumentAssembly
     }
     func pageDragToken(_ page: PDFPage) -> String { "\(pageRevision.uuidString)|\(ObjectIdentifier(page))" }
+    func deleteOverviewPages() {
+        guard let document, canArrangePages else { return }
+        let pages = PDFPageAssembly.pages(document)
+        let remaining = pages.filter { !selectedOverviewPages.contains(ObjectIdentifier($0)) }
+        guard remaining.count < pages.count else { return }
+        guard !remaining.isEmpty else { editingError = "Keep at least one page in the PDF."; return }
+        let next = remaining[min(max(0, currentPage - 1), remaining.count - 1)]
+        applyPageOrder(remaining, selected: next, sources: [], action: pages.count - remaining.count == 1 ? "Delete Page" : "Delete Pages")
+    }
     func selectOverviewPage(_ page: PDFPage) {
         guard let document, page.document === document else { return }
         currentPage = document.index(for: page) + 1

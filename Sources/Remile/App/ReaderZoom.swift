@@ -10,14 +10,9 @@ final class ReaderZoom: ObservableObject {
     private weak var pdf: PDFView?
     private weak var web: WKWebView?
     private var observers: [NSObjectProtocol] = []
-    private var fitting: Bool? // true: width, false: page, nil: manual
-    private struct FitGeometry: Equatable {
-        let viewport: CGSize
-        let page: CGSize
-        let width: Bool
-        let mode: PDFDisplayMode
-    }
-    private var lastFit: FitGeometry?
+    private var fitting: Bool? // Pending one-shot fit until the initial viewport exists.
+    private var layoutObserver: NSObjectProtocol?
+    private var hasAttachedPDF = false
     init(text: Bool = false) {
         let saved = UserDefaults.standard.double(forKey: Self.preference)
         scale = text && saved > 0 ? min(3, max(0.5, saved / 100)) : 1
@@ -26,58 +21,74 @@ final class ReaderZoom: ObservableObject {
     func attach(_ view: PDFView) {
         guard pdf !== view else { return }
         observers.forEach(NotificationCenter.default.removeObserver); observers = []
-        pdf = view; scale = view.scaleFactor; lastFit = nil
-        if fitting == nil { fitting = false }
-        fit(width: fitting ?? false)
+        if let layoutObserver { NotificationCenter.default.removeObserver(layoutObserver); self.layoutObserver = nil }
+        let restoring = hasAttachedPDF && fitting == nil
+        hasAttachedPDF = true; pdf = view
+        if restoring { view.autoScales = false; view.scaleFactor = scale }
+        else { scale = view.scaleFactor; fit(width: fitting ?? false) }
         view.postsFrameChangedNotifications = true
         observers.append(NotificationCenter.default.addObserver(forName: .PDFViewScaleChanged, object: view, queue: .main) { [weak self, weak view] _ in
             Task { @MainActor [weak self, weak view] in
                 guard let self, let view, self.pdf === view else { return }; self.scale = view.scaleFactor
             }
         })
-        for name in [NSView.frameDidChangeNotification, Notification.Name.PDFViewPageChanged] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: view, queue: .main) { [weak self, weak view] _ in
-                let selecting = NSEvent.pressedMouseButtons & 1 != 0
-                Task { @MainActor [weak self, weak view] in
-                    guard let self, let view, self.pdf === view else { return }
-                    self.updateFitForLayout(pageChanged: name == .PDFViewPageChanged, selecting: selecting)
-                }
-            })
+        if fitting != nil {
+            layoutObserver = NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: view, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.updateFitForLayout(pageChanged: false, selecting: false) }
+            }
         }
     }
+
     func attach(_ view: WKWebView) { web = view; view.pageZoom = scale }
     func step(_ direction: CGFloat, fine: Bool = false) { change(scale + direction * (fine ? 0.02 : 0.1)) }
     func change(_ value: CGFloat) {
-        fitting = nil; lastFit = nil; scale = min(5, max(0.25, value))
+        fitting = nil; scale = min(5, max(0.25, value))
+        if let layoutObserver { NotificationCenter.default.removeObserver(layoutObserver); self.layoutObserver = nil }
         if let pdf { pdf.autoScales = false; pdf.scaleFactor = scale }
         web?.pageZoom = scale
     }
-    /// Selection can change PDFKit's current page without a reader navigation action.
+    /// Resizing only completes an initial fit that was requested before layout.
     func updateFitForLayout(pageChanged: Bool, selecting: Bool) {
-        guard let width = fitting, !(pageChanged && selecting) else { return }
-        applyFit(width: width, force: false)
+        guard let width = fitting, !pageChanged, !selecting else { return }
+        applyFit(width: width)
     }
-    func fit(width: Bool) { applyFit(width: width, force: true) }
-    private func applyFit(width: Bool, force: Bool) {
+    func fit(width: Bool) { applyFit(width: width) }
+    private func applyFit(width: Bool) {
         wide = width
-        guard let pdf, let page = pdf.currentPage else { change(1); return }
+        guard let pdf else { change(1); return }
         fitting = width
-        let bounds = page.bounds(for: pdf.displayBox)
-        let rotated = abs(page.rotation % 180) == 90
-        let unitWidth = rotated ? bounds.height : bounds.width
-        let unitHeight = rotated ? bounds.width : bounds.height
-        guard unitWidth > 0, unitHeight > 0, pdf.bounds.width > 32, pdf.bounds.height > 24 else { return }
-        let geometry = FitGeometry(viewport: pdf.bounds.size, page: CGSize(width: unitWidth, height: unitHeight), width: width, mode: pdf.displayMode)
-        guard force || geometry != lastFit else { return }
-        lastFit = geometry
-        let x = max(1, pdf.bounds.width - 32) / unitWidth
-        let y = max(1, pdf.bounds.height - 24) / unitHeight
+        pdf.layoutDocumentView()
+        let clip = pdf.documentView?.enclosingScrollView?.contentView
+        let visible = clip.map { pdf.convert($0.bounds, from: $0) } ?? pdf.bounds
+        let viewport = visible.size
+        guard viewport.width > 32, viewport.height > 24,
+              let page = pdf.page(for: NSPoint(x: visible.midX, y: visible.midY), nearest: true) ?? pdf.currentPage ?? pdf.document?.page(at: 0) else { return }
+        var pages = [page]
+        if (pdf.displayMode == .twoUp || pdf.displayMode == .twoUpContinuous), let document = pdf.document {
+            let index = document.index(for: page)
+            if index != NSNotFound {
+                let start = pdf.displaysAsBook ? (index == 0 ? -1 : 1 + ((index - 1) / 2) * 2) : (index / 2) * 2
+                pages = [start, start + 1].filter { $0 >= 0 && $0 < document.pageCount }.compactMap { document.page(at: $0) }
+            }
+        }
+        let rectangles = pages.map { pdf.convert($0.bounds(for: pdf.displayBox), from: $0) }
+        let spread = rectangles.dropFirst().reduce(rectangles.first ?? .zero) { $0.union($1) }
+        guard pdf.scaleFactor > 0 else { return }
+        let paper = CGSize(width: spread.width / pdf.scaleFactor, height: spread.height / pdf.scaleFactor)
+        guard paper.width > 0, paper.height > 0, viewport.width > 32, viewport.height > 24 else { return }
+        let x = max(1, viewport.width - 32) / paper.width
+        let y = max(1, viewport.height - 24) / paper.height
         let target = min(5, max(0.1, width ? x : min(x, y)))
+        fitting = nil
+        if let layoutObserver { NotificationCenter.default.removeObserver(layoutObserver); self.layoutObserver = nil }
         pdf.autoScales = false
         if abs(pdf.scaleFactor - target) > 0.001 { pdf.scaleFactor = target }
+        pdf.layoutDocumentView()
+        pdf.go(to: page)
         scale = pdf.scaleFactor
     }
-    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+
+    deinit { observers.forEach(NotificationCenter.default.removeObserver); if let layoutObserver { NotificationCenter.default.removeObserver(layoutObserver) } }
 }
 
 struct ReaderZoomControls: View {

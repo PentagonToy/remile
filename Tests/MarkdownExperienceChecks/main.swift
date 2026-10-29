@@ -68,6 +68,9 @@ Task { @MainActor in
     try? await Task.sleep(for: .milliseconds(250))
     verify(view.string == canonical, "Syntax styling does not rewrite source")
     let preview = MarkdownPreviewModel()
+    preview.display(dark: true, scale: 1, wide: false, serif: false)
+    verify(preview.web.isHidden, "Cold preview stays hidden before its first themed document")
+    verify(preview.web.underPageBackgroundColor == RemileStyle.slate, "Dark background is set even before HTML exists")
     let fixture = output.appendingPathComponent("experience.md")
     let source = "# A readable document\n\n한국어 and **emphasis**, $k-\\epsilon$.\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"
     await preview.render(source, url: fixture)
@@ -78,7 +81,7 @@ Task { @MainActor in
     await preview.render(source, url: fixture)
     verify(preview.message == nil && preview.sections.count == 1, "Completed source recovers preview and outline")
     preview.web.frame = NSRect(x: 0, y: 0, width: 760, height: 500)
-    preview.display(dark: false, scale: 1, wide: false, serif: false)
+    preview.display(dark: true, scale: 1, wide: false, serif: false)
     var font: String?
     for _ in 0..<100 {
         try? await Task.sleep(for: .milliseconds(50))
@@ -86,6 +89,11 @@ Task { @MainActor in
         if font == "18px" { break }
     }
     verify(font == "18px", "WebKit loads preview with readable 18px body")
+    verify(!preview.web.isHidden, "Themed document reveals the initial preview")
+    let background = try? await preview.web.evaluateJavaScript("getComputedStyle(document.body).backgroundColor") as? String
+    verify(background == "rgb(32, 44, 53)", "First document paint uses the dark canvas")
+    preview.display(dark: false, scale: 1, wide: false, serif: false)
+    verify(preview.web.underPageBackgroundColor == RemileStyle.paper, "Light native canvas updates without replacing WebKit")
     preview.display(dark: true, scale: 1.5, wide: false, serif: true)
     verify(preview.web.pageZoom == 1.5, "Preview zoom updates persistent WebKit view")
     let start = Date()

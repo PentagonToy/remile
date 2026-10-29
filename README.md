@@ -77,7 +77,7 @@ If Command Line Tools are selected, prefix the command with `DEVELOPER_DIR=/Appl
 
 `Tests/RemileTests` covers CLI argument validation, reference types and Markdown rendering, resource confinement and MathML. It imports the app module directly and uses isolated temporary fixtures. Open `Package.swift` in Xcode to run these XCTest cases there. The existing `tools/check_cli_arguments.sh` and `tools/check_markdown.sh` entry points run the corresponding tests.
 
-The Swift workflow builds the release executable and runs the standard tests and Live sync regression checks on macOS for relevant pushes to `main` or `dev`, and for pull requests. It does not sign, notarise or publish the app. Other focused checks remain in `Tests` and `tools/check_*.sh`. Run the checks for the behaviour you change. The CI selection does not replace the full regression suite or interactive release checks.
+The Swift workflow builds the release executable and runs the standard tests and Live sync regression checks on macOS for relevant pushes to `main` and for pull requests. It does not sign, notarise or publish the app. Other focused checks remain in `Tests` and `tools/check_*.sh`. Run the checks for the behaviour you change. The CI selection does not replace the full regression suite or interactive release checks.
 
 ## Licence and acknowledgements
 

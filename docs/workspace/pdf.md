@@ -8,7 +8,7 @@ Keep the page in view, and leave a few useful marks for later.
 2. Use the page field, thumbnails or outline to move through it.
 3. Open the sidebar to find text, highlights or comments.
 
-New PDFs start with the whole page fitted to the window. Use Fit to return to that view, or choose Fit width from the zoom menu.
+New PDFs start with the whole page fitted to the window. Fit sets the zoom once for the visible page or spread. Opening a sidebar or resizing the window keeps that zoom. Press Fit again to use the new space, or choose Fit width from the zoom menu.
 
 Use the single-rectangle or split-rectangle button to switch between one and two pages. New reading sessions start with one page.
 
@@ -20,7 +20,7 @@ With the PDF focused, Left and Right move between pages. Up and Down keep normal
 
 Choose a highlight, note or drawing tool. Save writes changes to the open file. Undo lets you revisit an edit.
 
-Use the page overview to reorder, rotate or add pages. Export comments from the Comments heading when you want your notes as Markdown or JSON.
+Use the page overview to reorder, rotate or add pages. Right-click a thumbnail to delete that page or the selected pages. Keep at least one page. Undo restores a deletion. Export comments from the Comments heading when you want your notes as Markdown or JSON.
 
 ## Copy an image or table
 

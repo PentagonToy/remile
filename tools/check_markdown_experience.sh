@@ -4,20 +4,13 @@ project_directory="$(cd "$(dirname "$0")/.." && pwd)"
 check_directory="${1:?Provide an absolute output directory under Agents/Repository}"
 case "$check_directory" in /*) ;; *) exit 1 ;; esac
 mkdir -p "$check_directory/module-cache"
-cat "$project_directory/Sources/Remile/App/NetworkAccess.swift" \
-    "$project_directory/Sources/Remile/Assistant/AIConfiguration.swift" \
-    "$project_directory/Sources/Remile/Markdown/MathMarkup.swift" \
-    "$project_directory/Sources/Remile/App/ReaderScrolling.swift" "$project_directory/Sources/Remile/App/ScrollMotion.swift" \
-    "$project_directory/Sources/Remile/App/AnimationPolicy.swift" "$project_directory/Sources/Remile/App/RemileStyle.swift" \
-    "$project_directory/Sources/Remile/Markdown/MarkdownHTML.swift" \
-    "$project_directory/Sources/Remile/Markdown/MarkdownPDF.swift" \
-    "$project_directory/Sources/Remile/Search/SearchMarkdown.swift" \
-    "$project_directory/Sources/Remile/Assistant/ReadableMath.swift" \
-    "$project_directory/Sources/Remile/Markdown/MarkdownEditing.swift" \
-    "$project_directory/Sources/Remile/Markdown/MathCompletion.swift" \
-    "$project_directory/Sources/Remile/Markdown/MarkdownEditor.swift" \
-    "$project_directory/Sources/Remile/Markdown/MarkdownRemoteImages.swift" \
-    "$project_directory/Sources/Remile/Markdown/MarkdownImagePresentation.swift" \
-    "$project_directory/Sources/Remile/Markdown/MarkdownPreview.swift" \
-    "$project_directory/Tests/MarkdownExperienceChecks/main.swift" > "$check_directory/markdown-experience.swift"
+# The editor shares completion, spelling and navigation code with the other workspaces.
+: > "$check_directory/markdown-experience.swift"
+for source_path in "$project_directory"/Sources/Remile/**/*.swift; do
+    [[ "${source_path:t}" == RemileApp.swift ]] && continue
+    cat "$source_path" >> "$check_directory/markdown-experience.swift"
+    printf '\n' >> "$check_directory/markdown-experience.swift"
+done
+cat "$project_directory/Tests/MarkdownExperienceChecks/main.swift" >> "$check_directory/markdown-experience.swift"
+
 swift -module-cache-path "$check_directory/module-cache" "$check_directory/markdown-experience.swift" "$check_directory"

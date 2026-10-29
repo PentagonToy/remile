@@ -2,7 +2,13 @@
 
 ## Unreleased
 
-- Add full-screen PDF Slide View and refine bottom-tab movement, Fit and window navigation.
+- Return to the matching PDF passage when the same Search result is clicked again.
+
+- Keep PDF Fit fixed when panels or window sizes change. Delete selected pages from thumbnail menus with Undo.
+- Fit Reference columns within smaller panes, widen Home navigation hit areas and align library indexing status.
+- Prevent white Markdown preview flashes and smooth LaTeX and Writer entry.
+
+- Add full-screen PDF Slide View and refine bottom-tab movement and window navigation.
 - Edit Reference keys and types, lock keys during regeneration and carry edits between Details and BibTeX. Recognise web, news and report types and use a podium for conference papers.
 - Reduce repeated PDF, search, Reference and Overleaf text-processing work. Harden CLI request cancellation and completion.
 - Add macOS build CI and standard XCTest coverage for CLI validation, Markdown rendering and Reference types.

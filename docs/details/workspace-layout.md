@@ -11,13 +11,13 @@ Pane defaults follow the task rather than one app-wide width. The main work area
 | Search | Results 32%, bounded to 300–460 pt | Reading preview uses the remainder | Ask is optional |
 | Reference | Equal initial side panes, each 20% with a 200–320 pt bound | Wide reference list in the centre | Thumbnail and metadata inspector |
 
-The bounds preserve readable controls at small widths and avoid oversized navigation on large displays. Reference stacks its preview below the list when three readable columns no longer fit. Enabling many reference columns adds horizontal scrolling rather than shrinking text. A person can still resize panes independently. Saved widths are clamped to the destination window when restored.
+The bounds preserve readable controls at small widths and avoid oversized navigation on large displays. Reference stacks its preview below the list when three readable columns no longer fit. Reference columns shrink to readable minimum widths before horizontal scrolling is needed. Saved widths return when space permits. A person can still resize panes independently. Saved widths are clamped to the destination window when restored.
 
 Search keeps the same PDF preview mounted when Ask opens or closes. The split reserves at least 280 pt for the PDF and 260 pt for Ask. Results yield space first in a narrow window. Opening Ask does not reload the PDF or run an AI request.
 
 Each named split remembers its manually adjusted width. Portable settings include these widths. Reopen a workspace after importing a settings file to apply its saved split widths.
 
-Panels and disclosures use a shared short transition. Navigation takes slightly longer. Pointer resizing stays direct. Turn off Animations in General, or use macOS Reduce Motion, to suppress added motion. Decorative clocks stop when their window loses focus or their view closes.
+Panels and disclosures use a shared short transition. Document and Writer entry have a brief transition. Search and Reference open directly. Pointer resizing stays direct. Turn off Animations in General, or use macOS Reduce Motion, to suppress added motion. Decorative clocks stop when their window loses focus or their view closes.
 
 ## Sources
 

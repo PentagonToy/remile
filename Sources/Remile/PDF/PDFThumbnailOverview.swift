@@ -116,15 +116,18 @@ struct PDFPageCollection: NSViewRepresentable {
             guard pages.indices.contains(index), let collection else { return nil }
             let path = IndexPath(item: index, section: 0)
             if !collection.selectionIndexPaths.contains(path) { collection.selectionIndexPaths = [path]; selectionChanged() }
-            let menu = NSMenu()
+            let menu = NSMenu(); menu.autoenablesItems = false
             func add(_ title: String, _ selector: Selector) { let item = NSMenuItem(title: title, action: selector, keyEquivalent: ""); item.target = self; item.isEnabled = session.canArrangePages; menu.addItem(item) }
             add("Rotate Left", #selector(rotateLeft)); add("Rotate Right", #selector(rotateRight))
             menu.addItem(.separator()); add("Insert PDFs…", #selector(insert))
+            menu.addItem(.separator()); add(session.selectedOverviewPages.count > 1 ? "Delete Pages" : "Delete Page", #selector(deletePages))
+            menu.items.last?.isEnabled = session.canArrangePages && session.selectedOverviewPages.count < pages.count
             return menu
         }
         @objc private func rotateLeft() { session.rotateOverviewPages(clockwise: false) }
         @objc private func rotateRight() { session.rotateOverviewPages(clockwise: true) }
         @objc private func insert() { session.choosePDFs(before: pages.first { session.selectedOverviewPages.contains(ObjectIdentifier($0)) }) }
+        @objc private func deletePages() { session.deleteOverviewPages() }
     }
 }
 

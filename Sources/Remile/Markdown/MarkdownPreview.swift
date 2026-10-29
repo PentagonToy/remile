@@ -40,6 +40,7 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
         configuration.userContentController.add(bridge, name: "sourceLocation")
         configuration.userContentController.addUserScript(WKUserScript(source: Self.navigationScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         let web = WKWebView(frame: .zero, configuration: configuration)
+        web.isHidden = true
         web.navigationDelegate = self; web.setAccessibilityLabel("Markdown preview")
         return web
     }()
@@ -71,6 +72,8 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     }
     func display(dark: Bool, scale: CGFloat, wide: Bool, serif: Bool) {
         self.dark = dark; self.scale = scale; self.wide = wide; self.serif = serif
+        let background = dark ? RemileStyle.slate : RemileStyle.paper
+        if web.underPageBackgroundColor != background { web.underPageBackgroundColor = background }
         guard let html else { return }
         if web.pageZoom != scale { web.pageZoom = scale }
         if loadedHTML != html {
@@ -148,6 +151,7 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         loaded = true; style(); ReaderScrolling.configure(webView)
+        webView.isHidden = false
         if loadedHTML != html { display(dark: dark, scale: scale, wide: wide, serif: serif) }
         if let line = requestedLine { requestedLine = nil; reveal(line: line) }
         else if requestedSection != nil { scrollToSection() }
@@ -158,7 +162,7 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
         if action.navigationType == .linkActivated, let url = action.request.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") { if !NetworkAccess.offline { NSWorkspace.shared.open(url) } }
         decisionHandler(.cancel)
     }
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { loadedHTML = ""; loaded = false; appliedCSS = nil; appliedOffline = nil; message = "Preview paused. Switch view to reload it." }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { webView.isHidden = true; loadedHTML = ""; loaded = false; appliedCSS = nil; appliedOffline = nil; message = "Preview paused. Switch view to reload it." }
 }
 
 struct MarkdownPreview: View {
@@ -179,7 +183,7 @@ struct MarkdownPreview: View {
         VStack(spacing: 0) {
             MarkdownCanvas(model: rendering, dark: colorScheme == .dark, scale: scale, wide: wide, serif: serif)
             if let message = rendering.message { Text(message).font(.system(size: 13)).foregroundStyle(.secondary).padding(10) }
-        }.onAppear { rendering.retryRemoteImages() }.onDisappear { rendering.pauseRemoteImages() }
+        }.background(RemileStyle.background).onAppear { rendering.retryRemoteImages() }.onDisappear { rendering.pauseRemoteImages() }
             .task(id: source) { if schedulesRender { await rendering.render(source, url: fileURL ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Untitled.md")) } }
     }
 }
@@ -187,7 +191,10 @@ struct MarkdownPreview: View {
 private struct MarkdownCanvas: NSViewRepresentable {
     @ObservedObject var model: MarkdownPreviewModel
     let dark: Bool; let scale: CGFloat; let wide: Bool; let serif: Bool
-    func makeNSView(context: Context) -> WKWebView { model.web.removeFromSuperview(); return model.web }
+    func makeNSView(context: Context) -> WKWebView {
+        model.display(dark: dark, scale: scale, wide: wide, serif: serif)
+        model.web.removeFromSuperview(); return model.web
+    }
     func updateNSView(_ view: WKWebView, context: Context) { model.display(dark: dark, scale: scale, wide: wide, serif: serif) }
 }
 

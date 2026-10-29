@@ -291,7 +291,7 @@ struct LibrarySearchView: View {
             }
             if model.selectedHit?.isMarkdown == true {
                 SearchMarkdownPreview(hit: model.selectedHit!, query: model.selectedHit?.matchQuery ?? model.query, revision: model.libraryRevision, open: open, citation: activeCitation)
-            } else { SearchPDFPreview(hit: model.selectedHit, query: model.selectedHit?.matchQuery ?? model.query, revision: model.libraryRevision, open: open, citation: activeCitation, askSelection: { context in
+            } else { SearchPDFPreview(hit: model.selectedHit, query: model.selectedHit?.matchQuery ?? model.query, revision: model.libraryRevision, open: open, revealID: model.resultRevealID, citation: activeCitation, askSelection: { context in
                 guard let hit = model.selectedHit else { return }
                 assistant.cancel(); citationState.selectedPassages = context.passages(path: hit.path)
                 if assistant.question.isEmpty { assistant.question = "Explain the selected passage." }
