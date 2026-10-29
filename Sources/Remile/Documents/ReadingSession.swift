@@ -144,6 +144,7 @@ final class ReadingSession: ObservableObject {
 }
 
 struct ReadingShell: View {
+    @AppStorage(AnimationPolicy.preference) private var animations = true
     @ObservedObject var home: HomeModel
     @ObservedObject var reader: ReadingSession
     @ObservedObject private var overleaf: OverleafLibrary
@@ -167,7 +168,7 @@ struct ReadingShell: View {
                     TeXWorkspace(project: project, close: { home.closeTeX() }, title: overleaf.title(for: project.root), projectTags: overleaf.connection(for: project.root).flatMap { overleaf.tags[$0.id] } ?? [], freeOverleaf: overleaf.connection(for: project.root).map { overleaf.isFreeLimited($0) } ?? false, overleafConnection: overleaf.connection(for: project.root), reviewArchiveChanged: { archive in
                         if let connection = overleaf.connection(for: project.root), archive.projectID == connection.projectID { overleaf.comments[connection.id] = archive }
                     }).id(project.identity)
-                }
+                }.modifier(RemileNavigationContent()).transition(.opacity.combined(with: .offset(x: 12)))
             } else if let url = reader.url {
                 DocumentWorkspace(document: $reader.document, fileURL: url, session: reader)
                     .id(url).transition(.opacity.combined(with: .offset(x: 12)))
@@ -186,8 +187,9 @@ struct ReadingShell: View {
                     }
             } else { HomeWorkspace(model: home).transition(.opacity) }
         }
-        .animation(reduceMotion ? nil : RemileMotion.navigation, value: reader.url)
-        .animation(reduceMotion ? nil : RemileMotion.navigation, value: overleaf.browsing)
+        .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: reader.url)
+        .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: overleaf.browsing)
+        .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: home.texProject?.identity)
         .frame(minWidth: 560, minHeight: 450)
         .overlay { if home.opening { ProgressView("Opening document…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
         .toolbar {

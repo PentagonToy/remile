@@ -62,7 +62,7 @@ Edited volumes may have editors rather than a single author. Author / Editor sho
 
 Existing keys remain unchanged when metadata is enriched. Use Regenerate citation key explicitly if you want an editor-based key, then update any manuscript citations that use the old key.
 
-Double-click a metadata value to edit it. Return saves and Escape cancels. Stored abstracts appear last, below the dates, in an Abstract section that starts collapsed. Expand it to read or copy the text. Use Edit reference to change the abstract. BibTeX exports omit abstracts unless enabled in Reference settings. Uncommon imported types and fields remain stored.
+Double-click a metadata value or citation key to edit it. Click Type to choose a reference type. Return saves and Escape cancels. Stored abstracts appear last, below the dates, in an Abstract section that starts collapsed. Expand it to read or copy the text. Use Edit reference to change the abstract. BibTeX exports omit abstracts unless enabled in Reference settings. Uncommon imported types and fields remain stored.
 
 ## Review and Undo
 

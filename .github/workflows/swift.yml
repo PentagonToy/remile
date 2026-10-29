@@ -2,7 +2,7 @@ name: Swift
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
     paths:
       - 'Package.swift'
       - 'README.md'

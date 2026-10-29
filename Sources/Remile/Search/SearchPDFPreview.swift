@@ -182,15 +182,16 @@ struct SearchPDFPreview: View {
     let query: String
     let revision: UUID
     let open: (URL) -> Void
+    var revealID: UUID? = nil
     var citation: AssistantCitation? = nil
     var askSelection: ((PDFSelectionContext) -> Void)? = nil
     @StateObject private var presentation = Presentation()
     private final class Presentation: ObservableObject { @Published var translation: SelectionTranslation? }
     @StateObject private var model = SearchPDFModel()
     @StateObject private var zoom = ReaderZoom()
-    init(hit: LibraryHit?, query: String, revision: UUID, open: @escaping (URL) -> Void, citation: AssistantCitation? = nil,
+    init(hit: LibraryHit?, query: String, revision: UUID, open: @escaping (URL) -> Void, revealID: UUID? = nil, citation: AssistantCitation? = nil,
          askSelection: ((PDFSelectionContext) -> Void)? = nil, editing: SearchPDFModel? = nil) {
-        self.hit = hit; self.query = query; self.revision = revision; self.open = open; self.citation = citation; self.askSelection = askSelection
+        self.hit = hit; self.query = query; self.revision = revision; self.open = open; self.revealID = revealID; self.citation = citation; self.askSelection = askSelection
         _model = StateObject(wrappedValue: editing ?? SearchPDFModel())
     }
     var body: some View {
@@ -229,7 +230,7 @@ struct SearchPDFPreview: View {
                 if model.loading { ProgressView("Loading PDF…").frame(maxWidth: .infinity, maxHeight: .infinity) }
                 else if let error = model.error { ContentUnavailableView(error, systemImage: "exclamationmark.triangle") }
                 else if let document = model.document {
-                    if hit.page > 0 && hit.page <= document.pageCount { SearchPDFCanvas(document: document, page: hit.page, query: query, editing: model, citation: citation, zoom: zoom, selectionActions: selectionActions(hit)) }
+                    if hit.page > 0 && hit.page <= document.pageCount { SearchPDFCanvas(document: document, page: hit.page, query: query, editing: model, revealID: revealID, citation: citation, zoom: zoom, selectionActions: selectionActions(hit)) }
                     else { ContentUnavailableView("Page changed. Update the Library index.", systemImage: "arrow.clockwise") }
                 }
             } else { ContentUnavailableView(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Search your library" : "Select a result", systemImage: "doc.text.magnifyingglass").frame(maxWidth: .infinity, maxHeight: .infinity) }
@@ -258,10 +259,11 @@ struct SearchPDFCanvas: NSViewRepresentable {
     let page: Int
     let query: String
     var editing: SearchPDFModel? = nil
+    var revealID: UUID? = nil
     var citation: AssistantCitation? = nil
     var zoom: ReaderZoom? = nil
     var selectionActions = PDFSelectionActions()
-    @MainActor final class Coordinator { var page = 0; var query = ""; var citationID: UUID?; let highlights = SearchPDFHighlights() }
+    @MainActor final class Coordinator { var page = 0; var query = ""; var citationID: UUID?; var revealID: UUID?; let highlights = SearchPDFHighlights() }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> PDFView {
         let view = PDFSelectionView(); view.selectionActions = selectionActions; editing?.attach(view); view.autoScales = true; view.displayMode = .singlePageContinuous
@@ -271,12 +273,15 @@ struct SearchPDFCanvas: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: PDFView, context: Context) {
+        update(view, coordinator: context.coordinator)
+    }
+    func update(_ view: PDFView, coordinator: Coordinator) {
         (view as? PDFSelectionView)?.selectionActions = selectionActions
-        context.coordinator.highlights.update(query: query, citation: citation)
+        coordinator.highlights.update(query: query, citation: citation)
         let changed = view.document !== document
         if changed { view.document = document }
-        guard changed || context.coordinator.page != page || context.coordinator.query != query || context.coordinator.citationID != citation?.id else { return }
-        context.coordinator.page = page; context.coordinator.query = query; context.coordinator.citationID = citation?.id
+        guard changed || coordinator.page != page || coordinator.query != query || coordinator.citationID != citation?.id || coordinator.revealID != revealID else { return }
+        coordinator.page = page; coordinator.query = query; coordinator.citationID = citation?.id; coordinator.revealID = revealID
         view.highlightedSelections = []
         let destination = changed ? editing?.takeRestoredPage() ?? page : page
         guard let target = document.page(at: destination - 1) else { return }
@@ -285,9 +290,8 @@ struct SearchPDFCanvas: NSViewRepresentable {
         if let first = selections.first { view.go(to: first) }
         view.highlightedSelections = []
         // PDFKit finalises page layout after the representable update.
-        let coordinator = context.coordinator
         DispatchQueue.main.async { [weak view] in
-            guard let view, view.document === document, coordinator.page == page, coordinator.query == query, coordinator.citationID == citation?.id else { return }
+            guard let view, view.document === document, coordinator.page == page, coordinator.query == query, coordinator.citationID == citation?.id, coordinator.revealID == revealID else { return }
             editing?.citationMessage = citation != nil && selections.isEmpty ? "Passage not found on this page." : nil
             view.highlightedSelections = []
             view.setCurrentSelection(nil, animate: false)

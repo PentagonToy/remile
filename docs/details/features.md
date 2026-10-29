@@ -14,7 +14,7 @@ A skippable tour appears on first launch. Replay it with Take a tour in User gui
 
 Use the page field, single/two-page layout or page overview to navigate. The sidebar contains pages, outline, search, highlights and comments. Scan & OCR recognises text with Apple Vision.
 
-Edit PDF provides notes, highlights, freehand drawing, rectangles, ellipses and page controls. A text highlight uses one annotation per page, including selections across inline maths. In page overview, the contextual toolbar offers PDF addition, paper size and rotation of selected pages. Paper size fits all pages. Drag thumbnails to rearrange pages. Drawing and annotation tools appear in the reading view.
+Edit PDF provides notes, highlights, freehand drawing, rectangles, ellipses and page controls. A text highlight uses one annotation per page, including selections across inline maths. In page overview, the contextual toolbar offers PDF addition, paper size and rotation of selected pages. Paper size applies to all pages. Drag thumbnails to rearrange pages, or right-click to delete selected pages. Undo restores deleted pages. Drawing and annotation tools appear in the reading view.
 
 Save writes edits to the open file. Undo restores edits and deleted highlights or comment threads. Export comments as Markdown or JSON from the Comments heading, including authors and replies. Search previews use the same Save/Discard flow for highlights.
 

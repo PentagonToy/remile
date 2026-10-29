@@ -20,6 +20,7 @@ struct HomeWorkspace: View {
                 homeLayout.modifier(RemileNavigationContent()).transition(.identity)
             } else if model.page == .writer, let writer = model.writer {
                 WriterWorkspace(model: writer, goHome: { if model.closeWriter() { model.page = .home } }).navigationTitle(writer.title)
+                    .modifier(RemileNavigationContent()).transition(.opacity.combined(with: .offset(x: 12)))
             } else if model.page == .reference {
                 ReferenceWorkspace(model: model.references, goHome: { navigate(.home) }, openPDF: { url, page in
                     ReaderNavigation.shared.reveal(LibraryHit(path: url.path, folderID: "reference", page: page + 1, excerpt: "", score: 0), query: "")
@@ -31,7 +32,7 @@ struct HomeWorkspace: View {
             }
         }
         .modifier(WelcomeTour(enabled: (loadOnAppear || tourProgress != nil) && model.page == .home && !actions.settings && !model.guidePresented && !model.overleaf.presented, openGuide: { model.guidePresented = true }, progress: tour))
-        .animation(nil, value: model.page)
+        .animation(reduceMotion || !animations || model.page != .writer ? nil : RemileMotion.navigation, value: model.page)
         .background(RemileStyle.background).tint(RemileStyle.accent)
         .frame(minWidth: 560, minHeight: 450)
         .task { if loadOnAppear { await model.load() } }
@@ -60,10 +61,10 @@ struct HomeWorkspace: View {
                     }
                 }.padding(.vertical, 22)
                 SymbolLabel("Home", systemImage: "house").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).background(RemileStyle.accent.opacity(0.17), in: RoundedRectangle(cornerRadius: 9))
-                Button { navigate(.search) } label: { SymbolLabel("Search", systemImage: "magnifyingglass").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("search")
+                Button { navigate(.search) } label: { SymbolLabel("Search", systemImage: "magnifyingglass").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).contentShape(Rectangle()) }.buttonStyle(.plain).tourTarget("search")
                 Button { navigate(.reference) } label: {
                     Label { Text("Reference").fixedSize(horizontal: false, vertical: true) } icon: { SymbolIcon(systemName: "books.vertical") }
-                        .labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11)
+                        .labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).contentShape(Rectangle())
                 }.buttonStyle(.plain).tourTarget("reference")
                 Spacer()
                 Button { actions.settings = true } label: { SymbolLabel("Settings", systemImage: "gearshape").labelStyle(RemileNavigationLabelStyle()).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("settings")

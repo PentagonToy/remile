@@ -22,6 +22,10 @@ struct LibraryManager: View {
                 Button(action: model.addFolder) { SymbolLabel("Add to Library…", systemImage: "folder.badge.plus") }.disabled(model.indexing)
                 if model.indexing { Button("Stop", action: model.cancelIndexing) }
                 else { Button("Update Index") { model.refresh() }.disabled(model.summary.folders.isEmpty) }
+                if !model.indexing, let message = model.message {
+                    SymbolLabel(message, systemImage: "checkmark.circle")
+                        .font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1).remileHelp(message)
+                }
                 Spacer()
                 Text("\(model.summary.documents) documents").font(RemileType.caption).foregroundStyle(.secondary)
             }
@@ -53,8 +57,14 @@ struct LibraryManager: View {
                 if let progress = model.progress, !progress.preparingSearch {
                     ProgressView(value: Double(progress.completed), total: Double(max(1, progress.total)))
                     Text("\(progress.completed) of \(progress.total) · \(progress.name)").font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1)
-                } else { ProgressView(model.progress?.preparingSearch == true ? "Preparing search…" : "Preparing index…").controlSize(.small) }
-            } else if let message = model.message { SymbolLabel(message, systemImage: "checkmark.circle").font(RemileType.caption).foregroundStyle(.secondary) }
+                } else {
+                    HStack(spacing: RemileControl.spacing) {
+                        ProgressView().controlSize(.small)
+                        Text(model.progress?.preparingSearch == true ? "Preparing search…" : "Preparing index…")
+                            .font(RemileType.caption).foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
             if model.summary.needsOCR > 0 || model.summary.failed > 0 {
                 Text(coverageSummary).font(RemileType.caption).foregroundStyle(.secondary)
             }

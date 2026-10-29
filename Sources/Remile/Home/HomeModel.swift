@@ -20,6 +20,7 @@ final class HomeModel: ObservableObject {
     @Published var query = ""
     @Published var results: [LibraryHit] = [] { didSet { groupedResults = nil; rankedResults = nil } }
     @Published var selectedHit: LibraryHit?
+    @Published private(set) var resultRevealID = UUID()
     @Published var documentFilter = "" { didSet { groupedResults = nil; rankedResults = nil } }
     @Published var expandedDocuments = Set<String>()
     private var groupedResults: [SearchResultGroup]?
@@ -268,6 +269,7 @@ final class HomeModel: ObservableObject {
     func selectResult(_ hit: LibraryHit?) {
         if selectedHit?.path != hit?.path, !pdfSearchEditing.confirmLeaving() { return }
         selectedHit = hit
+        resultRevealID = UUID()
         if let hit { expandedDocuments.insert(hit.path) }
     }
     func filterDocuments() {
