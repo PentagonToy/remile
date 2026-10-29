@@ -1082,7 +1082,7 @@ let compactColumns = ReferenceColumn.visible(ReferenceColumn.defaults)
 let compactWidths = ReferenceColumnWidths.fitted(available: 666, columns: compactColumns, saved: [:])
 try check(compactColumns.reduce(130.0) { $0 + (compactWidths[$1.rawValue] ?? 0) } <= 666.01, "Default columns fit a normal three-pane Reference workspace")
 let manualWidths = ReferenceColumnWidths.fitted(available: 500, columns: compactColumns, saved: ["title": 430, "publication": 240])
-try check(manualWidths["title"] == 430 && manualWidths["publication"] == 240, "Compact layout preserves explicit user column widths")
+try check(manualWidths["title"] == 180 && manualWidths["publication"] == 120, "Below the minimum readable width, manual columns stop at readable floors")
 let wideWidths = ReferenceColumnWidths.fitted(available: 1200, columns: compactColumns, saved: [:])
 try check(wideWidths["publication"] == ReferenceColumn.publication.width && wideWidths["title"]! > compactWidths["title"]!, "Wide layouts restore full automatic column widths")
 

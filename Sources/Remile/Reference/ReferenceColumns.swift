@@ -72,7 +72,7 @@ struct ReferenceSort {
 
 enum ReferenceColumnWidths {
     static let preference = "reference.columnWidths"
-    /// Fit automatic columns first. Explicit user widths retain horizontal scrolling.
+    /// Keep saved widths when space permits, compressing to readable floors on narrow panes.
     static func fitted(available: Double, columns: [ReferenceColumn], saved: [String: Double]) -> [String: Double] {
         let overhead = Double(80 + columns.count * 10)
         let floors: [ReferenceColumn: Double] = [.title: 180, .author: 88, .publication: 120, .year: 44, .publisher: 100, .key: 100, .type: 72, .added: 88]
@@ -98,6 +98,18 @@ enum ReferenceColumnWidths {
             if weights > 0 {
                 for column in growers { result[column.rawValue, default: column.width] += spare * (column == .author ? 1 : 2) / weights }
             } else { result["title", default: 180] += spare }
+        }
+        let desired = columns.reduce(0.0) { $0 + (result[$1.rawValue] ?? $1.width) }
+        if desired + overhead > available {
+            let lower = columns.reduce(into: [String: Double]()) { values, column in
+                values[column.rawValue] = min(result[column.rawValue] ?? column.width, floors[column] ?? 80)
+            }
+            let minimum = lower.values.reduce(0, +)
+            let scale = desired > minimum ? max(0, min(1, (available - overhead - minimum) / (desired - minimum))) : 0
+            for column in columns {
+                let floor = lower[column.rawValue]!
+                result[column.rawValue] = floor + ((result[column.rawValue] ?? column.width) - floor) * scale
+            }
         }
         return result
     }

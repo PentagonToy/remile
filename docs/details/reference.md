@@ -54,7 +54,7 @@ Command-click selects several rows and Shift-click selects a range. Row context 
 
 Title, Author / Editor, Journal / Publisher, Year and Type are visible by default. Click a heading to sort ascending, then again to reverse. Text uses natural alphabetical order and years use numeric order. Empty values stay last. Drag a heading's right edge to resize it. Widths and visible columns are remembered and included in presets. Title stays visible and starts widest.
 
-Automatic columns share the available space while keeping your manual widths. Double-click a column boundary to return that column to automatic sizing. Reference settings → Reset widths restores automatic sizing for every column.
+Columns share the available space. Saved widths return when the pane is wide enough. On smaller panes, columns shrink to readable minimums before horizontal scrolling is needed. Double-click a column boundary to return that column to automatic sizing. Reference settings → Reset widths restores automatic sizing for every column.
 
 Settings below the sidebar artwork controls columns, citation keys and abstract export. Keys use the first author's surname, or the first editor's surname when no author is recorded, followed by the year and one or two title words. Missing contributors use `Reference`, missing years use `nd`, and collisions receive numeric suffixes. Changing the rule affects new records. Regenerating stored keys can require changes to manuscript citations.
 

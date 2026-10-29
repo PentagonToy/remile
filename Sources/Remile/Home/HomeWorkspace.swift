@@ -17,21 +17,21 @@ struct HomeWorkspace: View {
     var body: some View {
         ZStack {
             if model.page == .home {
-                homeLayout.modifier(RemileNavigationContent()).transition(.opacity.combined(with: .offset(x: -16)))
+                homeLayout.modifier(RemileNavigationContent()).transition(.identity)
             } else if model.page == .writer, let writer = model.writer {
                 WriterWorkspace(model: writer, goHome: { if model.closeWriter() { model.page = .home } }).navigationTitle(writer.title)
             } else if model.page == .reference {
                 ReferenceWorkspace(model: model.references, goHome: { navigate(.home) }, openPDF: { url, page in
                     ReaderNavigation.shared.reveal(LibraryHit(path: url.path, folderID: "reference", page: page + 1, excerpt: "", score: 0), query: "")
                     model.open(url)
-                }).modifier(RemileNavigationContent()).transition(.opacity)
+                }).modifier(RemileNavigationContent()).transition(.identity)
             } else {
                 LibrarySearchView(model: model, open: open, goHome: { navigate(.home) })
-                    .transition(.opacity.combined(with: .offset(x: 16)))
+                    .transition(.identity)
             }
         }
         .modifier(WelcomeTour(enabled: (loadOnAppear || tourProgress != nil) && model.page == .home && !actions.settings && !model.guidePresented && !model.overleaf.presented, openGuide: { model.guidePresented = true }, progress: tour))
-        .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: model.page)
+        .animation(nil, value: model.page)
         .background(RemileStyle.background).tint(RemileStyle.accent)
         .frame(minWidth: 560, minHeight: 450)
         .task { if loadOnAppear { await model.load() } }
