@@ -66,10 +66,6 @@
       "bundle": "Brand/remile_airplane_light.svg"
     },
     {
-      "source": "symbols/integrations/overleaf-mark.svg",
-      "bundle": "Brand/overleaf-mark.svg"
-    },
-    {
       "source": "symbols/providers/chatgpt.svg",
       "bundle": "Brand/chatgpt.svg"
     },

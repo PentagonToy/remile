@@ -32,8 +32,8 @@ struct ReferenceEditor: View {
                     else { LabeledContent("Citation key", value: ReferenceKeyRule.current.key(for: state.draft)).font(RemileType.caption) }
                     TextField("Journal / book", text: field("journal"))
                     DisclosureGroup("Publication details") {
-                        ForEach(["publisher", "booktitle", "editor", "date", "volume", "number", "pages", "edition", "series", "address", "institution", "organization"], id: \.self) { name in
-                            TextField(["number": "Issue", "booktitle": "Book / proceedings", "address": "Place", "organization": "Organisation" ][name] ?? name.capitalized, text: field(name))
+                        ForEach(["publisher", "booktitle", "editor", "date", "volume", "number", "pages", "edition", "series", "address", "school", "institution", "organization"], id: \.self) { name in
+                            TextField(["number": "Issue", "booktitle": "Book / proceedings", "address": "Place", "organization": "Organisation", "school": "University" ][name] ?? name.capitalized, text: field(name))
                         }
                     }
                     DisclosureGroup("Identifiers and details") {

@@ -10,6 +10,8 @@ enum ReferencePDFMetadata {
         if let author = attributes[PDFDocumentAttribute.authorAttribute] as? String, useful(author) { fields["author"] = compact(author) }
         if let page = pdf.page(at: 0) {
             let text = String((page.string ?? "").prefix(40_000))
+            let journal = journalHeader(in: text)
+            if let title = fields["title"], placeholderTitle(title, journal: journal) { fields.removeValue(forKey: "title") }
             let expression = try! NSRegularExpression(pattern: #"10\.[0-9]{4,9}/[-._;()/:A-Z0-9]+"#, options: [.caseInsensitive])
             let values = Set(expression.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match -> String? in
                 guard let range = Range(match.range, in: text) else { return nil }
@@ -19,9 +21,14 @@ enum ReferencePDFMetadata {
             })
             if values.count == 1 { fields["doi"] = values.first }
             if let id = arxivID(in: text) { fields["eprint"] = id; fields["archiveprefix"] = "arXiv"; fields["url"] = "https://arxiv.org/abs/" + id; fields["entrysubtype"] = "preprint" }
-            if fields["title"] == nil, let title = prominentTitle(page) { fields["title"] = title }
+            if fields["title"] == nil, let title = prominentTitle(page, journal: journal) { fields["title"] = title }
         }
-        if fields["title"] == nil { fields["title"] = fallback }
+        var cover = ""
+        for index in 0..<min(3, pdf.pageCount) {
+            if let text = pdf.page(at: index)?.string { cover += String(text.prefix(6000)) + "\n" }
+        }
+        if let kind = degree(in: cover) { fields["type"] = kind == .mastersThesis ? "Master's thesis" : "PhD dissertation" }
+        if fields["title"] == nil { fields["title"] = fallback.lowercased().hasSuffix(".pdf") ? String(fallback.dropLast(4)) : fallback }
         return fields
     }
     static func arxivID(in text: String) -> String? {
@@ -31,13 +38,38 @@ enum ReferencePDFMetadata {
         let bases = Set(ids.map { $0.replacingOccurrences(of: #"v[0-9]+$"#, with: "", options: .regularExpression) })
         return bases.count == 1 ? ids.first : nil
     }
-    static func placeholderTitle(_ text: String) -> Bool { !useful(text) }
+    static func placeholderTitle(_ text: String, journal: String? = nil) -> Bool {
+        if !useful(text) { return true }
+        guard let journal else { return false }
+        let title = compact(text).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+        let publication = compact(journal).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+        return !publication.isEmpty && title == publication
+    }
+    static func degree(in text: String) -> ReferenceKind? {
+        var cover = String(text.prefix(18_000))
+        if let body = cover.range(of: #"(?im)^\s*(?:abstract|introduction|references)\s*$"#, options: .regularExpression) {
+            cover = String(cover[..<body.lowerBound])
+        }
+        let context = #"(?:(?:thesis|dissertation)[\s\S]{0,80}(?:submitted|presented)|to\s+obtain\s+(?:the\s+)?degree|fulfil+ment\s+of)[\s\S]{0,180}"#
+        let doctorate = cover.range(of: context + #"(?:doctor of philosophy|doctoral (?:thesis|dissertation)|ph\.?\s*d\.?)"#, options: [.regularExpression, .caseInsensitive]) != nil
+        let masters = cover.range(of: context + #"master(?:['’]?s)?\s+(?:of\s+(?:science|arts|engineering)|thesis)"#, options: [.regularExpression, .caseInsensitive]) != nil
+        guard doctorate != masters else { return nil }
+        return doctorate ? .doctoralThesis : .mastersThesis
+    }
+    private static func journalHeader(in text: String) -> String? {
+        let lines = text.components(separatedBy: .newlines).prefix(30).map(compact).filter { !$0.isEmpty }
+        guard let index = lines.firstIndex(where: { $0.lowercased().contains("journal homepage") }), index > 0 else { return nil }
+        let header = lines[index - 1]
+        return header.count >= 6 && header.count <= 120 ? header : nil
+    }
     private static func compact(_ value: String) -> String { value.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
     private static func useful(_ value: String) -> Bool {
         let value = compact(value)
+        // Publisher production IDs are not bibliographic titles.
+        if value.range(of: #"^[A-Z]{2,12}[_-][0-9]{5,}[0-9 ._-]*$"#, options: [.regularExpression, .caseInsensitive]) != nil { return false }
         return !value.lowercased().hasPrefix("arxiv:") && !value.lowercased().hasPrefix("arxiv ") && !value.lowercased().contains("arxiv.org/") && !value.isEmpty && value.count < 600 && !["untitled", "untitled reference", "unknown", "author", "title", "user"].contains(value.lowercased()) && !value.lowercased().hasPrefix("microsoft word") && !value.lowercased().hasSuffix(".pdf") && !value.lowercased().hasSuffix(".docx")
     }
-    private static func prominentTitle(_ page: PDFPage) -> String? {
+    private static func prominentTitle(_ page: PDFPage, journal: String?) -> String? {
         guard let attributed = page.attributedString, attributed.length <= 200_000 else { return nil }
         let text = attributed.string as NSString
         var lines: [(text: String, size: CGFloat)] = []
@@ -45,7 +77,9 @@ enum ReferencePDFMetadata {
             guard lines.count < 70 else { stop.pointee = true; return }
             let value = compact(value ?? "")
             if value.lowercased().hasPrefix("abstract") { stop.pointee = true; return }
-            guard !value.isEmpty else { return }
+            guard !value.isEmpty, !placeholderTitle(value, journal: journal),
+                !value.lowercased().contains("contents lists available"),
+                !value.lowercased().contains("journal homepage") else { return }
             var size: CGFloat = 0
             attributed.enumerateAttribute(.font, in: range) { font, _, _ in size = max(size, (font as? NSFont)?.pointSize ?? 0) }
             lines.append((value, size))

@@ -19,6 +19,9 @@ import Network
     @Published private(set) var tags: [UUID: [OverleafWebClient.Tag]] = [:]
     @Published private(set) var unavailableTags = Set<UUID>()
     @Published var importSize = CGSize(width: 986, height: 600)
+    @Published var connectionNoticePresented = false
+    private var pendingConnection: (() -> Void)?
+    private var proceedAfterNotice = false
     @Published var presented = false
     @Published var browsing = false
     @Published private(set) var tagSignInProfile: UUID?
@@ -42,7 +45,9 @@ import Network
     private var probing = false
     var syncRevision = 0
     let directory: URL
-    init(directory: URL? = nil) {
+    private let connectionNoticeDefaults: UserDefaults
+    init(directory: URL? = nil, connectionNoticeDefaults: UserDefaults = .standard) {
+        self.connectionNoticeDefaults = connectionNoticeDefaults
         self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app/Overleaf")
         do { try OverleafAccountEdit.recover(under: self.directory) } catch { self.error = error.localizedDescription }
         if let data = try? Data(contentsOf: self.directory.appendingPathComponent("projects.json")), let saved = try? JSONDecoder().decode([OverleafConnection].self, from: data) { projects = saved }
@@ -99,7 +104,30 @@ import Network
     func connection(for root: URL) -> OverleafConnection? { projects.first { self.root($0).standardizedFileURL.path == root.standardizedFileURL.path } }
     func savedAccount(_ label: String) -> OverleafConnection? { projects.first { $0.account == label.trimmingCharacters(in: .whitespacesAndNewlines) } }
     func account(_ label: String) -> Account? { accounts.first { $0.name == label.trimmingCharacters(in: .whitespacesAndNewlines) } }
+    func requestConnection(_ action: @escaping () -> Void) {
+        guard OverleafConnectionNotice.accepted(in: connectionNoticeDefaults) else {
+            pendingConnection = action
+            proceedAfterNotice = false
+            connectionNoticePresented = true
+            return
+        }
+        action()
+    }
+    func respondToConnectionNotice(agree: Bool) {
+        if agree { connectionNoticeDefaults.set(OverleafConnectionNotice.version, forKey: OverleafConnectionNotice.key) }
+        proceedAfterNotice = agree
+        connectionNoticePresented = false
+    }
+    func finishConnectionNotice() {
+        let action = proceedAfterNotice ? pendingConnection : nil
+        pendingConnection = nil
+        proceedAfterNotice = false
+        action?()
+    }
     func openLibrary(add: Bool = false, from window: NSWindow? = nil) {
+        requestConnection { [weak self] in self?.showLibrary(add: add, from: window) }
+    }
+    private func showLibrary(add: Bool, from window: NSWindow?) {
         if add, let window = window ?? NSApp.keyWindow ?? NSApp.mainWindow {
             let parent = window.sheetParent ?? window
             importSize = OverleafImportSizing.fit(parent: parent.contentLayoutRect.size, screen: parent.screen?.visibleFrame.size ?? parent.frame.size)

@@ -12,6 +12,8 @@ enum ReferenceCitation {
         let commentsOnly = source.components(separatedBy: .newlines).allSatisfy { line in let text = line.trimmingCharacters(in: .whitespaces); return text.isEmpty || text.hasPrefix("%") }
         let existing = commentsOnly ? [] : try ReferenceBibTeX.parse(source)
         if let match = existing.first(where: { $0.citationKey == record.citationKey }) {
+            if let identity = record.fields["zoterosource"], !identity.isEmpty, match.fields["zoterosource"] == identity { return source }
+
             guard try ReferenceExport.bibtex([match]) == entry else { throw ReferenceFailure("This citation key already has different details. Existing entries were kept.") }
             return source
         }

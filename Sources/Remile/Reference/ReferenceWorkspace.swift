@@ -10,6 +10,10 @@ struct ReferenceWorkspace: View {
     let goHome: () -> Void
     var openPDF: (URL, Int) -> Void = { _, _ in }
     @StateObject private var state = Presentation()
+    @StateObject private var remarkable = RemarkableExtensionModel()
+    @StateObject private var zotero = ZoteroExtensionModel()
+    @State private var showRemarkable = false
+    @AppStorage(RemarkableExtensionAccess.enabledKey) private var remarkableEnabled = false
     private final class Presentation: ObservableObject {
         @Published var paneReset = UUID()
         @Published var editor: Entry?
@@ -38,12 +42,14 @@ struct ReferenceWorkspace: View {
         @Published var duplicateReview: DuplicateGroup?
         @Published var parentLibrary: UUID?
         @Published var emptyTrash = false
+        @Published var connectingLibrary: ReferenceLibrary?
     }
     @FocusState private var namingLibrary: Bool
     @AppStorage(ReferenceColumnWidths.preference) private var savedWidths = "{}"
     @AppStorage(ReferenceColumn.preference) private var columnSource = ReferenceColumn.defaults
     @AppStorage("reference.libraryExpanded") private var libraryExpanded = true
     @AppStorage("reference.libraryExpanded.defaultOpen") private var libraryDefaultApplied = false
+    @AppStorage("reference.zoteroExpanded") private var zoteroExpanded = true
     @AppStorage("reference.harbourExpanded") private var harbourExpanded = true
     private struct Entry: Identifiable { let id = UUID(); var record: ReferenceRecord?; var citation = "" }
     private struct DuplicateGroup: Identifiable { let id = UUID(); let records: [ReferenceRecord] }
@@ -53,6 +59,9 @@ struct ReferenceWorkspace: View {
             Text("Reference").font(RemileType.heading)
             Spacer()
             Menu {
+                if model.libraries.first(where: { $0.id == model.selectedLibrary })?.source == "remarkable" {
+                    Button("Choose reMarkable folders…") { showRemarkable = true }.disabled(!remarkableEnabled)
+                }
                 Button("Find a paper…") { model.error = nil; state.paperTarget = nil; state.paperSearch = true }
                 Button("Import files…") { model.chooseFiles() }
                 Button("Add manually…") { model.error = nil; state.editor = Entry() }
@@ -88,7 +97,18 @@ struct ReferenceWorkspace: View {
                     Button("Cancel") { model.cancelRecognition() }
                 }.padding(8).background(RemileStyle.editorBar)
             }
+            if remarkable.busy || zotero.busy {
+                HStack(spacing: RemileControl.spacing) {
+                    ProgressView().controlSize(.small)
+                    Text(remarkable.busy ? remarkable.phase : zotero.phase).font(RemileType.caption)
+                    Spacer()
+                    Button("Cancel") { remarkable.cancel(); zotero.cancel() }
+                }.padding(8).background(RemileStyle.editorBar)
+            }
             if model.busy { ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(8) }
+            if let notice = model.notice {
+                HStack { Text(notice).font(RemileType.caption); Spacer(); Button("Dismiss") { model.notice = nil } }.padding(10)
+            }
             if let error = model.error {
                 HStack { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).textSelection(.enabled); Spacer(); Button { model.error = nil } label: { SymbolIcon(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss message") }.padding(10).background(RemileStyle.editorBar)
             }
@@ -97,6 +117,14 @@ struct ReferenceWorkspace: View {
             .overlay(Color.black.opacity(draggingFiles ? 0.10 : 0).allowsHitTesting(false))
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: draggingFiles)
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: $state.windowTarget) { receive($0) }
+            .onChange(of: remarkable.error) { _, error in
+                if !showRemarkable, let error {
+                    model.error = error
+                    if !remarkable.connected { showRemarkable = true }
+                }
+            }
+            .onChange(of: zotero.error) { _, error in if let error { model.error = error } }
+            .onDisappear { remarkable.leave(); zotero.leave() }
             .onChange(of: savedWidths) { state.widths = ReferenceColumnWidths.decode(savedWidths) }
             .onAppear { ReferenceColumn.applyDefaults(); if !libraryDefaultApplied { libraryExpanded = true; libraryDefaultApplied = true } }
             .task(id: state.storageID) { await model.watch() }
@@ -117,6 +145,10 @@ struct ReferenceWorkspace: View {
                 Button("Cancel", role: .cancel) { }
                 Button("Empty Trash", role: .destructive) { model.emptyTrash() }
             } message: { Text("Permanently delete all references, libraries and collections in Trash? Their metadata and unshared PDFs cannot be recovered. PDFs used by active references stay in place.") }
+            .sheet(isPresented: $showRemarkable) {
+                RemarkableConnection(model: remarkable, references: model, showReference: { showRemarkable = false })
+            }
+            .sheet(item: $state.connectingLibrary) { library in ReferenceLinkReview(model: model, library: library) }
             .sheet(item: $state.attachments) { record in ReferenceAttachments(model: model, recordID: record.id) }
             .sheet(item: $state.evidence) { record in ReferenceEvidenceView(record: record) }
             .sheet(isPresented: $state.paperSearch) { ReferencePaperSearch(model: model, target: state.paperTarget) }
@@ -159,7 +191,7 @@ struct ReferenceWorkspace: View {
     }
     private func receive(_ providers: [NSItemProvider], target: ReferenceRecord? = nil, pdfOnly: Bool = false) -> Bool {
         guard !model.busy, !model.showingTrash, target?.trashed == nil else { return false }
-        let library = model.selectedLibrary
+        let library = model.destinationLibrary
         state.windowTarget = false; state.dropTarget = false; state.hoveredRecord = nil; state.harbourTarget = false; state.previewTarget = false
         HomeFileDrop.receive(providers) { urls in
             guard !pdfOnly || (!urls.isEmpty && urls.allSatisfy({ $0.pathExtension.lowercased() == "pdf" })) else { model.error = "Drop PDFs here. Use Add to import BibTeX."; return }
@@ -191,13 +223,38 @@ struct ReferenceWorkspace: View {
             VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    DisclosureGroup("Library", isExpanded: $libraryExpanded) {
-                        ForEach(model.activeLibraries.filter { $0.parentID == nil }) { library in
+                    VStack(alignment: .leading, spacing: 8) {
+                        DisclosureGroup("Libraries", isExpanded: $libraryExpanded) {
+                            Button { model.selectLibrary(ReferenceLibrary.allID) } label: {
+                                HStack {
+                                    SymbolLabel("All references", systemImage: "books.vertical")
+                                    Spacer()
+                                    Text(String(model.allRecords.count)).font(RemileType.caption).foregroundStyle(.secondary)
+                                }.padding(10).background(model.selectedLibrary == ReferenceLibrary.allID && !model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                            }.buttonStyle(.plain)
+                            ForEach(model.activeLibraries.filter { $0.parentID == nil && $0.source != "remarkable" && $0.source?.hasPrefix("zotero-import:") != true }) { library in
+                                libraryRow(library)
+                                ForEach(model.activeLibraries.filter { $0.parentID == library.id }) { collection in libraryRow(collection).padding(.leading, 18) }
+                                if state.addingLibrary && state.parentLibrary == library.id { libraryNameField.padding(.leading, 18) }
+                            }
+                            if state.addingLibrary && state.parentLibrary == nil { libraryNameField }
+                        }.contextMenu {
+                            Button("Add library…", systemImage: "folder.badge.plus") { addLibrary() }
+                        }
+                        ForEach(model.activeLibraries.filter { $0.parentID == nil && $0.source == "remarkable" }) { library in
                             libraryRow(library)
                             ForEach(model.activeLibraries.filter { $0.parentID == library.id }) { collection in libraryRow(collection).padding(.leading, 18) }
                             if state.addingLibrary && state.parentLibrary == library.id { libraryNameField.padding(.leading, 18) }
                         }
-                        if state.addingLibrary && state.parentLibrary == nil { libraryNameField }
+                        if model.activeLibraries.contains(where: { $0.source?.hasPrefix("zotero-import:") == true }) {
+                            DisclosureGroup("Zotero", isExpanded: $zoteroExpanded) {
+                                ForEach(model.activeLibraries.filter { $0.parentID == nil && $0.source?.hasPrefix("zotero-import:") == true }) { library in
+                                    libraryRow(library)
+                                    ForEach(model.activeLibraries.filter { $0.parentID == library.id }) { collection in libraryRow(collection).padding(.leading, 18) }
+                                    if state.addingLibrary && state.parentLibrary == library.id { libraryNameField.padding(.leading, 18) }
+                                }
+                            }
+                        }
                         Button { model.showingTrash = true; model.selected = model.items.first?.id; model.selectedIDs = Set([model.selected].compactMap { $0 }) } label: {
                             HStack { SymbolLabel("Trash", systemImage: "trash"); Spacer(); Text(String(model.trashRecords.count)).foregroundStyle(.secondary) }.padding(10).background(model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
                         }.buttonStyle(.plain).contextMenu {
@@ -255,7 +312,7 @@ struct ReferenceWorkspace: View {
         return Group {
         if state.renamingLibrary?.id == library.id { libraryNameField }
         else { Button { model.selectLibrary(library.id) } label: {
-            HStack { SymbolLabel(library.name, systemImage: library.parentID == nil ? "tray.full" : "folder").lineLimit(1); Spacer(minLength: 2); Text(String(count)).font(RemileType.caption).foregroundStyle(.secondary) }
+            HStack { SymbolLabel(library.name, systemImage: library.source == "remarkable" ? "scribble.variable" : (library.parentID == nil ? "tray.full" : "folder")).lineLimit(1); Spacer(minLength: 2); Text(String(count)).font(RemileType.caption).foregroundStyle(.secondary) }
                 .padding(10).background(model.selectedLibrary == library.id && !model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain).accessibilityAction(named: "Rename") { renameLibrary(library) }
         }
@@ -265,6 +322,16 @@ struct ReferenceWorkspace: View {
             if library.parentID == nil { Button("Add collection…", systemImage: "folder.badge.plus") { addLibrary(parent: library.id) } }
             Button("Rename…", systemImage: "square.and.pencil") { renameLibrary(library) }
             Divider()
+            if library.source == "remarkable" {
+                Button("Update library") { remarkable.updateLibrary(library, python: RemarkableRuntime.python, to: model) }.disabled((records.isEmpty && library.remarkableFolders?.isEmpty != false) || library.remarkableFolders?.isEmpty == true || remarkable.busy || zotero.busy || !remarkableEnabled)
+                Button("Choose folders…") { showRemarkable = true }.disabled(!remarkableEnabled || remarkable.busy)
+                if library.remarkableFolders?.isEmpty == false {
+                    Button("Disconnect folders") { model.connectRemarkableFolders([]) }
+                }
+                Button("Connect to Libraries…") { state.connectingLibrary = library }.disabled(records.isEmpty)
+            } else if library.importedZoteroScope != nil {
+                Button("Update library") { zotero.updateLibrary(library, to: model) }.disabled(zotero.busy || remarkable.busy)
+            }
             Button("Copy library as BibTeX", systemImage: "doc.on.clipboard") { model.copy(records) }.disabled(records.isEmpty)
             Button("Export library as BibTeX…", systemImage: "square.and.arrow.up") { model.export(records) }.disabled(records.isEmpty)
             Divider()
@@ -373,7 +440,15 @@ struct ReferenceWorkspace: View {
         ForEach(columns) { column in
             let fitted = widths[column.rawValue] ?? column.width
             Group {
-                if let record { Text(column.displayedValue(record)).foregroundStyle(column == .title ? RemileStyle.ink : .secondary) }
+                if let record {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(column.displayedValue(record)).foregroundStyle(column == .title ? RemileStyle.ink : .secondary)
+                        if column == .title, model.selectedLibrary == ReferenceLibrary.allID {
+                            Text(model.libraries.first(where: { $0.id == record.library })?.name ?? "")
+                                .font(RemileType.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 else {
                     Button { model.sort(by: column) } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 4) {

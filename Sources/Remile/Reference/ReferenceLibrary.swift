@@ -1,18 +1,40 @@
 import Foundation
 
 struct ReferenceLibrary: Codable, Identifiable, Equatable, Sendable {
+    static let allID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
     static let primaryID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
     static let primary = Self(id: primaryID, name: "My library")
     var id: UUID = UUID()
     var name: String
     var parentID: UUID?
     var trashed: Date?
+    var source: String? = nil
+    var zoteroScope: ZoteroScope? = nil
+    var remarkableFolders: [RemarkableFolderScope]? = nil
+    var importedZoteroScope: ZoteroScope? {
+        if let zoteroScope { return zoteroScope }
+        guard let source, source.hasPrefix("zotero-import:") else { return nil }
+        let parts = source.dropFirst("zotero-import:".count).split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts[0].range(of: #"^(users/0|groups/[1-9][0-9]*)$"#, options: .regularExpression) != nil else { return nil }
+        let library = ZoteroLibrary(path: String(parts[0]), name: name)
+        if parts[1].isEmpty { return ZoteroScope(library: library) }
+        guard ZoteroItem.validKey(String(parts[1])) else { return nil }
+        return ZoteroScope(library: library, collection: ZoteroCollection(key: String(parts[1]), name: name, parent: nil))
+    }
 }
 extension ReferenceRecord {
     var library: UUID { libraryID ?? ReferenceLibrary.primaryID }
 }
 
 enum ReferenceDuplicates {
+    /// Find duplicates independently, so matching records elsewhere never colour a library.
+    static func withinLibraries(_ records: [ReferenceRecord]) -> [UUID: [UUID]] {
+        var result: [UUID: [UUID]] = [:]
+        for library in Dictionary(grouping: records.filter { $0.remarkable == nil }, by: { $0.collectionID ?? $0.library }).values {
+            result.merge(lookup(library), uniquingKeysWith: { first, _ in first })
+        }
+        return result
+    }
     static func lookup(_ records: [ReferenceRecord]) -> [UUID: [UUID]] {
         let active = records.filter { $0.trashed == nil }
         var parent = Array(active.indices), seen: [String: Int] = [:]

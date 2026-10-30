@@ -37,8 +37,8 @@ try check(parsed[0].fields["month"] == "Jan", "Predefined month")
 try check(parsed[0].fields["title"] == "A {Nested} Title", "Preserve inner braces")
 let roundTrip = try ReferenceBibTeX.parse(ReferenceBibTeX.export(parsed))
 try check(roundTrip.map(\.fields) == parsed.map(\.fields), "Field round trip")
-try check(ReferenceKeyRule.surnameYearWord.key(for: parsed[0]) == "Kang_2026_A", "Surname/year/first word")
-try check(ReferenceKeyRule.surnameYearTwoWords.key(for: parsed[0]) == "Kang_2026_A_Nested", "Surname/year/two words")
+try check(ReferenceKeyRule.surnameYearWord.key(for: parsed[0]) == "Kang_2026_Nested", "Surname/year/first meaningful title word")
+try check(ReferenceKeyRule.surnameYearTwoWords.key(for: parsed[0]) == "Kang_2026_Nested_Title", "Surname/year/two meaningful title words")
 try check(ReferenceKeyRule.surnameYear.key(for: parsed[1]) == "Doe_2025", "Family name without comma")
 var unknown = ReferenceRecord(); unknown.fields["title"] = "Uncertain title"
 try check(ReferenceKeyRule.surnameYearWord.key(for: unknown) == "Reference_nd_Uncertain", "Unknown author/year are explicit")
@@ -48,7 +48,7 @@ for invalid in ["not BibTeX", "@article{x,title={Unclosed}", "@article{x,title=u
     rejects("Malformed bibliography") { _ = try ReferenceBibTeX.parse(invalid) }
 }
 let added = try repository.add(parsed)
-try check(added[0].key == "Kang_2026_A", "Import uses the fixed preset")
+try check(added[0].key == "Kang_2026_Nested", "Import uses the fixed preset")
 try check(added[0].originalKey == "oldKey", "Original citation key retained as provenance")
 try check(added[0].id == parsed[0].id, "Stable record identity")
 try check(try ReferenceRepository(root: root).records() == added, "Catalogue survives reload")

@@ -96,6 +96,7 @@ struct PDFProtectionButton: View {
                 .animation((reduceMotion || !animations) ? nil : .easeInOut(duration: 0.35), value: protection.attempts)
         }
         .buttonStyle(.borderless)
+        .disabled(!protection.isLocked)
         .accessibilityLabel(protection.isLocked ? "PDF editing protected" : protection.authorised ? "PDF editing allowed" : "PDF has no editing protection")
         .help(protection.explanation)
     }

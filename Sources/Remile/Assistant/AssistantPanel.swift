@@ -73,8 +73,8 @@ struct AssistantPanel: View {
                     SymbolIcon(systemName: "arrow.up").foregroundStyle(RemileStyle.onAccent)
                         .frame(width: 28, height: 28).background(RemileStyle.brand, in: Circle())
                 }.buttonStyle(.plain).padding(4)
-                    .disabled(assistant.working || (passages.isEmpty && retrieve == nil))
-                    .remileHelp(assistant.question.isEmpty ? "Summarize document" : "Send message").accessibilityLabel("Send message")
+                    .disabled(provider == "Off" || assistant.working || (passages.isEmpty && retrieve == nil))
+                    .remileHelp(provider == "Off" ? "AI is off. Choose AI above to send a message." : assistant.question.isEmpty ? "Summarize document" : "Send message").accessibilityLabel("Send message")
             }
             .background(RemileStyle.sidebar, in: RoundedRectangle(cornerRadius: 7))
             .overlay(RoundedRectangle(cornerRadius: 7).stroke(RemileStyle.ink.opacity(0.15)))
@@ -125,7 +125,7 @@ struct AssistantPanel: View {
         withAnimation(reduceMotion ? nil : RemileMotion.panel) { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
     }
     private func ask() {
-        guard !assistant.working else { return }
+        guard provider != "Off", !assistant.working else { return }
         assistant.useEngine(.selected)
         if let retrieve { assistant.ask(topic: topic, retrieve: retrieve) }
         else { assistant.ask(passages: passages, topic: topic) }

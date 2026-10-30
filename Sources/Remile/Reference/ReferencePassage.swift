@@ -45,7 +45,7 @@ enum ReferencePassages {
         let passage = ReferencePassage(id: UUID(), reference: recordID, attachment: attachmentID, sha256: expectedSHA256, page: page, start: range.location, length: range.length, text: quote, created: Date())
         return try repository.withLibraryLock {
             try Task.checkCancellation()
-            guard let current = try ReferenceEvidence.active(repository).first(where: { $0.id == recordID }), current.revision == loaded.record.revision, current.attachments.contains(where: { $0.id == attachmentID && $0.sha256 == expectedSHA256 }) else { throw ReferenceFailure("The reference changed. Open the source again.") }
+            guard let current = try ReferenceEvidence.active(repository).first(where: { $0.id == recordID }), current.revision == loaded.record.revision, current.attachments.contains(where: { $0.matches(attachmentID) && $0.sha256 == expectedSHA256 }) else { throw ReferenceFailure("The reference changed. Open the source again.") }
             var saved = try read(recordID: recordID, repository: repository)
             if let existing = saved.first(where: { $0.attachment == attachmentID && $0.sha256 == expectedSHA256 && $0.page == page && $0.start == range.location && $0.length == range.length }) { return existing }
             guard saved.count < 200 else { throw ReferenceFailure("This reference already has 200 saved passages.") }

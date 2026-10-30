@@ -8,10 +8,12 @@ struct ReferenceRepository: Sendable {
     private let configuredRoot: URL?
     var root: URL { configuredRoot ?? StoragePaths.reference() }
     private let keyRule: ReferenceKeyRule?
+    var citationKeyRule: ReferenceKeyRule { keyRule ?? .current }
     private let history: History?
     private let readOnly: Bool
+    var isReadOnly: Bool { readOnly || StoragePaths.isReadOnly(root) }
     init(root: URL? = nil, keyRule: ReferenceKeyRule? = nil, history: History? = nil, readOnly: Bool = false) { self.configuredRoot = root; self.keyRule = keyRule; self.history = history; self.readOnly = readOnly }
-    fileprivate struct Catalogue: Codable { var schema = 1; var records: [ReferenceRecord] = []; var libraries: [ReferenceLibrary]?; var garbage: [ReferenceAttachment]? }
+    struct Catalogue: Codable, Equatable { var schema = 1; var records: [ReferenceRecord] = []; var libraries: [ReferenceLibrary]?; var garbage: [ReferenceAttachment]? }
     func recordingHistory(_ history: History) -> Self { Self(root: configuredRoot, keyRule: keyRule, history: history, readOnly: readOnly) }
     func undo(redo: Bool = false) throws {
         guard let history else { return }
@@ -52,6 +54,149 @@ struct ReferenceRepository: Sendable {
     }
     func records() throws -> [ReferenceRecord] { try readCatalogue().records }
     func libraries() throws -> [ReferenceLibrary] { try readCatalogue().libraries ?? [.primary] }
+    /// Explicit imports store a normal managed attachment. Nothing is fetched by catalogue reads.
+    @discardableResult func importRemarkable(_ item: RemarkableCloudItem, file: URL, fields: [String: String]) throws
+        -> UUID
+    {
+        guard UUID(uuidString: item.id) != nil, item.title.count <= 500, item.revision.count <= 128 else {
+            throw ReferenceFailure("Invalid reMarkable document.")
+        }
+        let attributes = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+        guard attributes.isRegularFile == true, attributes.isSymbolicLink != true,
+            let size = attributes.fileSize, size <= 200_000_000
+        else { throw ReferenceFailure("Choose a PDF smaller than 200 MB.") }
+        let data = try Data(contentsOf: file, options: .mappedIfSafe)
+        guard let pdf = PDFDocument(data: data), !pdf.isLocked, pdf.pageCount > 0 else {
+            throw ReferenceFailure("The received PDF could not be opened.")
+        }
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        var created: URL?
+        do {
+            return try catalogueTransaction { catalogue in
+                var libraries = catalogue.libraries ?? [.primary]
+                let library: ReferenceLibrary
+                if let existing = libraries.first(where: { $0.source == "remarkable" && $0.trashed == nil }) {
+                    library = existing
+                } else {
+                    let name =
+                        libraries.contains { $0.name == "reMarkable" && $0.trashed == nil }
+                        ? "reMarkable Cloud" : "reMarkable"
+                    library = ReferenceLibrary(name: name, source: "remarkable")
+                    libraries.append(library)
+                    catalogue.libraries = libraries
+                }
+                let index = catalogue.records.firstIndex {
+                    $0.library == library.id && $0.remarkable?.id == item.id && $0.trashed == nil
+                }
+                var record = index.map { catalogue.records[$0] } ?? ReferenceKind.note.applying(to: ReferenceRecord())
+                record.libraryID = library.id
+                if index == nil {
+                    record.key = uniqueKey(
+                        RemarkableCitationKey.note(title: item.title, created: item.createdDate ?? record.created),
+                        in: catalogue.records.filter { $0.library == library.id })
+                    record.fields["title"] = item.title
+                }
+                for (key, value) in (item.fields ?? [:]).merging(fields, uniquingKeysWith: { _, new in new })
+                where ["author", "year", "doi", "eprint", "archiveprefix", "url"].contains(key) {
+                    if record.fields[key]?.isEmpty != false { record.fields[key] = value }
+                }
+                if item.fileType == "pdf", let title = fields["title"], !ReferencePDFMetadata.placeholderTitle(title),
+                    index == nil || record.title == record.remarkable?.title || ReferencePDFMetadata.placeholderTitle(record.title, journal: record.fields["journal"])
+                {
+                    record.fields["title"] = title
+                }
+                if item.fileType == "pdf", let degree = ReferenceKind.thesisKind(fields["type"] ?? ""),
+                    index == nil || ReferenceKind.classify(record) == .note {
+                    let generated = index == nil || record.key == record.remarkable?.generatedKey
+                    record = degree.applying(to: record)
+                    if generated && record.citationKeyLocked != true {
+                        record.key = uniqueKey(citationKeyRule.key(for: record), in: catalogue.records.filter { $0.library == library.id && $0.id != record.id })
+                        record.remarkable?.generatedKey = record.key
+                    }
+                }
+                var attachment: ReferenceAttachment
+                if let existing = catalogue.records.flatMap(\.attachments).first(where: { $0.sha256 == hash && (try? Data(contentsOf: attachmentURL($0), options: .mappedIfSafe)) == data })
+                {
+                    attachment = existing
+                } else {
+                    attachment = ReferenceAttachment(
+                        name: String(item.title.prefix(100))
+                            + (item.title.lowercased().hasSuffix(".pdf") ? "" : ".pdf"), sha256: hash, bytes: data.count
+                    )
+                    let destination = attachmentURL(attachment)
+                    try FileManager.default.createDirectory(
+                        at: destination.deletingLastPathComponent(), withIntermediateDirectories: true,
+                        attributes: [.posixPermissions: 0o700])
+                    try data.write(to: destination, options: .withoutOverwriting)
+                    created = destination
+                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
+                }
+                if let previous = record.remarkable?.attachmentID, previous != attachment.id,
+                    let old = record.attachments.first(where: { $0.id == previous }),
+                    let baseline = record.remarkable?.sha256, old.sha256 == baseline,
+                    try managedAttachmentUnchanged(old, expected: baseline)
+                {
+                    record.attachments.removeAll { $0.id == previous }
+                    catalogue.garbage = (catalogue.garbage ?? []) + [old]
+                }
+                record.attachments.removeAll { $0.id == attachment.id }
+                record.attachments.insert(attachment, at: 0)
+                record.remarkable = RemarkableReference(
+                    id: item.id, revision: item.revision, title: item.title, fileType: item.fileType ?? "unknown",
+                    attachmentID: attachment.id, generatedKey: record.remarkable?.generatedKey ?? (index == nil ? record.key : nil), sha256: hash,
+                    created: record.remarkable?.created ?? item.createdDate)
+                if let index {
+                    if record != catalogue.records[index] {
+                        record.revision = UUID(); record.modified = Date(); catalogue.records[index] = record
+                    }
+                } else {
+                    catalogue.records.append(record)
+                }
+                return record.id
+            }
+        } catch {
+            if let created { try? FileManager.default.removeItem(at: created) }
+            throw error
+        }
+    }
+    @discardableResult func setRemarkableFolders(_ scopes: [RemarkableFolderScope]) throws -> UUID {
+        guard scopes.count <= 5000, Set(scopes.map(\.id)).count == scopes.count,
+            scopes.allSatisfy({ ($0.id == RemarkableFolderScope.unfiledID || UUID(uuidString: $0.id) != nil) && $0.name.count <= 500 })
+        else { throw ReferenceFailure("Choose valid reMarkable folders.") }
+        return try catalogueTransaction { catalogue in
+            var libraries = catalogue.libraries ?? [.primary]
+            let index: Int
+            if let existing = libraries.firstIndex(where: { $0.source == "remarkable" && $0.trashed == nil }) { index = existing }
+            else { libraries.append(ReferenceLibrary(name: "reMarkable", source: "remarkable")); index = libraries.count - 1 }
+            libraries[index].remarkableFolders = scopes.sorted { $0.id < $1.id }
+            catalogue.libraries = libraries
+            return libraries[index].id
+        }
+    }
+    func linkRemarkable(_ source: ReferenceRecord, to target: ReferenceRecord, disconnect: Bool = false) throws {
+        try catalogueTransaction { catalogue in
+            let libraries = catalogue.libraries ?? [.primary]
+            let hidden = Set(libraries.filter { $0.trashed != nil }.map(\.id))
+            guard source.id != target.id,
+                let index = catalogue.records.firstIndex(where: { $0.id == source.id && $0.revision == source.revision }),
+                let destination = catalogue.records.first(where: { $0.id == target.id && $0.revision == target.revision }),
+                catalogue.records[index].remarkable != nil, destination.remarkable == nil,
+                [catalogue.records[index], destination].allSatisfy({ $0.trashed == nil && !hidden.contains($0.library) && $0.collectionID.map(hidden.contains) != true }),
+                libraries.first(where: { $0.id == destination.library })?.source != "remarkable"
+            else { throw ReferenceFailure("The references changed. Select them again.") }
+            var excluded = Set(catalogue.records[index].disconnectedReferences ?? [])
+            if disconnect { excluded.insert(target.id) } else { excluded.remove(target.id) }
+            guard excluded.count <= 1000 else { throw ReferenceFailure("This document has too many disconnected references.") }
+            catalogue.records[index].disconnectedReferences = excluded.isEmpty ? nil : excluded.sorted { $0.uuidString < $1.uuidString }
+            var links = catalogue.records[index].linkedReferences ?? []
+            if disconnect { links.removeAll { $0 == target.id } }
+            else if !links.contains(target.id) { links.append(target.id) }
+            guard links != (catalogue.records[index].linkedReferences ?? []) || source.disconnectedReferences != catalogue.records[index].disconnectedReferences else { return }
+            guard links.count <= 100 else { throw ReferenceFailure("This document has too many connections.") }
+            catalogue.records[index].linkedReferences = links.isEmpty ? nil : links
+            catalogue.records[index].revision = UUID(); catalogue.records[index].modified = Date()
+        }
+    }
     @discardableResult func addLibrary(_ name: String, parentID: UUID? = nil) throws -> ReferenceLibrary {
         try catalogueTransaction { catalogue in
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -145,32 +290,76 @@ struct ReferenceRepository: Sendable {
     }
     func merge(_ snapshots: [ReferenceRecord], preferred: UUID, alignMetadata: Bool, resolvedFields: [String: String]? = nil) throws {
         try transaction { records in
-            let versions = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0.revision) })
-            let indices = records.indices.filter { versions[records[$0].id] != nil }
-            guard versions[preferred] != nil, indices.count >= 2, indices.count == snapshots.count, indices.allSatisfy({ records[$0].trashed == nil && records[$0].revision == versions[records[$0].id] }),
-                  let master = records.first(where: { $0.id == preferred }), let group = ReferenceDuplicates.lookup(records)[preferred], Set(versions.keys).isSubset(of: Set(group)) else { throw ReferenceFailure("The duplicate references changed. Review them again.") }
-            let resolved = resolvedFields ?? ReferenceMergePlan.fields(snapshots, preferred: preferred)
-            var discarded = Set<UUID>()
-            let attachments = Dictionary(indices.flatMap { records[$0].attachments }.map { ($0.sha256, $0) }, uniquingKeysWith: { first, _ in first }).values.sorted { $0.id.uuidString < $1.id.uuidString }
-            for (_, group) in Dictionary(grouping: indices, by: { records[$0].collectionID ?? records[$0].library }) {
-                let library = records[group[0]].library
-                let keep = group.first { records[$0].id == preferred } ?? group.min { records[$0].created < records[$1].created }!
-                let before = records[keep]
-                let notes = Array(Set(group.compactMap { records[$0].fields["note"] }.filter { !$0.isEmpty })).sorted().joined(separator: "\n\n")
-                if alignMetadata || library == master.library { records[keep].fields = resolved; records[keep].type = master.type }
-                else {
-                    for index in group { for (key, value) in records[index].fields where records[keep].fields[key]?.isEmpty != false { records[keep].fields[key] = value } }
-                }
-                if !notes.isEmpty { records[keep].fields["note"] = notes }
-                let key = uniqueKey(master.citationKey, in: records.filter { $0.library == library && $0.id != before.id })
-                records[keep].key = key; records[keep].attachments = Array(attachments); records[keep].revision = UUID(); records[keep].modified = Date()
-                var mapping: [String: String] = [:]
-                for index in group { mapping[records[index].key] = key; if index != keep { discarded.insert(records[index].id) } }
-                mapping[before.key] = key
-                try rewriteRelations(&records, indices: records.indices.filter { records[$0].library == library && records[$0].trashed == nil }, mapping: mapping)
-            }
-            records.removeAll { discarded.contains($0.id) }
+            try mergeRecords(&records, snapshots: snapshots, preferred: preferred, alignMetadata: alignMetadata, resolvedFields: resolvedFields)
         }
+    }
+    /// One catalogue transaction and undo step for every checked duplicate group.
+    func mergeAll(_ groups: [[ReferenceRecord]]) throws {
+        try transaction { records in
+            let originals = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0.revision) })
+            guard groups.flatMap({ $0 }).allSatisfy({ originals[$0.id] == $0.revision }) else {
+                throw ReferenceFailure("The duplicate references changed. Review them again.")
+            }
+            var included = Set<UUID>()
+            for group in groups {
+                guard group.count > 1, Set(group.map { $0.collectionID ?? $0.library }).count == 1,
+                      group.allSatisfy({ included.insert($0.id).inserted }), let preferred = ReferenceMergePlan.ranked(group.filter { $0.citationKeyLocked == true }).first ?? ReferenceMergePlan.ranked(group).first
+                else { throw ReferenceFailure("The duplicate references changed. Review them again.") }
+                // Earlier groups may have rewritten cross-references in this group.
+                let ids = Set(group.map(\.id))
+                let current = records.filter { ids.contains($0.id) }
+                try mergeRecords(&records, snapshots: current, preferred: preferred.id, alignMetadata: false, resolvedFields: nil)
+            }
+        }
+    }
+    private func mergeRecords(_ records: inout [ReferenceRecord], snapshots: [ReferenceRecord], preferred: UUID, alignMetadata: Bool, resolvedFields: [String: String]?) throws {
+        guard snapshots.allSatisfy({ $0.remarkable == nil }) else { throw ReferenceFailure("Use Connect to Libraries for reMarkable documents.") }
+        let versions = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0.revision) })
+        let indices = records.indices.filter { versions[records[$0].id] != nil }
+        guard versions[preferred] != nil, indices.count >= 2, indices.count == snapshots.count, indices.allSatisfy({ records[$0].trashed == nil && records[$0].revision == versions[records[$0].id] }),
+              let master = records.first(where: { $0.id == preferred }), let group = ReferenceDuplicates.lookup(snapshots)[preferred], Set(versions.keys).isSubset(of: Set(group)) else { throw ReferenceFailure("The duplicate references changed. Review them again.") }
+        let resolved = resolvedFields ?? ReferenceMergePlan.fields(snapshots, preferred: preferred)
+        var discarded = Set<UUID>()
+        var redirected: [UUID: UUID] = [:]
+        let attachments = Dictionary(indices.flatMap { records[$0].attachments }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }).values.sorted { $0.id.uuidString < $1.id.uuidString }
+        for (_, group) in Dictionary(grouping: indices, by: { records[$0].collectionID ?? records[$0].library }) {
+            let library = records[group[0]].library
+            let keep = group.first { records[$0].id == preferred } ?? group.min { records[$0].created < records[$1].created }!
+            let before = records[keep]
+            let origins = group.flatMap { records[$0].zotero?.sources ?? [] }
+            if var origin = before.zotero ?? origins.first {
+                var seen: Set<String> = [origin.source]
+                origin.mergedSources = origins.filter { seen.insert($0.source).inserted }
+                records[keep].zotero = origin
+            }
+            records[keep].citationKeyLocked = group.contains { records[$0].citationKeyLocked == true } ? true : before.citationKeyLocked
+            let notes = Array(Set(group.compactMap { records[$0].fields["note"] }.filter { !$0.isEmpty })).sorted().joined(separator: "\n\n")
+            if alignMetadata || library == master.library { records[keep].fields = resolved; records[keep].type = master.type }
+            else {
+                for index in group { for (key, value) in records[index].fields where records[keep].fields[key]?.isEmpty != false { records[keep].fields[key] = value } }
+            }
+            if !notes.isEmpty { records[keep].fields["note"] = notes }
+            let groupIDs = Set(group.map { records[$0].id })
+            let key = uniqueKey(master.citationKey, in: records.filter { $0.library == library && !groupIDs.contains($0.id) })
+            records[keep].key = key; records[keep].attachments = Array(attachments); records[keep].revision = UUID(); records[keep].modified = Date()
+            var mapping: [String: String] = [:]
+            for index in group { mapping[records[index].key] = key; if index != keep { discarded.insert(records[index].id); redirected[records[index].id] = records[keep].id } }
+            mapping[before.key] = key
+            try rewriteRelations(&records, indices: records.indices.filter { records[$0].library == library && records[$0].trashed == nil }, mapping: mapping)
+        }
+        for index in records.indices where records[index].linkedReferences != nil {
+            let links = Array(Set((records[index].linkedReferences ?? []).map { redirected[$0] ?? $0 })).sorted { $0.uuidString < $1.uuidString }
+            if Set(links) != Set(records[index].linkedReferences ?? []) {
+                records[index].linkedReferences = links; records[index].revision = UUID(); records[index].modified = Date()
+            }
+        }
+        for index in records.indices where records[index].disconnectedReferences != nil {
+            let excluded = Array(Set((records[index].disconnectedReferences ?? []).map { redirected[$0] ?? $0 })).sorted { $0.uuidString < $1.uuidString }
+            if excluded != records[index].disconnectedReferences {
+                records[index].disconnectedReferences = excluded; records[index].revision = UUID()
+            }
+        }
+        records.removeAll { discarded.contains($0.id) }
     }
     func applyCleanup(_ changes: [ReferenceCleanup.Change]) throws {
         try transaction { records in
@@ -178,6 +367,14 @@ struct ReferenceRepository: Sendable {
                 guard let index = records.firstIndex(where: { $0.id == change.id }), records[index].revision == change.before.revision, records[index].trashed == nil else { throw ReferenceFailure("A reference changed. Run Clean up again before applying.") }
                 _ = try destination(records[index].collectionID ?? records[index].library)
                 records[index].fields = change.after.fields; records[index].type = change.after.type
+                if records[index].remarkable?.generatedKey == change.before.key, records[index].citationKeyLocked != true,
+                    ReferenceKind.classify(records[index]) != .note, !records[index].contributors.isEmpty, !records[index].year.isEmpty {
+                    let desired = (keyRule ?? .current).key(for: records[index])
+                    let library = records[index].library
+                    let key = uniqueKey(desired, in: records.filter { $0.id != change.id && $0.library == library })
+                    records[index].key = key
+                    records[index].remarkable?.generatedKey = key
+                }
                 records[index].revision = UUID(); records[index].modified = Date()
             }
         }
@@ -205,6 +402,7 @@ struct ReferenceRepository: Sendable {
             let record = catalogue.records[index], libraries = catalogue.libraries ?? [.primary]
             guard libraries.contains(where: { $0.id == record.library && $0.trashed == nil }), record.collectionID == nil || libraries.contains(where: { $0.id == record.collectionID && $0.trashed == nil }) else { throw ReferenceFailure("Restore the library before changing attachments.") }
             let removed = catalogue.records[index].attachments.filter { ids.contains($0.id) }
+            catalogue.records[index].detachedPDFs = Array(Set((record.detachedPDFs ?? []) + removed.map(\.sha256))).sorted()
             catalogue.records[index].attachments.removeAll { ids.contains($0.id) }
             catalogue.records[index].revision = UUID(); catalogue.records[index].modified = Date()
             var pending = catalogue.garbage ?? []
@@ -227,7 +425,7 @@ struct ReferenceRepository: Sendable {
     @discardableResult func update(_ replacement: ReferenceRecord, expected: UUID, renameKey: Bool = false) throws -> ReferenceRecord {
         try transaction { records in
             guard let index = records.firstIndex(where: { $0.id == replacement.id }), records[index].revision == expected else { throw ReferenceFailure("The reference changed. Open it again before saving.") }
-            guard replacement.attachments == records[index].attachments, replacement.trashed == records[index].trashed, replacement.library == records[index].library, replacement.collectionID == records[index].collectionID else { throw ReferenceFailure("Use the attachment or Trash action for this change.") }
+            guard replacement.linkedReferences == records[index].linkedReferences, replacement.attachments == records[index].attachments, replacement.trashed == records[index].trashed, replacement.library == records[index].library, replacement.collectionID == records[index].collectionID else { throw ReferenceFailure("Use the attachment or Trash action for this change.") }
             var record = replacement
             if renameKey {
                 record.key = record.key.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -285,7 +483,11 @@ struct ReferenceRepository: Sendable {
             var mappings: [UUID: [String: String]] = [:], changed = 0
             for index in selected {
                 let library = records[index].library
-                let key = reserveKey(rule.key(for: records[index]), keys: &reserved[library, default: []])
+                let desired: String
+                if let source = records[index].remarkable, ReferenceKind.classify(records[index]) == .note {
+                    desired = RemarkableCitationKey.note(title: source.title, created: source.created ?? records[index].created)
+                } else { desired = rule.key(for: records[index]) }
+                let key = reserveKey(desired, keys: &reserved[library, default: []])
                 if key != records[index].key { mappings[library, default: [:]][records[index].key] = key; records[index].key = key; records[index].revision = UUID(); records[index].modified = Date(); changed += 1 }
             }
             for (library, mapping) in mappings { try rewriteRelations(&records, indices: records.indices.filter { records[$0].trashed == nil && records[$0].library == library }, mapping: mapping) }
@@ -348,6 +550,7 @@ struct ReferenceRepository: Sendable {
                                 records[index].revision = UUID(); records[index].modified = Date(); imported.append(records[index])
                             } else {
                                 var record = ReferenceRecord(); record.libraryID = library; record.collectionID = destinationLibrary.parentID == nil ? nil : destinationLibrary.id; record.attachments = [attachment]; record.fields = fields; if fields["entrysubtype"] == "preprint" { record.type = "misc" }
+                                if let degree = ReferenceKind.thesisKind(fields["type"] ?? "") { record = degree.applying(to: record) }
                                 record.key = uniqueKey((keyRule ?? .current).key(for: record), in: records.filter { $0.library == record.library }); records.append(record); imported.append(record)
                             }
                         }
@@ -440,8 +643,8 @@ struct ReferenceRepository: Sendable {
         guard records.count <= 10_000, Set(records.map(\.id)).count == records.count, Set(records.map { $0.library.uuidString + ":" + $0.citationKey.lowercased() }).count == records.count else { throw ReferenceFailure("The library contains duplicate identities or too many references.") }
         for record in records {
             guard ReferenceBibTeX.validToken(record.citationKey), ReferenceBibTeX.validToken(record.type), record.fields.count <= 100, record.originalCitation.utf8.count <= 4_000_000,
-                  record.fields.allSatisfy({ ReferenceBibTeX.validToken($0.key) && $0.value.utf8.count <= 500_000 }), record.attachments.count <= 100,
-                  record.attachments.allSatisfy({ $0.bytes >= 0 && $0.bytes <= 200_000_000 && $0.sha256.count == 64 && $0.sha256.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) && $0.name.utf8.count <= 1024 }) else { throw ReferenceFailure("Check the reference fields and attachments before saving.") }
+                  record.fields.allSatisfy({ ReferenceBibTeX.validToken($0.key) && $0.value.utf8.count <= 500_000 }), record.attachments.count <= 100, (record.linkedReferences?.count ?? 0) <= 100, (record.zotero?.files.count ?? 0) <= 100,
+                  record.attachments.allSatisfy({ ($0.previousIDs?.count ?? 0) <= 1000 && $0.bytes >= 0 && $0.bytes <= 200_000_000 && $0.sha256.count == 64 && $0.sha256.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) && $0.name.utf8.count <= 1024 }) else { throw ReferenceFailure("Check the reference fields and attachments before saving.") }
         }
     }
     private func transaction<T>(recordHistory: Bool = true, _ action: (inout [ReferenceRecord]) throws -> T) throws -> T {
@@ -455,12 +658,14 @@ struct ReferenceRepository: Sendable {
             return result
         }
     }
-    private func catalogueTransaction<T>(historyMove: Bool? = nil, recordHistory: Bool = true, _ action: (inout Catalogue) throws -> T) throws -> T {
+    func catalogueTransaction<T>(historyMove: Bool? = nil, recordHistory: Bool = true, _ action: (inout Catalogue) throws -> T) throws -> T {
         try withLibraryLock {
             var catalogue = try readCatalogue()
             let before = catalogue
             let result = try action(&catalogue)
+            if historyMove == nil, before != catalogue { try sharePaperPDFs(in: &catalogue) }
             try validate(catalogue.records)
+            if historyMove == nil, before == catalogue { return result }
             let libraries = catalogue.libraries ?? [.primary]
             guard libraries.count <= 200, Set(libraries.map(\.id)).count == libraries.count, libraries.allSatisfy({ child in child.parentID == nil || libraries.contains { $0.id == child.parentID && $0.parentID == nil } }), catalogue.records.allSatisfy({ record in libraries.contains { $0.id == record.library } }) else { throw ReferenceFailure("Check the library identities before saving.") }
             let data = try JSONEncoder().encode(catalogue)

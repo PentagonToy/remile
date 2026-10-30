@@ -23,10 +23,18 @@ enum ReferenceKeyRule: String, Codable, CaseIterable, Sendable {
         let year = Self.parts(record.year).joined()
         var components = [surname.isEmpty ? "Reference" : surname, year.isEmpty ? "nd" : year]
         if self != .surnameYear {
-            let words = Self.parts(record.fields["title"] ?? "")
+            let words = Self.titleWords(record.fields["title"] ?? "")
             components += words.prefix(self == .surnameYearTwoWords ? 2 : 1)
         }
         return String(components.joined(separator: "_").prefix(140))
+    }
+    private static func titleWords(_ title: String) -> [String] {
+        let words = parts(title)
+        if words.count > 1, words[0].lowercased() == "a", ["priori", "posteriori"].contains(words[1].lowercased()) {
+            return ["A" + words[1].prefix(1).uppercased() + words[1].dropFirst()] + words.dropFirst(2)
+        }
+        if words.count > 1, ["a", "an", "the"].contains(words[0].lowercased()) { return Array(words.dropFirst()) }
+        return words
     }
     private static func parts(_ source: String) -> [String] {
         let stripped = source.replacingOccurrences(of: #"\\[A-Za-z]+"#, with: "", options: .regularExpression)

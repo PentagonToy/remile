@@ -21,7 +21,7 @@ binary_directory="$(swift build --build-system native --scratch-path "$output_di
 application="$output_directory/remile.app"
 mkdir -p "$application/Contents/MacOS" "$application/Contents/Resources"
 mkdir -p "$application/Contents/Resources/Brand"
-artwork=(others/brand/{icons,banners,wordmarks,scenes}/*.svg others/motion/airplane/*.svg others/symbols/{providers,integrations,reference}/*.svg)
+artwork=(others/brand/{icons,banners,wordmarks,scenes}/*.svg others/motion/airplane/*.svg others/symbols/{providers,reference}/*.svg)
 cp "${artwork[@]}" "$application/Contents/Resources/Brand/"
 mkdir -p "$application/Contents/Resources/Templates/Help"
 cp others/templates/help/bubble.json "$application/Contents/Resources/Templates/Help/"
@@ -31,6 +31,7 @@ cp others/licences/CHATGPT-LICENSE.txt "$application/Contents/Resources/Brand/"
 mkdir -p "$application/Contents/Resources/Licences"
 cp LICENSE "$application/Contents/Resources/Licences/Remile-MIT.txt"
 cp THIRD_PARTY_NOTICES.md "$application/Contents/Resources/Licences/"
+cp -R others/licences/remarkable-tools "$application/Contents/Resources/Licences/"
 cp others/licences/SEARCH-WORDS.txt "$application/Contents/Resources/Licences/"
 cp "$binary_directory/Remile" "$application/Contents/MacOS/Remile"
 swift tools/render_icons.swift others/brand/icons/remile_icon_light_rounded.svg "$output_directory/Remile.iconset"
@@ -51,6 +52,10 @@ cat > "$application/Contents/Info.plist" <<PLIST
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSPrincipalClass</key><string>NSApplication</string>
+<key>NSAppTransportSecurity</key><dict>
+<key>NSExceptionDomains</key><dict>
+<key>127.0.0.1</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+</dict></dict>
 <key>UTExportedTypeDeclarations</key><array><dict>
 <key>UTTypeIdentifier</key><string>local.remile.pdf-page</string>
 <key>UTTypeDescription</key><string>remile. page position</string>
@@ -68,6 +73,8 @@ cat > "$application/Contents/Info.plist" <<PLIST
 </dict></array>
 </dict></plist>
 PLIST
+mkdir -p "$application/Contents/Resources/Extensions/reMarkable"
+cp others/extensions/remarkable/ink.py others/extensions/remarkable/ssh.py others/extensions/remarkable/runtime.json "$application/Contents/Resources/Extensions/reMarkable/"
 mkdir -p "$application/Contents/Resources/CLI"
 cp tools/bundled_cli "$application/Contents/Resources/CLI/remile"
 chmod +x "$application/Contents/Resources/CLI/remile"

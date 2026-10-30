@@ -16,7 +16,7 @@ struct HomeWorkspace: View {
 
     var body: some View {
         ZStack {
-            if model.page == .home {
+            if model.page == .home || model.page == .extensions {
                 homeLayout.modifier(RemileNavigationContent()).transition(.identity)
             } else if model.page == .writer, let writer = model.writer {
                 WriterWorkspace(model: writer, goHome: { if model.closeWriter() { model.page = .home } }).navigationTitle(writer.title)
@@ -60,17 +60,25 @@ struct HomeWorkspace: View {
                         Text("v" + RemileRelease.current).font(RemileType.small).monospacedDigit().foregroundStyle(.secondary).fixedSize()
                     }
                 }.padding(.vertical, 22)
-                SymbolLabel("Home", systemImage: "house").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).background(RemileStyle.accent.opacity(0.17), in: RoundedRectangle(cornerRadius: 9))
+                Button { navigate(.home) } label: { SymbolLabel("Home", systemImage: "house").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).contentShape(Rectangle()) }.buttonStyle(.plain).background(model.page == .home ? RemileStyle.accent.opacity(0.17) : .clear, in: RoundedRectangle(cornerRadius: 9))
                 Button { navigate(.search) } label: { SymbolLabel("Search", systemImage: "magnifyingglass").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).contentShape(Rectangle()) }.buttonStyle(.plain).tourTarget("search")
                 Button { navigate(.reference) } label: {
                     Label { Text("Reference").fixedSize(horizontal: false, vertical: true) } icon: { SymbolIcon(systemName: "books.vertical") }
                         .labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).contentShape(Rectangle())
                 }.buttonStyle(.plain).tourTarget("reference")
+                Button { navigate(.extensions) } label: {
+                    SymbolLabel("Extensions", systemImage: "puzzlepiece.extension").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).contentShape(Rectangle())
+                }.buttonStyle(.plain).background(model.page == .extensions ? RemileStyle.accent.opacity(0.17) : .clear, in: RoundedRectangle(cornerRadius: 9))
                 Spacer()
                 Button { actions.settings = true } label: { SymbolLabel("Settings", systemImage: "gearshape").labelStyle(RemileNavigationLabelStyle()).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("settings")
                 Button { model.guidePresented = true } label: { SymbolLabel("User guide", systemImage: "book.closed").labelStyle(RemileNavigationLabelStyle()).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).remileHelp("A quick guide to remile.").tourTarget("guide")
             }.padding(14).frame(maxWidth: .infinity).background(.ultraThinMaterial)
-        }, content: { home.frame(maxWidth: .infinity, maxHeight: .infinity) })
+        }, content: {
+            Group {
+                if model.page == .extensions { ExtensionsWorkspace(references: model.references, showReference: { navigate(.reference) }) }
+                else { home }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        })
     }
 
     private var home: some View {
@@ -102,9 +110,7 @@ struct HomeWorkspace: View {
                                 Button("Delete local editing history…", role: .destructive) { actions.clearHistory = true }
                             } label: { SymbolIcon(systemName: "ellipsis").frame(width: 28, height: 26) }.menuStyle(.borderlessButton).tint(RemileStyle.ink).fixedSize().remileHelp("Recent items and local history")
                         }
-                        if recentExpanded {
-                            if model.recent.isEmpty { Text("Open a document or start with an editor below.").foregroundStyle(.secondary).font(RemileType.callout).padding(.vertical, 12) }
-                            else {
+                        if recentExpanded, !model.recent.isEmpty {
                                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: narrow ? 2 : 3), spacing: 6) {
                                     ForEach(Array(model.recent.prefix(narrow && compact ? 4 : 6)), id: \.self) { url in
                                         Button { open(url) } label: { RecentReadingRow(url: url, openedAt: model.lastOpened(url), displayName: model.overleaf.connection(for: url)?.name, overleaf: model.overleaf.connection(for: url) != nil).frame(height: compact ? 68 : 88).onDrag { NSItemProvider(object: url as NSURL) } }.buttonStyle(RemilePressStyle())
@@ -115,7 +121,6 @@ struct HomeWorkspace: View {
                                             }
                                     }
                                 }
-                            }
                         }
                     }
                     VStack(alignment: .leading, spacing: 10) {

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Fill missing fields without overwriting edits. Automatic imports use identifiers only.
+/// Fill missing fields without overwriting edits. reMarkable PDFs may also use an exact title match.
 enum ReferenceRecognition {
     actor Receipt {
         private var saved: [ReferenceRecord] = []
@@ -14,7 +14,11 @@ enum ReferenceRecognition {
         record.trashed == nil && (identifier(record) || (!ReferencePDFMetadata.placeholderTitle(record.title) && record.title != "Untitled reference" && record.title.count >= 20 && record.title.count <= 500))
     }
     static func automaticEligible(_ record: ReferenceRecord) -> Bool {
-        eligible(record) && !record.attachments.isEmpty && (record.contributors.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || record.year.isEmpty) && identifier(record)
+        let pendingPaper = record.remarkable?.fileType == "pdf" && ReferenceKind.classify(record) == .note
+        let invalidTitle = ReferencePDFMetadata.placeholderTitle(record.title, journal: record.fields["journal"])
+        let needsMetadata = record.contributors.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || record.year.isEmpty || pendingPaper || invalidTitle
+        let exactTitleCandidate = pendingPaper && record.title.split(whereSeparator: \.isWhitespace).count >= 3
+        return eligible(record) && !record.attachments.isEmpty && needsMetadata && (identifier(record) || exactTitleCandidate)
     }
     private static func identifier(_ record: ReferenceRecord) -> Bool {
         archiveID(record) != nil || ReferenceDuplicates.normaliseDOI(record.fields["doi"] ?? "").hasPrefix("10.")
@@ -39,8 +43,20 @@ enum ReferenceRecognition {
             if ReferenceMergePlan.published(local), fetched.fields["entrysubtype"] == "preprint", ["year", "date", "entrysubtype", "journal", "booktitle", "publisher", "volume", "number", "pages", "doi", "url"].contains(key) { continue }
             next.fields[key] = value
         }
-        if !fetched.title.isEmpty, local.title == "Untitled reference" || ReferencePDFMetadata.placeholderTitle(local.title) { next.fields["title"] = fetched.title }
-        if !ReferenceMergePlan.published(local) { next.type = fetched.type }
+        let placeholder = ReferencePDFMetadata.placeholderTitle(local.title, journal: local.fields["journal"])
+            || ReferencePDFMetadata.placeholderTitle(local.title, journal: fetched.fields["journal"])
+        if !fetched.title.isEmpty, local.title == "Untitled reference" || placeholder { next.fields["title"] = fetched.title }
+        if !ReferenceMergePlan.published(local) {
+            next.type = fetched.type
+            if local.remarkable?.fileType == "pdf", ReferenceKind.classify(local) == .note {
+                if ReferenceKind.classify(fetched) == .other {
+                    next.type = local.type
+                    next.fields["entrysubtype"] = "note"
+                } else {
+                    next.fields["entrysubtype"] = fetched.fields["entrysubtype"]
+                }
+            }
+        }
         return next
     }
     static func enrich(_ records: [ReferenceRecord], repository: ReferenceRepository, lookup: @escaping @Sendable (ReferenceRecord) async throws -> ReferenceRecord = ReferencePaperLookup.metadata, onFailure: @escaping @Sendable (String) async -> Void = { _ in }) async -> [ReferenceRecord] {

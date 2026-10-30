@@ -10,15 +10,27 @@ Create libraries and collections from the sidebar context menu. Drop a PDF onto 
 
 Right-click a library or collection and choose **Rename…** to change its name. Return or a click elsewhere saves a valid name. An empty name cancels when you leave the field, and Escape cancels the edit. Renaming keeps its references and collections together and supports Undo.
 
+## Connected notes and PDF storage
+
+Connect reMarkable notes to a paper from the reMarkable context menu. Confirmed DOI or arXiv matches can link automatically. Similar metadata requires review. The paper keeps its metadata, key and original PDF, with linked notes following later source updates.
+
+Identical PDFs share storage automatically. Confirmed DOI or arXiv matches also connect available PDFs to metadata-only records. Each reference keeps its own fields and citation key. Removing an attachment keeps it detached from automatic sharing.
+
+Opening a shared PDF gives that reference an independent editing path. APFS keeps unchanged bytes shared. Other storage uses an independent copy for editing.
+
 ## Find and organise
 
-Search by the details you remember. Click a column heading to sort, then click again to reverse the order. Drag a heading's edge to adjust its width.
+All references searches across Libraries, reMarkable and imported Zotero sources, excluding Trash. Select an individual library to narrow the results. New items added from All references go to My library. Search by the details you remember. Click a column heading to sort, then click again to reverse the order. Drag a heading's edge to adjust its width.
 
 PDFs are saved locally first. While online, remile uses a detected DOI or arXiv ID to fill missing details without AI. The airplane button pauses these lookups.
 
 Double-click a metadata value or citation key to edit it. Click **Type** to choose a reference type. **Read metadata** reviews details extracted from the PDF. **Look up metadata** fills missing fields and available abstracts online by DOI, arXiv ID or an exact title match. Existing values stay unchanged, and no PDF is uploaded. Available abstracts appear below the dates in a collapsed Abstract section. [Metadata lookup details →](details/reference.md#metadata-lookup)
 
 Web pages use a globe, newspaper articles use a newspaper, conference papers use a podium, and reports use a document icon. Imported website, news and report types are recognised alongside standard BibTeX types such as `online` and `techreport`. A URL alone does not change a paper's type.
+
+In current source builds, the interface uses **Thesis** for `mastersthesis` and **Dissertation** for `phdthesis`. BibTeX keeps its original type names. University uses `school`. Explicit degree statements on the first three PDF pages can identify a degree locally. Imported Zotero thesis types retain their degree when supplied.
+
+A verified DOI can also replace a journal masthead mistakenly stored as the paper title. Other edited titles and locked citation keys are preserved.
 
 In **Edit reference**, the **BibTeX** tab shows the current entry. Changes carry between **Details** and **BibTeX**.
 
@@ -27,6 +39,8 @@ Right-click a reference and choose **Lock citation key** to keep its key during 
 Edited books can list editors instead of authors. **Author / Editor** shows their names with `(ed.)` or `(eds.)`. New citation keys use the first editor's surname when no author is recorded. [Names and keys →](details/reference.md#columns-and-keys)
 
 Missing a PDF? Right-click the reference and choose **Find a paper…**. remile checks local files and public sources. For subscription-only papers, download the PDF in your browser and add the local file. remile does not manage publisher sign-ins. [PDF lookup details →](details/reference.md#pdf-access)
+
+Leading A, An and The are skipped when generating title words for citation keys. A Priori and A Posteriori are kept as single terms. The one-word and two-word presets remain available. This title-word rule applies to new or explicitly regenerated keys.
 
 ## Cite while writing
 
@@ -59,7 +73,7 @@ Background, fact, method and comparison hints describe possible uses of your sen
 
 ## Review before tidying
 
-Clean up reviews metadata and duplicate candidates. Merge selected lets you choose the base record and keep distinct PDFs. Merged entries are removed without going to Trash.
+Clean up reviews metadata and duplicates within the current library or collection. Matches in other libraries do not highlight rows. Choose Merge all to combine every checked group, or uncheck groups to merge selected ones. Open a group to choose its base record and resolve individual fields. Distinct PDFs and Zotero source identities are retained. Merged entries are removed without going to Trash. One Undo restores a batch merge.
 
 Undo and Redo cover recent changes. Empty Trash permanently removes discarded records and unshared files after confirmation.
 

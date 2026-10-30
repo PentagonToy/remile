@@ -36,7 +36,7 @@ enum ReferenceCleanup {
         catch { try Task.checkCancellation(); return nil }
     }
     static func needsLookup(_ record: ReferenceRecord) -> Bool {
-        ReferenceRecognition.eligible(record) && (record.contributors.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || record.year.isEmpty || (record.fields["abstract"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        ReferenceRecognition.eligible(record) && (record.contributors.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || record.year.isEmpty || ReferencePDFMetadata.placeholderTitle(record.title, journal: record.fields["journal"]) || (record.fields["abstract"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
     /// Preview only. Applying keeps the existing revision check and Undo boundary.
     static func onlineChange(_ before: ReferenceRecord, local: ReferenceRecord, fetched: ReferenceRecord) throws -> Change? {
@@ -52,7 +52,7 @@ enum ReferenceCleanup {
                 if let value = next.fields[field] { next.fields[field] = value.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
             }
             if let doi = next.fields["doi"], !doi.isEmpty { next.fields["doi"] = ReferenceDuplicates.normaliseDOI(doi) }
-            for attachment in record.attachments where next.fields["doi"]?.isEmpty != false || next.authors.isEmpty || ReferencePDFMetadata.placeholderTitle(next.title) || next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension {
+            for attachment in record.attachments where next.fields["doi"]?.isEmpty != false || next.authors.isEmpty || ReferencePDFMetadata.placeholderTitle(next.title, journal: next.fields["journal"]) || next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension {
                 let fields: [String: String]
                 if let saved = cached[attachment.id] { fields = saved }
                 else {
@@ -61,7 +61,11 @@ enum ReferenceCleanup {
                     fields = ReferencePDFMetadata.fields(pdf, fallback: (attachment.name as NSString).deletingPathExtension)
                     cached[attachment.id] = fields
                 }
-                for (field, value) in fields where next.fields[field]?.isEmpty != false || (field == "title" && (ReferencePDFMetadata.placeholderTitle(next.title) || next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension)) { next.fields[field] = value }
+                for (field, value) in fields where next.fields[field]?.isEmpty != false || (field == "title" && (ReferencePDFMetadata.placeholderTitle(next.title, journal: next.fields["journal"]) || next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension)) { next.fields[field] = value }
+            }
+            if let degree = ReferenceKind.thesisKind(next.fields["type"] ?? ""),
+                [ReferenceKind.note, .other].contains(ReferenceKind.classify(next)) {
+                next = degree.applying(to: next)
             }
             if next.fields["archiveprefix"]?.lowercased() == "arxiv", next.fields["journal"]?.isEmpty != false, next.type == "article" { next.type = "misc" }
             if next.fields != record.fields || next.type != record.type { result.append(Change(before: record, after: next)) }

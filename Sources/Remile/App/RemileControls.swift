@@ -126,6 +126,9 @@ enum RemileSymbol {
     static let saveSize: CGFloat = 15
     static let exportSize: CGFloat = 13
     static let saveOffset: CGFloat = -1.5
+    static let statusDotSize: CGFloat = 5
+    static let statusDotInset: CGFloat = 1
+    static let statusDotBorder: CGFloat = 1
 }
 
 /// All app-owned SF Symbols share a centred slot and rendering configuration.

@@ -12,3 +12,6 @@
 /site/
 /.cache/
 **/__pycache__/
+
+# Removed third-party provider artwork
+/others/symbols/integrations/overleaf-mark.svg

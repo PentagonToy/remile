@@ -16,6 +16,7 @@ A local workspace for PDF, Markdown and LaTeX documents.
 - **PDF** — Read and annotate PDFs in bottom tabs, present pages in Slide View and find matching passages across your local library.
 - **LaTeX** — Edit multi-file projects, navigate their outline, compile and preview the PDF.
 - **Overleaf** — Start in Live for online editing, or use Private to review local changes before publishing.
+- **Extensions (development preview)** — Read selected reMarkable folders over SSH or import local Zotero libraries into Reference. See [setup and limits](docs/extensions.md).
 - **Reference** — Organise PDF/BibTeX records, review duplicates, edit or lock citation keys and keep shared attachments. See [Reference](docs/reference.md).
 - **AI** — Use Apple Intelligence on your Mac or connect ChatGPT for document questions, [manuscript review](docs/manuscript-review.md), grammar suggestions and reviewed LaTeX repairs.
 
@@ -25,7 +26,7 @@ Convert, compress, combine and export documents when you need to. Suggested sour
 
 ## Begin with a document
 
-Open a Markdown file or PDF, return to a recent document, or bring a LaTeX project into the workspace. Add a folder to Library when you want to find passages across your documents. Your files stay on your Mac. You choose when to connect AI or synchronise with Overleaf.
+Open a Markdown file or PDF, return to a recent document, or bring a LaTeX project into the workspace. Add a folder to Library when you want to find passages across your documents. Local files stay on your Mac. You choose when to use connected services.
 
 ## Install
 
@@ -51,7 +52,7 @@ Download [remile. 0.2.2 for Apple Silicon](https://github.com/PentagonToy/remile
 | macOS | Targets macOS 14 Sonoma and later. Release validation used macOS 27 on an M1 Pro. |
 | Reading, writing and local search | No AI account or TeX installation required. |
 | LaTeX, optional | A local TeX installation with `latexmk`, such as MacTeX or TeX Live. |
-| Overleaf, optional | Internet, Git and Git access to your Overleaf project. |
+| Overleaf, optional | Internet for Live. Git and project Git access for Git synchronisation. |
 | Apple Intelligence, optional | macOS 26 or later on an eligible Mac, with Apple Intelligence enabled. |
 | ChatGPT, optional | Internet and an eligible connected ChatGPT account. Account limits apply. |
 | Package trust | Developer ID signed and Apple-notarised. macOS may ask you to confirm the first launch. |
@@ -61,7 +62,7 @@ See [installation and updates](docs/distribution.md) for package details and the
 
 ## Development
 
-remile. is a native Swift application with no external Swift package dependencies.
+remile. is a native Swift application with no external Swift package dependencies. Current source builds include the SSH and Zotero development preview, Thesis / Dissertation types and improved PDF metadata recognition. These changes are not part of the published 0.2.2 binary.
 
 Sources live in `Sources/Remile`. `tools/prepare_app.sh` builds and packages `remile.app`. Set `REMILE_BUILD_DIRECTORY` to an external output directory.
 
@@ -73,12 +74,12 @@ swift test --build-system native --scratch-path /absolute/path/to/remile-tests -
 
 If Command Line Tools are selected, prefix the command with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`, using your Xcode installation path. This selects Xcode for that command without changing the system setting.
 
-`Tests/RemileTests` covers CLI argument validation, reference types and Markdown rendering, resource confinement and MathML. It imports the app module directly and uses isolated temporary fixtures. Open `Package.swift` in Xcode to run these XCTest cases there. The existing `tools/check_cli_arguments.sh` and `tools/check_markdown.sh` entry points run the corresponding tests.
+`Tests/RemileTests` uses isolated fixtures and imports the app module directly. Open `Package.swift` in Xcode or run the command above. Focused checks are in `tools/check_*.sh`.
 
-The Swift workflow builds the release executable and runs the standard tests and Live sync regression checks on macOS for relevant pushes to `main` and for pull requests. It does not sign, notarise or publish the app. Other focused checks remain in `Tests` and `tools/check_*.sh`. Run the checks for the behaviour you change. The CI selection does not replace the full regression suite or interactive release checks.
+CI builds Release and runs the standard tests and Live sync checks for relevant changes. It does not sign or publish the app.
 
 ## Licence and acknowledgements
 
 remile. source code is available under the [MIT licence](LICENSE).
 
-The ChatGPT icon path is reused from [OpenCode](https://github.com/anomalyco/opencode) under MIT, with its original notice retained. See [third-party notices](THIRD_PARTY_NOTICES.md) for this asset, platform components, external tools and the distinction between incorporated material and development references. Apple, OpenAI and Overleaf names and marks remain their owners’ property. remile. is an independent project.
+The ChatGPT icon path is reused from [OpenCode](https://github.com/anomalyco/opencode) under MIT, with its original notice retained. See [third-party notices](THIRD_PARTY_NOTICES.md) for this asset, platform components, external tools and the distinction between incorporated material and development references. Apple, OpenAI, Overleaf, reMarkable and Zotero names and marks remain their owners’ property. remile. is an independent project.

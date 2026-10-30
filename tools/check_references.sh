@@ -4,9 +4,19 @@ project_directory="${0:A:h:h}"
 check_directory="${1:?Provide an external output directory}"
 mkdir -p "$check_directory/module-cache"
 check_main="${REMILE_REFERENCE_CHECK_MAIN:-$project_directory/Tests/ReferenceChecks/main.swift}"
-for source_path in "$project_directory/Sources/Remile/App/StorageLocation.swift" "$project_directory/Sources/Remile/App/StorageFileAccess.swift" "$project_directory/Sources/Remile/App/StoragePaths.swift" "$project_directory/Sources/Remile/Automation/DirectoryChanges.swift" "$project_directory/Sources/Remile/Overleaf/OverleafProjectID.swift" "$project_directory/Sources/Remile/Automation/EditorCLIArguments.swift" "$project_directory/Sources/Remile/App/NetworkAccess.swift" "$project_directory/Sources/Remile/Reference/ReferenceRecord.swift" "$project_directory/Sources/Remile/Reference/ReferenceLibrary.swift" "$project_directory/Sources/Remile/Reference/ReferenceKind.swift" "$project_directory/Sources/Remile/Reference/ReferenceText.swift" "$project_directory/Sources/Remile/Reference/ReferenceColumns.swift" "$project_directory/Sources/Remile/App/WorkspaceLayout.swift" "$project_directory/Sources/Remile/App/PortableSettings.swift" "$project_directory/Sources/Remile/Reference/ReferenceKeyRule.swift" "$project_directory/Sources/Remile/Reference/ReferenceBibTeX.swift" "$project_directory/Sources/Remile/Reference/ReferencePDFMetadata.swift" "$project_directory/Sources/Remile/Reference/ReferenceCleanup.swift" "$project_directory/Sources/Remile/Reference/ReferenceMergePlan.swift" "$project_directory/Sources/Remile/Reference/ReferenceArxiv.swift" "$project_directory/Sources/Remile/Reference/ReferenceRecognition.swift" "$project_directory/Sources/Remile/Reference/ReferencePaperLookup.swift" "$project_directory/Sources/Remile/Reference/ReferencePDFResolver.swift" "$project_directory/Sources/Remile/Reference/ReferenceRepository.swift" "$project_directory/Sources/Remile/Reference/ReferenceCitation.swift" "$project_directory/Sources/Remile/Reference/ReferenceRelevance.swift" "$project_directory/Sources/Remile/Reference/ReferenceCitationCompletion.swift" "$project_directory/Sources/Remile/Reference/ReferenceEvidence.swift" "$project_directory/Sources/Remile/Reference/ReferencePassage.swift" "$project_directory/Sources/Remile/Reference/ReferenceCollect.swift" "$project_directory/Sources/Remile/Reference/ReferenceCLI.swift" "$project_directory/Sources/Remile/Reference/ReferenceModel.swift" "$check_main"; do
+source_paths=("$project_directory"/Sources/Remile/**/*.swift(.N))
+source_paths=("${(@)source_paths:#*/App/RemileApp.swift}")
+for source_path in "${source_paths[@]}" "$check_main"; do
     printf '#sourceLocation(file: "%s", line: 1)\n' "$source_path"
     cat "$source_path"
     printf '\n#sourceLocation()\n'
 done > "$check_directory/checks.swift"
+if ! rg -q '_cdecl\("__isPlatformVersionAtLeast"\)' "$check_main"; then
+    cat >> "$check_directory/checks.swift" <<'SWIFT'
+@_cdecl("__isPlatformVersionAtLeast")
+public func referenceHostVersionAtLeast(_ major: Int32, _ minor: Int32, _ patch: Int32) -> Int32 {
+    ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: Int(major), minorVersion: Int(minor), patchVersion: Int(patch))) ? 1 : 0
+}
+SWIFT
+fi
 swift -module-cache-path "$check_directory/module-cache" "$check_directory/checks.swift" "$check_directory" "${@[2,-1]}"

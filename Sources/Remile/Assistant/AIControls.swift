@@ -14,8 +14,8 @@ struct GPTMark: View {
         }
         image.isTemplate = false; return image
     }
-    private static let light = coloured(RemileStyle.gold)
-    private static let dark = coloured(RemileStyle.amber)
+    private static let light = coloured(.black)
+    private static let dark = coloured(.white)
     var body: some View {
         Image(nsImage: scheme == .dark ? Self.dark : Self.light).renderingMode(.original).resizable().scaledToFit().frame(width: 17, height: 17)
             .accessibilityLabel("ChatGPT")

@@ -203,6 +203,9 @@ struct ReadingShell: View {
         .sheet(isPresented: $home.convertPresented) { ConvertWorkspace(model: home.conversion) }
         .sheet(isPresented: $home.compressPresented) { CompressWorkspace(model: home.compression) }
         .sheet(isPresented: $home.combinePresented) { CombineWorkspace(model: home.combination, open: home.open) }
+        .sheet(isPresented: $overleaf.connectionNoticePresented, onDismiss: overleaf.finishConnectionNotice) {
+            OverleafConnectionNotice(agree: { overleaf.respondToConnectionNotice(agree: true) }, disagree: { overleaf.respondToConnectionNotice(agree: false) })
+        }
         .sheet(isPresented: $overleaf.presented) { OverleafProjects(library: overleaf, open: home.openTeX, prepareRemoval: { root in
             if home.texProject?.root == root, !home.closeTeX(retainConnection: false) { return false }
             home.removeRecent(root); return true
