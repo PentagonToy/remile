@@ -46,7 +46,7 @@ enum ReferenceEvidence {
         return matches[0]
     }
     static func attachment(recordID: UUID, attachmentID: UUID, repository: ReferenceRepository = ReferenceRepository()) throws -> (record: ReferenceRecord, attachment: ReferenceAttachment, url: URL, data: Data) {
-        guard let record = try active(repository).first(where: { $0.id == recordID }), let attachment = record.attachments.first(where: { $0.id == attachmentID }) else { throw ReferenceFailure("This attachment is no longer available.") }
+        guard let record = try active(repository).first(where: { $0.id == recordID }), let attachment = record.attachments.first(where: { $0.matches(attachmentID) }) else { throw ReferenceFailure("This attachment is no longer available.") }
         let url = repository.attachmentURL(attachment), values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
         guard values.isRegularFile == true, values.isSymbolicLink != true, (values.fileSize ?? Int.max) <= 200_000_000 else { throw ReferenceFailure("This PDF is unavailable or too large.") }
         try Task.checkCancellation()

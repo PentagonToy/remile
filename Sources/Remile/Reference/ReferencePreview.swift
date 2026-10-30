@@ -24,11 +24,32 @@ struct ReferencePreview: View {
         var generation = UUID()
     }
     private struct Loaded: @unchecked Sendable { let document: PDFDocument }
-    private var attachment: ReferenceAttachment? { record.attachments.first { $0.id == (state.attachmentID ?? model.previewAttachments[record.id]) } ?? record.attachments.first }
+    private var attachment: ReferenceAttachment? {
+        guard let id = state.attachmentID ?? model.previewAttachments[record.id] else { return record.attachments.first }
+        return record.attachments.first { $0.matches(id) } ?? record.attachments.first
+    }
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
                 titleHeading
+                let linked = model.linkedRemarkable(record)
+                if !linked.isEmpty {
+                    VStack(alignment: .leading, spacing: RemileControl.spacing) {
+                        Text("reMarkable").font(RemileType.caption).foregroundStyle(.secondary)
+                        ForEach(linked) { source in
+                            HStack {
+                                Button {
+                                    model.selectLibrary(source.library)
+                                    model.selected = source.id; model.selectedIDs = [source.id]
+                                } label: { SymbolLabel(source.displayTitle, systemImage: "scribble.variable").lineLimit(2) }
+                                    .buttonStyle(.plain).remileHelp("View reMarkable notes")
+                                Spacer(minLength: 0)
+                            }.contextMenu {
+                                Button("Disconnect") { model.connectRemarkable(source, to: record, disconnect: true) }
+                            }
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
                 Divider()
 
                 if record.attachments.count > 1 {
@@ -40,7 +61,7 @@ struct ReferencePreview: View {
                 else if let document = state.document, let attachment {
                     HStack(spacing: 12) {
                         Button { move(-1) } label: { SymbolIcon(systemName: "chevron.left").frame(width: 24, height: 30) }.disabled(state.page == 0).accessibilityLabel("Previous preview page")
-                        Button { model.readingAttachment = attachment.id; openPDF(model.repository.attachmentURL(attachment), state.page) } label: {
+                        Button { model.openAttachment(attachment, from: record, page: state.page, openPDF: openPDF) } label: {
                             if let image = state.thumbnail {
                                 Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: 150, maxHeight: 160).shadow(color: .black.opacity(0.15), radius: 3, y: 2)
                             }

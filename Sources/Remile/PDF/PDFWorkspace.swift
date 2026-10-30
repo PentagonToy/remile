@@ -181,7 +181,8 @@ struct PDFWorkspace: View {
             Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.toggleEditing() } } label: { controlLabel(session.isEditing ? "Done" : "Edit PDF", symbol: session.isEditing ? "checkmark" : "square.and.pencil", compact: compact) }.remileHelp(session.isEditing ? "Finish editing PDF" : "Edit PDF text, annotations and pages").disabled(session.document == nil)
             AIToolGroup {
             AIProviderButton()
-            Button { toggleAssistant() } label: { SymbolIcon(systemName: "text.bubble") }.remileHelp(assistantProvider == "ChatGPT" ? "Ask ChatGPT" : "Ask (on-device)").accessibilityLabel(assistantProvider == "ChatGPT" ? "Ask ChatGPT" : "Ask (on-device)").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
+            WorkspaceAskButton(isPresented: presentation.ask, action: toggleAssistant)
+                .disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
 
             }
             if compact {

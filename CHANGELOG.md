@@ -1,5 +1,14 @@
 # Changelog
 
+## In development — 30 October 2026
+
+- Read selected reMarkable folders over SSH with a local Keychain connection. Preserve original unmarked PDFs and keep updates on request.
+- Import local Zotero libraries and collections. Preserve local fields, citation keys and PDF edits during source updates.
+- Add Thesis / Dissertation types, degree-aware PDF metadata and exact public title matching. Correct journal mastheads stored as titles.
+- Refine source selection, Reference libraries, duplicate review, shared PDF storage and connected citations.
+- Bring compiler status dots closer to their icons and keep optional connection tools in one menu.
+- Replace bundled Overleaf artwork with the native leaf symbol. Retain the first-use notice and the separate review of unofficial service interfaces.
+
 ## 0.2.2 — 29 October 2026
 
 - Keep PDF Fit fixed through sidebar and window changes. Add thumbnail page deletion with Undo, full-screen Slide View and smoother bottom-tab navigation.
@@ -41,43 +50,29 @@
 - Start Overleaf in Live unless Private was chosen. Retry transient file snapshots, reconnect from Paused and retain the source position after reviewed updates.
 - Complete project image names and reference labels. Pair supported TeX environments and avoid highlighting an uncertain PDF word match.
 - Align Reference headers, centre missing-value marks and distinguish DOCX with a muted rose badge.
-
 - Preserve editors in online book metadata. Show editor-only volumes in Author / Editor and use editors for new citation keys without rewriting existing keys.
-
 - Rank TeX citation suggestions by local sentence, title and abstract overlap. Show concise source hints without AI calls. Keep manual metadata lookup available beyond missing authors and year, with exact title matching and Crossref abstracts.
-
 - Fill missing PDF reference metadata by DOI or arXiv ID while online, following Work offline. Preserve user fields and distinguish preprints from published papers.
 - Open new LaTeX drafts before choosing a save location. Group numeric setting values beside their arrows and refine source/PDF navigation only for clear text matches.
-
 - Open workspace help directly from User guide. Include Writer in the Home tour and respect the app animation preference during navigation.
-
 - Unify interface type, toolbar spacing, action buttons and short selection controls across workspaces. Keep document font sizes independent. Add focused PDF and Markdown settings and shorten panel transitions while respecting Reduce Motion.
-
 - Simplify Overleaf imports with direct project actions. Keep account preferences and Git tokens in the shared account manager.
-
 - Create a local project from the Home LaTeX button. Keep editor names centred, align account controls and animate Overleaf navigation consistently with Search.
-
 - Manage Overleaf account names and connections in one window. Confirm removal before deleting associated local projects and history. Size the project import window before opening it.
-
 - Add a compact Overleaf email sign-in screen with the official web flow for other providers and additional verification. Preserve existing session storage without saving passwords.
-
 - Copy the selected or clicked PDF table directly as spreadsheet cells, with a cancellable progress message instead of a review window.
-
 - Drag PDF images into native editors and avoid selecting nearby text when opening an image menu. Preserve direct text selection on OCR layers.
-
 - Copy embedded PDF image regions and copy locally recognised tables as spreadsheet cells. Share page inspection and export with the CLI.
-
 - Copy portable Overleaf project IDs from the library and recent documents. Resolve them through CLI project discovery, source reads and explicit opening with buffer hashes and PDF currency.
-
 - Import LaTeX source ZIPs from the Home card into a new chosen folder, preserving the archive and its project assets. Share bounded extraction with Overleaf imports.
 - Discover open documents and explicitly target CLI requests by session UUID. Add Reference import, metadata update, attachment changes, Trash/restore and key regeneration with revision checks.
-
 - Add the local Reference workspace with libraries/collections, PDF/BibTeX import, metadata editing, reviewed duplicate merging, public-paper lookup and revision-checked CLI access.
 - Add Harbour drops, attachment markers/removal, fixed citation-key rules, configurable venue columns and shared sidebar motion. Include Search and Reference in the Home tour.
 - Add portable preference import/export and role-specific split defaults. Save inline edits on an outside click and let empty new Markdown drafts close without a save question.
 - Open unfinished LaTeX projects for editing even when compilation fails. Harden CLI argument validation and Overleaf Live file reconciliation, including targeted Premium Git publication and Free source imports.
 
 ## 0.1.3 — 2026-10-22
+
 - Accept project files with any extension. Dismiss inline entries on an outside click and warn before deleting connected files. Release source and PDF navigation callbacks when leaving the editor.
 - Shorten help text and wrap explanatory hints. Use event-driven CLI requests, incremental source hashes, cached search grouping, bounded raster previews and asynchronous cache cleanup. Expose resource diagnostics through the CLI.
 - Use responsive shared navigation widths and an equal initial Markdown split. Remove custom word alternatives and background replacement lookups. Keep native right-click spelling corrections.
@@ -97,6 +92,7 @@
 - Give the disk image a drag-to-Applications layout with a paper background and installation arrow.
 
 ## 0.1.2 — 2026-10-21
+
 - Add PDF drawing, rectangles and ellipses, with colour selection and Undo. Defer annotation serialisation until Save and preview strokes as vector overlays.
 - Add signature editing locks and explicit risk consent in PDF readers and Search. Preserve original signed bytes for supported, permitted incremental annotation saves. Retain one temporary original during editing and clean it after Save or Discard. Integrity checks do not validate certificate trust, expiry or revocation.
 - Group each highlight selection into one annotation per page, including inline maths. Preserve form data and support undoable highlight and comment-thread deletion.
@@ -109,6 +105,7 @@
 - Bound temporary compilation storage and session caches. Consolidate documentation around current workflows, installation and limits.
 
 ## 0.1.1 — 2026-10-20
+
 - Place larger LaTeX and Overleaf titles in a bounded, subtle box at the centre of the action toolbar. Centre titles that fit and keep the beginning of overflowing titles visible. Double-click an Overleaf title to rename the online project after server confirmation.
 - Show Overleaf sync age in whole minutes.
 - Resize Files and Outline by dragging their dividing line.

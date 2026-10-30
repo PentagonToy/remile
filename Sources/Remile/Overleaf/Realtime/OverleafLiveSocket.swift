@@ -117,7 +117,14 @@ actor OverleafLiveSocket: OverleafLiveChannel {
             for try await text in browser.messages {
                 guard epoch == expected else { return }; try NetworkAccess.requireOnline(); lastFrame = Date()
                 if text.hasPrefix("7:") { OverleafLiveDiagnostics.note("server-error-packet") }
-                switch try OverleafLiveWire.decode(text) {
+                let packet: OverleafLiveWire.Packet
+                do { packet = try OverleafLiveWire.decode(text) }
+                catch {
+                    OverleafLiveDiagnostics.note("wire-decode-kind", code: Int(text.prefix(1)) ?? -1)
+                    OverleafLiveDiagnostics.note("wire-decode-bytes", code: text.utf8.count)
+                    throw error
+                }
+                switch packet {
                 case .heartbeat: OverleafLiveDiagnostics.note("heartbeat"); try await browser.send("2::")
                 case .closed: OverleafLiveDiagnostics.note("server-disconnect"); throw OverleafLiveWire.Failure.disconnected
                 case .acknowledgement(let id, let args):
@@ -145,7 +152,7 @@ actor OverleafLiveSocket: OverleafLiveChannel {
                     } else if name == "connectionRejected" || name == "forceDisconnect" { throw OverleafLiveWire.Failure.permission }
                     else if name == "otUpdateError" { throw OverleafLiveWire.Failure.protocolMismatch }
                     else {
-                        if case .dropped = output.yield(Event(name: name, args: args)) { throw OverleafLiveWire.Failure.protocolMismatch }
+                        if case .dropped = output.yield(Event(name: name, args: args)) { OverleafLiveDiagnostics.note("event-buffer-overflow"); throw OverleafLiveWire.Failure.protocolMismatch }
                     }
                 case .connected, .ignored: break
                 }

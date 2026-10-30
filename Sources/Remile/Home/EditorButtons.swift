@@ -10,14 +10,5 @@ struct RemileEditorButtonStyle: ButtonStyle {
 }
 
 struct OverleafMark: View {
-    private static let symbol: NSImage? = {
-        let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let urls = [Bundle.main.resourceURL?.appendingPathComponent("Brand/overleaf-mark.svg"), source.appendingPathComponent("others/symbols/integrations/overleaf-mark.svg")]
-        guard let image = urls.compactMap({ $0 }).compactMap({ NSImage(contentsOf: $0) }).first else { return nil }
-        image.isTemplate = true; return image
-    }()
-    var body: some View {
-        if let image = Self.symbol { Image(nsImage: image).resizable().scaledToFit().frame(width: 18, height: 18).accessibilityHidden(true) }
-        else { SymbolIcon(systemName: "leaf").accessibilityHidden(true) }
-    }
+    var body: some View { SymbolIcon(systemName: "leaf").accessibilityHidden(true) }
 }

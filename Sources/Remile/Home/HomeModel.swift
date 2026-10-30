@@ -9,7 +9,7 @@ final class HomeModel: ObservableObject {
     let overleaf: OverleafLibrary
     @Published var texProject: TeXProject?
     let assistant = DocumentAssistant(historyKey: "search")
-    enum Page { case home, search, reference, writer }
+    enum Page { case home, search, reference, extensions, writer }
     @Published var writer: WriterModel?
     let references = ReferenceModel()
     @Published var opening = false
@@ -382,6 +382,11 @@ final class HomeModel: ObservableObject {
         }
     }
     func openTeX(_ root: URL) {
+        if overleaf.connection(for: root) != nil {
+            overleaf.requestConnection { [weak self] in self?.openTeXProject(root) }
+        } else { openTeXProject(root) }
+    }
+    private func openTeXProject(_ root: URL) {
         if let current = texProject, current.root.path == root.standardizedFileURL.path { overleaf.browsing = false; return }
         if let warm = overleaf.takeWarmProject(root) {
             guard reader.close(), closeTeX() else { _ = overleaf.retainWarmProject(warm); return }

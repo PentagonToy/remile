@@ -7,6 +7,7 @@ import Foundation
     private var libraryTask: Task<ReferenceCitationIndex, Error>?
     private var projectTask: Task<ReferenceCitationIndex, Never>?
     private var selectedLibraries = Set<UUID>()
+    private var externalVersion = ""
     private var libraryVersion: ReferenceRepository.Version?
     private var bibliographySources: [String: String] = [:]
     private var offered: [UUID: ReferenceRecord] = [:]
@@ -24,7 +25,10 @@ import Foundation
         let libraries = choice.selectedLibraries
         let version = libraries.isEmpty ? nil : await Task.detached(priority: .userInitiated) { repository.version() }.value
         guard !Task.isCancelled else { return nil }
-        if selectedLibraries != libraries || libraryVersion != version { invalidate(); selectedLibraries = libraries; libraryVersion = version }
+        let external = ZoteroCitationSources.signature
+        if selectedLibraries != libraries || libraryVersion != version || externalVersion != external {
+            invalidate(); selectedLibraries = libraries; libraryVersion = version; externalVersion = external
+        }
         let generation = generation
         let sources = buffers.filter { $0.key.lowercased().hasSuffix(".bib") }
         if projectTask == nil || sources != bibliographySources {
@@ -35,7 +39,7 @@ import Foundation
                     guard !Task.isCancelled else { return ReferenceCitationIndex() }
                     records += ((try? ReferenceBibTeX.parse(sources[path]!)) ?? []).map { record in
                         var copy = record
-                        copy.fields = record.fields.filter { ["title", "author", "editor", "year", "abstract", "doi", "eprint", "url"].contains($0.key) }; copy.originalCitation = ""
+                        copy.fields = record.fields.filter { ["title", "author", "editor", "year", "abstract", "doi", "eprint", "url", "zoterosource", "zoterolibrary", "zoterocollection"].contains($0.key) }; copy.originalCitation = ""
                         return copy
                     }
                 }
@@ -47,7 +51,11 @@ import Foundation
             libraryTask = Task.detached(priority: .userInitiated) {
                 let snapshot = try repository.snapshot(), hidden = Set(snapshot.libraries.filter { $0.trashed != nil }.map(\.id))
                 try Task.checkCancellation()
-                return ReferenceCitationIndex(snapshot.records.filter {
+                let connected = Set(ZoteroCitationSources.libraries.map(\.id))
+                let external: [ReferenceRecord]
+                if libraries.isDisjoint(with: connected) { external = [] }
+                else { external = (try? await ZoteroCitationSources.shared.records()) ?? [] }
+                return ReferenceCitationIndex((snapshot.records + external).filter {
                     $0.trashed == nil && !hidden.contains($0.library) && $0.collectionID.map(hidden.contains) != true && ReferenceCitationPreferences.includes($0, libraries: libraries)
                 })
             }
@@ -63,12 +71,26 @@ import Foundation
         guard !Task.isCancelled, self.generation == generation else { return nil }
         offered = Dictionary(uniqueKeysWithValues: suggestions.filter { !$0.project }.map { ($0.record.id, $0.record) })
         guard !suggestions.isEmpty else { return nil }
-        return EditorCompletion.Context(range: prefix.range, items: suggestions.map {
-            .init(label: $0.record.citationKey, insertion: $0.record.citationKey + prefix.closing, referenceID: $0.project ? nil : $0.record.id,
-                  detail: [$0.record.displayTitle, [$0.record.displayContributors, $0.record.year, $0.project ? "Project" : "Library"].filter { !$0.isEmpty }.joined(separator: " · "),
-                           $0.relevance.map { $0.basis + " · " + $0.intents.map(\.title).joined(separator: " / ") + "\n" + $0.note }, $0.relevance.flatMap { $0.excerpt.isEmpty ? nil : $0.excerpt }].compactMap { $0 }.joined(separator: "\n"),
-                  annotation: $0.relevance?.label)
-        })
+        let items: [EditorCompletion.Item] = suggestions.map { suggestion in
+            let record = suggestion.record
+            let origin = ZoteroCitationSources.origin(record)
+            let location = origin ?? (suggestion.project ? "Project" : "Library")
+            let summary = [record.displayContributors, record.year, location].filter { !$0.isEmpty }.joined(separator: " · ")
+            var details: [String] = []
+            if let origin { details.append(origin) }
+            details.append(record.displayTitle); details.append(summary)
+            if let relevance = suggestion.relevance {
+                let intents = relevance.intents.map(\.title).joined(separator: " / ")
+                details.append(relevance.basis + " · " + intents + "\n" + relevance.note)
+                if !relevance.excerpt.isEmpty { details.append(relevance.excerpt) }
+            }
+            let annotation: String?
+            if origin != nil { annotation = suggestion.project ? "Project · Zotero" : "Zotero" }
+            else { annotation = suggestion.relevance?.label }
+            return EditorCompletion.Item(label: record.citationKey, insertion: record.citationKey + prefix.closing,
+                referenceID: suggestion.project ? nil : record.id, detail: details.joined(separator: "\n"), annotation: annotation)
+        }
+        return EditorCompletion.Context(range: prefix.range, items: items)
     }
     func prepare(_ item: EditorCompletion.Item, project: TeXProject) throws {
         guard let id = item.referenceID else { return }

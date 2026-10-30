@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "id": "remarkable-ink-0.3.0-py312-v1",
+  "pythonVersion": "3.12.16",
+  "python": {
+    "filename": "python.tar.gz",
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.12.16%2B20261026-aarch64-apple-darwin-install_only_stripped.tar.gz",
+    "bytes": 25035343,
+    "sha256": "353d5f1b4fd2715e7053f12f068435d5bbad16b91e057006b5d01e0925709a7e"
+  },
+  "packages": [
+    {
+      "name": "click",
+      "version": "8.5.0",
+      "filename": "click-8.5.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl",
+      "bytes": 125251,
+      "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
+      "licence": "BSD-3-Clause"
+    },
+    {
+      "name": "packaging",
+      "version": "23.2",
+      "filename": "packaging-23.2-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/ec/1a/610693ac4ee14fcdf2d9bf3c493370e4f2ef7ae2e19217d7a237ff42367d/packaging-23.2-py3-none-any.whl",
+      "bytes": 53011,
+      "sha256": "8c491190033a9af7e1d931d0b5dacc2ef47509b34dd0de67ed209b5203fc88c7",
+      "licence": "Apache-2.0 OR BSD-2-Clause"
+    },
+    {
+      "name": "rmc",
+      "version": "0.3.0",
+      "filename": "rmc-0.3.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/a8/b0/486783b0321557d4294195e73e10b58dc5b5e1ac8519791c48160f863097/rmc-0.3.0-py3-none-any.whl",
+      "bytes": 12626,
+      "sha256": "f2957bf08c48902bf50b047ee08aeb0be5a8c0a64bf7a1a46e23ae02c0c75780",
+      "licence": "MIT"
+    },
+    {
+      "name": "rmscene",
+      "version": "0.6.1",
+      "filename": "rmscene-0.6.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/b2/77/4de4d4e0203d83288d33b4e448aafbe9aff6fe4deeb344f28c1cca901b98/rmscene-0.6.1-py3-none-any.whl",
+      "bytes": 25316,
+      "sha256": "9cd50ae8eede26e3263d78102db880644d39dcc6a5376d38627c060e47bf9045",
+      "licence": "MIT"
+    }
+  ]
+}

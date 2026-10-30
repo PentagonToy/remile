@@ -1,7 +1,10 @@
 import Foundation
 
 enum ReferenceKind: String, CaseIterable {
-    case article, book, newspaper, webpage, conference, report, preprint, other
+    case article, book, newspaper, webpage, conference, report, preprint
+    case mastersThesis = "mastersthesis"
+    case doctoralThesis = "phdthesis"
+    case note, other
     var symbol: String {
         switch self {
         case .article: return "doc.text"
@@ -11,7 +14,9 @@ enum ReferenceKind: String, CaseIterable {
         case .conference: return "doc" // Fallback when the custom podium asset is unavailable.
         case .report: return "doc.richtext"
         case .preprint: return "doc.plaintext"
+        case .note: return "scribble.variable"
         case .other: return "doc"
+        case .mastersThesis, .doctoralThesis: return "graduationcap"
         }
     }
     var label: String {
@@ -23,7 +28,10 @@ enum ReferenceKind: String, CaseIterable {
         case .conference: return "Conference paper"
         case .report: return "Report"
         case .preprint: return "Preprint"
+        case .note: return "Note"
         case .other: return "Other"
+        case .mastersThesis: return "Thesis"
+        case .doctoralThesis: return "Dissertation"
         }
     }
     var bibType: String {
@@ -33,12 +41,18 @@ enum ReferenceKind: String, CaseIterable {
         case .webpage: return "online"
         case .conference: return "inproceedings"
         case .report: return "techreport"
+        case .note: return "unpublished"
         case .preprint, .other: return "misc"
+        case .mastersThesis: return "mastersthesis"
+        case .doctoralThesis: return "phdthesis"
         }
     }
     static func classify(_ record: ReferenceRecord) -> Self {
+        if record.type == "unpublished", record.fields["entrysubtype"]?.lowercased() == "note" { return .note }
         if record.fields["entrysubtype"]?.lowercased() == "preprint" { return .preprint }
         let type = record.type.lowercased()
+        if let kind = thesisKind(type) { return kind }
+        if type == "thesis", let kind = thesisKind(record.fields["type"] ?? "") { return kind }
         if type == "article" { return record.fields["entrysubtype"]?.lowercased() == "newspaper" ? .newspaper : .article }
         if ["book", "inbook", "incollection", "booklet"].contains(type) { return .book }
         if ["online", "www", "electronic", "webpage", "website", "url"].contains(type) { return .webpage }
@@ -47,12 +61,22 @@ enum ReferenceKind: String, CaseIterable {
         if ["report", "techreport"].contains(type) { return .report }
         return .other
     }
+    static func thesisKind(_ value: String) -> Self? {
+        let value = value.lowercased().filter(\.isLetter)
+        if ["mastersthesis", "masterthesis", "mathesis", "masterofscience", "masterofarts", "masterofengineering", "masters", "master", "msc", "mscthesis"].contains(value) { return .mastersThesis }
+        if ["phdthesis", "phddissertation", "phd", "doctoralthesis", "doctoraldissertation", "doctorofphilosophy"].contains(value) { return .doctoralThesis }
+        return nil
+    }
     func applying(to record: ReferenceRecord, customType: String = "") -> ReferenceRecord {
         var result = record
         result.type = self == .other ? (customType.isEmpty ? "misc" : customType) : bibType
-        if self == .preprint { result.fields["entrysubtype"] = "preprint" }
+        if self == .note { result.fields["entrysubtype"] = "note" }
+        else if self == .preprint { result.fields["entrysubtype"] = "preprint" }
         else if self == .newspaper { result.fields["entrysubtype"] = "newspaper" }
-        else if ["newspaper", "preprint"].contains(result.fields["entrysubtype"] ?? "") { result.fields.removeValue(forKey: "entrysubtype") }
+        else if ["newspaper", "preprint", "note", "pdf"].contains(result.fields["entrysubtype"] ?? "") { result.fields.removeValue(forKey: "entrysubtype") }
+        if self == .mastersThesis { result.fields["type"] = "Master's thesis" }
+        else if self == .doctoralThesis { result.fields["type"] = "PhD dissertation" }
+        else if Self.thesisKind(result.fields["type"] ?? "") != nil { result.fields.removeValue(forKey: "type") }
         return result
     }
 }
@@ -69,7 +93,8 @@ enum ReferenceMetadata {
         for (key, label) in names {
             if let value = record.fields[key], !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { result.append(ReferenceMetadataRow(id: key, label: label, value: ReferenceText.field(key, value))) }
         }
-        let known = Set(names.map(\.0) + ["entrysubtype", "abstract"])
+        if let school = record.fields["school"], !school.isEmpty { result.append(.init(id: "school", label: "University", value: school)) }
+        let known = Set(names.map(\.0) + ["entrysubtype", "abstract", "school"] + (ReferenceKind.thesisKind(record.type) != nil || record.type == "thesis" ? ["type"] : []))
         for key in record.fields.keys.sorted() where !known.contains(key) {
             if let value = record.fields[key], !value.isEmpty { result.append(ReferenceMetadataRow(id: key, label: key.replacingOccurrences(of: "_", with: " ").capitalized, value: value)) }
         }

@@ -49,12 +49,13 @@ struct WorkspaceCommands: Commands {
     }
 }
 struct WorkspaceAskButton: View {
+    @AppStorage("assistant.provider") private var provider = "Apple Intelligence"
     let isPresented: Bool
     let action: () -> Void
     var body: some View {
         Button(action: action) { SymbolLabel("Ask", systemImage: isPresented ? "text.bubble.fill" : "text.bubble") }
             .labelStyle(.iconOnly).foregroundStyle(isPresented ? RemileStyle.accent : RemileStyle.ink)
-            .accessibilityLabel("Ask").accessibilityValue(isPresented ? "Open" : "Closed").remileHelp("Ask about this document · ⇧⌘A")
+            .accessibilityLabel("Ask").accessibilityValue(isPresented ? "Open" : "Closed").remileHelp(provider == "Off" ? "AI is off. Open Ask to view history or choose AI." : "Ask about this document · ⇧⌘A")
     }
 }
 struct WorkspaceReferenceButton: View {

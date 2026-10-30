@@ -14,6 +14,7 @@ struct ReferenceCleanupReview: View {
         @Published var loading = true
         @Published var error: String?
         @Published var group: DuplicateGroup?
+        @Published var duplicateIncluded = Set<UUID>()
         @Published var progress: String?
         var loaded = false
         var lookupTask: Task<Void, Never>?
@@ -24,7 +25,7 @@ struct ReferenceCleanupReview: View {
         let groups = Set(visible.compactMap { model.duplicates[$0]?.sorted { $0.uuidString < $1.uuidString } })
         let records = Dictionary(uniqueKeysWithValues: model.records.map { ($0.id, $0) })
         return groups.compactMap { ids -> DuplicateGroup? in
-            let found = ids.compactMap { records[$0] }
+            let found = ids.filter(visible.contains).compactMap { records[$0] }.sorted { $0.id.uuidString < $1.id.uuidString }
             return found.count > 1 ? DuplicateGroup(records: found) : nil
         }.sorted { $0.records[0].displayTitle.localizedStandardCompare($1.records[0].displayTitle) == .orderedAscending }
     }
@@ -59,6 +60,12 @@ struct ReferenceCleanupReview: View {
                     Button("Apply selected") { model.applyCleanup(state.changes.filter { state.included.contains($0.id) }) { dismiss() } }
                         .disabled(state.loading || state.included.isEmpty || model.busy).keyboardShortcut(.defaultAction)
                         .remileHelp("Apply checked metadata changes. Citation keys stay unchanged.")
+                } else {
+                    Button(state.duplicateIncluded.count == duplicateGroups.count ? "Merge all" : "Merge selected") {
+                        let groups = duplicateGroups.filter { state.duplicateIncluded.contains($0.id) }.map(\.records)
+                        model.mergeAll(groups) { Task { await refresh() } }
+                    }.disabled(state.loading || model.busy || state.duplicateIncluded.isEmpty)
+                        .keyboardShortcut(.defaultAction)
                 }
             }
         }.padding(24).frame(width: 580, height: 430).background(RemileStyle.background).tint(RemileStyle.accent)
@@ -90,7 +97,11 @@ struct ReferenceCleanupReview: View {
     }
     private func duplicate(_ group: DuplicateGroup) -> some View {
         let first = group.records[0]
-        return Button { state.group = group } label: {
+        return HStack(spacing: 12) {
+            Toggle("Include " + first.displayTitle, isOn: Binding(get: { state.duplicateIncluded.contains(group.id) }, set: {
+                if $0 { state.duplicateIncluded.insert(group.id) } else { state.duplicateIncluded.remove(group.id) }
+            })).labelsHidden().toggleStyle(.checkbox)
+            Button { state.group = group } label: {
             HStack(spacing: 14) {
                 SymbolIcon(systemName: "doc.on.doc").foregroundStyle(RemileStyle.accent).frame(width: 22)
                 VStack(alignment: .leading, spacing: 6) {
@@ -98,8 +109,9 @@ struct ReferenceCleanupReview: View {
                     Text("\(group.records.count) references · " + [first.shortContributors, first.year].filter { !$0.isEmpty }.joined(separator: " · ")).font(RemileType.caption).foregroundStyle(.secondary)
                 }
                 SymbolIcon(systemName: "chevron.right").foregroundStyle(.secondary)
-            }.padding(14).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 7))
-        }.buttonStyle(.plain).remileHelp("Review duplicates: " + first.displayTitle).accessibilityLabel("Review duplicates: " + first.displayTitle)
+            }
+            }.buttonStyle(.plain).remileHelp("Review duplicates: " + first.displayTitle).accessibilityLabel("Review duplicates: " + first.displayTitle)
+        }.padding(14).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 7)).disabled(model.busy)
     }
     private func empty(_ text: String) -> some View {
         VStack(spacing: 10) { SymbolIcon(systemName: "checkmark.circle").foregroundStyle(RemileStyle.accent); Text(text).font(RemileType.callout).foregroundStyle(.secondary) }
@@ -136,6 +148,9 @@ struct ReferenceCleanupReview: View {
             let changes = try await Task.detached(priority: .userInitiated) { try ReferenceCleanup.proposals(records, repository: repository) }.value
             state.changes = changes
             let ids = Set(changes.map(\.id))
+            let duplicateIDs = Set(duplicateGroups.map(\.id))
+            if state.loaded { state.duplicateIncluded.formIntersection(duplicateIDs) }
+            else { state.duplicateIncluded = duplicateIDs }
             if state.loaded { state.included.formIntersection(ids) }
             else { state.included = ids; if target == nil && changes.isEmpty && !duplicateGroups.isEmpty { state.tab = 1 } }
             state.loaded = true

@@ -229,6 +229,13 @@ Task { @MainActor in
         await live.start(project: integrated, library: library, connection: integratedConnection)
         check(previousWriter == nil && live.connected, "A short writer handoff during project switching reconnects automatically")
         check(live.connected, "Workspace joins text Live after the file manifest is reconciled")
+        live.setVisible(false)
+        let citation = ReferenceRecord(type: "book", fields: ["title": "Citation fixture", "author": "Test, Author", "year": "2026"])
+        try integrated.addReference(citation, bibliography: "remile-references.bib")
+        await live.flush()
+        try await eventually { live.connected && integratedRemote.files["remile-references.bib"] != nil }
+        check(live.issue == nil, "A bibliography added while a citation sheet hides the workspace reconciles without a changed-tree pause")
+        live.setVisible(true)
         let image = run.appendingPathComponent("dropped.png"); try bytes("dropped image").write(to: image)
         integrated.drop([image], into: ""); await live.flush()
         try await eventually { live.connected && integratedRemote.files["dropped.png"] == bytes("dropped image") }

@@ -223,10 +223,11 @@ struct TeXWorkspace: View {
                     toggleLogs()
                 } label: {
                     HStack(spacing: 6) {
-                        SymbolIcon(systemName: showingPanel ? "doc.richtext" : "terminal").overlay(alignment: .top) {
+                        SymbolIcon(systemName: showingPanel ? "doc.richtext" : "terminal").overlay(alignment: .topTrailing) {
                             if let logSeverity, !showingPanel {
-                                Circle().fill(logSeverity == .error ? Color.red : Color.yellow).frame(width: 6, height: 6)
-                                    .overlay(Circle().stroke(RemileStyle.editorBar, lineWidth: 1)).offset(y: -7).accessibilityHidden(true)
+                                Circle().fill(logSeverity == .error ? Color.red : Color.yellow).frame(width: RemileSymbol.statusDotSize, height: RemileSymbol.statusDotSize)
+                                    .overlay(Circle().stroke(RemileStyle.editorBar, lineWidth: RemileSymbol.statusDotBorder))
+                                    .offset(x: RemileSymbol.statusDotInset, y: RemileSymbol.statusDotInset).accessibilityHidden(true)
                             }
                         }
                     }

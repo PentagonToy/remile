@@ -281,13 +281,15 @@ import WebKit
         let attempt = generation
         do {
             try check(attempt)
-            if visible, fileSync != nil {
+            if fileSync != nil {
+              if visible {
                 if states.keys.contains(where: { !FileManager.default.fileExists(atPath: project.root.appendingPathComponent($0).path) }) { treeDirty = true }
                 if Date().timeIntervalSince(lastFileCheck) >= 2 {
                     lastFileCheck = Date()
                     let changed = try await fileSync!.changed(project); try check(attempt)
                     if changed { treeDirty = true }
                 }
+              }
                 if project.fileRevision != revision || treeDirty {
                     awaitingConfirmation = true
                     if sentAt.values.contains(where: { Date().timeIntervalSince($0) > 20 }) { throw OverleafLiveWire.Failure.uncertain }

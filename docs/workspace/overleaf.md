@@ -1,5 +1,7 @@
 # Overleaf
 
+Development builds show a one-time unofficial-connection notice before opening the library or a saved Overleaf project. Agree continues and saves the choice on this Mac. Disagree leaves the current workspace unchanged. The notice does not grant provider permission.
+
 Keep the comfort of a local editor and the connection to your shared project.
 
 ## Connect a project

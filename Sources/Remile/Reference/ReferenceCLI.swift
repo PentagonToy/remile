@@ -14,7 +14,7 @@ enum ReferenceCLI {
             let saved = try ReferencePassages.snapshot(recordID: id, repository: repository), record = saved.record
             return ["ok": true, "schema": 1, "id": id.uuidString, "key": record.citationKey, "passages": try saved.passages.map { passage -> [String: Any] in
                 var payload = try ReferencePassages.payload(passage)
-                payload["attached"] = record.attachments.contains(where: { $0.id == passage.attachment && $0.sha256 == passage.sha256 })
+                payload["attached"] = record.attachments.contains(where: { $0.matches(passage.attachment) && $0.sha256 == passage.sha256 })
                 return payload
             }]
         case "save-passage":
@@ -46,13 +46,16 @@ enum ReferenceCLI {
         }
         if options.first == "collect" {
             guard let library else { throw ReferenceFailure("Choose a destination library ID.") }
-            let record = try ReferenceCollect.save(file(), library: library, repository: repository)
+            let collected = try ReferenceCollect.save(file(), library: library, repository: repository)
+            let record = try repository.records().first { $0.id == collected.id } ?? collected
             return ["ok": true, "schema": 1, "id": record.id.uuidString, "key": record.citationKey, "revision": record.revision.uuidString, "library": library.uuidString]
         }
         if options.first == "import" {
             guard let library else { throw ReferenceFailure("Choose a destination library ID.") }
             let imported = try repository.importFiles([file()], libraryID: library)
-            return ["ok": true, "schema": 1, "references": imported.map { ["id": $0.id.uuidString, "revision": $0.revision.uuidString] }]
+            let ids = Set(imported.map(\.id))
+            let saved = try repository.records().filter { ids.contains($0.id) }
+            return ["ok": true, "schema": 1, "references": saved.map { ["id": $0.id.uuidString, "revision": $0.revision.uuidString] }]
         }
         let writes = ["update", "attach", "detach", "trash", "restore", "regenerate-key"]
         if let action = options.first, writes.contains(action) {
@@ -110,7 +113,7 @@ enum ReferenceCLI {
             row["attachments"] = record.attachments.map { ["id": $0.id.uuidString, "name": $0.name, "sha256": $0.sha256, "path": repository.attachmentURL($0).path] }
             return ["ok": true, "schema": 1, "reference": row, "bibtex": try ReferenceExport.bibtex([record])]
         case "export":
-            let targetLibrary = library ?? (option("--id") == nil ? libraries.first?.id : nil)
+            let targetLibrary = library
             var chosen = records.filter { !inTrash($0) && (targetLibrary == nil || $0.library == targetLibrary || $0.collectionID == targetLibrary) }
             if let id = option("--id").flatMap(UUID.init(uuidString:)) { chosen = chosen.filter { $0.id == id } }
             guard !chosen.isEmpty else { throw ReferenceFailure("Choose an existing reference to export.") }

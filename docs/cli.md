@@ -96,7 +96,7 @@ Combine accepts PDFs together or Markdown files together. Markdown output uses `
 
 ## Reference library
 
-`reference libraries` lists stable library/collection identities and parent IDs. `reference list [--library UUID] [--query text] [--limit 1..200] [--offset N] [--trash]` returns bounded bibliographic metadata with stable record IDs and revisions. `reference show --id UUID` returns fields, attachment paths and BibTeX. `reference export [--library UUID] [--id UUID] [--output /absolute/new.bib]` returns or exports active records. The output file must be new. These commands use the shared local catalogue without a running editor or model request. See [Reference](reference.md) for the native workspace and fixed citation-key formats.
+`reference libraries` lists stable library/collection identities and parent IDs. `reference list [--library UUID] [--query text] [--limit 1..200] [--offset N] [--trash]` returns bounded bibliographic metadata with stable record IDs and revisions. `reference show --id UUID` returns fields, attachment paths and BibTeX. `reference export [--library UUID] [--id UUID] [--output /absolute/new.bib]` exports active records across all libraries unless scoped. Citation keys must be unique in the exported set. The output file must be new. These commands use the shared local catalogue without a running editor or model request. See [Reference](reference.md) for the native workspace and fixed citation-key formats.
 
 Reference writes use the same transaction service as the native workspace:
 

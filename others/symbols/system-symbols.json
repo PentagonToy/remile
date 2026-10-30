@@ -137,6 +137,7 @@
       "name": "books.vertical",
       "sources": [
         "Sources/Remile/App/WorkspaceCommands.swift",
+        "Sources/Remile/Extensions/ZoteroExtension.swift",
         "Sources/Remile/Home/HomeWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafProjects.swift",
@@ -304,7 +305,8 @@
       "name": "doc.on.doc",
       "sources": [
         "Sources/Remile/LaTeX/TeXSetupGuide.swift",
-        "Sources/Remile/Reference/ReferenceCleanupReview.swift"
+        "Sources/Remile/Reference/ReferenceCleanupReview.swift",
+        "Sources/Remile/Reference/ReferencePicker.swift"
       ]
     },
     {
@@ -341,6 +343,7 @@
     {
       "name": "doc.text.magnifyingglass",
       "sources": [
+        "Sources/Remile/Reference/ReferencePicker.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift",
         "Sources/Remile/Review/ManuscriptReviewPanel.swift",
         "Sources/Remile/Search/LibrarySearchView.swift",
@@ -356,6 +359,7 @@
     {
       "name": "ellipsis",
       "sources": [
+        "Sources/Remile/Extensions/ExtensionsWorkspace.swift",
         "Sources/Remile/Home/HomeWorkspace.swift",
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
         "Sources/Remile/Markdown/MarkdownWorkspace.swift",
@@ -406,6 +410,8 @@
       "name": "folder",
       "sources": [
         "Sources/Remile/App/StorageSettings.swift",
+        "Sources/Remile/Extensions/RemarkableFolderPicker.swift",
+        "Sources/Remile/Extensions/ZoteroExtension.swift",
         "Sources/Remile/Home/HomeWorkspace.swift",
         "Sources/Remile/LaTeX/TeXFileTree.swift",
         "Sources/Remile/Overleaf/OverleafViews.swift",
@@ -432,6 +438,12 @@
     },
     {
       "name": "globe",
+      "sources": [
+        "Sources/Remile/Reference/ReferenceKind.swift"
+      ]
+    },
+    {
+      "name": "graduationcap",
       "sources": [
         "Sources/Remile/Reference/ReferenceKind.swift"
       ]
@@ -656,6 +668,12 @@
       ]
     },
     {
+      "name": "puzzlepiece.extension",
+      "sources": [
+        "Sources/Remile/Home/HomeWorkspace.swift"
+      ]
+    },
+    {
       "name": "quote.bubble",
       "sources": [
         "Sources/Remile/Assistant/AssistantPanel.swift"
@@ -698,6 +716,15 @@
       "name": "scope",
       "sources": [
         "Sources/Remile/LaTeX/TeXLogPanel.swift"
+      ]
+    },
+    {
+      "name": "scribble.variable",
+      "sources": [
+        "Sources/Remile/Extensions/ExtensionsWorkspace.swift",
+        "Sources/Remile/Reference/ReferenceKind.swift",
+        "Sources/Remile/Reference/ReferencePreview.swift",
+        "Sources/Remile/Reference/ReferenceWorkspace.swift"
       ]
     },
     {
