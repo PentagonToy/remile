@@ -53,3 +53,5 @@ Right-click a saved project and choose Copy project ID. The [CLI](../cli.md#over
 | Review | Read comments and suggestions through the separate review connection. |
 
 [Sync details](../overleaf-realtime.md) · [Workspace overview](../workspace-layout.md)
+
+From 0.2.4, open Review and choose **Enable review** before fetching comments or suggestions. This optional unofficial web connection is separate from Git. Use the Review export menu to disable it again. The choice also applies to CLI review requests. Disabling it keeps Git sync and imported local files available.

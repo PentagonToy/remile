@@ -61,6 +61,7 @@ import WebKit
         (!document && ["/user/projects", "/tag"].contains(path)) || reviewPath(path, document: document)
     }
     static func request(_ path: String, profile: UUID, document: Bool = false) async throws -> Data {
+        if reviewPath(path, document: document) { try OverleafReviewAccess.requireEnabled() }
         guard allowedReadPath(path, document: document) else {
             throw OverleafGit.Failure("This web connection only reads the project list and review notes. Source sync uses Git.")
         }

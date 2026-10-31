@@ -83,3 +83,7 @@ See the [test map](Tests/README.md) for suite responsibilities and remaining int
 remile. source code is available under the [MIT licence](LICENSE).
 
 The ChatGPT icon path is reused from [OpenCode](https://github.com/anomalyco/opencode) under MIT, with its original notice retained. See [third-party notices](THIRD_PARTY_NOTICES.md) for this asset, platform components, external tools and the distinction between incorporated material and development references. Apple, OpenAI, Overleaf, reMarkable and Zotero names and marks remain their owners’ property. remile. is an independent project.
+
+[Contributing](CONTRIBUTING.md) · [Security reporting](SECURITY.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+[Performance check scope](docs/details/performance-checks.md) · [Provenance review scope](docs/details/provenance.md)

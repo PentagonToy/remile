@@ -44,6 +44,11 @@ jobs:
         run: swift build --build-system native --scratch-path "$RUNNER_TEMP/remile-build" --jobs 2 -c release --product Remile
       - name: Standard tests
         run: swift test --build-system native --scratch-path "$RUNNER_TEMP/remile-tests" --jobs 2
+      - name: Overleaf CLI, login and titlebar regression checks
+        run: |
+          zsh tools/check_overleaf_commands.sh "$RUNNER_TEMP/remile-command-checks"
+          zsh tools/check_overleaf_login.sh "$RUNNER_TEMP/remile-login-checks"
+          zsh tools/check_titlebar.sh "$RUNNER_TEMP/remile-titlebar-checks"
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
