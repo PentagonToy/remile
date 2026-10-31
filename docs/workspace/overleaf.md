@@ -6,9 +6,9 @@ Keep the local editor connected to an Overleaf project through Git. Comments and
 
 1. Open Overleaf from Home and choose Add project.
 2. Add an account label and its Git token.
-3. Paste the Overleaf project or Git link and name the local project.
+3. Sign in to choose a project, or expand **Add by link** and paste its Overleaf or Git link.
 
-Create a token in **Overleaf → Account settings → Git integration**. Eligible Git access and a local TeX installation are required. The project list shows copies already added on this Mac. Git does not provide an account-wide project catalogue.
+Create a token in **Overleaf → Account settings → Git integration**. Eligible Git access and a local TeX installation are required. The chooser reads your account’s project list through a separate web session when opened or manually refreshed. Projects start in collapsible tag groups, with untagged projects last. A project with several tags appears in each matching group. Search stays local and shows matching projects directly, including those in collapsed groups. Tag colours are fetched alongside the list. Project contents are not downloaded until selected. The list is discarded when the chooser closes. Selected projects connect through Git. Git tokens alone cannot list projects.
 
 ## Choose a mode
 
@@ -29,6 +29,8 @@ Identical attachments are read once per recovery attempt and share memory. This 
 Choose Review beside Files for comments and tracked suggestions. Review connects separately and can request sign-in without interrupting Git editing. It uses private web requests, not a collaboration socket. Refresh updates the snapshot. Exports and source-location navigation remain available.
 
 Cards show the author when supplied, the date and the file path. Select the path to visit its source location. Editor line numbers are controlled in **Settings → LaTeX → Line numbers**. Opened project files use the bottom tab bar, with the same behaviour as local LaTeX projects.
+
+The selected review card has a quiet outline. Disabled acceptance and rejection buttons explain the next required step in their tooltip. The connection bar distinguishes unsaved edits from work saved on this Mac and confirmed synchronisation.
 
 Use ✓ to accept or × to reject a single suggestion after synchronisation is confirmed and its location still matches. Acceptance updates review metadata through the web connection. Rejection restores the source through Git, verifies it and clears the original suggestion marker. Overleaf history can record this as a source edit and a separate accepted-range event. Moved or grouped suggestions may need to be handled in Overleaf. Git updates can remove or displace comments and tracked changes.
 

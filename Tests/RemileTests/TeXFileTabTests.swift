@@ -39,6 +39,12 @@ import SwiftUI
         XCTAssertEqual(project.openFiles, [project.main])
         project.selected = "one.tex"; project.selected = "two.tex"; project.selected = "one.tex"
         XCTAssertEqual(project.openFiles, ["main.tex", "one.tex", "two.tex"])
+        project.cycleFileTab(forward: false)
+        XCTAssertEqual(project.selected, "main.tex")
+        project.cycleFileTab(forward: false)
+        XCTAssertEqual(project.selected, "two.tex")
+        project.cycleFileTab(forward: true)
+        XCTAssertEqual(project.selected, "main.tex")
         project.buffers["one.tex"] = "Unsaved writing"
         project.moveFileTab("two.tex", to: "main.tex", after: false)
         XCTAssertEqual(project.openFiles, ["two.tex", "main.tex", "one.tex"])
@@ -46,9 +52,10 @@ import SwiftUI
         project.closeFileTab("one.tex")
         XCTAssertEqual(project.buffers["one.tex"], "Unsaved writing")
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("one.tex").path))
-        project.closeFileTab("two.tex")
+        XCTAssertTrue(project.closeSelectedFileTab())
         XCTAssertEqual(project.selected, "main.tex")
         project.closeFileTab("main.tex")
+        XCTAssertFalse(project.closeSelectedFileTab())
         XCTAssertEqual(project.openFiles, ["main.tex"])
         project.selected = "one.tex"
         XCTAssertEqual(project.buffers["one.tex"], "Unsaved writing")

@@ -25,6 +25,7 @@
       "sources": [
         "Sources/Remile/Markdown/MarkdownWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafProjects.swift",
         "Sources/Remile/Overleaf/OverleafReviewPanel.swift",
         "Sources/Remile/Search/LibraryManager.swift",
         "Sources/Remile/Search/SearchPDFPreview.swift"
@@ -147,6 +148,7 @@
       "sources": [
         "Sources/Remile/LaTeX/TeXAskPanel.swift",
         "Sources/Remile/Overleaf/OverleafAccountManager.swift",
+        "Sources/Remile/Overleaf/OverleafProjects.swift",
         "Sources/Remile/Overleaf/OverleafReviewPanel.swift",
         "Sources/Remile/Overleaf/OverleafViews.swift",
         "Sources/Remile/PDF/PDFWorkspace.swift",

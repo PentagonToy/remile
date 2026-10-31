@@ -17,6 +17,7 @@ struct OverleafReviewPanel: View {
         @Published var refreshID = UUID()
         @Published var signIn = false
         @Published var needsSignIn = false
+        @Published var selected: String?
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -46,15 +47,18 @@ struct OverleafReviewPanel: View {
                                     HStack(spacing: RemileControl.spacing) {
                                         SymbolLabel(change.insertion ? "Added" : "Deleted", systemImage: change.insertion ? "plus" : "minus").foregroundStyle(change.insertion ? RemileStyle.success : RemileStyle.warning)
                                         Spacer(minLength: RemileControl.spacing)
-                                        OverleafReviewDecisionButtons(changeID: change.id) { decide(change, accept: $0) }
-                                            .disabled(state.applying || state.busy || !change.singleRange || !project.canReviewChanges || change.anchor.location(in: project.buffers) == nil)
+                                        OverleafReviewDecisionButtons(changeID: change.id, disabledReason: disabledReason(change)) { decide(change, accept: $0) }
                                     }
                                     if let author = change.author { Text(author).fontWeight(.semibold) }
                                     if let timestamp = change.timestamp { date(timestamp) }
-                                    location(change.anchor, highlight: .change)
+                                    location(change.anchor, highlight: .change, selection: "change:" + change.id)
                                     Divider().opacity(0.4)
                                     Text(change.text).strikethrough(!change.insertion, color: RemileStyle.deletion)
-                                }.font(RemileType.caption).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(RemileStyle.success.opacity(0.07), in: RoundedRectangle(cornerRadius: 10)).contentShape(Rectangle()).onTapGesture { navigate(change.anchor, highlight: .change) }
+                                }.font(RemileType.caption).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(RemileStyle.success.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+                                    .overlay(selectionBorder("change:" + change.id)).contentShape(Rectangle())
+                                    .accessibilityAddTraits(state.selected == "change:" + change.id ? .isSelected : [])
+                                    .accessibilityAction(named: Text("Show in source")) { navigate(change.anchor, highlight: .change, selection: "change:" + change.id) }
+                                    .onTapGesture { navigate(change.anchor, highlight: .change, selection: "change:" + change.id) }
                             }
                         } else {
                             let threads = snapshot.archive.threads.filter { state.resolved || !$0.resolved }
@@ -66,12 +70,16 @@ struct OverleafReviewPanel: View {
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(message.author).fontWeight(.semibold)
                                             if let timestamp = message.timestamp { date(timestamp) }
-                                            if message.id == thread.messages.first?.id, let anchor = snapshot.anchors[thread.id] { location(anchor, highlight: .comment) }
+                                            if message.id == thread.messages.first?.id, let anchor = snapshot.anchors[thread.id] { location(anchor, highlight: .comment, selection: "thread:" + thread.id) }
                                             Divider().opacity(0.4)
                                             Text(message.text)
                                         }
                                     }
-                                }.font(RemileType.caption).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(RemileStyle.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 10)).contentShape(Rectangle()).onTapGesture { if let anchor = snapshot.anchors[thread.id] { navigate(anchor, highlight: .comment) } }
+                                }.font(RemileType.caption).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(RemileStyle.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                                    .overlay(selectionBorder("thread:" + thread.id)).contentShape(Rectangle())
+                                    .accessibilityAddTraits(state.selected == "thread:" + thread.id ? .isSelected : [])
+                                    .accessibilityAction(named: Text("Show in source")) { if let anchor = snapshot.anchors[thread.id] { navigate(anchor, highlight: .comment, selection: "thread:" + thread.id) } }
+                                    .onTapGesture { if let anchor = snapshot.anchors[thread.id] { navigate(anchor, highlight: .comment, selection: "thread:" + thread.id) } }
                             }
                         }
                     } else if !state.busy { empty("Review unavailable") }
@@ -86,17 +94,31 @@ struct OverleafReviewPanel: View {
     @ViewBuilder private func date(_ value: String) -> some View {
         if let date = OverleafReviewSnapshot.date(value) { Text(date, format: .dateTime.day().month(.abbreviated).hour().minute()).foregroundStyle(RemileStyle.secondaryInk) }
     }
-    private func location(_ anchor: OverleafReviewSnapshot.Anchor, highlight: TeXProject.SourceJump.Highlight) -> some View {
+    private func selectionBorder(_ id: String) -> some View {
+        RoundedRectangle(cornerRadius: 10).stroke(state.selected == id ? RemileStyle.accent.opacity(0.5) : .clear, lineWidth: 1).allowsHitTesting(false)
+    }
+    private func disabledReason(_ change: OverleafReviewSnapshot.Change) -> String? {
+        if state.applying { return "Updating the change…" }
+        if state.busy { return "Refreshing review…" }
+        if !change.singleRange { return "Review this grouped change in Overleaf." }
+        if project.compiling { return "Wait for compilation to finish." }
+        if project.dirty || project.liveWorkspace.pendingDocumentCount > 0 { return "Wait for saved changes to sync." }
+        if !project.canReviewChanges { return "Finish syncing, then refresh review." }
+        if change.anchor.location(in: project.buffers) == nil { return "Refresh review to match the current source." }
+        return nil
+    }
+    private func location(_ anchor: OverleafReviewSnapshot.Anchor, highlight: TeXProject.SourceJump.Highlight, selection: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Button {
-                navigate(anchor, highlight: highlight)
+                navigate(anchor, highlight: highlight, selection: selection)
             } label: { Text(anchor.file).multilineTextAlignment(.leading) }
                 .buttonStyle(.plain).foregroundStyle(RemileStyle.accent)
                 .disabled(anchor.location(in: project.buffers) == nil)
                 .remileHelp(anchor.location(in: project.buffers) == nil ? "Available after synchronisation and review refresh" : "Show in source")
         }
     }
-    private func navigate(_ anchor: OverleafReviewSnapshot.Anchor, highlight: TeXProject.SourceJump.Highlight) {
+    private func navigate(_ anchor: OverleafReviewSnapshot.Anchor, highlight: TeXProject.SourceJump.Highlight, selection: String) {
+        state.selected = selection
         guard let target = anchor.location(in: project.buffers) else { return }
         project.selected = target.file; project.sourceJump = .init(location: target, highlight: highlight)
     }
@@ -150,17 +172,18 @@ struct OverleafReviewPanel: View {
 
 struct OverleafReviewDecisionButtons: View {
     let changeID: String
+    var disabledReason: String? = nil
     let decide: (Bool) -> Void
     var body: some View {
         HStack(spacing: RemileControl.spacing) {
             Button { decide(true) } label: { SymbolIcon(systemName: "checkmark") }
                 .accessibilityLabel("Accept change")
                 .accessibilityIdentifier("overleaf.accept." + changeID)
-                .remileHelp("Accept · keep this change in Overleaf")
+                .remileHelp(disabledReason ?? "Accept · keep this change in Overleaf")
             Button { decide(false) } label: { SymbolIcon(systemName: "xmark") }
                 .accessibilityLabel("Reject change")
                 .accessibilityIdentifier("overleaf.reject." + changeID)
-                .remileHelp("Reject · restore the source before this change")
-        }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent)
+                .remileHelp(disabledReason ?? "Reject · restore the source before this change")
+        }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.accent).disabled(disabledReason != nil)
     }
 }

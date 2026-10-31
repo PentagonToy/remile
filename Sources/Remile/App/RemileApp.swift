@@ -110,9 +110,9 @@ private struct HomeCommands: Commands {
             Button(model.page == .writer ? "Save As…" : "Save a Copy…") { if model.page == .writer, let writer = model.writer { writer.saveAs() } else { model.reader.saveCopy() } }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(model.texProject != nil)
         }
         CommandGroup(after: .saveItem) {
-            Button("Close Document") {
+            Button(model.texProject == nil ? "Close Document" : "Close Tab") {
                 if model.page == .writer { if model.writer?.confirmLeaving() != false { model.writer = nil; model.page = .home } }
-                else if model.texProject != nil { model.closeTeX() }
+                else if let project = model.texProject { if !project.closeSelectedFileTab() { model.closeTeX() } }
                 else if model.reader.url != nil { model.reader.close() }
                 else { NSApp.keyWindow?.performClose(nil) }
             }.keyboardShortcut("w")

@@ -7,9 +7,9 @@ remile. is a native macOS document workspace. The Swift package has one executab
 | Native readers and persistence | `ReadingSession`, PDF/Markdown sessions | Keep unsaved edits and document identity. Save/Discard owns persistence |
 | LaTeX authoring | `TeXProject` and focused compiler/history/outline helpers | Own the active project and buffers. External processes build snapshots |
 | Connected projects | `OverleafLibrary` | Account/project metadata, worktrees, review and publication lifecycle |
-| Web account access | `OverleafWebIdentity`, `OverleafWebClient`, `OverleafSignInSession` | Per-profile review session with an allowlist for threads, ranges and source anchors |
+| Web account access | `OverleafWebIdentity`, `OverleafWebClient`, `OverleafSignInSession` | Per-profile web session with an allowlist for on-demand project listing and tags, threads, ranges and source anchors |
 | Current source synchronisation | `OverleafGit`, `OverleafGitSync`, `OverleafLiveWorkspace` | Versioned Git transport, worktree fingerprints, isolated review copies and normal pushes |
-| Online lifecycle | `OverleafLiveWorkspace`, text and journal helpers | One Git writer, offline work, private recovery and buffer reconciliation |
+| Online lifecycle | `OverleafLiveWorkspace`, `OverleafSyncRecovery` | One Git writer, offline work, bounded managed recovery and buffer reconciliation |
 | Network policy | `NetworkAccessGate` | Reject and cancel app-owned network operations. No operating-system firewall claim |
 | Local automation | `EditorCLI`, `EditorBridge` | Structured responses, explicit document identity and expected hashes for edits |
 
@@ -19,7 +19,11 @@ Use native macOS APIs and focused source modules. Add dependencies only when the
 
 Keep document identity, unsaved buffers and user decisions separate from disposable previews and caches. Save and export have explicit destinations.
 
-Online and On-device use the same local project. Git publishes a linear snapshot with normal pushes. Web requests are limited to review reads and accepting a current suggestion. Rejection restores source through Git. No editor collaboration socket is opened. Older recovery journals remain readable.
+Online and On-device use the same local project. Git publishes a linear snapshot with normal pushes. Web requests are limited to on-demand project listing and tags, review reads and accepting a current suggestion. Rejection restores source through Git. No editor collaboration socket is opened. Older recovery journals remain readable.
+
+Full-project validation and reconciliation prepare an immutable plan away from the main actor. Installation checks the captured project and edit/file revisions, then verifies touched unbuffered files before writing. New typing invalidates the plan rather than being overwritten. Unchanged installs preserve the current PDF. File writes and final attachment checks remain synchronous.
+
+Recovery uses one pending stage per connection and object-ID receipts. Completion retains three managed references. A 256 MiB preflight budget limits new preparation without deleting unresolved work. Legacy unlabelled recovery data and Git's object database are outside automatic expiry. Identical blobs share memory within one resume operation only. See [the Overleaf guide](workspace/overleaf.md#choose-a-mode) for the storage boundaries.
 
 Search prepares document structure and scientific aliases during indexing. It stores a replaceable numeric ranking cache locally. Changed documents update their derived text, and global ranking weights are recomputed when needed.
 

@@ -52,7 +52,8 @@ struct OverleafBar: View {
             .onChange(of: library.offlineMode || NetworkAccess.offline) { Task { await live.networkChanged() } }
     }
     @ViewBuilder private var status: some View {
-        if !live.enabled { Text("Saved on this Mac").foregroundStyle(RemileStyle.secondaryInk) }
+        if project.dirty { Text("Unsaved changes").foregroundStyle(RemileStyle.secondaryInk).help("These changes have not been saved on this Mac.") }
+        else if !live.enabled { Text("Saved on this Mac").foregroundStyle(RemileStyle.secondaryInk) }
         else if !library.hasNetwork || library.offlineMode || NetworkAccess.offline { Text("Saved locally · offline").foregroundStyle(RemileStyle.secondaryInk) }
         else if live.connecting { Text("Syncing…") }
         else if live.requiresGitReview { Text("Review needed").foregroundStyle(RemileStyle.warning) }

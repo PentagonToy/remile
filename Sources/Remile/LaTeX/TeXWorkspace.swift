@@ -36,7 +36,7 @@ struct TeXWorkspace: View {
             TeXFileTabs(project: project, notice: freeOverleaf ? "Overleaf Free · Git sync unavailable" : nil) {
                 presentation.review = false; presentation.files = true; presentation.paneReset = UUID()
             }
-        }.focusedSceneValue(\.workspaceActions, WorkspaceActions(ask: { project.showsAssistant.toggle() }, references: { presentation.references = true }, restorePanes: { presentation.paneReset = UUID() }, logs: toggleLogs, find: { presentation.pane = "Source"; editor.find($0) }, complete: { presentation.pane = "Source"; editor.complete() }))
+        }.focusedSceneValue(\.workspaceActions, WorkspaceActions(ask: { project.showsAssistant.toggle() }, references: { presentation.references = true }, restorePanes: { presentation.paneReset = UUID() }, logs: toggleLogs, find: { presentation.pane = "Source"; editor.find($0) }, complete: { presentation.pane = "Source"; editor.complete() }, nextTab: project.openFiles.count > 1 ? { project.cycleFileTab(forward: true) } : nil, previousTab: project.openFiles.count > 1 ? { project.cycleFileTab(forward: false) } : nil))
         .font(RemileType.control).background(RemileStyle.background).navigationTitle(project.displayName + (project.dirty ? " •" : ""))
     }
     private var workspaceContent: some View {

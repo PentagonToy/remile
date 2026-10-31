@@ -57,9 +57,12 @@ import WebKit
         let pattern = document ? "^/Project/[a-f0-9]{24}/doc/[a-f0-9]{24}/download$" : "^/project/[a-f0-9]{24}/(threads|ranges|changes/users)$"
         return path.range(of: pattern, options: .regularExpression) != nil
     }
+    nonisolated static func allowedReadPath(_ path: String, document: Bool = false) -> Bool {
+        (!document && ["/user/projects", "/tag"].contains(path)) || reviewPath(path, document: document)
+    }
     static func request(_ path: String, profile: UUID, document: Bool = false) async throws -> Data {
-        guard reviewPath(path, document: document) else {
-            throw OverleafGit.Failure("Project browsing and source sync use Git. This web connection is only for review notes.")
+        guard allowedReadPath(path, document: document) else {
+            throw OverleafGit.Failure("This web connection only reads the project list and review notes. Source sync uses Git.")
         }
         try NetworkAccess.requireOnline()
         do { try await OverleafWebIdentity.restore(profile) }
@@ -108,11 +111,20 @@ import WebKit
               let text = String(data: bytes, encoding: .utf8) else { throw Failure.response }
         return try JSONSerialization.data(withJSONObject: ["text": text, "disposition": response.value(forHTTPHeaderField: "Content-Disposition") ?? ""])
     }
-    static func projects(_ profile: UUID) async throws -> [Project] {
-        let projects = try parseProjects(await request("/user/projects", profile: profile))
-        // Tags are optional metadata. An unavailable tag endpoint must not hide projects.
-        guard let data = try? await request("/tag", profile: profile), let tags = try? parseTags(data) else { return projects }
-        return projects.map { project in var item = project; item.tags = tags[item.id] ?? []; item.tagsLoaded = true; return item }
+    static func projects(_ profile: UUID, request: (String, UUID) async throws -> Data = {
+        try await OverleafWebClient.request($0, profile: $1)
+    }) async throws -> [Project] {
+        let projects = try parseProjects(await request("/user/projects", profile))
+        try Task.checkCancellation()
+        let tagData = try? await request("/tag", profile)
+        try Task.checkCancellation()
+        guard let tagData, let tags = try? parseTags(tagData) else { return projects }
+        return projects.map { project in
+            var item = project
+            item.tags = tags[item.id] ?? []
+            item.tagsLoaded = true
+            return item
+        }
     }
     nonisolated static func parseTags(_ data: Data) throws -> [String: [Tag]] {
         guard data.count <= 8_000_000, let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]], rows.count <= 10_000 else { throw Failure.response }
@@ -125,7 +137,7 @@ import WebKit
         return result.mapValues { $0.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending } }
     }
     nonisolated static func parseProjects(_ data: Data) throws -> [Project] {
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], let rows = object["projects"] as? [[String: Any]], rows.count <= 10_000 else { throw Failure.response }
+        guard data.count <= 8_000_000, let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], let rows = object["projects"] as? [[String: Any]], rows.count <= 10_000 else { throw Failure.response }
         var seen = Set<String>()
         return try rows.map { row in
             guard let id = row["_id"] as? String, OverleafConnection.projectID("https://www.overleaf.com/project/" + id) != nil, let name = row["name"] as? String else { throw Failure.response }

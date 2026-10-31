@@ -51,6 +51,14 @@ import UniformTypeIdentifiers
         }
     }
     @Published private(set) var openFiles: [String] = []
+    @discardableResult func closeSelectedFileTab() -> Bool {
+        guard openFiles.count > 1 else { return false }
+        closeFileTab(selected); return true
+    }
+    func cycleFileTab(forward: Bool) {
+        guard openFiles.count > 1, let index = openFiles.firstIndex(of: selected) else { return }
+        selected = openFiles[(index + (forward ? 1 : openFiles.count - 1)) % openFiles.count]
+    }
     func closeFileTab(_ file: String) {
         guard openFiles.count > 1, let index = openFiles.firstIndex(of: file) else { return }
         openFiles.remove(at: index)
@@ -176,10 +184,42 @@ import UniformTypeIdentifiers
         if expected != text { buffers[file] = text }
         original[file] = text
     }
-    /// Install only reconciled file changes, preserving edits made while a request was pending.
-    func installLiveFiles(expected: [String: Data], result: [String: Data], paths: Set<String>) throws {
+    struct LiveFileInstall: Sendable {
+        let root: URL
+        let editRevision: Int
+        let fileRevision: Int
+        let expected: [String: Data]
+        let result: [String: Data]
+        let paths: Set<String>
+        let matchesRemote: Bool
+    }
+    /// Build a validated immutable plan off-main. The editor must still match its captured revisions at install.
+    nonisolated static func prepareLiveInstall(root: URL, buffers: [String: String], editRevision: Int, fileRevision: Int,
+                                               base: [String: Data], result: [String: Data], head: String) throws -> LiveFileInstall {
+        let current = try OverleafLiveFiles.scan(root, buffers: buffers)
+        guard try OverleafAutoPublisher.head(root) == head else { throw OverleafGit.Failure("Git history changed during sync. Review changes.") }
+        let merged = try OverleafGitSync.reconcile(base: base, current: current, result: result)
+        let touched = Set(current.keys).union(merged.keys).filter { current[$0] != merged[$0] }
+        return .init(root: root, editRevision: editRevision, fileRevision: fileRevision,
+                     expected: current, result: merged, paths: Set(touched), matchesRemote: merged == result)
+    }
+    /// Apply only a current plan. Unbuffered files retain an exact final check against external edits.
+    func installLiveFiles(_ plan: LiveFileInstall) throws {
+        let expected = plan.expected, result = plan.result, paths = plan.paths
         let textOnly = paths.allSatisfy { buffers[$0] != nil && result[$0] != nil && OverleafLiveFiles.source($0) }
-        guard (!compiling || textOnly), try OverleafLiveFiles.scan(root, buffers: buffers) == expected else { throw OverleafLiveFiles.Failure.stale }
+        guard root.standardizedFileURL.path == plan.root.standardizedFileURL.path, editRevision == plan.editRevision, fileRevision == plan.fileRevision,
+              !compiling || textOnly else { throw OverleafLiveFiles.Failure.stale }
+        guard !paths.isEmpty else { return }
+        for path in paths where buffers[path] == nil || !OverleafLiveFiles.source(path) {
+            let url = try TeXFileSystem.url(path, root: root)
+            var disk: Data?
+            if FileManager.default.fileExists(atPath: url.path) {
+                let values = try url.resourceValues(forKeys: [.isSymbolicLinkKey, .fileSizeKey])
+                guard values.isSymbolicLink != true, (values.fileSize ?? Int.max) <= OverleafLiveFiles.fileLimit else { throw OverleafLiveFiles.Failure.stale }
+                disk = try Data(contentsOf: url, options: .mappedIfSafe)
+            }
+            guard disk == expected[path] else { throw OverleafLiveFiles.Failure.stale }
+        }
         for path in paths {
             guard OverleafLiveFiles.validPath(path) else { throw OverleafLiveFiles.Failure.invalid }
             if let bytes = result[path], OverleafLiveFiles.source(path) {

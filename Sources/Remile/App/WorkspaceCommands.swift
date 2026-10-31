@@ -9,6 +9,8 @@ struct WorkspaceActions {
     var logs: (() -> Void)? = nil
     var find: ((NSTextFinder.Action) -> Void)? = nil
     var complete: (() -> Void)? = nil
+    var nextTab: (() -> Void)? = nil
+    var previousTab: (() -> Void)? = nil
 }
 private struct WorkspaceActionsKey: FocusedValueKey { typealias Value = WorkspaceActions }
 private struct PDFSlideActionKey: FocusedValueKey { typealias Value = () -> Void }
@@ -40,6 +42,9 @@ struct WorkspaceCommands: Commands {
             Button("Complete Command") { actions?.complete?() }.keyboardShortcut(.escape, modifiers: .option).disabled(actions?.complete == nil)
         }
         CommandMenu("Workspace") {
+            Button("Next Source Tab") { actions?.nextTab?() }.keyboardShortcut(.tab, modifiers: .control).disabled(actions?.nextTab == nil)
+            Button("Previous Source Tab") { actions?.previousTab?() }.keyboardShortcut(.tab, modifiers: [.control, .shift]).disabled(actions?.previousTab == nil)
+            Divider()
             Button("Show or Hide Ask") { actions?.ask?() }.keyboardShortcut("a", modifiers: [.command, .shift]).disabled(actions?.ask == nil)
             Button("Reference Library…") { actions?.references?() }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(actions?.references == nil)
             Divider()

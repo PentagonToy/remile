@@ -18,6 +18,8 @@ Files holds the project. Outline follows its sections. Drag the divider to give 
 
 Opened files appear in the bottom tab bar. Select a tab to switch source, drag it to change its order, or use + to open another project file. Double-click a tab to rename its file. Closing a tab keeps your edits and the file in the project. At least one file stays open. Source tabs stay within their window.
 
+Use **Control-Tab** and **Control-Shift-Tab** to move between source tabs. **Command-W** closes the current tab. When only one source tab remains, it closes the project through the usual save confirmation.
+
 Source line numbers are on by default. Change **Settings → LaTeX → Line numbers** to hide them. The same setting applies to Overleaf sources.
 
 Double-click in the PDF to return to the corresponding source. Word context refines the target when it matches clearly. Ambiguous text and figures keep the SyncTeX location. Selecting text alone does not move the source. Type `\cite{` to search your bibliography and Reference while writing. [Read the citation hints →](../reference.md#read-citation-hints)

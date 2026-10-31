@@ -36,7 +36,7 @@ The editor opens readable TeX sources independently of compilation. Main selecti
 
 ## Scroll content spacing
 
-App-owned scrolling cards reserve an 18 pt trailing gutter inside their viewport through ScrollContentSpacing. Cleanup, duplicate review, paper search, Reference settings/list/preview, Search result content, Overleaf library cards and review/combine cards use this spacing. Wider established spacing, including the User guide's 28 pt and Home's content padding, stays intact. The Reference list header reserves the same additional gutter as its rows. Native source editors and PDF canvases keep their own scrolling geometry.
+App-owned scrolling cards reserve an 18 pt trailing gutter inside their viewport through ScrollContentSpacing. Cleanup, duplicate review, paper search, Reference settings/list/preview, Search result content, Overleaf library cards and combine cards use this spacing. Overleaf review cards instead align with the Comments/Changes selector. Wider established spacing, including the User guide's 28 pt and Home's content padding, stays intact. The Reference list header reserves the same additional gutter as its rows. Native source editors and PDF canvases keep their own scrolling geometry.
 
 Reserve the gutter around the whole card, not just its text, so both overlay and always-visible scrollbars stay separated from the card edge. Keep scrollbar tracks at the viewport edge and retain their native behaviour.
 

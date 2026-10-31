@@ -273,6 +273,40 @@ final class OverleafGitSyncTests: XCTestCase {
             XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: recovery.path).count, 1)
         }
     }
+    @MainActor func testLiveInstallRejectsTypingAfterValidationAndNoOpKeepsFileRevision() throws {
+        try fixture { local, _, _, _ in
+            let project = try TeXProject(local, historyEnabled: false)
+            let current = try OverleafLiveFiles.scan(local, buffers: project.buffers)
+            var incoming = current; incoming["main.tex"] = Data("Remote writing\n".utf8)
+            let plan = try TeXProject.prepareLiveInstall(root: local, buffers: project.buffers, editRevision: project.editRevision,
+                fileRevision: project.fileRevision, base: current, result: incoming, head: try git(["rev-parse", "HEAD"], local))
+            project.buffers["main.tex"] = "Typing after validation\n"
+            XCTAssertThrowsError(try project.installLiveFiles(plan))
+            XCTAssertEqual(project.buffers["main.tex"], "Typing after validation\n")
+            XCTAssertEqual(try String(contentsOf: local.appendingPathComponent("main.tex"), encoding: .utf8), "Alpha one\nBeta two\n")
+            let latest = try OverleafLiveFiles.scan(local, buffers: project.buffers)
+            let noOp = try TeXProject.prepareLiveInstall(root: local, buffers: project.buffers, editRevision: project.editRevision,
+                fileRevision: project.fileRevision, base: latest, result: latest, head: try git(["rev-parse", "HEAD"], local))
+            let revision = project.fileRevision
+            try project.installLiveFiles(noOp)
+            XCTAssertEqual(project.fileRevision, revision)
+            XCTAssertEqual(project.buffers["main.tex"], "Typing after validation\n")
+        }
+    }
+    @MainActor func testLiveInstallRejectsExternalAttachmentChangesAfterValidation() throws {
+        try fixture { local, _, _, _ in
+            let file = local.appendingPathComponent("image.bin")
+            try Data([1, 2]).write(to: file)
+            let project = try TeXProject(local, historyEnabled: false)
+            let current = try OverleafLiveFiles.scan(local, buffers: project.buffers)
+            var incoming = current; incoming["image.bin"] = Data([3, 4])
+            let plan = try TeXProject.prepareLiveInstall(root: local, buffers: project.buffers, editRevision: project.editRevision,
+                fileRevision: project.fileRevision, base: current, result: incoming, head: try git(["rev-parse", "HEAD"], local))
+            try Data([5, 6]).write(to: file)
+            XCTAssertThrowsError(try project.installLiveFiles(plan))
+            XCTAssertEqual(try Data(contentsOf: file), Data([5, 6]))
+        }
+    }
     private func git(_ args: [String], _ root: URL) throws -> String {
         try OverleafGit.run(["-c", "protocol.file.allow=always"] + args, at: root).text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -355,9 +389,56 @@ final class OverleafGitSyncTests: XCTestCase {
     }
     @MainActor func testPrivateWebEndpointsFailClosed() async {
         do {
-            _ = try await OverleafWebClient.request("/user/projects", profile: UUID())
-            XCTFail("A Git-only integration must not fetch browser endpoints")
-        } catch { XCTAssertTrue(error.localizedDescription.contains("Git")) }
+            _ = try await OverleafWebClient.request("/user/settings", profile: UUID())
+            XCTFail("The catalogue exception must not allow unrelated browser endpoints")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("Source sync uses Git")) }
+    }
+    @MainActor func testCatalogueReadsListAndOptionalTagsOnce() async throws {
+        let profile = UUID()
+        var calls: [String] = []
+        let id = String(repeating: "a", count: 24)
+        let payload = Data("{\"projects\":[{\"_id\":\"\(id)\",\"name\":\"Sample\"}]}".utf8)
+        let projects = try await OverleafWebClient.projects(profile) { path, receivedProfile in
+            calls.append(path)
+            XCTAssertEqual(receivedProfile, profile)
+            if path == "/tag" {
+                return Data("[{\"_id\":\"tag-1\",\"name\":\"Research\",\"color\":\"#123456\",\"project_ids\":[\"\(id)\"]}]".utf8)
+            }
+            return payload
+        }
+        XCTAssertEqual(calls, ["/user/projects", "/tag"])
+        XCTAssertEqual(projects.map(\.name), ["Sample"])
+        XCTAssertEqual(projects[0].tags.first?.color, "#123456")
+    }
+    @MainActor func testTagFailureDoesNotHideProjects() async throws {
+        let id = String(repeating: "b", count: 24)
+        var calls: [String] = []
+        let projects = try await OverleafWebClient.projects(UUID()) { path, _ in
+            calls.append(path)
+            if path == "/tag" { throw OverleafWebClient.Failure.unavailable }
+            return Data("{\"projects\":[{\"_id\":\"\(id)\",\"name\":\"Still available\"}]}".utf8)
+        }
+        XCTAssertEqual(projects.map(\.name), ["Still available"])
+        XCTAssertFalse(projects[0].tagsLoaded)
+        XCTAssertEqual(calls, ["/user/projects", "/tag"])
+    }
+    func testProjectTagGroupsKeepEveryMembershipAndUntaggedLast() {
+        let alpha = OverleafWebClient.Tag(id: "alpha", name: "Alpha", color: "#123456")
+        let beta = OverleafWebClient.Tag(id: "beta", name: "Beta", color: nil)
+        let shared = OverleafWebClient.Project(id: "shared", name: "Shared", tags: [beta, alpha])
+        let plain = OverleafWebClient.Project(id: "plain", name: "Plain")
+        let groups = OverleafProjects.grouped([plain, shared])
+        XCTAssertEqual(groups.map(\.id), [.tag("alpha"), .tag("beta"), .untagged])
+        XCTAssertEqual(groups.map { $0.projects.map(\.id) }, [["shared"], ["shared"], ["plain"]])
+        XCTAssertTrue(OverleafProjects.grouped([]).isEmpty)
+    }
+    func testCatalogueReadExceptionIsExact() {
+        XCTAssertTrue(OverleafWebClient.allowedReadPath("/user/projects"))
+        XCTAssertTrue(OverleafWebClient.allowedReadPath("/tag"))
+        XCTAssertFalse(OverleafWebClient.allowedReadPath("/user/projects", document: true))
+        for path in ["/tag?all=true", "/user/settings", "/user/projects?all=true", "/user/projects/", "/user/projects/../settings", "/socket.io/1/"] {
+            XCTAssertFalse(OverleafWebClient.allowedReadPath(path))
+        }
     }
     @MainActor func testOnlyReviewReadPathsAreAllowed() {
         let id = String(repeating: "a", count: 24)

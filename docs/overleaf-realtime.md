@@ -6,6 +6,7 @@ Online keeps a local project connected through Overleaf's Git integration. On-de
 
 | State | Meaning |
 | --- | --- |
+| Unsaved changes | Edits are still in the editor buffer and have not been saved on this Mac. |
 | Synced | The saved source was confirmed through Git at the displayed time. |
 | Waiting to sync | New edits are saved locally and waiting for a short pause. |
 | Syncing | Git is checking, merging or publishing a saved snapshot. |
@@ -20,6 +21,8 @@ The open project groups edits before publishing. It waits for five quiet seconds
 Transient failures retry with increasing delays. Rate-limit responses wait at least five minutes. A failed request does not discard local work or switch the chosen mode. A rejected push never becomes a force push.
 
 Independent changes merge in a private working copy. Changes typed during a request are reconciled before updating the editor. Ambiguous text, deletion or binary changes stop for review. Use Sync now to retry or Review changes to compare both versions.
+
+Restarting remile reuses a pending recovery operation. A fetch checks an uncertain upload before sending it again. See [recovery storage and limits](workspace/overleaf.md#choose-a-mode) for the copy budget, retained records and legacy data policy.
 
 ## Local work
 

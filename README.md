@@ -14,7 +14,7 @@ A local workspace for PDF, Markdown and LaTeX documents.
 - **Writer** — Write paged documents, edit supported DOCX content and export a PDF copy.
 - **Markdown** — Write in Edit, read the rendered document, or keep both together in Split.
 - **PDF** — Read and annotate PDFs in bottom tabs, present pages in Slide View and find matching passages across your local library.
-- **LaTeX** — Edit multi-file projects, navigate their outline, compile and preview the PDF.
+- **LaTeX** — Edit multi-file projects in source tabs, navigate their outline, compile and preview the PDF.
 - **Overleaf** — Use Online for automatic Git synchronisation, or On-device for local work. Comments and suggestions connect separately.
 - **Extensions (development preview)** — Read selected reMarkable folders over SSH or import local Zotero libraries into Reference. See [setup and limits](docs/extensions.md).
 - **Reference** — Organise PDF/BibTeX records, review duplicates, edit or lock citation keys and keep shared attachments. See [Reference](docs/reference.md).

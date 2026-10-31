@@ -139,25 +139,14 @@ import SwiftUI
             recoveryDirectory = prepared.recovery
             let caughtUp = try await Self.background { try OverleafGitSync.publish(prepared) }
             try active(epoch)
-            // Capture current buffers after transport. New typing is merged, never replaced by a stale snapshot.
-            let buffers = project.buffers, filesRevision = project.fileRevision
-            let inspection = try await Self.background { (try OverleafLiveFiles.scan(root, buffers: buffers), try OverleafAutoPublisher.head(root)) }
-            var current = inspection.0
-            try active(epoch)
-            guard project.fileRevision == filesRevision else { throw OverleafGitSync.ReviewRequired("Project files changed during sync. Review changes.") }
-            for (path, source) in project.buffers { current[path] = Data(source.utf8) }
-            let merged = try OverleafGitSync.reconcile(base: prepared.review.localFiles, current: current, result: prepared.files)
-            let touched = Set(current.keys).union(merged.keys).filter { current[$0] != merged[$0] }
-            guard inspection.1 == prepared.originalHead else { throw OverleafGit.Failure("Git history changed during sync. Review changes.") }
-            try project.installLiveFiles(expected: current, result: merged, paths: Set(touched))
-            let installedRevision = project.editRevision, installedFileRevision = project.fileRevision
+            let installed = try await install(prepared, in: project, epoch: epoch)
             // A mixed reset advances only the base. Files and new typing remain untouched.
             try await Self.background { _ = try OverleafGit.run(["reset", "--mixed", prepared.head], at: root) }
             try active(epoch)
             connected = true; reconnecting = false; issue = nil; failures = 0
             confirmedRevision = revision; lastConfirmedAt = Date(); library.markSynced(connection.id)
-            if merged == prepared.files && caughtUp && project.editRevision == installedRevision && project.fileRevision == installedFileRevision {
-                confirmedRevision = installedRevision; confirmedFileRevision = installedFileRevision; firstEdit = nil
+            if installed.matchesRemote && caughtUp && project.editRevision == installed.editRevision && project.fileRevision == installed.fileRevision {
+                confirmedRevision = installed.editRevision; confirmedFileRevision = installed.fileRevision; firstEdit = nil
             }
             unchangedChecks = 0
             nextCheck = Date().addingTimeInterval(caughtUp ? Self.idleDelay(unchangedChecks: 0) : 15)
@@ -175,6 +164,20 @@ import SwiftUI
             failures = min(failures + 1, 6)
             nextCheck = Date().addingTimeInterval(max((error as? OverleafGit.Failure)?.retryAfter ?? 0, [5.0, 15, 30, 60, 120, 180, 300][failures]))
         }
+    }
+    private func install(_ prepared: OverleafGitSync.Prepared, in project: TeXProject, epoch: UUID) async throws -> (matchesRemote: Bool, editRevision: Int, fileRevision: Int) {
+        for _ in 0..<3 {
+            let root = project.root, buffers = project.buffers, editRevision = project.editRevision, fileRevision = project.fileRevision
+            let plan = try await Self.background {
+                try TeXProject.prepareLiveInstall(root: root, buffers: buffers, editRevision: editRevision, fileRevision: fileRevision,
+                                                 base: prepared.review.localFiles, result: prepared.files, head: prepared.originalHead)
+            }
+            try active(epoch)
+            guard project.root == root, project.editRevision == editRevision, project.fileRevision == fileRevision else { continue }
+            try project.installLiveFiles(plan)
+            return (plan.matchesRemote, project.editRevision, project.fileRevision)
+        }
+        throw OverleafGit.Failure("Your edits are kept. Sync will retry when editing settles.")
     }
     private func active(_ epoch: UUID) throws {
         try Task.checkCancellation()
