@@ -8,7 +8,7 @@ Current Swift source was compared with the local `overleaf-textarea-master` snap
 
 A focused manual comparison examined `EditorSpellcheck.swift` against the textarea filter helper and the Overleaf project-list/read-path handling against the server reference. The former uses native spelling exclusions rather than the reference's ordered text-replacement pipeline. The latter shares protocol field names and routes. These observations describe the inspected implementation, not ownership of every expression. Git source sync and the absence of a vendored server or browser extension are distinct from the rights attached to any copied material.
 
-The incorporated-material inventory in [third-party notices](../../THIRD_PARTY_NOTICES.md) covers the stopword data, provider artwork and optional renderer dependencies. No old binaries or archived source versions were cleared by this comparison. In particular, the Overleaf logo in 0.2.2 retains unresolved asset and trademark permission questions. Version 0.2.3 is the recommended replacement and no longer bundles that logo.
+The incorporated-material inventory in [third-party notices](../../THIRD_PARTY_NOTICES.md) covers the stopword data, provider artwork and optional renderer dependencies. No old binaries or archived source versions were cleared by this comparison. In particular, the Overleaf logo in 0.2.2 retains unresolved asset and trademark permission questions. Version 0.2.4 is the recommended replacement and no longer bundles that logo.
 
 ## Handling a later finding
 

@@ -13,7 +13,7 @@ The complete upstream MIT notice is retained in [CHATGPT-LICENSE.txt](others/lic
 
 ## Earlier releases
 
-Release 0.2.2 includes `overleaf-mark.svg`, whose paths match the inspected `overleaf/overleaf` repository asset at `services/web/public/overleaf-logo.svg` (AGPL-3.0 repository). Its applicable asset licence and separate trademark permission remain unconfirmed. Release 0.2.3 replaces it with the native `leaf` SF Symbol and no longer bundles that SVG. Version 0.2.3 supersedes 0.2.2 as the recommended download. Earlier binaries and tags remain historical artefacts and are not silently replaced. This change does not resolve permissions for earlier distributions. [Official logo policy](https://www.overleaf.com/for/partners/logos).
+Release 0.2.2 includes `overleaf-mark.svg`, whose paths match the inspected `overleaf/overleaf` repository asset at `services/web/public/overleaf-logo.svg` (AGPL-3.0 repository). Its applicable asset licence and separate trademark permission remain unconfirmed. Release 0.2.3 replaces it with the native `leaf` SF Symbol and no longer bundles that SVG. Version 0.2.4 is the recommended download and also excludes that logo. Earlier binaries and tags remain historical artefacts and are not silently replaced. This change does not resolve permissions for earlier distributions. [Official logo policy](https://www.overleaf.com/for/partners/logos).
 
 ## Platform components and external tools
 
