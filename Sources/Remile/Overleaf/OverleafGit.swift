@@ -63,6 +63,9 @@ enum OverleafCredential {
 }
 
 enum OverleafGit {
+    static func head(_ root: URL) throws -> String {
+        try run(["rev-parse", "HEAD"], at: root).text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     struct Failure: LocalizedError {
         let errorDescription: String?
         var retryAfter: TimeInterval? = nil
@@ -205,7 +208,7 @@ enum OverleafGit {
             _ = try run(["add", "-A"], at: stage)
             let dirty = try run(["diff", "--cached", "--quiet"], at: stage, allowFailure: true).status != 0
             if dirty { _ = try run(["-c", "commit.gpgsign=false", "commit", "-m", "Local writing changes"], at: stage) }
-            let localFiles = try OverleafLiveFiles.scan(stage)
+            let localFiles = try OverleafSourceFiles.scan(stage)
             let localHead = try run(["rev-parse", "HEAD"], at: stage).text.trimmingCharacters(in: .whitespacesAndNewlines)
             let merge = try run(["-c", "commit.gpgsign=false", "merge", "--no-commit", remote], at: stage, allowFailure: true)
             let conflicts = Set(try run(["diff", "--name-only", "--diff-filter=U", "-z"], at: stage).text.split(separator: "\0").map(String.init))

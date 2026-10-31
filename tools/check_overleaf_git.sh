@@ -6,4 +6,4 @@ check_directory="${1:?Provide an absolute external output directory}"
 case "$check_directory" in /*) ;; *) exit 1 ;; esac
 case "$check_directory" in "$project_directory"|"$project_directory"/*) exit 1 ;; esac
 cd "$project_directory"
-swift test --build-system native --scratch-path "$check_directory" --jobs 2 --filter 'Overleaf(GitSync|OnlineBar|ConnectionNotice)Tests'
+swift test --build-system native --scratch-path "$check_directory" --jobs 2 --filter 'Overleaf(GitSync|Source|Review|ProjectCatalogue|OnlineBar|ConnectionNotice)Tests'

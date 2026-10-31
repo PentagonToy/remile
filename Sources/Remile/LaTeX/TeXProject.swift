@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 @MainActor final class TeXProject: ObservableObject {
     let identity = UUID()
-    lazy var liveWorkspace = OverleafLiveWorkspace()
+    lazy var liveWorkspace = OverleafOnlineWorkspace()
     lazy var sourceEditor = MarkdownEditorController()
     var lastPreviewLocation: TeXSync.PDFLocation?
     @Published var overleafReview: OverleafReviewSnapshot?
@@ -172,14 +172,14 @@ import UniformTypeIdentifiers
     var dirty: Bool { buffers != original || draftChanged }
     /// Live updates touch one known source, with buffer and disk compare-and-swap checks.
     func installLiveSource(_ file: String, expected: String, text: String, expectedDisk: String) throws {
-        guard buffers[file] == expected, files.contains(file), treeFiles.contains(file) else { throw OverleafLive.Failure.staleDraft }
+        guard buffers[file] == expected, files.contains(file), treeFiles.contains(file) else { throw OverleafSource.Failure.staleDraft }
         let url = root.appendingPathComponent(file)
         guard url.resolvingSymlinksInPath() == url.standardizedFileURL,
               url.path.hasPrefix(root.path + "/"),
-              try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw OverleafLive.Failure.staleDraft }
+              try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw OverleafSource.Failure.staleDraft }
         let disk = try String(contentsOf: url, encoding: .utf8)
-        guard disk == expectedDisk || disk == expected else { throw OverleafLive.Failure.staleDraft }
-        try OverleafLive.validate(text)
+        guard disk == expectedDisk || disk == expected else { throw OverleafSource.Failure.staleDraft }
+        try OverleafSource.validate(text)
         if disk != text { try text.write(to: url, atomically: true, encoding: .utf8) }
         if expected != text { buffers[file] = text }
         original[file] = text
@@ -196,8 +196,8 @@ import UniformTypeIdentifiers
     /// Build a validated immutable plan off-main. The editor must still match its captured revisions at install.
     nonisolated static func prepareLiveInstall(root: URL, buffers: [String: String], editRevision: Int, fileRevision: Int,
                                                base: [String: Data], result: [String: Data], head: String) throws -> LiveFileInstall {
-        let current = try OverleafLiveFiles.scan(root, buffers: buffers)
-        guard try OverleafAutoPublisher.head(root) == head else { throw OverleafGit.Failure("Git history changed during sync. Review changes.") }
+        let current = try OverleafSourceFiles.scan(root, buffers: buffers)
+        guard try OverleafGit.head(root) == head else { throw OverleafGit.Failure("Git history changed during sync. Review changes.") }
         let merged = try OverleafGitSync.reconcile(base: base, current: current, result: result)
         let touched = Set(current.keys).union(merged.keys).filter { current[$0] != merged[$0] }
         return .init(root: root, editRevision: editRevision, fileRevision: fileRevision,
@@ -206,24 +206,24 @@ import UniformTypeIdentifiers
     /// Apply only a current plan. Unbuffered files retain an exact final check against external edits.
     func installLiveFiles(_ plan: LiveFileInstall) throws {
         let expected = plan.expected, result = plan.result, paths = plan.paths
-        let textOnly = paths.allSatisfy { buffers[$0] != nil && result[$0] != nil && OverleafLiveFiles.source($0) }
+        let textOnly = paths.allSatisfy { buffers[$0] != nil && result[$0] != nil && OverleafSourceFiles.source($0) }
         guard root.standardizedFileURL.path == plan.root.standardizedFileURL.path, editRevision == plan.editRevision, fileRevision == plan.fileRevision,
-              !compiling || textOnly else { throw OverleafLiveFiles.Failure.stale }
+              !compiling || textOnly else { throw OverleafSourceFiles.Failure.stale }
         guard !paths.isEmpty else { return }
-        for path in paths where buffers[path] == nil || !OverleafLiveFiles.source(path) {
+        for path in paths where buffers[path] == nil || !OverleafSourceFiles.source(path) {
             let url = try TeXFileSystem.url(path, root: root)
             var disk: Data?
             if FileManager.default.fileExists(atPath: url.path) {
                 let values = try url.resourceValues(forKeys: [.isSymbolicLinkKey, .fileSizeKey])
-                guard values.isSymbolicLink != true, (values.fileSize ?? Int.max) <= OverleafLiveFiles.fileLimit else { throw OverleafLiveFiles.Failure.stale }
+                guard values.isSymbolicLink != true, (values.fileSize ?? Int.max) <= OverleafSourceFiles.fileLimit else { throw OverleafSourceFiles.Failure.stale }
                 disk = try Data(contentsOf: url, options: .mappedIfSafe)
             }
-            guard disk == expected[path] else { throw OverleafLiveFiles.Failure.stale }
+            guard disk == expected[path] else { throw OverleafSourceFiles.Failure.stale }
         }
         for path in paths {
-            guard OverleafLiveFiles.validPath(path) else { throw OverleafLiveFiles.Failure.invalid }
-            if let bytes = result[path], OverleafLiveFiles.source(path) {
-                guard bytes.count <= OverleafLive.textLimit, String(data: bytes, encoding: .utf8) != nil else { throw OverleafLiveFiles.Failure.invalid }
+            guard OverleafSourceFiles.validPath(path) else { throw OverleafSourceFiles.Failure.invalid }
+            if let bytes = result[path], OverleafSourceFiles.source(path) {
+                guard bytes.count <= OverleafSource.textLimit, String(data: bytes, encoding: .utf8) != nil else { throw OverleafSourceFiles.Failure.invalid }
             }
             _ = try TeXFileSystem.url(path, root: root)
         }
@@ -246,13 +246,13 @@ import UniformTypeIdentifiers
             throw error
         }
         for path in paths {
-            if OverleafLiveFiles.source(path), let bytes = result[path], let text = String(data: bytes, encoding: .utf8) { buffers[path] = text; original[path] = text }
+            if OverleafSourceFiles.source(path), let bytes = result[path], let text = String(data: bytes, encoding: .utf8) { buffers[path] = text; original[path] = text }
             else { buffers[path] = nil; original[path] = nil; externalEdits[path] = nil; provenance[path] = nil; pendingHistory.remove(path) }
         }
         treeFiles = try TeXFileSystem.paths(root); treeFolders = try TeXFileSystem.folders(root)
         for path in buffers.keys where !treeFiles.contains(path) { buffers[path] = nil; original[path] = nil }
-        for path in treeFiles where buffers[path] == nil && OverleafLiveFiles.source(path) {
-            if let bytes = result[path], let text = String(data: bytes, encoding: .utf8), bytes.count <= OverleafLive.textLimit { buffers[path] = text; original[path] = text }
+        for path in treeFiles where buffers[path] == nil && OverleafSourceFiles.source(path) {
+            if let bytes = result[path], let text = String(data: bytes, encoding: .utf8), bytes.count <= OverleafSource.textLimit { buffers[path] = text; original[path] = text }
         }
         files = buffers.keys.sorted()
         if buffers[main] == nil, let replacement = TeXMainDocument.choose(sources: buffers, saved: nil) { main = replacement }

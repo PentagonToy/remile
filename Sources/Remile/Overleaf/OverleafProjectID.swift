@@ -12,6 +12,7 @@ enum OverleafProjectID {
 
 /// Local to this Mac. An explicit choice wins over the first-open default.
 enum OverleafSyncPreference {
+    // Preserve the saved mode when upgrading from Live/Private builds.
     private static func key(_ id: UUID) -> String { "overleaf.prefersLive." + id.uuidString }
     static func live(_ id: UUID, store: UserDefaults = .standard) -> Bool { store.object(forKey: key(id)) as? Bool ?? true }
     static func choose(_ live: Bool, for id: UUID, store: UserDefaults = .standard) { store.set(live, forKey: key(id)) }

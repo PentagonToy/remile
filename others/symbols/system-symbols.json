@@ -136,7 +136,6 @@
       "name": "books.vertical",
       "sources": [
         "Sources/Remile/App/WorkspaceCommands.swift",
-        "Sources/Remile/Extensions/ZoteroExtension.swift",
         "Sources/Remile/Home/HomeWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
         "Sources/Remile/Reference/ReferencePicker.swift",
@@ -853,6 +852,7 @@
     {
       "name": "tray.full",
       "sources": [
+        "Sources/Remile/Extensions/ZoteroExtension.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift"
       ]
     },

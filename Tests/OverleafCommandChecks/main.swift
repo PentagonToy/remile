@@ -17,7 +17,7 @@ struct OverleafConnection {
     func root(_ project: OverleafConnection) -> URL { directory.appendingPathComponent(project.id.uuidString) }
 }
 @MainActor final class TestLiveWorkspace {
-    var automationStatus: [String: Any] = ["enabled": true, "connected": true, "confirmed": false, "pendingDocuments": 1]
+    var automationStatus: [String: Any] = ["transport": "git", "mode": "online", "enabled": true, "connected": true, "confirmed": false, "pendingDocuments": 1]
 }
 @MainActor final class TestProject {
     let liveWorkspace = TestLiveWorkspace()
@@ -84,6 +84,7 @@ Task { @MainActor in
         func call(_ request: EditorBridge.Request, homes: [HomeModel]? = nil) async -> [String: Any] { await OverleafCommands.handle(request, homes: homes ?? [home], current: home) }
         let closed = await call(request("show"))
         precondition(closed["live"] is NSNull)
+        precondition(closed["online"] is NSNull)
         precondition(closed["ok"] as? Bool == true && closed["pdfCurrent"] is NSNull && home.opens == 0)
         let disk = await call(request("read", file: "main.tex"))
         precondition(disk["source"] as? String == "saved source" && disk["origin"] as? String == "disk")
@@ -106,6 +107,11 @@ Task { @MainActor in
         precondition(buffer["dirty"] as? Bool == true && buffer["pdfCurrent"] as? Bool == false)
         precondition((buffer["live"] as? [String: Any])?["pendingDocuments"] as? Int == 1)
         precondition((buffer["live"] as? [String: Any])?["confirmed"] as? Bool == false)
+        let online = buffer["online"] as? [String: Any]
+        precondition(online?["transport"] as? String == "git" && online?["mode"] as? String == "online")
+        let onlineJSON = try JSONSerialization.data(withJSONObject: buffer["online"]!, options: .sortedKeys)
+        let legacyJSON = try JSONSerialization.data(withJSONObject: buffer["live"]!, options: .sortedKeys)
+        precondition(onlineJSON == legacyJSON)
         let again = await call(request("open"))
         precondition(again["ok"] as? Bool == true && home.opens == 1)
         let second = HomeModel(library); second.texProject = TestProject(root)

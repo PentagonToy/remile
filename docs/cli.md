@@ -130,7 +130,7 @@ remile overleaf review --id overleaf:PROJECT_ID --format bundle --output /absolu
 
 Replace `PROJECT_ID` with the copied 24-character ID. `list` returns project names, persistent IDs, connection UUIDs and local roots. Several account connections to the same project require `--connection UUID`. Several open windows require `--target UUID` from `documents`.
 
-`show` returns known sync status and the last recorded sync time. An open project includes `live` observations: connection and reconnection state, pending document count, file reconciliation, review requirements and the last confirmed sync time. `live.confirmed` becomes false as soon as local typing is pending. A closed project returns `live: null`. For an open project it also returns the session target, source hashes, unsaved state and whether its PDF matches the current source. For a closed project, PDF currency is unknown. `read` returns an open editor buffer or the saved UTF-8 source, its SHA-256 and origin. It accepts project-relative text paths up to 4 MB and refuses paths outside the project. Unsaved buffers take precedence over disk files.
+`show` returns known sync status and the last recorded sync time. An open project includes `online` observations: Git transport, the chosen `online` or `on-device` mode, connection state, pending document count, review requirements and the last confirmed sync time. `online.confirmed` becomes false as soon as local typing is pending. The original `live` field remains an identical compatibility alias. A closed project returns both fields as `null`. For an open project it also returns the session target, source hashes, unsaved state and whether its PDF matches the current source. For a closed project, PDF currency is unknown. `read` returns an open editor buffer or the saved UTF-8 source, its SHA-256 and origin. It accepts project-relative text paths up to 4 MB and refuses paths outside the project. Unsaved buffers take precedence over disk files.
 
 `review` reads the connected account's current server comments and tracked changes directly. It does not require opening the sidebar first. JSON is the default. Markdown carries project, document, thread and change identities, UTF-16 anchors, source hashes and bounded source excerpts. `complete: false` identifies missing or changing review locations. Read-only review access never accepts, rejects, resolves or edits a record.
 
@@ -140,7 +140,7 @@ Listing, showing and reading do not fetch remote changes. `remoteFreshness: not-
 
 `open` reuses a unique open session or opens the local project through the normal editor, which starts compilation. It refuses to replace unsaved work. Use the returned target with `read`, `pdf-read`, `logs` and other live commands. Opening is explicit. Read-only inspection does not open or compile a project. Research folders are supplied separately in the agent request.
 
-## Live editor
+## Open editor
 
 Run `documents` to discover open document sessions, then pass `--target UUID` to a live document command. `status` also returns this identity. An explicit target never falls back to another window, and reopening a document gives it a new session identity. Without a target, commands retain active-window behaviour. Check the target status and buffer fingerprint before applying edits. An open request creates a window when none is open.
 

@@ -17,11 +17,11 @@ import WebKit
     }
     func open() async throws {
         try NetworkAccess.requireOnline(); try Task.checkCancellation()
-        guard project.range(of: "^[a-f0-9]{24}$", options: .regularExpression) != nil else { throw OverleafLiveFiles.Failure.invalid }
+        guard project.range(of: "^[a-f0-9]{24}$", options: .regularExpression) != nil else { throw OverleafSourceFiles.Failure.invalid }
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 ready = continuation
-                timer = Task { [weak self] in do { try await Task.sleep(for: .seconds(20)); self?.finish(OverleafLiveWire.Failure.timeout) } catch { } }
+                timer = Task { [weak self] in do { try await Task.sleep(for: .seconds(20)); self?.finish(OverleafGit.Failure("Overleaf did not confirm the review request. Try again.")) } catch { } }
                 web.load(URLRequest(url: URL(string: "https://www.overleaf.com/project")!))
             }
         } onCancel: { Task { @MainActor [weak self] in self?.close() } }
@@ -34,21 +34,21 @@ import WebKit
     }
     private func request(_ action: String, args: [String: Any]) async throws -> [String: Any] {
         try NetworkAccess.requireOnline(); try Task.checkCancellation()
-        guard loaded else { throw OverleafLiveWire.Failure.disconnected }
+        guard loaded else { throw OverleafGit.Failure("Reconnect review notes before trying again.") }
         let lease = try NetworkAccess.gate.watch { [weak self] in Task { @MainActor in self?.close() } }
         defer { NetworkAccess.gate.release(lease) }
         var args = args; args["action"] = action; args["project"] = project
         let value = try await web.callAsyncJavaScript(Self.script, arguments: args, in: nil, contentWorld: .page)
         try NetworkAccess.requireOnline(); try Task.checkCancellation()
-        guard let result = value as? [String: Any], let status = result["status"] as? Int else { throw OverleafLiveFiles.Failure.uncertain }
+        guard let result = value as? [String: Any], let status = result["status"] as? Int else { throw OverleafSourceFiles.Failure.uncertain }
         if status == 401 { throw OverleafWebClient.Failure.signIn }
         if status == 403 { throw OverleafWebClient.Failure.permission }
         if status == 429 { throw OverleafWebClient.Failure.rateLimited }
-        guard (200...299).contains(status), result["success"] as? Bool != false else { throw OverleafLiveFiles.Failure.uncertain }
+        guard (200...299).contains(status), result["success"] as? Bool != false else { throw OverleafSourceFiles.Failure.uncertain }
         return result
     }
     func acceptChange(document: String, change: String) async throws {
-        guard Self.id(document), !change.isEmpty, change.utf8.count <= 256, !change.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw OverleafLiveFiles.Failure.invalid }
+        guard Self.id(document), !change.isEmpty, change.utf8.count <= 256, !change.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw OverleafSourceFiles.Failure.invalid }
         _ = try await request("acceptChange", args: ["entity": document, "change": change])
     }
     private static func id(_ value: String) -> Bool { value.range(of: "^[a-f0-9]{24}$", options: .regularExpression) != nil }

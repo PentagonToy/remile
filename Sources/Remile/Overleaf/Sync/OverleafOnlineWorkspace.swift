@@ -1,8 +1,8 @@
 import Foundation
 import SwiftUI
 
-/// One visible-project Git writer. The historical property name preserves local session identity.
-@MainActor final class OverleafLiveWorkspace: ObservableObject {
+/// One visible-project Git writer with bounded foreground and collaboration checks.
+@MainActor final class OverleafOnlineWorkspace: ObservableObject {
     @Published private(set) var enabled = false
     @Published private(set) var connecting = false
     @Published private(set) var connected = false
@@ -34,9 +34,10 @@ import SwiftUI
     private var confirmedFileRevision = -1
     var pendingDocumentCount: Int { project.map { $0.editRevision != confirmedRevision || $0.fileRevision != confirmedFileRevision || $0.dirty ? 1 : 0 } ?? 0 }
     var automationStatus: [String: Any] {
-        ["transport": "git", "enabled": enabled, "connected": connected, "connecting": connecting,
-         "reconnecting": reconnecting, "pendingDocuments": pendingDocumentCount,
-         "syncingFiles": syncingFiles, "confirmed": connected && !syncingFiles && pendingDocumentCount == 0 && issue == nil,
+        let pending = pendingDocumentCount
+        return ["transport": "git", "mode": enabled ? "online" : "on-device", "enabled": enabled, "connected": connected, "connecting": connecting,
+         "reconnecting": reconnecting, "pendingDocuments": pending,
+         "syncingFiles": syncingFiles, "confirmed": connected && !syncingFiles && pending == 0 && issue == nil,
          "lastConfirmedAt": lastConfirmedAt.map { $0.timeIntervalSince1970 } as Any? ?? NSNull(),
          "reviewRequired": requiresGitReview, "issue": issue as Any? ?? NSNull(),
          "gitChecks": gitChecks, "nextCheckAt": nextCheck.timeIntervalSince1970]
@@ -179,7 +180,7 @@ import SwiftUI
             guard generation == epoch else { return }
             connected = false; issue = error.localizedDescription
             // Merge ambiguity pauses publishing. Transient transport failures keep a bounded retry schedule.
-            requiresGitReview = error is OverleafLiveWire.Failure || error is OverleafGitSync.ReviewRequired || issue?.contains("Review changes") == true
+            requiresGitReview = (error as? OverleafSource.Failure) == .conflict || error is OverleafGitSync.ReviewRequired || issue?.contains("Review changes") == true
             reconnecting = !requiresGitReview
             pauseReason = requiresGitReview ? "Review needed" : "Saved locally · retrying"
             failures = min(failures + 1, 6)
@@ -261,7 +262,7 @@ import SwiftUI
         let service = OverleafReviewWrite(connection)
         defer { service.close() }
         try await service.open()
-        guard pendingDocumentCount == 0, project.buffers[change.anchor.file] == change.anchor.source else { throw OverleafLive.Failure.staleDraft }
+        guard pendingDocumentCount == 0, project.buffers[change.anchor.file] == change.anchor.source else { throw OverleafSource.Failure.staleDraft }
         let latest = try await OverleafWebClient.request("/project/" + connection.projectID + "/ranges", profile: connection.profileID)
         guard try change.isCurrent(in: latest), pendingDocumentCount == 0, project.buffers[change.anchor.file] == change.anchor.source else { throw OverleafGit.Failure("This change moved. Refresh the review.") }
         try await service.acceptChange(document: change.documentID, change: change.changeID)

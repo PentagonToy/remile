@@ -245,9 +245,6 @@ import Network
         }
         busy = false
     }
-    func connectLive(projectID: String, name: String, account: Account, download: ((String, UUID) async throws -> Data)? = nil) async {
-        error = "Add this project with its Git link and token. Existing local copies are kept."
-    }
     func rememberTags(_ catalog: [OverleafWebClient.Project], profile: UUID) {
         for project in projects where project.profileID == profile {
             if let item = catalog.first(where: { $0.id == project.projectID }) {
@@ -317,10 +314,10 @@ import Network
         statuses[id] = .online; syncedAt[id] = Date(); pendingFiles.remove(id)
         UserDefaults.standard.set(syncedAt[id], forKey: "overleaf.synced." + id.uuidString)
     }
-    func writerLease(_ project: OverleafConnection) throws -> OverleafLiveWriterLease {
-        let key = OverleafLive.Key(profile: project.profileID, project: project.projectID, document: project.projectID)
+    func writerLease(_ project: OverleafConnection) throws -> OverleafWriterLease {
+        let key = OverleafSource.Key(profile: project.profileID, project: project.projectID, document: project.projectID)
         try key.validate()
-        return try OverleafLiveWriterLease(file: OverleafLiveJournal.lock(for: key, under: directory.appendingPathComponent("Live")))
+        return try OverleafWriterLease(file: OverleafWriterLease.lock(for: key, under: directory.appendingPathComponent("Live")))
     }
 
 }

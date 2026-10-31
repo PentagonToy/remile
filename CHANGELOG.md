@@ -1,8 +1,10 @@
 # Changelog
 
-## In development — 31 October 2026
+## 0.2.3 — 31 October 2026
 
-- Restore on-demand Overleaf project selection with collapsible tag groups, local search and a link fallback. Selected projects still connect through Git.
+- Remove retired socket transport scaffolding and obsolete checks. Keep Git sync, review, recovery and source safety tests in the standard suite.
+- Trim unused source-archive connection code, expose Git mode through the CLI and avoid sorting the reMarkable folder tree twice. Align connected-library search and symbols with Reference.
+- Restore on-demand Overleaf project selection with collapsible tag groups, project/tag search, stable refresh and a link fallback. Selected projects still connect through Git.
 - Move Overleaf source sync to Git with Online and On-device modes, grouped edits and resumable recovery. Review remains a separate web connection, with recoverable suggestion rejection.
 - Merge independent concurrent Overleaf edits with one bounded retry, check active projects sooner and preserve the source caret using unique nearby text.
 - Reduce Git waits and duplicate attachment reads. Check recovery space, limit managed records and prepare validation off the main thread while protecting new edits.

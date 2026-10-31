@@ -4,7 +4,7 @@ struct OverleafBar: View {
     @ObservedObject var library: OverleafLibrary
     @ObservedObject var project: TeXProject
     let connection: OverleafConnection
-    @ObservedObject private var live: OverleafLiveWorkspace
+    @ObservedObject private var live: OverleafOnlineWorkspace
     @State private var accounts = false
     @Environment(\.scenePhase) private var scenePhase
     init(library: OverleafLibrary, project: TeXProject, connection: OverleafConnection) {

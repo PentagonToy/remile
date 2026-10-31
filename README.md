@@ -16,7 +16,7 @@ A local workspace for PDF, Markdown and LaTeX documents.
 - **PDF** — Read and annotate PDFs in bottom tabs, present pages in Slide View and find matching passages across your local library.
 - **LaTeX** — Edit multi-file projects in source tabs, navigate their outline, compile and preview the PDF.
 - **Overleaf** — Use Online for automatic Git synchronisation, or On-device for local work. Comments and suggestions connect separately.
-- **Extensions (development preview)** — Read selected reMarkable folders over SSH or import local Zotero libraries into Reference. See [setup and limits](docs/extensions.md).
+- **Extensions** — Read selected reMarkable folders over SSH or import local Zotero libraries into Reference. See [setup and limits](docs/extensions.md).
 - **Reference** — Organise PDF/BibTeX records, review duplicates, edit or lock citation keys and keep shared attachments. See [Reference](docs/reference.md).
 - **AI** — Use Apple Intelligence on your Mac or connect ChatGPT for document questions, [manuscript review](docs/manuscript-review.md), grammar suggestions and reviewed LaTeX repairs.
 
@@ -42,7 +42,7 @@ Update with `brew upgrade --cask remile`. The cask installs the app and the `rem
 
 ### Download
 
-Download [remile. 0.2.2 for Apple Silicon](https://github.com/PentagonToy/remile/releases/download/v0.2.2/remile-0.2.2-arm64.dmg), open the DMG and drag **remile.app** into **Applications**. Checksums are included with the [release](https://github.com/PentagonToy/remile/releases/tag/v0.2.2).
+Download [remile. 0.2.3 for Apple Silicon](https://github.com/PentagonToy/remile/releases/download/v0.2.3/remile-0.2.3-arm64.dmg), open the DMG and drag **remile.app** into **Applications**. Checksums are included with the [release](https://github.com/PentagonToy/remile/releases/tag/v0.2.3).
 
 ### Requirements
 
@@ -62,7 +62,7 @@ See [installation and updates](docs/distribution.md) for package details and the
 
 ## Development
 
-remile. is a native Swift application with no external Swift package dependencies. Current source builds include the SSH and Zotero development preview, Thesis / Dissertation types and improved PDF metadata recognition. These changes are not part of the published 0.2.2 binary.
+remile. is a native Swift application with no external Swift package dependencies. Includes reMarkable SSH and local Zotero extensions, Thesis / Dissertation types and improved PDF metadata recognition.
 
 Sources live in `Sources/Remile`. `tools/prepare_app.sh` builds and packages `remile.app`. Set `REMILE_BUILD_DIRECTORY` to an external output directory.
 
@@ -76,7 +76,7 @@ If Command Line Tools are selected, prefix the command with `DEVELOPER_DIR=/Appl
 
 `Tests/RemileTests` uses isolated fixtures and imports the app module directly. Open `Package.swift` in Xcode or run the command above. Focused checks are in `tools/check_*.sh`.
 
-CI builds Release and runs the standard tests and sync regression checks for relevant changes. It does not sign or publish the app.
+See the [test map](Tests/README.md) for suite responsibilities and remaining integration fixtures. CI builds Release and runs the standard tests and SSH/ink helper checks for relevant changes. It does not sign or publish the app.
 
 ## Licence and acknowledgements
 

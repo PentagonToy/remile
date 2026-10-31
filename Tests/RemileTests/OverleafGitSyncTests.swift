@@ -3,39 +3,20 @@ import XCTest
 @testable import Remile
 
 final class OverleafGitSyncTests: XCTestCase {
-    func testReviewDatesAcceptFractionalAndWholeSeconds() throws {
-        let whole = try XCTUnwrap(OverleafReviewSnapshot.date("2026-10-31T06:35:00Z"))
-        let fraction = try XCTUnwrap(OverleafReviewSnapshot.date("2026-10-31T06:35:00.123Z"))
-        XCTAssertEqual(fraction.timeIntervalSince(whole), 0.123, accuracy: 0.001)
-        XCTAssertNil(OverleafReviewSnapshot.date("not a date"))
-    }
-    func testChangeAuthorsUseNamesWithoutEmailFallback() throws {
-        let connection = OverleafConnection(id: UUID(), projectID: String(repeating: "a", count: 24), name: "Fixture", account: "Test", branch: "main")
-        let archive = try OverleafThreadArchive.parse(Data("{}".utf8), project: connection)
-        var snapshot = OverleafReviewSnapshot(archive: archive)
-        let payload = Data(#"{"pathname":"main.tex","lines":["body"],"ranges":{"changes":[{"id":"c1","op":{"p":0,"d":"old"},"metadata":{"user_id":"u1"}},{"id":"c2","op":{"p":0,"d":"old"},"metadata":{"user_id":"u2"}}]}}"#.utf8)
-        try snapshot.include(payload, documentID: "doc1")
-        try snapshot.includeAuthors(Data(#"[{"id":"u1","first_name":"Hanseul","last_name":"Kang","email":"private@example.com"},{"id":"u2","email":"private@example.com"}]"#.utf8))
-        XCTAssertEqual(snapshot.changes.first?.author, "Hanseul Kang")
-        XCTAssertNil(snapshot.changes.last?.author)
-        let exported = String(decoding: try snapshot.export(json: true), as: UTF8.self)
-        XCTAssertTrue(exported.contains("Hanseul Kang"))
-        XCTAssertFalse(exported.contains("private@example.com"))
-    }
     @MainActor func testSyncScheduleBacksOffAndCoalescesEdits() {
-        XCTAssertEqual((0...6).map { OverleafLiveWorkspace.idleDelay(unchangedChecks: $0) }, [60, 60, 120, 240, 300, 300, 300])
+        XCTAssertEqual((0...6).map { OverleafOnlineWorkspace.idleDelay(unchangedChecks: $0) }, [60, 60, 120, 240, 300, 300, 300])
         let start = Date(timeIntervalSince1970: 1000)
-        XCTAssertEqual(OverleafLiveWorkspace.editDeadline(first: start, last: start, attempt: .distantPast), start.addingTimeInterval(5))
-        XCTAssertEqual(OverleafLiveWorkspace.editDeadline(first: start, last: start.addingTimeInterval(30), attempt: .distantPast), start.addingTimeInterval(20))
-        XCTAssertEqual(OverleafLiveWorkspace.editDeadline(first: start, last: start, attempt: start), start.addingTimeInterval(15))
+        XCTAssertEqual(OverleafOnlineWorkspace.editDeadline(first: start, last: start, attempt: .distantPast), start.addingTimeInterval(5))
+        XCTAssertEqual(OverleafOnlineWorkspace.editDeadline(first: start, last: start.addingTimeInterval(30), attempt: .distantPast), start.addingTimeInterval(20))
+        XCTAssertEqual(OverleafOnlineWorkspace.editDeadline(first: start, last: start, attempt: start), start.addingTimeInterval(15))
     }
     @MainActor func testCollaborationWindowAndForegroundChecksStayBounded() {
         let now = Date(timeIntervalSince1970: 1000)
-        XCTAssertEqual(OverleafLiveWorkspace.remoteDelay(unchangedChecks: 9, activeUntil: now.addingTimeInterval(1), now: now), 15)
-        XCTAssertEqual(OverleafLiveWorkspace.remoteDelay(unchangedChecks: 1, activeUntil: now, now: now), 60)
-        XCTAssertEqual(OverleafLiveWorkspace.remoteDelay(unchangedChecks: 9, activeUntil: now, now: now), 300)
-        XCTAssertEqual(OverleafLiveWorkspace.foregroundDeadline(now: now, attempt: now.addingTimeInterval(-2)), now.addingTimeInterval(13))
-        XCTAssertEqual(OverleafLiveWorkspace.foregroundDeadline(now: now, attempt: now.addingTimeInterval(-30)), now)
+        XCTAssertEqual(OverleafOnlineWorkspace.remoteDelay(unchangedChecks: 9, activeUntil: now.addingTimeInterval(1), now: now), 15)
+        XCTAssertEqual(OverleafOnlineWorkspace.remoteDelay(unchangedChecks: 1, activeUntil: now, now: now), 60)
+        XCTAssertEqual(OverleafOnlineWorkspace.remoteDelay(unchangedChecks: 9, activeUntil: now, now: now), 300)
+        XCTAssertEqual(OverleafOnlineWorkspace.foregroundDeadline(now: now, attempt: now.addingTimeInterval(-2)), now.addingTimeInterval(13))
+        XCTAssertEqual(OverleafOnlineWorkspace.foregroundDeadline(now: now, attempt: now.addingTimeInterval(-30)), now)
     }
     func testConcurrentPushRebuildsAgainstNewRemoteAndKeepsLaterLocalWriting() throws {
         try fixture { local, other, remote, connection in
@@ -47,6 +28,8 @@ final class OverleafGitSyncTests: XCTestCase {
             let remoteBefore = try git(["rev-parse", "main"], remote)
             XCTAssertThrowsError(try OverleafGitSync.publish(pending)) { XCTAssertTrue($0 is OverleafGitSync.RemoteAdvanced) }
             XCTAssertEqual(try git(["rev-parse", "main"], remote), remoteBefore)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: pending.recovery.path))
+            XCTAssertEqual(try String(contentsOf: local.appendingPathComponent("main.tex"), encoding: .utf8), "Alpha local\nBeta two\n")
             let localNow = "Alpha local\nBeta two\nLater local writing\n"
             try localNow.write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
             let outcome = try OverleafGitSync.synchronise(connection, root: local, recovery: recovery, transport: remote.path)
@@ -340,7 +323,7 @@ final class OverleafGitSyncTests: XCTestCase {
     @MainActor func testLiveInstallRejectsTypingAfterValidationAndNoOpKeepsFileRevision() throws {
         try fixture { local, _, _, _ in
             let project = try TeXProject(local, historyEnabled: false)
-            let current = try OverleafLiveFiles.scan(local, buffers: project.buffers)
+            let current = try OverleafSourceFiles.scan(local, buffers: project.buffers)
             var incoming = current; incoming["main.tex"] = Data("Remote writing\n".utf8)
             let plan = try TeXProject.prepareLiveInstall(root: local, buffers: project.buffers, editRevision: project.editRevision,
                 fileRevision: project.fileRevision, base: current, result: incoming, head: try git(["rev-parse", "HEAD"], local))
@@ -348,7 +331,7 @@ final class OverleafGitSyncTests: XCTestCase {
             XCTAssertThrowsError(try project.installLiveFiles(plan))
             XCTAssertEqual(project.buffers["main.tex"], "Typing after validation\n")
             XCTAssertEqual(try String(contentsOf: local.appendingPathComponent("main.tex"), encoding: .utf8), "Alpha one\nBeta two\n")
-            let latest = try OverleafLiveFiles.scan(local, buffers: project.buffers)
+            let latest = try OverleafSourceFiles.scan(local, buffers: project.buffers)
             let noOp = try TeXProject.prepareLiveInstall(root: local, buffers: project.buffers, editRevision: project.editRevision,
                 fileRevision: project.fileRevision, base: latest, result: latest, head: try git(["rev-parse", "HEAD"], local))
             let revision = project.fileRevision
@@ -362,7 +345,7 @@ final class OverleafGitSyncTests: XCTestCase {
             let file = local.appendingPathComponent("image.bin")
             try Data([1, 2]).write(to: file)
             let project = try TeXProject(local, historyEnabled: false)
-            let current = try OverleafLiveFiles.scan(local, buffers: project.buffers)
+            let current = try OverleafSourceFiles.scan(local, buffers: project.buffers)
             var incoming = current; incoming["image.bin"] = Data([3, 4])
             let plan = try TeXProject.prepareLiveInstall(root: local, buffers: project.buffers, editRevision: project.editRevision,
                 fileRevision: project.fileRevision, base: current, result: incoming, head: try git(["rev-parse", "HEAD"], local))
@@ -403,19 +386,6 @@ final class OverleafGitSyncTests: XCTestCase {
             XCTAssertEqual(try String(contentsOf: local.appendingPathComponent("main.tex"), encoding: .utf8), "Alpha local\nBeta two\n", "Transport never resets the live editor's files")
         }
     }
-    func testRemoteChangeRacingPublishRejectsWithoutOverwritingEitherSide() throws {
-        try fixture { local, other, remote, connection in
-            try "My draft\n".write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
-            let prepared = try OverleafGitSync.prepare(connection, root: local, recovery: local.deletingLastPathComponent().appendingPathComponent("Recovery"), transport: remote.path)
-            try "Their draft\n".write(to: other.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
-            _ = try git(["add", "."], other); _ = try git(["commit", "-m", "Racing edit"], other); _ = try git(["push"], other)
-            let before = try git(["rev-parse", "main"], remote)
-            XCTAssertThrowsError(try OverleafGitSync.publish(prepared))
-            XCTAssertEqual(try git(["rev-parse", "main"], remote), before)
-            XCTAssertTrue(FileManager.default.fileExists(atPath: prepared.recovery.path))
-            XCTAssertEqual(try String(contentsOf: local.appendingPathComponent("main.tex"), encoding: .utf8), "My draft\n")
-        }
-    }
     func testOverlappingEditsRequireReviewAndKeepRecovery() throws {
         try fixture { local, other, remote, connection in
             try "My paragraph\n".write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
@@ -445,74 +415,12 @@ final class OverleafGitSyncTests: XCTestCase {
         XCTAssertTrue(OverleafSyncPreference.live(id, store: store))
         OverleafSyncPreference.choose(false, for: id, store: store)
         XCTAssertFalse(OverleafSyncPreference.live(id, store: store))
-        let workspace = OverleafLiveWorkspace()
+        let workspace = OverleafOnlineWorkspace()
         await workspace.stop()
         XCTAssertFalse(workspace.enabled)
         XCTAssertEqual(workspace.automationStatus["transport"] as? String, "git")
+        XCTAssertEqual(workspace.automationStatus["mode"] as? String, "on-device")
         XCTAssertFalse(workspace.automationStatus["confirmed"] as? Bool ?? true)
-    }
-    @MainActor func testPrivateWebEndpointsFailClosed() async {
-        do {
-            _ = try await OverleafWebClient.request("/user/settings", profile: UUID())
-            XCTFail("The catalogue exception must not allow unrelated browser endpoints")
-        } catch { XCTAssertTrue(error.localizedDescription.contains("Source sync uses Git")) }
-    }
-    @MainActor func testCatalogueReadsListAndOptionalTagsOnce() async throws {
-        let profile = UUID()
-        var calls: [String] = []
-        let id = String(repeating: "a", count: 24)
-        let payload = Data("{\"projects\":[{\"_id\":\"\(id)\",\"name\":\"Sample\"}]}".utf8)
-        let projects = try await OverleafWebClient.projects(profile) { path, receivedProfile in
-            calls.append(path)
-            XCTAssertEqual(receivedProfile, profile)
-            if path == "/tag" {
-                return Data("[{\"_id\":\"tag-1\",\"name\":\"Research\",\"color\":\"#123456\",\"project_ids\":[\"\(id)\"]}]".utf8)
-            }
-            return payload
-        }
-        XCTAssertEqual(calls, ["/user/projects", "/tag"])
-        XCTAssertEqual(projects.map(\.name), ["Sample"])
-        XCTAssertEqual(projects[0].tags.first?.color, "#123456")
-    }
-    @MainActor func testTagFailureDoesNotHideProjects() async throws {
-        let id = String(repeating: "b", count: 24)
-        var calls: [String] = []
-        let projects = try await OverleafWebClient.projects(UUID()) { path, _ in
-            calls.append(path)
-            if path == "/tag" { throw OverleafWebClient.Failure.unavailable }
-            return Data("{\"projects\":[{\"_id\":\"\(id)\",\"name\":\"Still available\"}]}".utf8)
-        }
-        XCTAssertEqual(projects.map(\.name), ["Still available"])
-        XCTAssertFalse(projects[0].tagsLoaded)
-        XCTAssertEqual(calls, ["/user/projects", "/tag"])
-    }
-    func testProjectTagGroupsKeepEveryMembershipAndUntaggedLast() {
-        let alpha = OverleafWebClient.Tag(id: "alpha", name: "Alpha", color: "#123456")
-        let beta = OverleafWebClient.Tag(id: "beta", name: "Beta", color: nil)
-        let shared = OverleafWebClient.Project(id: "shared", name: "Shared", tags: [beta, alpha])
-        let plain = OverleafWebClient.Project(id: "plain", name: "Plain")
-        let groups = OverleafProjects.grouped([plain, shared])
-        XCTAssertEqual(groups.map(\.id), [.tag("alpha"), .tag("beta"), .untagged])
-        XCTAssertEqual(groups.map { $0.projects.map(\.id) }, [["shared"], ["shared"], ["plain"]])
-        XCTAssertTrue(OverleafProjects.grouped([]).isEmpty)
-    }
-    func testCatalogueReadExceptionIsExact() {
-        XCTAssertTrue(OverleafWebClient.allowedReadPath("/user/projects"))
-        XCTAssertTrue(OverleafWebClient.allowedReadPath("/tag"))
-        XCTAssertFalse(OverleafWebClient.allowedReadPath("/user/projects", document: true))
-        for path in ["/tag?all=true", "/user/settings", "/user/projects?all=true", "/user/projects/", "/user/projects/../settings", "/socket.io/1/"] {
-            XCTAssertFalse(OverleafWebClient.allowedReadPath(path))
-        }
-    }
-    @MainActor func testOnlyReviewReadPathsAreAllowed() {
-        let id = String(repeating: "a", count: 24)
-        XCTAssertTrue(OverleafWebClient.reviewPath("/project/" + id + "/threads"))
-        XCTAssertTrue(OverleafWebClient.reviewPath("/project/" + id + "/ranges"))
-        XCTAssertTrue(OverleafWebClient.reviewPath("/project/" + id + "/changes/users"))
-        XCTAssertTrue(OverleafWebClient.reviewPath("/Project/" + id + "/doc/" + id + "/download", document: true))
-        for path in ["/user/projects", "/tag", "/project/" + id + "/compile", "/socket.io/1/", "/project/" + id + "/threads?next=1"] {
-            XCTAssertFalse(OverleafWebClient.reviewPath(path))
-        }
     }
     @MainActor func testOnlineWorkspaceReceivesAndPublishesWithoutReloadingTheEditor() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
@@ -530,10 +438,11 @@ final class OverleafGitSyncTests: XCTestCase {
         let identity = project.identity
         let library = OverleafLibrary(directory: folder.appendingPathComponent("Library"))
         let connection = OverleafConnection(id: UUID(), projectID: String(repeating: "a", count: 24), name: "Fixture", account: "Test", branch: "main")
-        let workspace = OverleafLiveWorkspace(transport: remote.path)
+        let workspace = OverleafOnlineWorkspace(transport: remote.path)
         await workspace.start(project: project, library: library, connection: connection)
         await workspace.retry()
         XCTAssertTrue(workspace.connected, workspace.issue ?? "Not connected")
+        XCTAssertEqual(workspace.automationStatus["mode"] as? String, "online")
         project.buffers["main.tex"] = source.replacingOccurrences(of: "First", with: "Local")
         try (source + "% Remote collaborator\n").write(to: other.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
         _ = try git(["add", "."], other); _ = try git(["commit", "-m", "Independent simultaneous edit"], other); _ = try git(["push"], other)
