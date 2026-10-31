@@ -2,6 +2,8 @@
 
 ## Unreleased — 0.2.4
 
+- Bring Finder-opened documents to the front on launch and keep Home hidden while the initial document loads.
+
 - Make the optional Overleaf Review web connection an explicit choice, with revocation and CLI access checks. Git source sync remains separate.
 - Run existing Overleaf CLI, login and titlebar safety checks in macOS CI. Move native account and source-safety fixtures into the standard test suite.
 - Clarify release-specific notices, official ChatGPT sign-in references and the scope of source provenance checks. Add contribution, issue-reporting and security guidance. Format the touched Review code for readability.

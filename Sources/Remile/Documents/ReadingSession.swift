@@ -185,7 +185,8 @@ struct ReadingShell: View {
                             } label: { SymbolIcon(systemName: "plus").frame(width: RemileControl.toolHit, height: RemileControl.toolHit) }.remileHelp("Document tools")
                         } }
                     }
-            } else { HomeWorkspace(model: home).transition(.opacity) }
+            } else if home.opening { Color.clear }
+            else { HomeWorkspace(model: home).transition(.opacity) }
         }
         .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: reader.url)
         .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: overleaf.browsing)
@@ -272,6 +273,7 @@ final class RemileWindows: ObservableObject {
     private var entries: [ObjectIdentifier: (NSWindow, HomeModel)] = [:]
     private var pending: [(HomeModel) -> Void] = []
     private var opening = false
+    private var externalActivation = false
     private var pdfTabs: [(URL, NSWindow)] = []
     private var preparingPDFTab = false
     private var preparedPDFTab: (url: URL, data: Data, parent: NSWindow)?
@@ -286,6 +288,10 @@ final class RemileWindows: ObservableObject {
                 try model.openPreparedDocument(prepared.url, data: prepared.data, recordRecent: recordRecent)
                 pdfTabParents[ObjectIdentifier(model)] = prepared.parent
             } catch { model.error = error.localizedDescription }
+        }
+        if externalActivation {
+            let actions = pending; pending = []
+            for action in actions { action(model) }
         }
         return model
     }
@@ -311,6 +317,11 @@ final class RemileWindows: ObservableObject {
         opening = false
         let actions = pending; pending = []
         for action in actions { action(model) }
+        if externalActivation {
+            externalActivation = false
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+        }
         if isNew, let parent = pdfTabParents.removeValue(forKey: ObjectIdentifier(model)) {
             let parentID = ObjectIdentifier(parent)
             let windowID = ObjectIdentifier(window)
@@ -383,10 +394,18 @@ final class RemileWindows: ObservableObject {
     }
     /// Finder opens join the frontmost PDF group, even when another workspace is active.
     func openExternalDocument(_ url: URL) {
+        externalActivation = true
+        NSApp.activate(ignoringOtherApps: true)
         let pdfHome = NSApp.orderedWindows.compactMap { entries[ObjectIdentifier($0)]?.1 }
             .first { $0.reader.url?.pathExtension.lowercased() == "pdf" }
         if url.pathExtension.lowercased() == "pdf", let pdfHome { pdfHome.open(url) }
-        else { perform { $0.open(url) } }
+        else { perform { model in
+            model.open(url)
+            if let window = self.entries.values.first(where: { $0.1 === model })?.0 {
+                self.externalActivation = false
+                window.makeKeyAndOrderFront(nil)
+            }
+        } }
     }
     func tabID(for token: String) -> ObjectIdentifier? {
         entries.keys.first { String(describing: $0) == token }
