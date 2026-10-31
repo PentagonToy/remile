@@ -59,5 +59,3 @@ jobs:
           python -m pip install --only-binary=:all: --no-deps --require-hashes -r "$RUNNER_TEMP/remarkable-tools.txt"
       - name: SSH and ink helper checks
         run: python -m unittest discover -s Tests/RemarkableSSHChecks -v
-      - name: Live sync regression checks
-        run: zsh tools/check_overleaf_realtime.sh "$RUNNER_TEMP/remile-live-checks"

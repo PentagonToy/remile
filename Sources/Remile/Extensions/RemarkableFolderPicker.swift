@@ -39,6 +39,9 @@ enum RemarkableCloudTree {
         for item in children[""] ?? [] { appendTree(item) }
         // Keep malformed or cyclic cloud entries reachable without recursive traversal.
         for item in items where !seen.contains(item.id) { appendTree(item) }
+        return visibleRows(all, expanded: expanded, query: query)
+    }
+    static func visibleRows(_ all: [RemarkableCloudRow], expanded: Set<String>, query: String) -> [RemarkableCloudRow] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if !term.isEmpty {
             var matches = Set(all.filter {
@@ -67,13 +70,14 @@ struct RemarkableFolderPicker: View {
     var body: some View {
         let folders = items.filter(\.isFolder)
         let all = RemarkableCloudTree.rows(folders, expanded: Set(folders.map(\.id)), query: "")
-        let rows = RemarkableCloudTree.rows(folders, expanded: expanded, query: query)
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rows = RemarkableCloudTree.visibleRows(all, expanded: expanded, query: term)
         let parents = Dictionary(folders.map { ($0.id, $0.parentID ?? "") }, uniquingKeysWith: { first, _ in first })
         let states = folderStates(all, parents: parents)
         let branches = Set(folders.compactMap(\.parentID))
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                if query.isEmpty || "Unfiled".localizedCaseInsensitiveContains(query) {
+                if term.isEmpty || "Unfiled".localizedCaseInsensitiveContains(term) {
                     HStack(spacing: RemileControl.spacing) {
                         checkbox(RemarkableFolderScope.unfiledID, title: "Unfiled", state: selection.contains(RemarkableFolderScope.unfiledID) ? .on : .off, inherited: false)
                         Color.clear.frame(width: RemileControl.iconSlot, height: RemileControl.iconSlot)
@@ -89,8 +93,8 @@ struct RemarkableFolderPicker: View {
                         Button {
                             if !expanded.insert(row.id).inserted { expanded.remove(row.id) }
                         } label: {
-                            SymbolIcon(systemName: !query.isEmpty || expanded.contains(row.id) ? "chevron.down" : "chevron.right").opacity(branches.contains(row.id) ? 1 : 0)
-                        }.buttonStyle(.plain).disabled(busy || !query.isEmpty || !branches.contains(row.id))
+                            SymbolIcon(systemName: !term.isEmpty || expanded.contains(row.id) ? "chevron.down" : "chevron.right").opacity(branches.contains(row.id) ? 1 : 0)
+                        }.buttonStyle(.plain).disabled(busy || !term.isEmpty || !branches.contains(row.id))
                             .accessibilityLabel("Folders in " + row.item.title)
                         Button { change(row.id, chosen: state != .on) } label: {
                             SymbolLabel(row.item.title, systemImage: "folder").lineLimit(2)

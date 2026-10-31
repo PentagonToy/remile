@@ -26,6 +26,12 @@ final class RemarkableFolderTests: XCTestCase {
         XCTAssertEqual(RemarkableCloudTree.rows(items, expanded: [], query: "Combustion").map(\.id), ["books", "nested", "paper"])
         XCTAssertTrue(RemarkableCloudTree.rows(items, expanded: [], query: "absent").isEmpty)
     }
+    func testPreparedTreeCanBeFilteredWithoutRebuildingHierarchy() {
+        let all = RemarkableCloudTree.rows(items, expanded: ["books", "nested"], query: "")
+        XCTAssertEqual(RemarkableCloudTree.visibleRows(all, expanded: [], query: " \n ").map(\.id), ["books", "empty", "root"])
+        XCTAssertEqual(RemarkableCloudTree.visibleRows(all, expanded: [], query: "  Combustion  ").map(\.id), ["books", "nested", "paper"])
+        XCTAssertEqual(RemarkableCloudTree.visibleRows(all, expanded: ["books"], query: "").map(\.id), ["books", "nested", "empty", "root"])
+    }
     func testMissingParentsDuplicatesAndCyclesRemainReachable() {
         let malformed = [
             RemarkableCloudItem(id: "a", title: "A", revision: "1", parentID: "b", folder: true),

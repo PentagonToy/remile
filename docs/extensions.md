@@ -1,6 +1,6 @@
-# Extensions (development preview)
+# Extensions
 
-Available from current source builds. The published 0.2.2 download does not include these extensions.
+Available in remile. 0.2.3.
 
 Enable an extension with its card’s switch, then click the card to choose sources. Disabling it preserves imported references and PDFs.
 

@@ -16,6 +16,6 @@ The main guides help you begin. These pages explain the controls, boundaries and
 
 - [CLI](../cli.md)
 - [Architecture](../architecture.md)
-- [Live synchronisation](../overleaf-realtime.md)
+- [Online synchronisation](../overleaf-realtime.md)
 - [Privacy](../privacy.md)
 - [Brand](../brand.md)

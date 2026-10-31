@@ -20,10 +20,10 @@ enum OverleafAccountEdit {
         guard manager.fileExists(atPath: file.path) else { return }
         guard (try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 16_000_000 else { throw CocoaError(.fileReadCorruptFile) }
         let change = try JSONDecoder().decode(Change.self, from: Data(contentsOf: file))
-        let leases = try change.removedProjects.map { project -> OverleafLiveWriterLease in
-            let key = OverleafLive.Key(profile: project.profileID, project: project.projectID, document: project.projectID)
+        let leases = try change.removedProjects.map { project -> OverleafWriterLease in
+            let key = OverleafSource.Key(profile: project.profileID, project: project.projectID, document: project.projectID)
             try key.validate()
-            return try OverleafLiveWriterLease(file: OverleafLiveJournal.lock(for: key, under: directory.appendingPathComponent("Live")))
+            return try OverleafWriterLease(file: OverleafWriterLease.lock(for: key, under: directory.appendingPathComponent("Live")))
         }
         defer { withExtendedLifetime(leases) {} }
         try finish(change, under: directory)

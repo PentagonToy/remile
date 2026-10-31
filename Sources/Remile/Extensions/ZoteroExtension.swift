@@ -203,6 +203,7 @@ struct ZoteroConnection: View {
     @State private var selected = Set<String>()
     @State private var expanded = Set<String>()
     @State private var query = ""
+    private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     var body: some View {
         VStack(alignment: .leading, spacing: RemileControl.rowSpacing) {
             HStack {
@@ -210,8 +211,8 @@ struct ZoteroConnection: View {
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction).disabled(model.busy || references.busy)
             }
-            Text("Keep Zotero running to use its libraries.").font(RemileType.caption).foregroundStyle(.secondary)
             if !model.libraries.isEmpty {
+                Text("Keep Zotero running to use its libraries.").font(RemileType.caption).foregroundStyle(.secondary)
                 TextField("Find a library or collection", text: $query).textFieldStyle(.roundedBorder)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: RemileControl.spacing) {
@@ -277,17 +278,18 @@ struct ZoteroConnection: View {
     }
     private func libraryRow(_ library: ZoteroLibrary) -> some View {
         let rows = model.rowsByLibrary[library.id] ?? []
-        let matches = query.isEmpty || library.name.localizedCaseInsensitiveContains(query)
+        let term = searchTerm
+        let matches = term.isEmpty || library.name.localizedCaseInsensitiveContains(term)
         let byID = Dictionary(rows.map { ($0.id, $0.collection) }, uniquingKeysWith: { first, _ in first })
         let parents = Set(rows.compactMap { $0.collection.parent })
         let root = ZoteroScope(library: library)
         let states = collectionStates(rows, library: library)
         let rootState: NSControl.StateValue = selected.contains(root.id) ? .on : (selected.contains(where: { $0.hasPrefix(root.id) }) ? .mixed : .off)
         return LazyVStack(alignment: .leading, spacing: RemileControl.spacing) {
-            if matches || rows.contains(where: { $0.path.joined(separator: " / ").localizedCaseInsensitiveContains(query) }) {
+            if matches || rows.contains(where: { $0.path.joined(separator: " / ").localizedCaseInsensitiveContains(term) }) {
                 scopeRow(root, title: library.name, depth: 0, hasChildren: !rows.isEmpty || model.collections[library.id] == nil, state: rootState)
-                if expanded.contains(library.id) || !query.isEmpty {
-                    ForEach(rows.filter { rowVisible($0, library: library, byID: byID) && (matches || $0.path.joined(separator: " / ").localizedCaseInsensitiveContains(query)) }) { row in
+                if expanded.contains(library.id) || !term.isEmpty {
+                    ForEach(rows.filter { rowVisible($0, library: library, byID: byID, searching: !term.isEmpty) && (matches || $0.path.joined(separator: " / ").localizedCaseInsensitiveContains(term)) }) { row in
                         scopeRow(ZoteroScope(library: library, collection: row.collection), title: row.collection.name,
                             depth: min(row.path.count, 8), hasChildren: parents.contains(row.id), state: states[row.id] ?? .off)
                     }
@@ -295,8 +297,8 @@ struct ZoteroConnection: View {
             }
         }
     }
-    private func rowVisible(_ row: ZoteroExtensionModel.CollectionRow, library: ZoteroLibrary, byID: [String: ZoteroCollection]) -> Bool {
-        if !query.isEmpty { return true }
+    private func rowVisible(_ row: ZoteroExtensionModel.CollectionRow, library: ZoteroLibrary, byID: [String: ZoteroCollection], searching: Bool) -> Bool {
+        if searching { return true }
         var parent = row.collection.parent, seen = Set<String>()
         while let id = parent, seen.insert(id).inserted {
             guard expanded.contains(library.id + ":" + id) else { return false }
@@ -334,7 +336,7 @@ struct ZoteroConnection: View {
                     .opacity(hasChildren ? 1 : 0)
             }.buttonStyle(.plain).disabled(model.busy || !hasChildren).accessibilityLabel("Expand " + title)
             Button { selection(scope).wrappedValue = state != .on } label: {
-                SymbolLabel(title, systemImage: scope.collection == nil ? "books.vertical" : "folder")
+                SymbolLabel(title, systemImage: scope.collection == nil ? "tray.full" : "folder")
                     .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(model.busy || (state == .on && !selected.contains(scope.id)))
         }.padding(.vertical, RemileControl.spacing).padding(.horizontal, RemileControl.spacing)

@@ -1,33 +1,11 @@
 import Foundation
 
 /// Conservative character-range reconciliation: overlapping intent remains a review.
-enum OverleafLiveText {
-    static func applying(_ ops: [OverleafLiveWire.JSON], to text: String) throws -> String {
-        guard ops.count <= 10_000 else { throw OverleafLiveWire.Failure.protocolMismatch }
-        var value = text
-        for op in ops {
-            guard let offset = op["p"].integer, offset >= 0, offset <= value.utf16.count else { throw OverleafLiveWire.Failure.protocolMismatch }
-            let deleted = op["d"].string, inserted = op["i"].string, comment = op["c"].string
-            guard [deleted, inserted, comment].compactMap({ $0 }).count == 1 else { throw OverleafLiveWire.Failure.protocolMismatch }
-            let length = (deleted ?? comment)?.utf16.count ?? 0
-            let units = value as NSString
-            func boundary(_ index: Int) -> Bool {
-                index == 0 || index == units.length || !((0xD800...0xDBFF).contains(units.character(at: index - 1)) && (0xDC00...0xDFFF).contains(units.character(at: index)))
-            }
-            guard length <= value.utf16.count - offset,
-                  boundary(offset), boundary(offset + length),
-                  let range = Range(NSRange(location: offset, length: length), in: value) else { throw OverleafLiveWire.Failure.protocolMismatch }
-            if let expected = deleted ?? comment, String(value[range]) != expected { throw OverleafLiveWire.Failure.protocolMismatch }
-            if comment != nil { continue }
-            value.replaceSubrange(range, with: inserted ?? "")
-            try OverleafLive.validate(value)
-        }
-        return value
-    }
+enum OverleafSourceText {
     /// Line anchors separate independent changes. Bound the LCS table and fall back
     /// to one conservative range when a document is too complex for a cheap diff.
-    static func edits(from base: String, to changed: String) throws -> [OverleafLive.Edit] {
-        try OverleafLive.validate(base); try OverleafLive.validate(changed)
+    static func edits(from base: String, to changed: String) throws -> [OverleafSource.Edit] {
+        try OverleafSource.validate(base); try OverleafSource.validate(changed)
         if base == changed { return [] }
         func lines(_ text: String) -> [String] {
             let parts = text.components(separatedBy: "\n")
@@ -39,7 +17,7 @@ enum OverleafLiveText {
         var endA = a.count, endB = b.count
         while endA > prefix, endB > prefix, a[endA - 1] == b[endB - 1] { endA -= 1; endB -= 1 }
         let n = endA - prefix, m = endB - prefix
-        guard n <= 2_000, m <= 2_000, (n + 1) * (m + 1) <= 250_000 else { return [try OverleafLive.Edit.between(base, changed)] }
+        guard n <= 2_000, m <= 2_000, (n + 1) * (m + 1) <= 250_000 else { return [try OverleafSource.Edit.between(base, changed)] }
         let width = m + 1
         var table = [Int](repeating: 0, count: (n + 1) * width)
         if n > 0, m > 0 {
@@ -56,26 +34,26 @@ enum OverleafLiveText {
             else { j += 1 }
         }
         matches.append((endA, endB))
-        var result: [OverleafLive.Edit] = [], left = prefix, right = prefix
+        var result: [OverleafSource.Edit] = [], left = prefix, right = prefix
         var offset = a[..<prefix].reduce(0) { $0 + $1.utf16.count }
         for (x, y) in matches {
             let before = a[left..<x].joined(), after = b[right..<y].joined()
             if before != after {
-                let edit = try OverleafLive.Edit.between(before, after)
-                result.append(OverleafLive.Edit(offset: offset + edit.offset, deleted: edit.deleted, inserted: edit.inserted))
+                let edit = try OverleafSource.Edit.between(before, after)
+                result.append(OverleafSource.Edit(offset: offset + edit.offset, deleted: edit.deleted, inserted: edit.inserted))
             }
             offset += before.utf16.count + (x < endA ? a[x].utf16.count : 0)
             left = x + 1; right = y + 1
         }
         return result
     }
-    static func replacing(_ base: String, edits: [OverleafLive.Edit]) throws -> String {
+    static func replacing(_ base: String, edits: [OverleafSource.Edit]) throws -> String {
         var result = base
         for edit in edits.sorted(by: { $0.offset > $1.offset }) {
-            guard let range = Range(NSRange(location: edit.offset, length: edit.deleted.utf16.count), in: result), String(result[range]) == edit.deleted else { throw OverleafLiveWire.Failure.conflict }
+            guard let range = Range(NSRange(location: edit.offset, length: edit.deleted.utf16.count), in: result), String(result[range]) == edit.deleted else { throw OverleafSource.Failure.conflict }
             result.replaceSubrange(range, with: edit.inserted)
         }
-        try OverleafLive.validate(result); return result
+        try OverleafSource.validate(result); return result
     }
     static func merge(base: String, local: String, remote: String) throws -> String {
         if local == remote || remote == base { return local }
@@ -87,7 +65,7 @@ enum OverleafLiveText {
             for a in localEdits {
                 if a.offset == b.offset, a.deleted == b.deleted, a.inserted == b.inserted { duplicate = true; continue }
                 let aEnd = a.offset + a.deleted.utf16.count, bEnd = b.offset + b.deleted.utf16.count
-                guard (aEnd <= b.offset || bEnd <= a.offset), a.offset != b.offset else { throw OverleafLiveWire.Failure.conflict }
+                guard (aEnd <= b.offset || bEnd <= a.offset), a.offset != b.offset else { throw OverleafSource.Failure.conflict }
             }
             if !duplicate { combined.append(b) }
         }

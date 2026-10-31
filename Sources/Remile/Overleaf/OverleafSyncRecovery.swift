@@ -47,7 +47,7 @@ enum OverleafSyncRecovery {
         let stage = stage(connection, recovery: recovery)
         let properties = try stage.resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey])
         guard properties.isSymbolicLink != true, properties.isDirectory == true else { throw invalid() }
-        let currentHead = try OverleafAutoPublisher.head(root)
+        let currentHead = try OverleafGit.head(root)
         guard currentHead == saved.originalHead || currentHead == saved.head else { throw invalid() }
         // Git objects are immutable. Share identical bytes only within this resume, never in a persistent cache.
         var objects: [String: Data] = [:]
@@ -78,10 +78,10 @@ enum OverleafSyncRecovery {
             guard fields.count == 4, ["100644", "100755"].contains(String(fields[0])), fields[1] == "blob", validObject(String(fields[2])),
                   let size = Int(fields[3]), size >= 0 else { throw invalid() }
             if path.split(separator: "/").contains(where: { $0.hasPrefix(".") }) { continue }
-            guard size <= OverleafLiveFiles.fileLimit, result.count < 10_000, OverleafLiveFiles.validPath(path), result[path] == nil,
+            guard size <= OverleafSourceFiles.fileLimit, result.count < 10_000, OverleafSourceFiles.validPath(path), result[path] == nil,
                   names.insert(path.precomposedStringWithCanonicalMapping.lowercased()).inserted else { throw invalid() }
             total += size
-            guard total <= OverleafLiveFiles.byteLimit else { throw invalid() }
+            guard total <= OverleafSourceFiles.byteLimit else { throw invalid() }
             let id = String(fields[2])
             let bytes: Data
             if let known = objects[id] { bytes = known }

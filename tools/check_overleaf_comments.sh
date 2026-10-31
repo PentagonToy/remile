@@ -1,27 +1,9 @@
 #!/bin/zsh
-set -eu
+# Compatibility entry for standard synthetic review checks. No account access.
+set -euo pipefail
 project_directory="${0:A:h:h}"
-check_directory="${1:?Provide an external output directory}"
-mkdir -p "$check_directory/module-cache"
-{
-    cat "$project_directory/Sources/Remile/App/NetworkAccess.swift" \
-    "$project_directory/Sources/Remile/Assistant/AIConfiguration.swift" \
-    "$project_directory/Sources/Remile/App/KeychainAccess.swift"
-    cat "$project_directory/Sources/Remile/LaTeX/TeXFileSystem.swift"
-    cat "$project_directory/Sources/Remile/Convert/WordArchive.swift"
-    cat "$project_directory/Sources/Remile/Overleaf/Realtime/OverleafLiveState.swift"
-    cat "$project_directory/Sources/Remile/Overleaf/Realtime/OverleafLiveText.swift"
-    cat "$project_directory/Sources/Remile/Overleaf/Realtime/OverleafLiveWire.swift"
-    cat "$project_directory/Sources/Remile/Overleaf/Realtime/OverleafLiveFiles.swift"
-    cat "$project_directory/Sources/Remile/Overleaf/OverleafGit.swift"
-    for file in PDFReplyWriter PDFFormPreservation PDFSignedAnnotations PDFCommentGraph PDFCommentExport; do cat "$project_directory/Sources/Remile/PDF/$file.swift"; done
-    cat "$project_directory/Sources/Remile/Overleaf/OverleafThreadArchive.swift"
-    cat "$project_directory/Sources/Remile/LaTeX/TeXSync.swift"
-    cat "$project_directory/Sources/Remile/Documents/SourceDigest.swift"
-    cat "$project_directory/Sources/Remile/Overleaf/OverleafReviewSnapshot.swift"
-    cat "$project_directory/Sources/Remile/Overleaf/OverleafReviewExport.swift"
-    cat "$project_directory/Sources/Remile/Overleaf/OverleafReviewPackage.swift"
-    cat "$project_directory/Sources/Remile/Overleaf/OverleafReviewService.swift"
-    cat "$project_directory/Tests/OverleafCommentChecks/main.swift"
-} > "$check_directory/checks.swift"
-swift -module-cache-path "$check_directory/module-cache" "$check_directory/checks.swift" "$check_directory"
+check_directory="${1:?Provide an absolute external output directory}"
+case "$check_directory" in /*) ;; *) exit 1 ;; esac
+case "$check_directory" in "$project_directory"|"$project_directory"/*) exit 1 ;; esac
+cd "$project_directory"
+swift test --build-system native --scratch-path "$check_directory" --jobs 2 --filter OverleafReviewTests

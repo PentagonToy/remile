@@ -28,7 +28,7 @@ Double-click a metadata value or citation key to edit it. Click **Type** to choo
 
 Web pages use a globe, newspaper articles use a newspaper, conference papers use a podium, and reports use a document icon. Imported website, news and report types are recognised alongside standard BibTeX types such as `online` and `techreport`. A URL alone does not change a paper's type.
 
-In current source builds, the interface uses **Thesis** for `mastersthesis` and **Dissertation** for `phdthesis`. BibTeX keeps its original type names. University uses `school`. Explicit degree statements on the first three PDF pages can identify a degree locally. Imported Zotero thesis types retain their degree when supplied.
+The interface uses **Thesis** for `mastersthesis` and **Dissertation** for `phdthesis`. BibTeX keeps its original type names. University uses `school`. Explicit degree statements on the first three PDF pages can identify a degree locally. Imported Zotero thesis types retain their degree when supplied.
 
 A verified DOI can also replace a journal masthead mistakenly stored as the paper title. Other edited titles and locked citation keys are preserved.
 

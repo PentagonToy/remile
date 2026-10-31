@@ -1,6 +1,6 @@
 import Foundation
 
-/// Resolve persistent project references before using the existing live-document commands.
+/// Resolve persistent project references before using the open-document commands.
 @MainActor enum OverleafCommands {
     static func handle(_ request: EditorBridge.Request, homes: [HomeModel], current: HomeModel?) async -> [String: Any] {
         do {
@@ -40,7 +40,9 @@ import Foundation
             result["observedAt"] = Date().timeIntervalSince1970
             result["remoteFreshness"] = "not-checked"
             result["open"] = home != nil
-            result["live"] = home?.texProject?.liveWorkspace.automationStatus as Any? ?? NSNull()
+            let online = home?.texProject?.liveWorkspace.automationStatus as Any? ?? NSNull()
+            result["online"] = online
+            result["live"] = online // Keep the original CLI field as a compatibility alias.
             if let project = home?.texProject {
                 result["target"] = project.identity.uuidString
                 result["dirty"] = project.dirty

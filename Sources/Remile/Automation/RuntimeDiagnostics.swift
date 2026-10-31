@@ -14,7 +14,7 @@ enum RuntimeDiagnostics {
     }
     @MainActor static func snapshot(_ home: HomeModel) -> [String: Any] {
         let project = home.texProject
-        return ["ok": true, "memory": memory(), "decoration": ["ticks": DecorativeMotionDiagnostics.ticks, "applicationActive": NSApp.isActive, "keyWindow": NSApp.keyWindow != nil], "automation": ["transport": "directoryEvents", "idlePolling": false], "liveStages": OverleafLiveDiagnostics.snapshot,
+        return ["ok": true, "memory": memory(), "decoration": ["ticks": DecorativeMotionDiagnostics.ticks, "applicationActive": NSApp.isActive, "keyWindow": NSApp.keyWindow != nil], "automation": ["transport": "directoryEvents", "idlePolling": false],
                 "cache": ["activeBuildFolders": TeXCache.activeCount, "budgetBytes": TeXCache.budgetBytes],
                 "workspace": ["sourceFiles": project?.buffers.count ?? 0, "sourceBytes": project?.buffers.values.reduce(0) { $0 + $1.utf8.count } ?? 0,
                               "cachedSourceHashes": project?.cachedSourceHashCount ?? 0,

@@ -26,7 +26,7 @@ enum OverleafGitSync {
             do { return (prepared, try publish(prepared)) }
             catch is RemoteAdvanced {
                 guard attempt == 0 else { throw RemoteAdvanced() }
-                guard try OverleafAutoPublisher.head(root) == prepared.originalHead else {
+                guard try OverleafGit.head(root) == prepared.originalHead else {
                     throw ReviewRequired("Local Git history changed during sync. Your work and recovery copy are kept.")
                 }
                 // The server was fetched and has not accepted this head. Retain its local snapshot before rebuilding.
@@ -41,12 +41,12 @@ enum OverleafGitSync {
         let stage = OverleafSyncRecovery.stage(connection, recovery: recovery)
         // No push can occur before the receipt exists. An interrupted preparation is reproducible from the root.
         if FileManager.default.fileExists(atPath: stage.path) { try FileManager.default.removeItem(at: stage) }
-        let originalHead = try OverleafAutoPublisher.head(root)
+        let originalHead = try OverleafGit.head(root)
         let review = try OverleafGit.prepare(connection, root: root, reviewRoot: recovery, transport: transport, includeContents: false, stageDirectory: stage)
         if review.changes.isEmpty {
             if FileManager.default.fileExists(atPath: review.stage.path) {
                 guard try OverleafGit.fingerprint(root) == review.fingerprint,
-                      try OverleafAutoPublisher.head(root) == originalHead else { throw ReviewRequired("Local files changed. Review changes before syncing.") }
+                      try OverleafGit.head(root) == originalHead else { throw ReviewRequired("Local files changed. Review changes before syncing.") }
                 // History-only remote commits need no source install or outgoing push.
                 _ = try OverleafGit.run(["reset", "--mixed", review.remoteHead], at: root)
                 try FileManager.default.removeItem(at: review.stage)
@@ -59,13 +59,13 @@ enum OverleafGitSync {
             let local = try source(":2:" + change.path, at: review.stage)
             let remote = try source(":3:" + change.path, at: review.stage)
             guard let base, let local, let remote,
-                  let merged = try? OverleafLiveText.merge(base: base, local: local, remote: remote) else {
+                  let merged = try? OverleafSourceText.merge(base: base, local: local, remote: remote) else {
                 throw ReviewRequired("Both sides changed “\(change.path)”. Review changes before syncing.")
             }
             try merged.write(to: TeXFileSystem.url(change.path, root: review.stage), atomically: true, encoding: .utf8)
             _ = try OverleafGit.run(["add", "--", change.path], at: review.stage)
         }
-        let files = try OverleafLiveFiles.scan(review.stage)
+        let files = try OverleafSourceFiles.scan(review.stage)
         // Preserve the local snapshot and its history before creating a linear Overleaf commit.
         _ = try OverleafGit.run(["-c", "protocol.file.allow=always", "fetch", review.stage.path, "HEAD"], at: root)
         let local = try OverleafGit.run(["rev-parse", "FETCH_HEAD"], at: root).text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -84,7 +84,7 @@ enum OverleafGitSync {
     @discardableResult static func publish(_ prepared: Prepared) throws -> Bool {
         try Task.checkCancellation()
         let review = prepared.review
-        guard try OverleafAutoPublisher.head(review.root) == prepared.originalHead else {
+        guard try OverleafGit.head(review.root) == prepared.originalHead else {
             throw OverleafGit.Failure("The local Git history changed. Check changes before syncing.")
         }
         let local = review.transport.hasPrefix("/") ? ["-c", "protocol.file.allow=always"] : []
@@ -135,13 +135,13 @@ enum OverleafGitSync {
                   let r = result[path].flatMap({ String(data: $0, encoding: .utf8) }) else {
                 throw ReviewRequired("“\(path)” changed during sync. Your edits and the recovery copy are kept.")
             }
-            merged[path] = Data(try OverleafLiveText.merge(base: b, local: l, remote: r).utf8)
+            merged[path] = Data(try OverleafSourceText.merge(base: b, local: l, remote: r).utf8)
         }
         return merged
     }
     private static func source(_ ref: String, at root: URL) throws -> String? {
         let result = try OverleafGit.run(["show", ref], at: root, allowFailure: true)
-        guard result.status == 0, result.data.count <= OverleafLive.textLimit else { return nil }
+        guard result.status == 0, result.data.count <= OverleafSource.textLimit else { return nil }
         return String(data: result.data, encoding: .utf8)
     }
 }
