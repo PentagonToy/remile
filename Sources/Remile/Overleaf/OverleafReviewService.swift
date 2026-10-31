@@ -44,6 +44,14 @@ import Foundation
                 result.anchors = [:]; result.changes = []
                 result.warning = "Review changed while loading. Refresh to try again."
             }
+            if !result.changes.isEmpty {
+                do {
+                    let authors = try await request(prefix + "/changes/users", connection.profileID, false)
+                    try result.includeAuthors(authors)
+                }
+                catch is CancellationError { throw CancellationError() }
+                catch { } // Names are optional. Review remains available if the author lookup fails.
+            }
         } catch is CancellationError { throw CancellationError() }
         catch {
             result.warning = "Some review locations or changes could not be loaded."

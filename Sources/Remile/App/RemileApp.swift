@@ -59,7 +59,7 @@ struct RemileApp: App {
 
 private struct RemileWindow: View {
     let delegate: RemileDelegate
-    @StateObject private var home = HomeModel()
+    @StateObject private var home = RemileWindows.shared.makeHome()
     @Environment(\.openWindow) private var openWindow
     var body: some View {
         ReadingShell(home: home, reader: home.reader).modifier(ReaderAppearanceModifier()).modifier(NetworkAccessScope())

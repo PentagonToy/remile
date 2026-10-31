@@ -8,6 +8,11 @@ mkdir -p "$check_directory/module-cache"
     "$project_directory/Sources/Remile/Assistant/AIConfiguration.swift" \
     "$project_directory/Sources/Remile/App/KeychainAccess.swift"
     cat "$project_directory/Sources/Remile/LaTeX/TeXFileSystem.swift"
+    cat "$project_directory/Sources/Remile/Convert/WordArchive.swift"
+    cat "$project_directory/Sources/Remile/Overleaf/Realtime/OverleafLiveState.swift"
+    cat "$project_directory/Sources/Remile/Overleaf/Realtime/OverleafLiveText.swift"
+    cat "$project_directory/Sources/Remile/Overleaf/Realtime/OverleafLiveWire.swift"
+    cat "$project_directory/Sources/Remile/Overleaf/Realtime/OverleafLiveFiles.swift"
     cat "$project_directory/Sources/Remile/Overleaf/OverleafGit.swift"
     for file in PDFReplyWriter PDFFormPreservation PDFSignedAnnotations PDFCommentGraph PDFCommentExport; do cat "$project_directory/Sources/Remile/PDF/$file.swift"; done
     cat "$project_directory/Sources/Remile/Overleaf/OverleafThreadArchive.swift"

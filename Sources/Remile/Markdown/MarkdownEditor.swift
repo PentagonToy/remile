@@ -88,10 +88,11 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
     private func applyPreferences(_ view: NSTextView) {
         let focus = UserDefaults.standard.bool(forKey: "editor.focusMode")
         if focusMode != focus { focusMode = focus; scheduleStyle() }
-        let numbers = texTheme == nil && UserDefaults.standard.bool(forKey: "markdown.lineNumbers")
-        if scroll?.verticalRulerView == nil, let scroll { scroll.verticalRulerView = EditorLineRuler(scroll: scroll); scroll.hasVerticalRuler = true }
-        scroll?.rulersVisible = numbers
-        scroll?.verticalRulerView?.needsDisplay = true
+        let key = texTheme == nil ? "markdown.lineNumbers" : "latex.lineNumbers"
+        let numbers = UserDefaults.standard.object(forKey: key) as? Bool ?? true
+        if numbers, scroll?.verticalRulerView == nil, let scroll { scroll.verticalRulerView = EditorLineRuler(scroll: scroll); scroll.hasVerticalRuler = true }
+        if scroll?.rulersVisible != numbers { scroll?.rulersVisible = numbers }
+        if numbers { scroll?.verticalRulerView?.needsDisplay = true }
         let spellcheck = texTheme == nil ? (UserDefaults.standard.object(forKey: "markdown.spellcheck") as? Bool ?? true) : (UserDefaults.standard.object(forKey: "editor.spellcheck") as? Bool ?? true)
         if view.isGrammarCheckingEnabled != spellcheck { view.isGrammarCheckingEnabled = spellcheck }
         if view.isContinuousSpellCheckingEnabled != spellcheck { view.isContinuousSpellCheckingEnabled = spellcheck }
@@ -324,11 +325,12 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         guard let view = textView, let change = EditorSourceEditing.toggleComment(view.string, selection: view.selectedRange()) else { return }
         apply(change, name: "Toggle Comment")
     }
-    @discardableResult func reveal(range: NSRange, colour: NSColor = RemileStyle.amber, select: Bool = true) -> Bool {
-        guard let view = textView, let layout = view.layoutManager, range.location >= 0, range.length > 0, NSMaxRange(range) <= (view.string as NSString).length else { return false }
+    @discardableResult func reveal(range: NSRange, colour: NSColor = RemileStyle.amber, select: Bool = true, deletion: Bool = false) -> Bool {
+        guard let view = textView, let layout = view.layoutManager, range.location >= 0, range.length >= 0, NSMaxRange(range) <= (view.string as NSString).length else { return false }
         clearFlash(); flashRange = range; flashColour = colour
         view.setSelectedRange(select ? range : NSRange(location: range.location, length: 0)); view.scrollRangeToVisible(range); view.window?.makeFirstResponder(view)
-        layout.addTemporaryAttribute(.backgroundColor, value: flashColour.withAlphaComponent(0.3), forCharacterRange: range)
+        if deletion, range.length == 0 { (view as? MarkdownSourceTextView)?.reviewDeletionOffset = range.location }
+        else if range.length > 0 { layout.addTemporaryAttribute(.backgroundColor, value: flashColour.withAlphaComponent(0.3), forCharacterRange: range) }
         return true
     }
     func flash(line: Int, colour: NSColor = RemileStyle.amber) {
@@ -345,10 +347,12 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
     }
     private func clearFlash() {
         flashTask?.cancel(); flashTask = nil
+        (textView as? MarkdownSourceTextView)?.reviewDeletionOffset = nil
         if let view = textView { view.layoutManager?.removeTemporaryAttribute(.backgroundColor, forCharacterRange: NSIntersectionRange(flashRange, NSRange(location: 0, length: (view.string as NSString).length))) }
         flashRange = NSRange(location: 0, length: 0)
     }
     private func fadeFlash() {
+        if (textView as? MarkdownSourceTextView)?.reviewDeletionOffset != nil { clearFlash(); return }
         guard flashRange.length > 0, flashTask == nil else { return }
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { clearFlash(); return }
         let range = flashRange
@@ -368,6 +372,26 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
 /// Native editing, explicit mathematical completion and optional local suggestion lists.
 @MainActor
 final class MarkdownSourceTextView: NSTextView {
+    var reviewDeletionOffset: Int? { didSet { needsDisplay = true } }
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let offset = reviewDeletionOffset, offset <= (string as NSString).length, let window else { return }
+        // Deleted text is absent from the buffer. Mark its insertion point without changing source or Undo.
+        let screen = firstRect(forCharacterRange: NSRange(location: offset, length: 0), actualRange: nil)
+        var rect = convert(window.convertFromScreen(screen), from: nil)
+        rect.size.width = max(markerWidth, rect.width)
+        guard rect.intersects(dirtyRect), rect.height > 0 else { return }
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSBezierPath(rect: bounds).addClip()
+        let marker = NSBezierPath()
+        marker.move(to: NSPoint(x: rect.minX, y: rect.minY))
+        marker.line(to: NSPoint(x: rect.minX, y: rect.maxY))
+        marker.lineWidth = markerWidth
+        marker.setLineDash([3, 2], count: 2, phase: 0)
+        NSColor(RemileStyle.deletion).setStroke(); marker.stroke()
+    }
+    private let markerWidth: CGFloat = 2
     var syncSelection: () -> Void = {}
     var sourceInteraction: () -> Void = {}
     var completionKey: (NSEvent) -> Bool = { _ in false }

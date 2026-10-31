@@ -7,12 +7,13 @@ python_path="${2:?Provide the current host Python executable}"
 case "$check_directory" in /*) ;; *) print -u2 "Use an absolute output directory."; exit 1 ;; esac
 if [[ -e "$check_directory" ]]; then print -u2 "Use a new output directory to isolate fixtures."; exit 1; fi
 mkdir -p "$check_directory"
-checks=(git comments connection realtime titlebar)
+checks=(git comments commands login realtime titlebar)
 for check in "${checks[@]}"; do
     case "$check" in
         git) script=check_overleaf.sh ;;
         comments) script=check_overleaf_comments.sh ;;
-        connection) script=check_overleaf_connection.sh ;;
+        commands) script=check_overleaf_commands.sh ;;
+        login) script=check_overleaf_login.sh ;;
         realtime) script=check_overleaf_realtime.sh ;;
         titlebar) script=check_titlebar.sh ;;
     esac
@@ -27,7 +28,7 @@ done
 import json, subprocess, sys
 from pathlib import Path
 root, output = map(Path, sys.argv[1:])
-result = {'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(), 'scope': 'synthetic-local-only', 'working_tree_dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=root, text=True).strip()), 'checks': {name: 'passed' for name in ['git', 'comments', 'connection', 'realtime', 'titlebar']}, 'live_overleaf_tested': False}
+result = {'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(), 'scope': 'synthetic-local-only', 'working_tree_dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=root, text=True).strip()), 'checks': {name: 'passed' for name in ['git', 'comments', 'commands', 'login', 'realtime', 'titlebar']}, 'live_overleaf_tested': False}
 (output / 'summary.json').write_text(json.dumps(result, indent=2) + '\n')
-print('All five Overleaf safety groups passed; no live account was contacted.')
+print('All six Overleaf safety groups passed; no live account was contacted.')
 PY

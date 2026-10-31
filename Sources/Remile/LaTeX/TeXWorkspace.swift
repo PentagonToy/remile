@@ -33,7 +33,9 @@ struct TeXWorkspace: View {
             toolbar
             Divider()
             lifecycleContent
-            ReaderThemeFooter(notice: freeOverleaf ? "Overleaf Free · Git sync unavailable" : nil, noticeHelp: "Live sync is available. Git sync requires Overleaf Premium for you or the project owner.")
+            TeXFileTabs(project: project, notice: freeOverleaf ? "Overleaf Free · Git sync unavailable" : nil) {
+                presentation.review = false; presentation.files = true; presentation.paneReset = UUID()
+            }
         }.focusedSceneValue(\.workspaceActions, WorkspaceActions(ask: { project.showsAssistant.toggle() }, references: { presentation.references = true }, restorePanes: { presentation.paneReset = UUID() }, logs: toggleLogs, find: { presentation.pane = "Source"; editor.find($0) }, complete: { presentation.pane = "Source"; editor.complete() }))
         .font(RemileType.control).background(RemileStyle.background).navigationTitle(project.displayName + (project.dirty ? " •" : ""))
     }
@@ -115,7 +117,7 @@ struct TeXWorkspace: View {
         }
         .onChange(of: project.compiling) { if !project.compiling { presentation.pane = "Preview" } }
         .onChange(of: project.compileFailed) { if project.compileFailed { presentation.pane = "Preview" } }
-        .onChange(of: project.selected) { presentation.renameProject = false; presentation.renameSource = false; if project.buffers[project.selected] == nil { presentation.pane = "Source" } }
+        .onChange(of: project.selected) { presentation.renameProject = false; presentation.renameSource = false; presentation.pane = "Source" }
         .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.review)
         .animation(reduceMotion ? nil : RemileMotion.panel, value: project.showsLog)
         .animation(reduceMotion ? nil : RemileMotion.panel, value: project.showsHistory)
@@ -124,18 +126,16 @@ struct TeXWorkspace: View {
         .onReceive(project.$sourceJump) { jump in
             guard let jump else { return }; presentation.pane = "Source"
             editor.update(project.buffers[jump.location.file] ?? "", size: CGFloat(fontSize), serif: false, document: jump.location.file)
-            let colour = jump.highlight == .change ? NSColor.systemGreen : RemileStyle.amber
-            if let range = jump.location.range, editor.reveal(range: range, colour: colour, select: jump.highlight == nil) { }
+            let colour = jump.highlight == .change ? NSColor(RemileStyle.success) : RemileStyle.amber
+            if let range = jump.location.range, editor.reveal(range: range, colour: colour, select: jump.highlight == nil, deletion: jump.highlight == .change && range.length == 0) { }
             else { editor.reveal(line: jump.location.line); if jump.marksLine { editor.flash(line: jump.location.line, colour: colour) } }
         }
     }
     @ViewBuilder private var sourcePane: some View {
-        let sourceFile = project.selected
         if project.buffers[project.selected] == nil { TeXAssetPreview(project: project) }
         else { VStack(spacing: 0) {
             HStack(spacing: 6) {
-                InlineName(value: (sourceFile as NSString).lastPathComponent, editing: $presentation.renameSource) { project.rename(sourceFile, to: $0) }.font(RemileType.caption).frame(maxWidth: .infinity, alignment: .leading)
-                if project.dirty { Text("•").foregroundStyle(.secondary) }
+                Spacer(minLength: RemileControl.spacing)
                 Button { editor.textView?.undoManager?.undo() } label: { SymbolIcon(systemName: "arrow.uturn.backward") }.remileHelp("Undo the last source edit (⌘Z)").disabled(editor.textView?.undoManager?.canUndo != true)
                 Button { editor.textView?.undoManager?.redo() } label: { SymbolIcon(systemName: "arrow.uturn.forward") }.remileHelp("Restore the last undone edit (⇧⌘Z)").disabled(editor.textView?.undoManager?.canRedo != true)
                 Button { theme = theme == TeXEditorTheme.paper.rawValue ? TeXEditorTheme.remile.rawValue : TeXEditorTheme.paper.rawValue } label: { SymbolIcon(systemName: "circle.lefthalf.filled") }
@@ -321,6 +321,7 @@ struct TeXSettings: View {
     @AppStorage("latex.theme") private var theme = TeXEditorTheme.remile.rawValue
     @AppStorage("latex.fontSize") private var fontSize = 17
     @AppStorage("latex.historyMinutes") private var historyMinutes = 3
+    @AppStorage("latex.lineNumbers") private var lineNumbers = true
     @AppStorage("editor.toolSounds") private var toolSounds = true
     @AppStorage("editor.sidebarArtwork") private var sidebarArtwork = true
     @AppStorage("latex.engine") private var engine = TeXConfiguration.Engine.automatic.rawValue
@@ -328,6 +329,7 @@ struct TeXSettings: View {
         Form {
             Section("Editor") {
                 RemileSettingsStepper(title: "Source text", value: $fontSize, range: 10...32, formatted: "\(fontSize) pt")
+                Toggle("Line numbers", isOn: $lineNumbers)
                 EditorLanguageSettings()
                 RemileSettingsStepper(title: "History comparison", value: $historyMinutes, range: 1...30, formatted: "Every \(historyMinutes) min")
                 Toggle("Tool completion sounds", isOn: $toolSounds)

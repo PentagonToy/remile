@@ -32,6 +32,7 @@ extension OverleafReviewSnapshot {
             result["changes"] = changes.map { change -> [String: Any] in
                 var record: [String: Any] = ["id": change.changeID, "documentID": change.documentID, "singleRange": change.singleRange, "type": change.insertion ? "insertion" : "deletion", "text": change.text, "source": source(change.anchor)]
                 if let timestamp = change.timestamp { record["timestamp"] = timestamp }
+                if let author = change.author { record["author"] = author }
                 return record
             }
             if let warning { result["warning"] = warning }

@@ -22,11 +22,16 @@ import WebKit
     @Published private(set) var issue: String?
     @Published private(set) var storageWarning: String?
     @Published private(set) var needsSessionAccess = false
-    init(profile: UUID,
-         fetchProjects: @escaping (UUID) async throws -> Data = { try await OverleafWebClient.request("/user/projects", profile: $0) },
+    init(profile: UUID, projectID: String? = nil,
+         fetchProjects: ((UUID) async throws -> Data)? = nil,
          saveSession: @escaping (UUID) async -> Bool = { await OverleafWebIdentity.remember($0) },
          unlockSession: @escaping (UUID) async throws -> Void = { try NetworkAccess.requireOnline(); try await OverleafWebIdentity.restore($0, interactive: true) }) {
-        self.profile = profile; self.fetchProjects = fetchProjects; self.saveSession = saveSession; self.unlockSession = unlockSession
+        self.profile = profile
+        self.fetchProjects = fetchProjects ?? { profile in
+            guard let projectID, OverleafProjectID.parse(projectID) != nil else { throw OverleafWebClient.Failure.permission }
+            return try await OverleafWebClient.request("/project/" + projectID + "/threads", profile: profile)
+        }
+        self.saveSession = saveSession; self.unlockSession = unlockSession
         let config = WKWebViewConfiguration(); config.websiteDataStore = OverleafWebIdentity.dataStore(profile)
         web = WKWebView(frame: .zero, configuration: config)
         super.init(); web.navigationDelegate = self
@@ -46,7 +51,8 @@ import WebKit
             do {
                 if allowSavedSession { try await unlockSession(profile); try Task.checkCancellation() }
                 // A project-page redirect alone is not proof of authentication.
-                _ = try OverleafWebClient.parseProjects(await fetchProjects(profile))
+                let bytes = try await fetchProjects(profile)
+                guard (try JSONSerialization.jsonObject(with: bytes)) is [String: [String: Any]] else { throw OverleafWebClient.Failure.response }
                 try Task.checkCancellation()
                 let saved = await saveSession(profile)
                 try Task.checkCancellation()
@@ -171,14 +177,14 @@ struct OverleafSignIn: View {
     @StateObject private var session: OverleafSignInSession
     @StateObject private var draft = OverleafLoginDraft()
     let done: () -> Void
-    init(profile: UUID, done: @escaping () -> Void) { _session = StateObject(wrappedValue: OverleafSignInSession(profile: profile)); self.done = done }
+    init(profile: UUID, projectID: String? = nil, done: @escaping () -> Void) { _session = StateObject(wrappedValue: OverleafSignInSession(profile: profile, projectID: projectID)); self.done = done }
     private func openPasswords() {
         NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: "/System/Applications/Passwords.app"), configuration: NSWorkspace.OpenConfiguration())
     }
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Connect Overleaf").font(RemileType.heading)
+                Text("Connect review notes").font(RemileType.heading)
                 Spacer()
                 Button("Close", action: done).keyboardShortcut(.cancelAction)
             }.padding(20)

@@ -67,13 +67,9 @@ import Network
         return minutes == 0 ? "Synced just now" : "Synced \(minutes) min ago"
     }
     func renameProject(_ id: UUID, to name: String) async throws {
-        guard !busy, !liveOwned.contains(id), !offlineMode, !NetworkAccess.offline, hasNetwork, let project = projects.first(where: { $0.id == id }) else { throw OverleafProjectRename.Failure.unavailable }
-        busy = true; error = nil; defer { busy = false }
-        try await OverleafProjectRename.rename(project, to: name)
-        var updated = projects
-        if let index = updated.firstIndex(where: { $0.id == id }) { updated[index].name = name }
-        do { try persist(updated) }
-        catch { projects = updated; self.error = "Renamed on Overleaf. The local project name could not be saved." }
+        guard !busy, let index = projects.firstIndex(where: { $0.id == id }) else { return }
+        var updated = projects; updated[index].name = name
+        try persist(updated)
     }
     func title(for root: URL) -> String {
         connection(for: root) == nil ? "LaTeX" : "Overleaf"
@@ -141,17 +137,8 @@ import Network
         do { try persist(updated); return true } catch { self.error = error.localizedDescription; return false }
     }
     func refreshProjectTags() async {
-        guard !offlineMode, !NetworkAccess.offline, hasNetwork else { return }
+        // Preserve saved labels without contacting unsupported catalog/tag endpoints.
         tagError = nil; tagSignInProfile = nil
-        for account in accounts where projects.contains(where: { $0.profileID == account.id }) {
-            if Task.isCancelled { return }
-            do { let catalog = try await OverleafWebClient.projects(account.id); rememberTags(catalog, profile: account.id); if catalog.contains(where: { !$0.tagsLoaded }) { tagError = "Could not refresh tags. Saved tags are shown." } }
-            catch {
-                unavailableTags.formUnion(projects.filter { $0.profileID == account.id }.map(\.id))
-                self.tagError = account.name + ": " + error.localizedDescription
-                if (error as? OverleafWebClient.Failure)?.needsConnection == true { tagSignInProfile = account.id }
-            }
-        }
     }
     func isFreeLimited(_ project: OverleafConnection) -> Bool {
         accounts.first { $0.id == project.profileID }.map { $0.plan == .free && !$0.allowsGit } ?? false
@@ -231,9 +218,9 @@ import Network
         let account = account.trimmingCharacters(in: .whitespacesAndNewlines), existing = self.account(account)
         guard let projectID = OverleafConnection.projectID(url), !account.isEmpty, existing != nil || !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { error = "Enter an Overleaf project link, an account label and its Git token."; return }
         if let existing, !existing.allowsGit {
-            await connectLive(projectID: projectID, name: name, account: existing); return
+            error = Self.premiumHint; return
         }
-        guard !projects.contains(where: { $0.projectID == projectID && $0.account == account }) else { error = "This project is already connected for that account."; return }
+        guard !projects.contains(where: { $0.projectID == projectID && $0.account == account && $0.liveOnly != true }) else { error = "This project is already connected for that account."; return }
         busy = true; error = nil
         var project = OverleafConnection(id: UUID(), projectID: projectID, name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Overleaf project" : name.trimmingCharacters(in: .whitespacesAndNewlines), account: account.trimmingCharacters(in: .whitespacesAndNewlines), branch: "master")
         if let existing { project.profileID = existing.id }
@@ -259,31 +246,7 @@ import Network
         busy = false
     }
     func connectLive(projectID: String, name: String, account: Account, download: ((String, UUID) async throws -> Data)? = nil) async {
-        guard !busy else { return }
-        guard !offlineMode, hasNetwork, !NetworkAccess.offline else { error = "Go online to import this project."; return }
-        guard OverleafConnection.projectID("https://www.overleaf.com/project/" + projectID) == projectID,
-              accounts.contains(where: { $0.id == account.id }), !projects.contains(where: { $0.profileID == account.id && $0.projectID == projectID }) else { error = "This project is already connected or unavailable."; return }
-        busy = true; error = nil; defer { busy = false }
-        var connection = OverleafConnection(id: UUID(), profileID: account.id, projectID: projectID, name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Overleaf project" : name.trimmingCharacters(in: .whitespacesAndNewlines), account: account.name, branch: "master")
-        connection.liveOnly = true
-        let root = root(connection), baseline = OverleafSourceArchive.baseline(connection.id, under: directory)
-        do {
-            let bytes: Data
-            if let download { bytes = try await download(projectID, account.id) }
-            else {
-                _ = try OverleafWebClient.parseProjects(await OverleafWebClient.request("/user/projects", profile: account.id))
-                bytes = try await OverleafSourceDownload(project: projectID, profile: account.id).load()
-            }
-            try Task.checkCancellation(); try NetworkAccess.requireOnline()
-            try await Task.detached { try OverleafSourceArchive.install(bytes, at: root, baseline: baseline) }.value
-            _ = try TeXProject(root, historyEnabled: false)
-            try OverleafLiveFiles.save(OverleafLiveFiles.scan(root), to: OverleafFileSync.baseline(connection, library: directory))
-            try persist(projects + [connection])
-            statuses[connection.id] = .unchecked
-        } catch {
-            try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: baseline)
-            self.error = error.localizedDescription
-        }
+        error = "Add this project with its Git link and token. Existing local copies are kept."
     }
     func rememberTags(_ catalog: [OverleafWebClient.Project], profile: UUID) {
         for project in projects where project.profileID == profile {

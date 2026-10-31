@@ -302,10 +302,14 @@ final class HomeModel: ObservableObject {
             }
             do {
                 let data = try await Task.detached(priority: .userInitiated) { try Data(contentsOf: url) }.value
-                try reader.open(url, data: data)
-                if reader.url == url { overleaf.browsing = false; recordRecent(url) }
+                try openPreparedDocument(url, data: data)
             } catch { self.error = error.localizedDescription }
         }
+    }
+
+    func openPreparedDocument(_ url: URL, data: Data, recordRecent: Bool = true) throws {
+        try reader.open(url, data: data, recordRecent: recordRecent)
+        if reader.url == url { overleaf.browsing = false; if recordRecent { self.recordRecent(url) } }
     }
 
     private static let recentPreference = "reader.recentDocuments"
@@ -334,13 +338,14 @@ final class HomeModel: ObservableObject {
     func lastOpened(_ url: URL) -> Date? {
         (UserDefaults.standard.dictionary(forKey: "reader.lastOpened")?[url.standardizedFileURL.path] as? Double).map(Date.init(timeIntervalSince1970:))
     }
-    private func recordRecent(_ url: URL) {
+    func recordRecent(_ url: URL) {
         var hidden = UserDefaults.standard.stringArray(forKey: Self.hiddenRecentPreference) ?? []
         hidden.removeAll { $0 == url.standardizedFileURL.path }
         UserDefaults.standard.set(hidden, forKey: Self.hiddenRecentPreference)
         var dates = UserDefaults.standard.dictionary(forKey: "reader.lastOpened") ?? [:]
         dates[url.standardizedFileURL.path] = Date().timeIntervalSince1970
-        recent = Self.unique([url] + recent + NSDocumentController.shared.recentDocumentURLs).filter { !hidden.contains($0.standardizedFileURL.path) }
+        let saved = (UserDefaults.standard.stringArray(forKey: Self.recentPreference) ?? []).map { URL(fileURLWithPath: $0) }
+        recent = Self.unique([url] + recent + saved + NSDocumentController.shared.recentDocumentURLs).filter { !hidden.contains($0.standardizedFileURL.path) }
         let retained = Set(recent.map { $0.standardizedFileURL.path })
         UserDefaults.standard.set(dates.filter { retained.contains($0.key) }, forKey: "reader.lastOpened")
         UserDefaults.standard.set(recent.map(\.path), forKey: Self.recentPreference)

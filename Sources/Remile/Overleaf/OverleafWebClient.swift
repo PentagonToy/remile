@@ -53,7 +53,14 @@ import WebKit
     private final class RedirectPolicy: NSObject, URLSessionTaskDelegate {
         func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
     }
+    nonisolated static func reviewPath(_ path: String, document: Bool = false) -> Bool {
+        let pattern = document ? "^/Project/[a-f0-9]{24}/doc/[a-f0-9]{24}/download$" : "^/project/[a-f0-9]{24}/(threads|ranges|changes/users)$"
+        return path.range(of: pattern, options: .regularExpression) != nil
+    }
     static func request(_ path: String, profile: UUID, document: Bool = false) async throws -> Data {
+        guard reviewPath(path, document: document) else {
+            throw OverleafGit.Failure("Project browsing and source sync use Git. This web connection is only for review notes.")
+        }
         try NetworkAccess.requireOnline()
         do { try await OverleafWebIdentity.restore(profile) }
         catch Failure.sessionLocked {

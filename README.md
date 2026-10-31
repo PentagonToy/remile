@@ -15,7 +15,7 @@ A local workspace for PDF, Markdown and LaTeX documents.
 - **Markdown** — Write in Edit, read the rendered document, or keep both together in Split.
 - **PDF** — Read and annotate PDFs in bottom tabs, present pages in Slide View and find matching passages across your local library.
 - **LaTeX** — Edit multi-file projects, navigate their outline, compile and preview the PDF.
-- **Overleaf** — Start in Live for online editing, or use Private to review local changes before publishing.
+- **Overleaf** — Use Online for automatic Git synchronisation, or On-device for local work. Comments and suggestions connect separately.
 - **Extensions (development preview)** — Read selected reMarkable folders over SSH or import local Zotero libraries into Reference. See [setup and limits](docs/extensions.md).
 - **Reference** — Organise PDF/BibTeX records, review duplicates, edit or lock citation keys and keep shared attachments. See [Reference](docs/reference.md).
 - **AI** — Use Apple Intelligence on your Mac or connect ChatGPT for document questions, [manuscript review](docs/manuscript-review.md), grammar suggestions and reviewed LaTeX repairs.
@@ -52,7 +52,7 @@ Download [remile. 0.2.2 for Apple Silicon](https://github.com/PentagonToy/remile
 | macOS | Targets macOS 14 Sonoma and later. Release validation used macOS 27 on an M1 Pro. |
 | Reading, writing and local search | No AI account or TeX installation required. |
 | LaTeX, optional | A local TeX installation with `latexmk`, such as MacTeX or TeX Live. |
-| Overleaf, optional | Internet for Live. Git and project Git access for Git synchronisation. |
+| Overleaf, optional | Git, eligible Overleaf Git access and internet for synchronisation. Local TeX tools for PDF compilation. |
 | Apple Intelligence, optional | macOS 26 or later on an eligible Mac, with Apple Intelligence enabled. |
 | ChatGPT, optional | Internet and an eligible connected ChatGPT account. Account limits apply. |
 | Package trust | Developer ID signed and Apple-notarised. macOS may ask you to confirm the first launch. |
@@ -76,7 +76,7 @@ If Command Line Tools are selected, prefix the command with `DEVELOPER_DIR=/Appl
 
 `Tests/RemileTests` uses isolated fixtures and imports the app module directly. Open `Package.swift` in Xcode or run the command above. Focused checks are in `tools/check_*.sh`.
 
-CI builds Release and runs the standard tests and Live sync checks for relevant changes. It does not sign or publish the app.
+CI builds Release and runs the standard tests and sync regression checks for relevant changes. It does not sign or publish the app.
 
 ## Licence and acknowledgements
 

@@ -1,7 +1,9 @@
 # Changelog
 
-## In development — 30 October 2026
+## In development — 31 October 2026
 
+- Overleaf source synchronisation now uses Git with Online and On-device modes, grouped edits and slower idle checks. Review notes remain a separate web connection, with recoverable suggestion rejection.
+- Add bottom source-file tabs, optional line numbers and named review authors. Open additional PDFs directly into their prepared tabs.
 - Read selected reMarkable folders over SSH with a local Keychain connection. Preserve original unmarked PDFs and keep updates on request.
 - Import local Zotero libraries and collections. Preserve local fields, citation keys and PDF edits during source updates.
 - Add Thesis / Dissertation types, degree-aware PDF metadata and exact public title matching. Correct journal mastheads stored as titles.

@@ -16,6 +16,10 @@ A source ZIP opens into a new project folder. The ZIP stays unchanged. Source re
 
 Files holds the project. Outline follows its sections. Drag the divider to give either the source or PDF more room.
 
+Opened files appear in the bottom tab bar. Select a tab to switch source, drag it to change its order, or use + to open another project file. Double-click a tab to rename its file. Closing a tab keeps your edits and the file in the project. At least one file stays open. Source tabs stay within their window.
+
+Source line numbers are on by default. Change **Settings → LaTeX → Line numbers** to hide them. The same setting applies to Overleaf sources.
+
 Double-click in the PDF to return to the corresponding source. Word context refines the target when it matches clearly. Ambiguous text and figures keep the SyncTeX location. Selecting text alone does not move the source. Type `\cite{` to search your bibliography and Reference while writing. [Read the citation hints →](../reference.md#read-citation-hints)
 
 Inside `\includegraphics{…}`, type part of a filename to see matching project images. `\input{…}` and `\include{…}` suggest TeX files. `\ref{…}` and `\eqref{…}` suggest labels from the project. Completing a supported `\begin{…}` inserts its matching end and places the cursor inside. These suggestions use local project data without a network request.

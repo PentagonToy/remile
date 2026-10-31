@@ -9,8 +9,8 @@ struct OverleafConnectionNotice: View {
     var body: some View {
         VStack(alignment: .leading, spacing: RemileControl.rowSpacing * 2) {
             Text("Connect to Overleaf?").font(RemileType.heading)
-            Text("remile. is independent of Overleaf. Some connections, including Live, use unofficial interfaces.")
-            Text("Service terms or changes may restrict or stop access. You use this connection at your own risk.")
+            Text("remile. is independent of Overleaf. Projects sync through Overleaf’s Git integration.")
+            Text("Git requires eligible project access. Git updates can move or remove Overleaf comments and tracked changes.")
             HStack {
                 Link(destination: URL(string: "https://www.overleaf.com/legal")!) {
                     Text("Overleaf terms").foregroundStyle(RemileStyle.accent)

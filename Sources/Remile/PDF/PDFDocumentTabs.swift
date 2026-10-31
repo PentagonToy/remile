@@ -20,17 +20,17 @@ struct PDFDocumentTabs: View {
                 } else { Spacer(minLength: 0) }
                 Divider().frame(height: 16).accessibilityHidden(true)
                 ReaderThemeButton()
-            }.padding(.horizontal, 10).frame(height: 38).background(RemileStyle.editorBar)
+            }.padding(.horizontal, DocumentTabMetrics.inset).frame(height: DocumentTabMetrics.height).background(RemileStyle.editorBar)
         }
     }
 
     private func documentTabs(for reader: ReadingSession, availableWidth: CGFloat) -> some View {
         let tabs = windows.documentTabs(for: reader)
         let selectedID = tabs.first(where: \.selected)?.id
-        let spacing: CGFloat = 4
+        let spacing = DocumentTabMetrics.spacing
         let viewportWidth = max(0, availableWidth - RemileControl.toolHit - RemileControl.spacing)
         let gaps = CGFloat(max(0, tabs.count - 1)) * spacing
-        let tabWidth = min(220, max(92, (viewportWidth - gaps) / CGFloat(max(1, tabs.count))))
+        let tabWidth = min(DocumentTabMetrics.maximumWidth, max(DocumentTabMetrics.minimumWidth, (viewportWidth - gaps) / CGFloat(max(1, tabs.count))))
         let contentWidth = CGFloat(tabs.count) * tabWidth + gaps
 
         return HStack(spacing: 0) {
@@ -41,7 +41,7 @@ struct PDFDocumentTabs: View {
                             HStack(spacing: 2) {
                                 Text(tab.title).font(RemileType.control).lineLimit(1).truncationMode(.middle)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.leading, 10).frame(height: 30).contentShape(Rectangle())
+                                    .padding(.leading, DocumentTabMetrics.inset).frame(height: DocumentTabMetrics.labelHeight).contentShape(Rectangle())
                                     .accessibilityHidden(true)
                                     .overlay { PDFTabDragSurface(id: tab.id, title: tab.title) }
                                 Button { windows.closeDocumentTab(tab.id) } label: {
@@ -51,9 +51,9 @@ struct PDFDocumentTabs: View {
                             }
                             .frame(width: tabWidth)
                             .foregroundStyle(tab.selected ? RemileStyle.ink : RemileStyle.ink.opacity(0.65))
-                            .background(tab.selected ? RemileStyle.ink.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                            .background(tab.selected ? RemileStyle.ink.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: DocumentTabMetrics.radius))
                             .overlay {
-                                RoundedRectangle(cornerRadius: 6)
+                                RoundedRectangle(cornerRadius: DocumentTabMetrics.radius)
                                     .stroke(RemileStyle.accent, lineWidth: 1)
                                     .opacity(drag.feedback?.target == tab.id ? 0.65 : 0)
                                     .allowsHitTesting(false)
@@ -67,7 +67,7 @@ struct PDFDocumentTabs: View {
                             .animation(tabAnimation, value: drag.feedback)
                             .id(tab.id)
                         }
-                    }.padding(.vertical, 4)
+                    }.padding(.vertical, DocumentTabMetrics.spacing)
                         .animation(tabAnimation, value: tabs.map(\.id))
                 }
                 .frame(width: min(contentWidth, viewportWidth))

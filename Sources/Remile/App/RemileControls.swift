@@ -10,6 +10,18 @@ enum RemileControl {
     static let separatorHeight: CGFloat = 18
 }
 
+enum DocumentTabMetrics {
+    static let height: CGFloat = 38
+    static let labelHeight: CGFloat = 30
+    static let minimumWidth: CGFloat = 92
+    static let maximumWidth: CGFloat = 220
+    static let spacing: CGFloat = 4
+    static let inset: CGFloat = 10
+    static let radius: CGFloat = 6
+    static let markerWidth: CGFloat = 3
+    static let markerHeight: CGFloat = 24
+}
+
 struct RemileActionStyle: ButtonStyle {
     enum Emphasis: Equatable { case standard, primary, quiet }
     var emphasis: Emphasis = .standard

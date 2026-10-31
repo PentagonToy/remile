@@ -17,7 +17,7 @@ enum PortableSettings {
     static let defaults: [String: Value] = [
         "reader.appearance": .string("System"), "appearance.animations": .bool(true), "editor.sidebarArtwork": .bool(true),
         "reader.markdownZoom": .number(100), "pdf.defaultPaperSize": .string("A4"), "pdf.defaultLandscape": .bool(false),
-        "markdown.fontSize": .number(18), "markdown.spellcheck": .bool(true), "markdown.lineNumbers": .bool(false),
+        "markdown.fontSize": .number(18), "markdown.spellcheck": .bool(true), "markdown.lineNumbers": .bool(true), "latex.lineNumbers": .bool(true),
         "latex.fontSize": .number(17), "latex.theme": .string("remile."), "latex.engine": .string("Automatic"), "latex.bibliography": .bool(true), "latex.compileTimeLimit": .number(180), "latex.historyMinutes": .number(3),
         "editor.language": .string("Automatic"), "editor.spellcheck": .bool(true), "editor.focusMode": .bool(false), "editor.showExternalEdits": .bool(false), "editor.toolSounds": .bool(true),
         "reader.elasticScrolling": .bool(true), "reader.markdownSerif": .bool(false), "markdown.autoPair": .bool(true), "markdown.livePreview": .bool(true),

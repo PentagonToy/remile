@@ -7,9 +7,9 @@ remile. is a native macOS document workspace. The Swift package has one executab
 | Native readers and persistence | `ReadingSession`, PDF/Markdown sessions | Keep unsaved edits and document identity. Save/Discard owns persistence |
 | LaTeX authoring | `TeXProject` and focused compiler/history/outline helpers | Own the active project and buffers. External processes build snapshots |
 | Connected projects | `OverleafLibrary` | Account/project metadata, worktrees, review and publication lifecycle |
-| Web account access | `OverleafWebIdentity`, `OverleafWebClient`, `OverleafSignInSession` | Per-profile remile. session, read-only JSON endpoints and bounded login surface |
-| Current source synchronisation | `OverleafGit`, `OverleafAutoPublisher`, `OverleafAutoSync` | Versioned Git transport, worktree fingerprints, isolated review copies and normal pushes |
-| Live text and file synchronisation | `OverleafLiveWorkspace`, socket, wire, text and journal helpers | One project writer, native editor transport and preserved drafts |
+| Web account access | `OverleafWebIdentity`, `OverleafWebClient`, `OverleafSignInSession` | Per-profile review session with an allowlist for threads, ranges and source anchors |
+| Current source synchronisation | `OverleafGit`, `OverleafGitSync`, `OverleafLiveWorkspace` | Versioned Git transport, worktree fingerprints, isolated review copies and normal pushes |
+| Online lifecycle | `OverleafLiveWorkspace`, text and journal helpers | One Git writer, offline work, private recovery and buffer reconciliation |
 | Network policy | `NetworkAccessGate` | Reject and cancel app-owned network operations. No operating-system firewall claim |
 | Local automation | `EditorCLI`, `EditorBridge` | Structured responses, explicit document identity and expected hashes for edits |
 
@@ -19,7 +19,7 @@ Use native macOS APIs and focused source modules. Add dependencies only when the
 
 Keep document identity, unsaved buffers and user decisions separate from disposable previews and caches. Save and export have explicit destinations.
 
-Live and Private share one project writer. Git review compares the expected local and remote versions before publishing. Account browsing, Git access and Live transport remain separate capabilities.
+Online and On-device use the same local project. Git publishes a linear snapshot with normal pushes. Web requests are limited to review reads and accepting a current suggestion. Rejection restores source through Git. No editor collaboration socket is opened. Older recovery journals remain readable.
 
 Search prepares document structure and scientific aliases during indexing. It stores a replaceable numeric ranking cache locally. Changed documents update their derived text, and global ranking weights are recomputed when needed.
 

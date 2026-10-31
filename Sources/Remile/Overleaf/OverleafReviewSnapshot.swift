@@ -3,6 +3,10 @@ import Foundation
 /// Server ranges are UTF-16 offsets into the document returned with those ranges.
 /// Keep that snapshot so a later local edit cannot silently move an anchor.
 struct OverleafReviewSnapshot {
+    static func date(_ value: String) -> Date? {
+        (try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(value))
+            ?? (try? Date.ISO8601FormatStyle().parse(value))
+    }
     struct Anchor {
         let file: String
         let source: String
@@ -25,6 +29,8 @@ struct OverleafReviewSnapshot {
         let text: String
         let anchor: Anchor
         let timestamp: String?
+        var author: String? = nil
+        var authorID: String? = nil
         var singleRange = true
         func rejectedSource() throws -> String {
             guard singleRange else { throw OverleafGit.Failure("Review this grouped change in Overleaf.") }
@@ -120,7 +126,18 @@ struct OverleafReviewSnapshot {
                   let position = anchor(op, length: insertion.map { ($0 as NSString).length } ?? 0) else { continue }
             if insertion != nil, text.substring(with: NSRange(location: position.offset, length: position.length)) != content { continue }
             let metadata = row["metadata"] as? [String: Any]
-            changes.append(.init(id: documentID + ":" + id + ":" + String(index), documentID: documentID, changeID: id, insertion: insertion != nil, text: content, anchor: position, timestamp: metadata?["ts"] as? String ?? (metadata?["ts"] as? Double).map { ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: $0 / 1000)) }, singleRange: counts[id] == 1))
+            changes.append(.init(id: documentID + ":" + id + ":" + String(index), documentID: documentID, changeID: id, insertion: insertion != nil, text: content, anchor: position, timestamp: metadata?["ts"] as? String ?? (metadata?["ts"] as? Double).map { ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: $0 / 1000)) }, authorID: metadata?["user_id"] as? String, singleRange: counts[id] == 1))
         }
+    }
+    mutating func includeAuthors(_ data: Data) throws {
+        guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]], rows.count <= 2000 else { throw OverleafGit.Failure("Review author names could not be read.") }
+        var names: [String: String] = [:]
+        for row in rows {
+            guard let id = row["id"] as? String, Self.validID(id) else { continue }
+            let full = [row["first_name"] as? String, row["last_name"] as? String].compactMap { $0 }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = (row["name"] as? String ?? full).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty, name.count <= 200 { names[id] = name }
+        }
+        for index in changes.indices { changes[index].author = changes[index].authorID.flatMap { names[$0] } }
     }
 }

@@ -1,35 +1,38 @@
-# Live Overleaf synchronisation
+# Online Overleaf synchronisation
 
-Open a project in Live to work with Overleaf while staying in remile. Private keeps a local draft for review before publication. Your choice is remembered for that project.
+Online keeps a local project connected through Overleaf's Git integration. On-device keeps editing and compilation on this Mac without synchronising. The project remembers your choice. New connections start Online.
 
-## Connection status
+## Connection states
 
-| Status | What to do |
+| State | Meaning |
 | --- | --- |
-| Connecting | Wait for the project to join. |
-| Pending changes | Keep working while remile sends your edits. |
-| Awaiting confirmation | Wait for Overleaf to confirm the update. |
-| Confirmed | Your current source changes are confirmed. |
-| Reconnecting | Keep your draft open while the connection recovers. |
-| Paused | Click the status to reconnect or review the reported issue. |
-| Review required | Compare the local and remote versions before continuing. |
+| Synced | The saved source was confirmed through Git at the displayed time. |
+| Waiting to sync | New edits are saved locally and waiting for a short pause. |
+| Syncing | Git is checking, merging or publishing a saved snapshot. |
+| Offline | Online remains selected. Work stays local until the connection returns. |
+| On-device | Automatic synchronisation is stopped until you choose Online. |
+| Review needed | Overlapping edits need your choice. Recovery copies are kept. |
 
-Source confirmation and PDF freshness are separate. Compile after editing to refresh the PDF.
+## Reconnection
 
-## Keep your draft safe
+The open project groups edits before publishing. It waits for five quiet seconds, with a twenty-second limit during continuous typing and at least fifteen seconds between automatic checks while writing. Remote checks start one minute apart and slow to five minutes when nothing changes. Hidden workspaces and On-device mode stop automatic checks. Sync now checks immediately.
 
-Brief connection failures retry automatically. Pending edits stay available. Overlapping changes and uncertain file replacements pause for review rather than silently choosing a version.
+Transient failures retry with increasing delays. Rate-limit responses wait at least five minutes. A failed request does not discard local work or switch the chosen mode. A rejected push never becomes a force push.
 
-Resolve the highlighted difference, then use the action offered by the review screen. If you prefer to work separately, switch to Private and publish after reviewing your changes. Git publication stays paused while Live is active.
+Independent changes merge in a private working copy. Changes typed during a request are reconciled before updating the editor. Ambiguous text, deletion or binary changes stop for review. Use Sync now to retry or Review changes to compare both versions.
 
-## Files and recovery
+## Local work
 
-Live reconciles text and project files. File recovery copies appear through the paused status when a replacement needs attention. Review those copies before deleting them.
+Download the project and install the required TeX tools, packages and fonts before travelling. Local PDF compilation and source navigation do not need Overleaf. Different local TeX versions or fonts can produce a different PDF.
 
-Work offline stops online operations. Returning online allows reconnection. Leaving a project stops its file checks. One recent project may remain briefly available for a quick return.
+## Review notes
 
-## Limits
+Comments and suggestions use a separate web-session connection when you open Review. This exception is independent of Git synchronisation and uses private web interfaces. Acceptance uses a reviewed suggestion ID. Rejection restores source through Git, verifies the restored remote text, then clears only the original suggestion marker. A small local recovery record prevents a retry from restoring the same text twice. Overleaf history can show the Git restoration and a separate accepted-range event. Grouped or moved suggestions still need review in Overleaf. Review has no background refresh timer.
 
-Overleaf account permissions and service changes can interrupt a connection. Large source archives or frequently changing file trees may need more time. Conflicts, account restrictions and repeated file changes need your attention. Private remains available as a separate review workflow.
+Git updates can move or remove Overleaf comments and tracked changes. Avoid simultaneous Git publishing and sensitive collaborative review. The app does not provide live cursors or presence.
+
+## Existing copies
+
+Existing Git projects and explicit mode choices are retained. Older web-only copies remain on this Mac. Add a Git connection separately and compare any unpublished work before removing the old copy. Legacy recovery journals are retained.
 
 [Overleaf guide](workspace/overleaf.md) · [CLI workflows](cli.md#common-workflows)

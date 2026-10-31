@@ -15,6 +15,7 @@ enum TeXFileSystem {
         try FileManager.default.moveItem(at: source, to: destination)
     }
     static func paths(_ root: URL) throws -> [String] {
+        let base = root.resolvingSymlinksInPath()
         guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) else { throw CocoaError(.fileReadUnknown) }
         var paths: [String] = []
         for case let url as URL in items {
@@ -22,17 +23,18 @@ enum TeXFileSystem {
             if values.isSymbolicLink == true { items.skipDescendants(); continue }
             guard values.isRegularFile == true else { continue }
             guard paths.count < 10000 else { throw CocoaError(.fileReadTooLarge) }
-            paths.append(String(url.path.dropFirst(root.path.count + 1)))
+            paths.append(String(url.resolvingSymlinksInPath().path.dropFirst(base.path.count + 1)))
         }
         return paths.sorted()
     }
     static func folders(_ root: URL) throws -> [String] {
+        let base = root.resolvingSymlinksInPath()
         guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) else { throw CocoaError(.fileReadUnknown) }
         var result: [String] = []
         for case let url as URL in items {
             let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             if values.isSymbolicLink == true { items.skipDescendants(); continue }
-            if values.isDirectory == true { result.append(String(url.path.dropFirst(root.path.count + 1))) }
+            if values.isDirectory == true { result.append(String(url.resolvingSymlinksInPath().path.dropFirst(base.path.count + 1))) }
             guard result.count < 10000 else { throw CocoaError(.fileReadTooLarge) }
         }
         return result.sorted()
