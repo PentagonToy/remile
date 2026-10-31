@@ -13,7 +13,7 @@ The complete upstream MIT notice is retained in [CHATGPT-LICENSE.txt](others/lic
 
 ## Earlier releases
 
-Release 0.2.2 includes `overleaf-mark.svg`, whose paths match the inspected `overleaf/overleaf` repository asset at `services/web/public/overleaf-logo.svg` (AGPL-3.0 repository). Its applicable asset licence and separate trademark permission remain unconfirmed. Current development source replaces it with the native `leaf` SF Symbol and no longer bundles that SVG. This source change does not replace earlier release binaries. [Official logo policy](https://www.overleaf.com/for/partners/logos).
+Release 0.2.2 includes `overleaf-mark.svg`, whose paths match the inspected `overleaf/overleaf` repository asset at `services/web/public/overleaf-logo.svg` (AGPL-3.0 repository). Its applicable asset licence and separate trademark permission remain unconfirmed. Release 0.2.3 replaces it with the native `leaf` SF Symbol and no longer bundles that SVG. Version 0.2.3 supersedes 0.2.2 as the recommended download. Earlier binaries and tags remain historical artefacts and are not silently replaced. This change does not resolve permissions for earlier distributions. [Official logo policy](https://www.overleaf.com/for/partners/logos).
 
 ## Platform components and external tools
 
@@ -51,6 +51,16 @@ SSH passwords are stored in a non-synchronising, device-only macOS Keychain item
 
 Zotero integration is remile-authored Swift code using Zotero’s [documented local API](https://www.zotero.org/support/dev/web_api/v3/local_api). No Zotero application, SDK, citation-style bundle or translators are shipped. Zotero, reMarkable, Overleaf, OpenAI and ChatGPT names and marks belong to their respective owners. remile. is independent and is not presented as endorsed by those providers.
 
-Software licences do not grant access to accounts, permission to use private APIs or rights to redistribute imported papers. Connected services retain their own terms. In particular, Overleaf’s [Acceptable Use Policy](https://www.overleaf.com/legal) restricts unsupported interfaces and automated access. Current development source uses the documented Git integration for source synchronisation and removes the collaboration socket. Comments and suggestions retain a separate, narrowly scoped private web-interface exception. That exception remains subject to provider terms and permission review. Earlier release binaries retain their previous behaviour. The development reMarkable connection uses device SSH access, not cloud account access. SSH access does not grant permission to redistribute device software or imported documents. A user’s opt-in is not provider approval.
+Software licences do not grant access to accounts, permission to use private APIs or rights to redistribute imported papers. Connected services retain their own terms. In particular, Overleaf’s [Acceptable Use Policy](https://www.overleaf.com/legal) restricts unsupported interfaces and automated access. Release 0.2.3 and later use the documented Git integration for source synchronisation and removes the collaboration socket. Comments and suggestions retain a separate, narrowly scoped private web-interface exception. That exception remains subject to provider terms and permission review. Earlier release binaries retain their previous behaviour. The reMarkable connection in 0.2.3 and later uses device SSH access, not cloud account access. SSH access does not grant permission to redistribute device software or imported documents. A user’s opt-in is not provider approval.
 
 Imported PDFs, annotations, metadata and project templates retain their existing rights. Local copying, storage sharing, citation-key changes or metadata edits do not transfer copyright or make those materials MIT-licensed.
+
+## ChatGPT account connection
+
+remile uses the documented [Sign in with ChatGPT open-source registration flow](https://developers.openai.com/siwc/token-sharing-open-source/sign-in), with PKCE, ID-token verification, the issued client ID and explicit `chatgpt.tokens.use.direct` permission. Requests use `https://api.openai.com/v1/responses`. This is distinct from extracting another application's account session. Availability, eligible requests, account limits and provider terms still apply. The presence of an official flow is not a claim that every branding or implementation detail has been independently certified.
+
+## Provenance review scope
+
+The 31 October 2026 bounded comparison of current Swift sources against the inspected GPL overleaf-textarea and AGPL ayakaleaf server snapshots is recorded in [the provenance review](docs/details/provenance.md). It supplements the incorporated-material inventory above. It does not establish independent authorship or clear all historical versions. The project retains MIT while no specific incorporated copyleft component has been identified by this check. Any later finding requires component-specific attribution and licence analysis before redistribution. Changing the root licence alone would not settle trademark permissions, service terms or missing third-party notices.
+
+From 0.2.4, Review web access is disabled until enabled in the Review panel and can be disabled there again. CLI review requests respect the same choice. Project listing and tags remain separate on-demand web reads. User consent is not provider permission.

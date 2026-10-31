@@ -16,6 +16,7 @@ import WebKit
         super.init(); web.navigationDelegate = self
     }
     func open() async throws {
+        try OverleafReviewAccess.requireEnabled()
         try NetworkAccess.requireOnline(); try Task.checkCancellation()
         guard project.range(of: "^[a-f0-9]{24}$", options: .regularExpression) != nil else { throw OverleafSourceFiles.Failure.invalid }
         try await withTaskCancellationHandler {
@@ -33,6 +34,7 @@ import WebKit
         if let error { ready.resume(throwing: error) } else { loaded = true; ready.resume() }
     }
     private func request(_ action: String, args: [String: Any]) async throws -> [String: Any] {
+        try OverleafReviewAccess.requireEnabled()
         try NetworkAccess.requireOnline(); try Task.checkCancellation()
         guard loaded else { throw OverleafGit.Failure("Reconnect review notes before trying again.") }
         let lease = try NetworkAccess.gate.watch { [weak self] in Task { @MainActor in self?.close() } }
