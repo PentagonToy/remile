@@ -4,6 +4,7 @@
 
 - Restore on-demand Overleaf project selection with collapsible tag groups, local search and a link fallback. Selected projects still connect through Git.
 - Move Overleaf source sync to Git with Online and On-device modes, grouped edits and resumable recovery. Review remains a separate web connection, with recoverable suggestion rejection.
+- Merge independent concurrent Overleaf edits with one bounded retry, check active projects sooner and preserve the source caret using unique nearby text.
 - Reduce Git waits and duplicate attachment reads. Check recovery space, limit managed records and prepare validation off the main thread while protecting new edits.
 - Add bottom source tabs and keyboard navigation, optional line numbers, clearer save states and named, selectable review cards. Open additional PDFs without briefly showing Home.
 - Read selected reMarkable folders over SSH with a local Keychain connection. Preserve original unmarked PDFs and keep updates on request.

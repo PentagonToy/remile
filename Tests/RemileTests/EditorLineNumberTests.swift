@@ -4,6 +4,28 @@ import XCTest
 @testable import Remile
 
 final class EditorLineNumberTests: XCTestCase {
+    @MainActor func testExternalTeXInsertionKeepsTheCaretOnItsText() throws {
+        _ = NSApplication.shared
+        let controller = MarkdownEditorController()
+        controller.texTheme = .remile
+        _ = controller.makeView()
+        let source = String(repeating: "% Opening lines\n", count: 12) + "Unique paragraph with a caret here and some stable nearby text.\n"
+        controller.update(source, size: 17, serif: false, document: "main.tex")
+        let view = try XCTUnwrap(controller.textView)
+        let selection = (source as NSString).range(of: "caret")
+        view.setSelectedRange(selection)
+        let added = "% Remote section added above\n"
+        controller.update(added + source, size: 17, serif: false, document: "main.tex")
+        XCTAssertEqual(view.selectedRange(), NSRange(location: selection.location + (added as NSString).length, length: selection.length))
+        XCTAssertEqual((view.string as NSString).substring(with: view.selectedRange()), "caret")
+    }
+    func testAmbiguousCaretContextAndUnicodeFallbackStayConservative() {
+        let repeated = String(repeating: "x", count: 400)
+        XCTAssertEqual(EditorProvenance.anchoredSelection(NSRange(location: 150, length: 0), before: repeated, after: "prefix" + repeated), NSRange(location: 150, length: 0))
+        let mapped = EditorProvenance.anchoredSelection(NSRange(location: 1, length: 0), before: "a", after: "😀")
+        XCTAssertNotNil(Range(mapped, in: "😀"))
+        XCTAssertEqual(mapped.length, 0)
+    }
     @MainActor func testGutterPaintStaysInsideItsOwnBounds() async throws {
         _ = NSApplication.shared
         let store = UserDefaults.standard, key = "latex.lineNumbers", original = UserDefaults.standard.object(forKey: "latex.lineNumbers")

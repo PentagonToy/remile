@@ -6,6 +6,7 @@ struct OverleafBar: View {
     let connection: OverleafConnection
     @ObservedObject private var live: OverleafLiveWorkspace
     @State private var accounts = false
+    @Environment(\.scenePhase) private var scenePhase
     init(library: OverleafLibrary, project: TeXProject, connection: OverleafConnection) {
         self.library = library; self.project = project; self.connection = connection; live = project.liveWorkspace
     }
@@ -40,6 +41,9 @@ struct OverleafBar: View {
                 if OverleafSyncPreference.live(connection.id) { live.connectVisible(project: project, library: library, connection: connection) }
             }
             .onDisappear { live.setVisible(false); project.canReviewChanges = false }
+            .onChange(of: scenePhase) { phase in
+                if phase == .active { live.foregrounded() }
+            }
             .onChange(of: live.connected && !live.syncingFiles && !live.reviewing && live.pendingDocumentCount == 0 && live.issue == nil && !project.compiling) { project.canReviewChanges = $0 }
             .onChange(of: library.statuses[connection.id] == .online && library.review == nil) { ready in
                 if ready, live.enabled, live.requiresGitReview {

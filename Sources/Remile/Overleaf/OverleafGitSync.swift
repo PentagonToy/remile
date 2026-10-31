@@ -6,6 +6,9 @@ enum OverleafGitSync {
         let errorDescription: String?
         init(_ message: String) { errorDescription = message }
     }
+    struct RemoteAdvanced: LocalizedError {
+        let errorDescription: String? = "Overleaf changed during sync. Your work is kept and sync will retry."
+    }
     struct Prepared: Sendable {
         let review: OverleafGit.Review
         let files: [String: Data]
@@ -13,6 +16,24 @@ enum OverleafGitSync {
         let originalHead: String
         let recovery: URL
         var resumed = false
+    }
+    /// One immediate retry absorbs an ordinary concurrent push without an unbounded network loop.
+    static func synchronise(_ connection: OverleafConnection, root: URL, recovery: URL, transport: String? = nil) throws -> (prepared: Prepared, caughtUp: Bool) {
+        for attempt in 0..<2 {
+            try Task.checkCancellation()
+            let prepared = try prepare(connection, root: root, recovery: recovery, transport: transport)
+            if prepared.review.changes.isEmpty && !prepared.resumed { return (prepared, true) }
+            do { return (prepared, try publish(prepared)) }
+            catch is RemoteAdvanced {
+                guard attempt == 0 else { throw RemoteAdvanced() }
+                guard try OverleafAutoPublisher.head(root) == prepared.originalHead else {
+                    throw ReviewRequired("Local Git history changed during sync. Your work and recovery copy are kept.")
+                }
+                // The server was fetched and has not accepted this head. Retain its local snapshot before rebuilding.
+                try OverleafSyncRecovery.finish(prepared)
+            }
+        }
+        throw RemoteAdvanced()
     }
     static func prepare(_ connection: OverleafConnection, root: URL, recovery: URL, transport: String? = nil) throws -> Prepared {
         try Task.checkCancellation()
@@ -75,10 +96,26 @@ enum OverleafGitSync {
         if prepared.resumed {
             let remote = try fetch()
             if try OverleafGit.run(["merge-base", "--is-ancestor", prepared.head, remote], at: review.stage, allowFailure: true).status == 0 { observed = remote }
-            else if remote != review.remoteHead { throw ReviewRequired("Overleaf changed while sync was interrupted. Review changes. Your local work and recovery copy are kept.") }
+            else if prepared.originalHead == prepared.head {
+                throw ReviewRequired("Overleaf history no longer contains the installed sync. Review changes. Your local work and recovery copy are kept.")
+            } else if remote != review.remoteHead {
+                if try OverleafGit.run(["merge-base", "--is-ancestor", review.remoteHead, remote], at: review.stage, allowFailure: true).status == 0 { throw RemoteAdvanced() }
+                throw ReviewRequired("Overleaf history changed while sync was interrupted. Review changes. Your local work and recovery copy are kept.")
+            }
         }
         if observed == nil, prepared.head != review.remoteHead {
-            _ = try OverleafGit.run(local + ["push", review.transport, prepared.head + ":refs/heads/" + review.connection.branch], at: review.stage, credential: review.connection.profileID)
+            do {
+                _ = try OverleafGit.run(local + ["push", review.transport, prepared.head + ":refs/heads/" + review.connection.branch], at: review.stage, credential: review.connection.profileID)
+            } catch {
+                try Task.checkCancellation()
+                if (error as? OverleafGit.Failure)?.retryAfter != nil { throw error }
+                // A failed response may hide either a concurrent push or an already accepted upload.
+                let remote = try fetch()
+                if try OverleafGit.run(["merge-base", "--is-ancestor", prepared.head, remote], at: review.stage, allowFailure: true).status == 0 { observed = remote }
+                else if remote != review.remoteHead,
+                        try OverleafGit.run(["merge-base", "--is-ancestor", review.remoteHead, remote], at: review.stage, allowFailure: true).status == 0 { throw RemoteAdvanced() }
+                else { throw error }
+            }
         }
         // Fetch, rather than ls-remote: Overleaf materialises browser edits when fetching.
         let remote = try observed ?? fetch()

@@ -106,11 +106,15 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
     }
     func update(_ source: String, size: CGFloat, serif: Bool, document: String? = nil) {
         guard let view = textView else { return }
-        if documentID != document { assistance.cancel(); documentID = document; view.undoManager?.removeAllActions(); clearFlash(); completion.dismiss() }
+        let sameDocument = documentID == document
+        if !sameDocument { assistance.cancel(); documentID = document; view.undoManager?.removeAllActions(); clearFlash(); completion.dismiss() }
         var needsStyle = !hasStyled
         if view.string != source, !view.hasMarkedText() {
             needsStyle = true
-            let selection = view.selectedRange(), origin = scroll?.contentView.bounds.origin ?? .zero
+            let selection = sameDocument && texTheme != nil
+                ? EditorProvenance.anchoredSelection(view.selectedRange(), before: view.string, after: source)
+                : NSIntersectionRange(view.selectedRange(), NSRange(location: 0, length: (source as NSString).length))
+            let origin = scroll?.contentView.bounds.origin ?? .zero
             clearFlash(); completion.dismiss(); assistance.cancel()
             view.string = source
             findState.sourceChanged()

@@ -12,7 +12,9 @@ Create a token in **Overleaf → Account settings → Git integration**. Eligibl
 
 ## Choose a mode
 
-**Online** saves locally and synchronises through Git while the project is open. It is the default for new connections. Independent remote edits merge automatically. Overlapping edits wait for review. Sync now checks the saved work immediately.
+**Online** saves locally and synchronises through Git while the project is open. It is the default for new connections. Independent remote edits merge automatically. Overlapping edits wait for review. If a collaborator uploads during your sync, remile fetches the new history and tries one fresh merge. It never force-pushes. Sync now checks the saved work immediately.
+
+After returning to the project or syncing changes, remile checks for remote edits every fifteen seconds for two minutes. Quiet projects then slow to one to five minutes between checks. Rapid window changes do not trigger repeated requests, and connection errors keep their retry delay.
 
 **On-device** stops automatic synchronisation. Editing, local compilation and source navigation remain available. Choose Online when you want to reconnect.
 

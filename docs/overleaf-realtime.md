@@ -16,7 +16,7 @@ Online keeps a local project connected through Overleaf's Git integration. On-de
 
 ## Reconnection
 
-The open project groups edits before publishing. It waits for five quiet seconds, with a twenty-second limit during continuous typing and at least fifteen seconds between automatic checks while writing. Remote checks start one minute apart and slow to five minutes when nothing changes. Hidden workspaces and On-device mode stop automatic checks. Sync now checks immediately.
+The open project groups edits before publishing. It waits for five quiet seconds, with a twenty-second limit during continuous typing and at least fifteen seconds between automatic checks while writing. For two minutes after returning to the project or syncing changes, remote checks run fifteen seconds apart. They then slow from one to five minutes when nothing changes. Returning to the app brings the next check forward, while keeping minimum spacing and error backoff. Hidden workspaces and On-device mode stop automatic checks. Sync now checks immediately.
 
 Transient failures retry with increasing delays. Rate-limit responses wait at least five minutes. A failed request does not discard local work or switch the chosen mode. A rejected push never becomes a force push.
 

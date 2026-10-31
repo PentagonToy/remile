@@ -27,6 +27,7 @@ import SwiftUI
     private var nextCheck = Date.distantPast
     private var failures = 0
     private var unchangedChecks = 0
+    private var collaborationUntil = Date.distantPast
     private var lastAttempt = Date.distantPast
     private var gitChecks = 0
     private var confirmedRevision = -1
@@ -43,7 +44,7 @@ import SwiftUI
     func connectVisible(project: TeXProject, library: OverleafLibrary, connection: OverleafConnection) {
         self.project = project; self.library = library; self.connection = connection
         visible = true; enabled = true
-        if ticker == nil { startTicker() }
+        foregrounded()
     }
     func start(project: TeXProject, library: OverleafLibrary, connection: OverleafConnection) async {
         connectVisible(project: project, library: library, connection: connection)
@@ -57,8 +58,24 @@ import SwiftUI
     }
     func setVisible(_ value: Bool) {
         visible = value
-        if value { startTicker() }
+        if value { foregrounded() }
         else { ticker?.cancel(); ticker = nil }
+    }
+    func foregrounded() {
+        guard visible, enabled else { return }
+        if connecting { startTicker(); return }
+        if failures == 0 {
+            let now = Date()
+            collaborationUntil = now.addingTimeInterval(120)
+            nextCheck = min(nextCheck, Self.foregroundDeadline(now: now, attempt: lastAttempt))
+        }
+        wake()
+    }
+    static func foregroundDeadline(now: Date, attempt: Date) -> Date {
+        max(now, attempt.addingTimeInterval(15))
+    }
+    static func remoteDelay(unchangedChecks: Int, activeUntil: Date, now: Date) -> TimeInterval {
+        now < activeUntil ? 15 : idleDelay(unchangedChecks: unchangedChecks)
     }
     private func startTicker() {
         guard visible, enabled, ticker == nil else { return }
@@ -125,20 +142,23 @@ import SwiftUI
             let revision = project.editRevision, fileRevision = project.fileRevision
             let transport = self.transport
             gitChecks += 1
-            let prepared = try await Self.background { try OverleafGitSync.prepare(connection, root: root, recovery: folder, transport: transport) }
+            let outcome = try await Self.background { try OverleafGitSync.synchronise(connection, root: root, recovery: folder, transport: transport) }
             try active(epoch)
+            let prepared = outcome.prepared
             if prepared.review.changes.isEmpty && !prepared.resumed {
                 connected = true; reconnecting = false; issue = nil
                 lastConfirmedAt = Date(); confirmedRevision = revision; confirmedFileRevision = fileRevision; library.markSynced(connection.id)
                 if pendingDocumentCount == 0 { firstEdit = nil }
-                unchangedChecks += 1
-                failures = 0; nextCheck = Date().addingTimeInterval(Self.idleDelay(unchangedChecks: unchangedChecks))
+                let now = Date()
+                if prepared.review.remoteHead != prepared.originalHead { collaborationUntil = now.addingTimeInterval(120) }
+                unchangedChecks = now < collaborationUntil ? 0 : unchangedChecks + 1
+                failures = 0
+                nextCheck = now.addingTimeInterval(Self.remoteDelay(unchangedChecks: unchangedChecks, activeUntil: collaborationUntil, now: now))
                 recoveryDirectory = nil
                 return
             }
             recoveryDirectory = prepared.recovery
-            let caughtUp = try await Self.background { try OverleafGitSync.publish(prepared) }
-            try active(epoch)
+            let caughtUp = outcome.caughtUp
             let installed = try await install(prepared, in: project, epoch: epoch)
             // A mixed reset advances only the base. Files and new typing remain untouched.
             try await Self.background { _ = try OverleafGit.run(["reset", "--mixed", prepared.head], at: root) }
@@ -149,7 +169,8 @@ import SwiftUI
                 confirmedRevision = installed.editRevision; confirmedFileRevision = installed.fileRevision; firstEdit = nil
             }
             unchangedChecks = 0
-            nextCheck = Date().addingTimeInterval(caughtUp ? Self.idleDelay(unchangedChecks: 0) : 15)
+            collaborationUntil = Date().addingTimeInterval(120)
+            nextCheck = Date().addingTimeInterval(15)
             if !caughtUp { confirmedRevision = -1 }
             try await Self.background { try OverleafSyncRecovery.finish(prepared) }
             recoveryDirectory = nil
@@ -195,7 +216,7 @@ import SwiftUI
     func suspend() async { ticker?.cancel(); ticker = nil; generation = UUID(); connected = false; reconnecting = enabled }
     func networkChanged() async {
         if NetworkAccess.offline || library?.offlineMode == true || library?.hasNetwork == false { await suspend() }
-        else if enabled { nextCheck = .distantPast; startTicker() }
+        else if enabled { foregrounded() }
     }
     func decideReviewChange(_ change: OverleafReviewSnapshot.Change, accept: Bool) async throws {
         guard enabled, connected, !connecting, !syncingFiles, !reviewing, pendingDocumentCount == 0,
