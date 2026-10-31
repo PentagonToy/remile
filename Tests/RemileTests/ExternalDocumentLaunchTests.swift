@@ -3,6 +3,21 @@ import AppKit
 @testable import Remile
 
 final class ExternalDocumentLaunchTests: XCTestCase {
+    @MainActor func testWindowAttachmentIsReportedAfterConstruction() {
+        _ = NSApplication.shared
+        let view = WindowCloseGuard.AttachmentView()
+        var attached: NSWindow?
+        view.attached = { attached = $0 }
+        XCTAssertNil(attached)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 500), styleMask: [.titled], backing: .buffered, defer: true)
+        window.contentView = view
+        XCTAssertTrue(attached === window)
+        window.contentView = nil
+        attached = nil
+        window.contentView = view
+        XCTAssertTrue(attached === window, "Moving back to a window must retry registration")
+        window.contentView = nil
+    }
     @MainActor func testOrdinaryActionsWaitForTheirWindow() {
         _ = NSApplication.shared
         let windows = RemileWindows()

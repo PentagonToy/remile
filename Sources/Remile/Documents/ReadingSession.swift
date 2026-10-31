@@ -229,18 +229,25 @@ struct ReadingShell: View {
 }
 
 /// Preserve SwiftUI's window delegate while guarding native close actions.
-private struct WindowCloseGuard: NSViewRepresentable {
+struct WindowCloseGuard: NSViewRepresentable {
     let reader: ReadingSession
     let home: HomeModel
     func makeCoordinator() -> Coordinator { Coordinator(reader: reader, home: home) }
-    func makeNSView(context: Context) -> NSView { NSView() }
+    final class AttachmentView: NSView {
+        var attached: (@MainActor (NSWindow) -> Void)?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { attached?(window) }
+        }
+    }
+    func makeNSView(context: Context) -> NSView {
+        let view = AttachmentView()
+        view.attached = { [coordinator = context.coordinator] in coordinator.attach($0) }
+        return view
+    }
     func updateNSView(_ view: NSView, context: Context) {
         DispatchQueue.main.async {
-            guard let window = view.window, window.delegate !== context.coordinator else { return }
-            context.coordinator.previous = window.delegate
-            context.coordinator.titlebarDrag = TitlebarDrag(window: window)
-            window.delegate = context.coordinator
-            RemileWindows.shared.register(home, window: window)
+            if let window = view.window { context.coordinator.attach(window) }
         }
     }
     final class Coordinator: NSObject, NSWindowDelegate {
@@ -249,6 +256,13 @@ private struct WindowCloseGuard: NSViewRepresentable {
         weak var previous: NSWindowDelegate?
         var titlebarDrag: TitlebarDrag?
         init(reader: ReadingSession, home: HomeModel) { self.reader = reader; self.home = home }
+        @MainActor func attach(_ window: NSWindow) {
+            guard window.delegate !== self else { return }
+            previous = window.delegate
+            titlebarDrag = TitlebarDrag(window: window)
+            window.delegate = self
+            RemileWindows.shared.register(home, window: window)
+        }
         func windowShouldClose(_ sender: NSWindow) -> Bool { (previous?.windowShouldClose?(sender) ?? true) && home.writer?.confirmLeaving() != false && home.closeTeX(retainConnection: false) && reader.close() }
         func windowDidBecomeKey(_ notification: Notification) {
             if let window = notification.object as? NSWindow { RemileWindows.shared.register(home, window: window) }
