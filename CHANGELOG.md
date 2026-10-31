@@ -3,6 +3,9 @@
 ## In development — 31 October 2026
 
 - Overleaf source synchronisation now uses Git with Online and On-device modes, grouped edits and slower idle checks. Review notes remain a separate web connection, with recoverable suggestion rejection.
+- Reduce Git command delays and automatic comparison work. Keep Git housekeeping off the editor's main thread.
+- Resume interrupted Git sync from one recovery copy per project. Limit completed recovery references and check recovery space before staging.
+- Read identical attachments once per recovery attempt and share their memory without a persistent content cache.
 - Add bottom source-file tabs, optional line numbers and named review authors. Open additional PDFs directly into their prepared tabs.
 - Read selected reMarkable folders over SSH with a local Keychain connection. Preserve original unmarked PDFs and keep updates on request.
 - Import local Zotero libraries and collections. Preserve local fields, citation keys and PDF edits during source updates.

@@ -18,6 +18,12 @@ Create a token in **Overleaf → Account settings → Git integration**. Eligibl
 
 An interrupted Online connection keeps the selected mode and saves work locally. It retries when the connection returns. Repeated failures back off without opening repeated dialogs. A quick return within 45 seconds can reuse the last project and PDF. Its hidden synchronisation timer is stopped.
 
+Interrupted Git sync reuses one pending recovery copy per project, including after restarting remile. It checks the server before repeating an uncertain upload and preserves edits made since the interruption. Changed Git history or overlapping remote work can still require review.
+
+Recovery receipts contain Git object IDs, not copies of document text. Completed sync removes its temporary copy and keeps three managed recovery references. Before staging, remile checks a 256 MiB recovery budget with room for the current project. When space is insufficient, it pauses new preparation and keeps pending work. Existing Git history and older, unlabelled recovery copies are outside automatic expiry. Recovery references do not impose a hard size limit on Git's object database.
+
+Identical attachments are read once per recovery attempt and share memory. This does not create a persistent content cache. File and project size limits still count every path, including duplicate attachments.
+
 ## Read review notes
 
 Choose Review beside Files for comments and tracked suggestions. Review connects separately and can request sign-in without interrupting Git editing. It uses private web requests, not a collaboration socket. Refresh updates the snapshot. Exports and source-location navigation remain available.

@@ -62,6 +62,217 @@ final class OverleafGitSyncTests: XCTestCase {
         try OverleafReviewRejection.finish(change, root: root)
         XCTAssertFalse(FileManager.default.fileExists(atPath: try OverleafReviewRejection.location(change, root: root).path))
     }
+    func testAutomaticPreparationSkipsDisplayCopiesWithoutChangingManualReview() throws {
+        try fixture { local, other, remote, connection in
+            try "Remote body\n".write(to: other.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+            _ = try git(["add", "."], other); _ = try git(["commit", "-m", "Remote edit"], other); _ = try git(["push"], other)
+            let recovery = local.deletingLastPathComponent().appendingPathComponent("Recovery")
+            let automatic = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            XCTAssertTrue(automatic.review.changes.allSatisfy { $0.local.isEmpty && $0.remote.isEmpty && $0.result.isEmpty })
+            XCTAssertEqual(automatic.files["main.tex"], Data("Remote body\n".utf8))
+            let manual = try OverleafGit.prepare(connection, root: local, reviewRoot: recovery, transport: remote.path)
+            let change = try XCTUnwrap(manual.changes.first)
+            XCTAssertEqual(change.local, "Alpha one\nBeta two\n")
+            XCTAssertEqual(change.remote, "Remote body\n")
+            XCTAssertEqual(change.result, "Remote body\n")
+            XCTAssertEqual(manual.changes.map(\.path), automatic.review.changes.map(\.path))
+            XCTAssertEqual(manual.fingerprint, automatic.review.fingerprint)
+        }
+    }
+    func testGitCommandHonoursCancellationBeforeStarting() async {
+        let task = Task.detached {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try OverleafGit.run(["--version"], at: FileManager.default.temporaryDirectory)
+        }
+        do { _ = try await task.value; XCTFail("Cancelled Git work must not start") }
+        catch { XCTAssertTrue(error is CancellationError) }
+    }
+    func testMultiFilePreparationBenchmark() throws {
+        guard ProcessInfo.processInfo.environment["REMILE_GIT_BENCHMARK"] == "1" else { throw XCTSkip("Opt-in local Git benchmark") }
+        try fixture { local, other, remote, connection in
+            let clock = ContinuousClock()
+            let start = clock.now
+            for _ in 0..<20 { _ = try git(["rev-parse", "HEAD"], local) }
+            print("GIT_BENCH 20-local-commands \(start.duration(to: clock.now))")
+            for index in 0..<20 { try "Remote document \(index)\n".write(to: other.appendingPathComponent("chapter\(index).tex"), atomically: true, encoding: .utf8) }
+            _ = try git(["add", "."], other); _ = try git(["commit", "-m", "Twenty documents"], other); _ = try git(["push"], other)
+            let prepareStart = clock.now
+            let prepared = try OverleafGitSync.prepare(connection, root: local, recovery: local.deletingLastPathComponent().appendingPathComponent("Recovery"), transport: remote.path)
+            print("GIT_BENCH 20-file-prepare \(prepareStart.duration(to: clock.now))")
+            XCTAssertEqual(prepared.review.changes.count, 20)
+            XCTAssertEqual(prepared.files.count, 21)
+            for index in 0..<20 { XCTAssertEqual(prepared.files["chapter\(index).tex"], Data("Remote document \(index)\n".utf8)) }
+        }
+    }
+    func testRecoverySharesImmutableAttachmentsWithCopyOnWrite() throws {
+        try fixture { local, _, remote, connection in
+            let bytes = Data(repeating: 73, count: 1024 * 1024)
+            try bytes.write(to: local.appendingPathComponent("image.bin"))
+            try bytes.write(to: local.appendingPathComponent("same-image.bin"))
+            _ = try git(["add", "."], local); _ = try git(["commit", "-m", "Attachments"], local); _ = try git(["push"], local)
+            try "Changed source\n".write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+            let recovery = local.deletingLastPathComponent().appendingPathComponent("Recovery")
+            _ = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            let resumed = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            let base = try XCTUnwrap(resumed.review.localFiles["image.bin"])
+            let result = try XCTUnwrap(resumed.files["image.bin"])
+            let duplicate = try XCTUnwrap(resumed.files["same-image.bin"])
+            base.withUnsafeBytes { a in
+                result.withUnsafeBytes { b in
+                    duplicate.withUnsafeBytes { c in
+                        XCTAssertEqual(a.baseAddress, b.baseAddress, "Unchanged attachments share one allocation")
+                        XCTAssertEqual(a.baseAddress, c.baseAddress, "Repeated content at a different path is read once")
+                    }
+                }
+            }
+            XCTAssertEqual(result, bytes)
+            XCTAssertEqual(resumed.files["main.tex"], Data("Changed source\n".utf8))
+            var edited = result; edited[0] = 12
+            XCTAssertEqual(base[0], 73, "Copy-on-write must isolate later modifications")
+            XCTAssertEqual(resumed.files["same-image.bin"]?[0], 73)
+        }
+    }
+    func testRecoveryReuseBenchmark() throws {
+        guard ProcessInfo.processInfo.environment["REMILE_GIT_BENCHMARK"] == "1" else { throw XCTSkip("Opt-in recovery benchmark") }
+        try fixture { local, _, remote, connection in
+            let bytes = Data(repeating: 73, count: 1024 * 1024)
+            for index in 0..<24 { try bytes.write(to: local.appendingPathComponent("asset\(index).bin")) }
+            _ = try git(["add", "."], local); _ = try git(["commit", "-m", "Repeated attachments"], local); _ = try git(["push"], local)
+            try "Local edit\n".write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+            let recovery = local.deletingLastPathComponent().appendingPathComponent("Recovery")
+            _ = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            let clock = ContinuousClock(), start = ContinuousClock.now
+            let resumed = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            print("GIT_BENCH resume-24-attachments \(start.duration(to: clock.now))")
+            XCTAssertTrue(resumed.resumed)
+            XCTAssertEqual(resumed.files.count, 25)
+            for index in 0..<24 { XCTAssertEqual(resumed.files["asset\(index).bin"], bytes) }
+        }
+    }
+    func testInterruptedPreparationResumesTheSameCopyAndKeepsNewTyping() throws {
+        try fixture { local, other, remote, connection in
+            try "Alpha local\nBeta two\n".write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+            try "Alpha one\nBeta remote\n".write(to: other.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+            _ = try git(["add", "."], other); _ = try git(["commit", "-m", "Remote"], other); _ = try git(["push"], other)
+            let recovery = local.deletingLastPathComponent().appendingPathComponent("Recovery")
+            let first = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            let current = "Alpha local\nBeta two\nTyped after interruption\n"
+            try current.write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+            for _ in 0..<3 {
+                let resumed = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+                XCTAssertTrue(resumed.resumed); XCTAssertEqual(resumed.head, first.head); XCTAssertEqual(resumed.recovery, first.recovery)
+                let merged = try OverleafGitSync.reconcile(base: resumed.review.localFiles, current: ["main.tex": Data(current.utf8)], result: resumed.files)
+                XCTAssertEqual(merged["main.tex"], Data("Alpha local\nBeta remote\nTyped after interruption\n".utf8))
+            }
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: recovery.path).count, 2, "One stage and one small receipt")
+            XCTAssertTrue(try OverleafGitSync.publish(first))
+        }
+    }
+    func testLostPushResponseAndInterruptedInstallDoNotPublishTwice() throws {
+        try fixture { local, _, remote, connection in
+            try "Only local writing\n".write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+            let recovery = local.deletingLastPathComponent().appendingPathComponent("Recovery")
+            let first = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            XCTAssertTrue(try OverleafGitSync.publish(first))
+            let remoteHead = try git(["rev-parse", "main"], remote)
+            let resumed = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            XCTAssertTrue(resumed.resumed)
+            XCTAssertTrue(try OverleafGitSync.publish(resumed))
+            XCTAssertEqual(try git(["rev-parse", "main"], remote), remoteHead)
+            try XCTUnwrap(resumed.files["main.tex"]).write(to: local.appendingPathComponent("main.tex"))
+            _ = try git(["reset", "--mixed", resumed.head], local)
+            let afterInstall = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            XCTAssertTrue(afterInstall.resumed)
+            XCTAssertTrue(try OverleafGitSync.publish(afterInstall))
+            try OverleafSyncRecovery.finish(afterInstall)
+            XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: recovery.path).isEmpty)
+            XCTAssertFalse(try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path).resumed)
+        }
+    }
+    func testInterruptedSyncDoesNotOverwriteAChangedRemote() throws {
+        try fixture { local, other, remote, connection in
+            try "Local work\n".write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+            let recovery = local.deletingLastPathComponent().appendingPathComponent("Recovery")
+            let first = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            try "New remote work\n".write(to: other.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+            _ = try git(["add", "."], other); _ = try git(["commit", "-m", "Changed while offline"], other); _ = try git(["push"], other)
+            let remoteHead = try git(["rev-parse", "main"], remote)
+            let resumed = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            XCTAssertThrowsError(try OverleafGitSync.publish(resumed))
+            XCTAssertEqual(try git(["rev-parse", "main"], remote), remoteHead)
+            XCTAssertEqual(try String(contentsOf: local.appendingPathComponent("main.tex"), encoding: .utf8), "Local work\n")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: first.recovery.path))
+        }
+    }
+    func testCompletedSyncsKeepOnlyThreeRecoveryReferences() throws {
+        try fixture { local, _, remote, connection in
+            _ = try git(["update-ref", "refs/heads/keep-this", "HEAD"], local)
+            let legacy = "refs/remile/git-recovery/" + UUID().uuidString.lowercased()
+            _ = try git(["update-ref", legacy, "HEAD"], local)
+            let recovery = local.deletingLastPathComponent().appendingPathComponent("Recovery")
+            for revision in 0..<6 {
+                try "Revision \(revision)\n".write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+                let pending = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+                XCTAssertTrue(try OverleafGitSync.publish(pending))
+                _ = try git(["reset", "--mixed", pending.head], local)
+                try OverleafSyncRecovery.finish(pending)
+                XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: recovery.path).isEmpty)
+            }
+            let refs = try git(["for-each-ref", "--format=%(refname)", "refs/remile/git-recovery/"], local).split(separator: "\n")
+            XCTAssertEqual(refs.count, 4, "Three managed snapshots plus the unresolved legacy reference")
+            XCTAssertFalse(try git(["rev-parse", legacy], local).isEmpty)
+            XCTAssertFalse(try git(["rev-parse", "refs/heads/keep-this"], local).isEmpty)
+        }
+    }
+    func testRestartAcknowledgesAPushWhenTheRemoteHasAdvancedAgain() throws {
+        try fixture { local, other, remote, connection in
+            try "Local writing\n".write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+            let recovery = local.deletingLastPathComponent().appendingPathComponent("Recovery")
+            let first = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            XCTAssertTrue(try OverleafGitSync.publish(first))
+            _ = try git(["pull", "--ff-only"], other)
+            _ = try git(["commit", "--allow-empty", "-m", "Remote advanced"], other); _ = try git(["push"], other)
+            let remoteHead = try git(["rev-parse", "main"], remote)
+            let resumed = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            XCTAssertFalse(try OverleafGitSync.publish(resumed))
+            XCTAssertEqual(try git(["rev-parse", "main"], remote), remoteHead)
+        }
+    }
+    func testRecoveryBudgetAndDamagedReceiptPreservePendingFiles() throws {
+        try fixture { local, _, remote, connection in
+            let recovery = local.deletingLastPathComponent().appendingPathComponent("Recovery")
+            try FileManager.default.createDirectory(at: recovery, withIntermediateDirectories: true)
+            let pending = recovery.appendingPathComponent("existing-pending")
+            FileManager.default.createFile(atPath: pending.path, contents: nil)
+            let handle = try FileHandle(forWritingTo: pending)
+            try handle.truncate(atOffset: UInt64(OverleafSyncRecovery.byteLimit)); try handle.close()
+            XCTAssertThrowsError(try OverleafSyncRecovery.checkCapacity(root: local, recovery: recovery))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: pending.path))
+            // Remove only this synthetic quota fixture so the damaged-receipt case can prepare normally.
+            try FileManager.default.removeItem(at: pending)
+            try "Saved locally\n".write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+            let prepared = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+            let receipt = recovery.appendingPathComponent(connection.id.uuidString.lowercased() + ".json")
+            try Data("unreadable".utf8).write(to: receipt)
+            XCTAssertThrowsError(try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: prepared.recovery.path))
+            XCTAssertEqual(try String(contentsOf: local.appendingPathComponent("main.tex"), encoding: .utf8), "Saved locally\n")
+        }
+    }
+    func testRepeatedInterruptionsBeforeReceiptDoNotAccumulateSnapshotReferences() throws {
+        try fixture { local, _, remote, connection in
+            let recovery = local.deletingLastPathComponent().appendingPathComponent("Recovery")
+            for revision in 0..<5 {
+                try "Unfinished revision \(revision)\n".write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+                _ = try OverleafGitSync.prepare(connection, root: local, recovery: recovery, transport: remote.path)
+                // Simulate the earlier interruption point before a durable receipt had been written.
+                try FileManager.default.removeItem(at: recovery.appendingPathComponent(connection.id.uuidString.lowercased() + ".json"))
+            }
+            let refs = try git(["for-each-ref", "--format=%(refname)", "refs/remile/"], local).split(separator: "\n")
+            XCTAssertEqual(refs.map(String.init), ["refs/remile/git-pending"])
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: recovery.path).count, 1)
+        }
+    }
     private func git(_ args: [String], _ root: URL) throws -> String {
         try OverleafGit.run(["-c", "protocol.file.allow=always"] + args, at: root).text.trimmingCharacters(in: .whitespacesAndNewlines)
     }

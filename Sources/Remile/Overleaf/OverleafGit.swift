@@ -91,6 +91,7 @@ enum OverleafGit {
     }
     /// Git output is bounded on disk, so large repositories cannot block a full pipe.
     static func run(_ args: [String], at directory: URL, credential: UUID? = nil, allowFailure: Bool = false, input: Data? = nil, index: URL? = nil) throws -> Result {
+        try Task.checkCancellation()
         let networking = args.contains { $0.hasPrefix("https://") || $0.hasPrefix("http://") || $0.hasPrefix("ssh://") }
         if networking { try NetworkAccess.requireOnline() }
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("remile-git-" + UUID().uuidString)
@@ -101,6 +102,8 @@ enum OverleafGit {
         let stdout = try FileHandle(forWritingTo: output), stderr = try FileHandle(forWritingTo: errors)
         defer { try? stdout.close(); try? stderr.close() }
         let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/git"); process.currentDirectoryURL = directory
+        let finished = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in finished.signal() }
         process.arguments = ["-c", "credential.helper=", "-c", "core.hooksPath=/dev/null", "-c", "protocol.file.allow=never", "-c", "core.quotePath=false", "-c", "core.fileMode=false"] + args
         var environment = ProcessInfo.processInfo.environment
         for key in environment.keys where key.hasPrefix("GIT_") { environment.removeValue(forKey: key) }
@@ -124,9 +127,8 @@ enum OverleafGit {
         defer { if let lease { NetworkAccess.gate.release(lease) } }
         let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + 90, execute: watchdog)
-        while process.isRunning {
-            if Task.isCancelled { process.terminate() }
-            Thread.sleep(forTimeInterval: 0.05)
+        while finished.wait(timeout: .now() + .milliseconds(50)) == .timedOut {
+            if Task.isCancelled, process.isRunning { process.terminate() }
         }
         watchdog.cancel()
         try Task.checkCancellation()
@@ -175,17 +177,18 @@ enum OverleafGit {
         hash.update(data: try run(["rev-parse", "HEAD"], at: root).data)
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
-    static func prepare(_ connection: OverleafConnection, root: URL, reviewRoot: URL, transport: String? = nil) throws -> Review {
+    static func prepare(_ connection: OverleafConnection, root: URL, reviewRoot: URL, transport: String? = nil, includeContents: Bool = true, stageDirectory: URL? = nil) throws -> Review {
         try excludePrivateFiles(root)
         let transport = transport ?? connection.remote
         _ = try run((transport.hasPrefix("/") ? ["-c", "protocol.file.allow=always"] : []) + ["fetch", "--no-tags", transport, "refs/heads/" + connection.branch], at: root, credential: connection.profileID)
         let remote = try run(["rev-parse", "FETCH_HEAD"], at: root).text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let stage = reviewRoot.appendingPathComponent(UUID().uuidString)
+        let stage = stageDirectory ?? reviewRoot.appendingPathComponent(UUID().uuidString)
         if try run(["rev-parse", "HEAD"], at: root).text.trimmingCharacters(in: .whitespacesAndNewlines) == remote,
            try run(["status", "--porcelain", "--untracked-files=normal"], at: root).data.isEmpty {
             return Review(connection: connection, root: root, stage: stage, fingerprint: "", remoteHead: remote, transport: transport, changes: [], localChanges: false)
         }
         let before = try fingerprint(root)
+        if stageDirectory != nil { try OverleafSyncRecovery.checkCapacity(root: root, recovery: reviewRoot) }
         try FileManager.default.createDirectory(at: stage.deletingLastPathComponent(), withIntermediateDirectories: true)
         // A private review copy keeps merges and conflicts away from the active editor.
         _ = try run(["-c", "protocol.file.allow=always", "clone", "--shared", "--no-checkout", "--", root.path, stage.path], at: reviewRoot)
@@ -215,6 +218,8 @@ enum OverleafGit {
                 return data.count < 600_000 && !data.contains(0) ? String(data: data, encoding: .utf8) ?? "Binary file" : "Binary file"
             }
             let changes = try Set(localNames + remoteNames).sorted().map { path in
+                // Automatic sync needs paths and conflict flags, not three display copies per file.
+                if !includeContents { return Change(path: path, local: "", remote: "", result: "", conflict: conflicts.contains(path)) }
                 let url = try TeXFileSystem.url(path, root: stage)
                 let data = (try? Data(contentsOf: url)) ?? Data()
                 let text = data.count < 600_000 && !data.contains(0) ? String(data: data, encoding: .utf8) ?? "Binary file" : "Binary file"

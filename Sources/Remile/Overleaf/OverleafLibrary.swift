@@ -301,7 +301,11 @@ import Network
         busy = true; syncRevision += 1; error = nil
         do {
             let writer = try writerLease(review.connection); defer { withExtendedLifetime(writer) {} }
-            try await Task.detached { try OverleafGit.finish(review, choices: choices, publish: publish) }.value
+            let recovery = directory.appendingPathComponent("GitSyncRecovery")
+            try await Task.detached {
+                try OverleafGit.finish(review, choices: choices, publish: publish)
+                try OverleafSyncRecovery.finishReviewed(review.connection, root: review.root, recovery: recovery)
+            }.value
             let root = review.root; dismissReview(); reload(root)
             if publish || !review.localChanges { markSynced(review.connection.id) }
             else { statuses[review.connection.id] = .changes }

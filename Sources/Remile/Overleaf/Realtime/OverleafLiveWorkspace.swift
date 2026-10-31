@@ -127,7 +127,7 @@ import SwiftUI
             gitChecks += 1
             let prepared = try await Self.background { try OverleafGitSync.prepare(connection, root: root, recovery: folder, transport: transport) }
             try active(epoch)
-            if prepared.review.changes.isEmpty {
+            if prepared.review.changes.isEmpty && !prepared.resumed {
                 connected = true; reconnecting = false; issue = nil
                 lastConfirmedAt = Date(); confirmedRevision = revision; confirmedFileRevision = fileRevision; library.markSynced(connection.id)
                 if pendingDocumentCount == 0 { firstEdit = nil }
@@ -141,23 +141,28 @@ import SwiftUI
             try active(epoch)
             // Capture current buffers after transport. New typing is merged, never replaced by a stale snapshot.
             let buffers = project.buffers, filesRevision = project.fileRevision
-            var current = try await Self.background { try OverleafLiveFiles.scan(root, buffers: buffers) }
+            let inspection = try await Self.background { (try OverleafLiveFiles.scan(root, buffers: buffers), try OverleafAutoPublisher.head(root)) }
+            var current = inspection.0
             try active(epoch)
             guard project.fileRevision == filesRevision else { throw OverleafGitSync.ReviewRequired("Project files changed during sync. Review changes.") }
             for (path, source) in project.buffers { current[path] = Data(source.utf8) }
             let merged = try OverleafGitSync.reconcile(base: prepared.review.localFiles, current: current, result: prepared.files)
             let touched = Set(current.keys).union(merged.keys).filter { current[$0] != merged[$0] }
-            guard try OverleafAutoPublisher.head(root) == prepared.originalHead else { throw OverleafGit.Failure("Git history changed during sync. Review changes.") }
+            guard inspection.1 == prepared.originalHead else { throw OverleafGit.Failure("Git history changed during sync. Review changes.") }
             try project.installLiveFiles(expected: current, result: merged, paths: Set(touched))
+            let installedRevision = project.editRevision, installedFileRevision = project.fileRevision
             // A mixed reset advances only the base. Files and new typing remain untouched.
-            _ = try OverleafGit.run(["reset", "--mixed", prepared.head], at: root)
+            try await Self.background { _ = try OverleafGit.run(["reset", "--mixed", prepared.head], at: root) }
+            try active(epoch)
             connected = true; reconnecting = false; issue = nil; failures = 0
             confirmedRevision = revision; lastConfirmedAt = Date(); library.markSynced(connection.id)
-            if merged == prepared.files && caughtUp { confirmedRevision = project.editRevision; confirmedFileRevision = project.fileRevision; firstEdit = nil }
+            if merged == prepared.files && caughtUp && project.editRevision == installedRevision && project.fileRevision == installedFileRevision {
+                confirmedRevision = installedRevision; confirmedFileRevision = installedFileRevision; firstEdit = nil
+            }
             unchangedChecks = 0
             nextCheck = Date().addingTimeInterval(caughtUp ? Self.idleDelay(unchangedChecks: 0) : 15)
             if !caughtUp { confirmedRevision = -1 }
-            try? FileManager.default.removeItem(at: prepared.recovery)
+            try await Self.background { try OverleafSyncRecovery.finish(prepared) }
             recoveryDirectory = nil
         } catch is CancellationError { connected = false }
         catch {
