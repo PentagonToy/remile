@@ -8,6 +8,8 @@ A small place for notes that can grow into something more.
 2. Use **Edit** for source, **Read** for the formatted page, or **Split** for both.
 3. Save your file. Use Export when you need a PDF.
 
+Source line numbers are on by default. Change **Settings → Markdown → Line numbers** to hide them.
+
 ## Add a little structure
 
 The Format tools insert headings, links, lists, maths, code and tables. In a narrow window, open **More** for Format, Find and Zoom. Pasting cells from a spreadsheet creates a table.

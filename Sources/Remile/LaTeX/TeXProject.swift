@@ -44,10 +44,31 @@ import UniformTypeIdentifiers
 
     @Published var selected: String {
         didSet {
+            if !openFiles.contains(selected) { openFiles.append(selected) }
             guard oldValue != selected else { return }
             captureHistory(file: oldValue)
             if !navigating { backFiles.append(oldValue); forwardFiles = [] }
         }
+    }
+    @Published private(set) var openFiles: [String] = []
+    @discardableResult func closeSelectedFileTab() -> Bool {
+        guard openFiles.count > 1 else { return false }
+        closeFileTab(selected); return true
+    }
+    func cycleFileTab(forward: Bool) {
+        guard openFiles.count > 1, let index = openFiles.firstIndex(of: selected) else { return }
+        selected = openFiles[(index + (forward ? 1 : openFiles.count - 1)) % openFiles.count]
+    }
+    func closeFileTab(_ file: String) {
+        guard openFiles.count > 1, let index = openFiles.firstIndex(of: file) else { return }
+        openFiles.remove(at: index)
+        if selected == file { selected = openFiles[min(index, openFiles.count - 1)] }
+    }
+    func moveFileTab(_ file: String, to target: String, after: Bool) {
+        guard file != target, openFiles.contains(file), openFiles.contains(target) else { return }
+        var next = openFiles.filter { $0 != file }
+        guard let index = next.firstIndex(of: target) else { return }
+        next.insert(file, at: index + (after ? 1 : 0)); openFiles = next; selected = file
     }
     @Published var main: String {
         didSet {
@@ -128,7 +149,7 @@ import UniformTypeIdentifiers
         for case let url as URL in enumerator {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
             guard values.isRegularFile == true, values.isSymbolicLink != true else { continue }
-            let relative = String(url.path.dropFirst(root.path.count + 1))
+            let relative = String(url.resolvingSymlinksInPath().path.dropFirst(root.resolvingSymlinksInPath().path.count + 1))
             guard paths.count < 10000 else { throw CocoaError(.fileReadTooLarge) }
             paths.append(relative)
             guard ["tex", "bib", "sty", "cls"].contains(url.pathExtension.lowercased()) else { continue }
@@ -141,6 +162,7 @@ import UniformTypeIdentifiers
         guard let initial = TeXMainDocument.choose(sources: sources, saved: saved) else { throw TeXFileSystem.Failure(errorDescription: "Add a .tex file to open this project.") }
         draftBaseline = draft ? sources : [:]
         treeFiles = paths.sorted(); files = sources.keys.sorted(); buffers = sources; original = sources; main = initial; selected = initial
+        openFiles = [initial]
         treeFolders = try TeXFileSystem.folders(self.root)
         collections = TeXCollections.read(self.root)
         revisions = historyEnabled ? TeXHistory.read(self.root) : []; outline = TeXOutlineItem.project(sources, main: initial); captureHistory(file: initial)
@@ -162,9 +184,42 @@ import UniformTypeIdentifiers
         if expected != text { buffers[file] = text }
         original[file] = text
     }
-    /// Install only reconciled file changes, preserving edits made while a request was pending.
-    func installLiveFiles(expected: [String: Data], result: [String: Data], paths: Set<String>) throws {
-        guard !compiling, try OverleafLiveFiles.scan(root, buffers: buffers) == expected else { throw OverleafLiveFiles.Failure.stale }
+    struct LiveFileInstall: Sendable {
+        let root: URL
+        let editRevision: Int
+        let fileRevision: Int
+        let expected: [String: Data]
+        let result: [String: Data]
+        let paths: Set<String>
+        let matchesRemote: Bool
+    }
+    /// Build a validated immutable plan off-main. The editor must still match its captured revisions at install.
+    nonisolated static func prepareLiveInstall(root: URL, buffers: [String: String], editRevision: Int, fileRevision: Int,
+                                               base: [String: Data], result: [String: Data], head: String) throws -> LiveFileInstall {
+        let current = try OverleafLiveFiles.scan(root, buffers: buffers)
+        guard try OverleafAutoPublisher.head(root) == head else { throw OverleafGit.Failure("Git history changed during sync. Review changes.") }
+        let merged = try OverleafGitSync.reconcile(base: base, current: current, result: result)
+        let touched = Set(current.keys).union(merged.keys).filter { current[$0] != merged[$0] }
+        return .init(root: root, editRevision: editRevision, fileRevision: fileRevision,
+                     expected: current, result: merged, paths: Set(touched), matchesRemote: merged == result)
+    }
+    /// Apply only a current plan. Unbuffered files retain an exact final check against external edits.
+    func installLiveFiles(_ plan: LiveFileInstall) throws {
+        let expected = plan.expected, result = plan.result, paths = plan.paths
+        let textOnly = paths.allSatisfy { buffers[$0] != nil && result[$0] != nil && OverleafLiveFiles.source($0) }
+        guard root.standardizedFileURL.path == plan.root.standardizedFileURL.path, editRevision == plan.editRevision, fileRevision == plan.fileRevision,
+              !compiling || textOnly else { throw OverleafLiveFiles.Failure.stale }
+        guard !paths.isEmpty else { return }
+        for path in paths where buffers[path] == nil || !OverleafLiveFiles.source(path) {
+            let url = try TeXFileSystem.url(path, root: root)
+            var disk: Data?
+            if FileManager.default.fileExists(atPath: url.path) {
+                let values = try url.resourceValues(forKeys: [.isSymbolicLinkKey, .fileSizeKey])
+                guard values.isSymbolicLink != true, (values.fileSize ?? Int.max) <= OverleafLiveFiles.fileLimit else { throw OverleafLiveFiles.Failure.stale }
+                disk = try Data(contentsOf: url, options: .mappedIfSafe)
+            }
+            guard disk == expected[path] else { throw OverleafLiveFiles.Failure.stale }
+        }
         for path in paths {
             guard OverleafLiveFiles.validPath(path) else { throw OverleafLiveFiles.Failure.invalid }
             if let bytes = result[path], OverleafLiveFiles.source(path) {
@@ -202,6 +257,7 @@ import UniformTypeIdentifiers
         files = buffers.keys.sorted()
         if buffers[main] == nil, let replacement = TeXMainDocument.choose(sources: buffers, saved: nil) { main = replacement }
         if !treeFiles.contains(selected) { selected = main }
+        openFiles.removeAll { !treeFiles.contains($0) }
         build = nil; outputCurrent = false; fileRevision += 1
     }
     var source: Binding<String> { Binding(get: { self.buffers[self.selected] ?? "" }, set: { if self.buffers[self.selected] != nil { self.buffers[self.selected] = $0 } }) }
@@ -214,6 +270,7 @@ import UniformTypeIdentifiers
         buffers = snapshot.buffers; original = snapshot.buffers
         if buffers[main] == nil { main = snapshot.main }
         if !treeFiles.contains(selectedBefore) { selected = main }
+        openFiles.removeAll { !treeFiles.contains($0) }
         backFiles.removeAll { !treeFiles.contains($0) }; forwardFiles.removeAll { !treeFiles.contains($0) }
         collections = snapshot.collections; citations.invalidate()
         build = nil; outputCurrent = false; fileRevision += 1
@@ -399,7 +456,7 @@ import UniformTypeIdentifiers
             externalEdits = Dictionary(uniqueKeysWithValues: externalEdits.map { (mapped($0.key), $0.value) }); provenance = Dictionary(uniqueKeysWithValues: provenance.map { (mapped($0.key), $0.value) }); pendingHistory = Set(pendingHistory.map(mapped))
             buffers = Dictionary(uniqueKeysWithValues: buffers.map { (mapped($0.key), $0.value) })
             original = Dictionary(uniqueKeysWithValues: original.map { (mapped($0.key), $0.value) })
-            files = files.map(mapped).sorted(); treeFiles = treeFiles.map(mapped).sorted(); treeFolders = treeFolders.map(mapped).sorted(); main = mapped(main); selected = mapped(selected)
+            files = files.map(mapped).sorted(); treeFiles = treeFiles.map(mapped).sorted(); treeFolders = treeFolders.map(mapped).sorted(); main = mapped(main); openFiles = openFiles.map(mapped); selected = mapped(selected)
             updateCollections(collections.map { var group = $0; group.paths = group.paths.map(mapped); return group })
             backFiles = backFiles.map(mapped); forwardFiles = forwardFiles.map(mapped); build = nil
             outputCurrent = false; fileRevision += 1
@@ -424,6 +481,7 @@ import UniformTypeIdentifiers
                 try FileManager.default.trashItem(at: TeXFileSystem.url(path, root: root), resultingItemURL: nil)
                 for file in removed { buffers.removeValue(forKey: file); original.removeValue(forKey: file); externalEdits.removeValue(forKey: file); provenance.removeValue(forKey: file); pendingHistory.remove(file) }
                 files.removeAll { removed.contains($0) }; treeFiles.removeAll { $0 == path || $0.hasPrefix(path + "/") }; treeFolders.removeAll { $0 == path || $0.hasPrefix(path + "/") }
+                openFiles.removeAll { $0 == path || $0.hasPrefix(path + "/") }
                 if removed.contains(selected) { selected = main }; backFiles.removeAll { removed.contains($0) }; forwardFiles.removeAll { removed.contains($0) }; build = nil; outputCurrent = false; fileRevision += 1
             } catch { message = error.localizedDescription }
         }

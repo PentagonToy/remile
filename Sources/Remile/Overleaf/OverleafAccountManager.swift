@@ -20,7 +20,7 @@ struct OverleafAccountManager: View {
         self.library = library; self.prepareRemoval = prepareRemoval; self.close = close
         let initial = Draft(); initial.selected = library.accounts.first(where: { $0.id == selected })?.id ?? library.accounts.first?.id
         initial.name = library.accounts.first(where: { $0.id == initial.selected })?.name ?? ""
-        initial.adding = library.accounts.isEmpty; initial.showGit = requestGitToken
+        initial.adding = library.accounts.isEmpty; initial.showGit = true
         _draft = StateObject(wrappedValue: initial)
     }
     private var account: OverleafLibrary.Account? { library.accounts.first { $0.id == draft.selected } }
@@ -73,7 +73,7 @@ struct OverleafAccountManager: View {
                                     Toggle("Access to Premium-owned projects", isOn: Binding(get: { account.premiumProjectAccess == true }, set: { library.setPlan(.free, premiumProjectAccess: $0, for: account.id) }))
                                         .toggleStyle(.checkbox).remileHelp("Enable Git for projects owned by an Overleaf Premium subscriber.")
                                 }
-                                HStack { Text("Overleaf login"); Spacer(); Button("Sign in…") { draft.signIn = true } }
+                                Text("Use an Overleaf Git token. Browser sign-in is not needed.").font(RemileType.caption).foregroundStyle(RemileStyle.secondaryInk)
                                 if account.allowsGit {
                                     DisclosureGroup("Git token", isExpanded: $draft.showGit) {
                                         VStack(alignment: .leading, spacing: 12) {
@@ -89,7 +89,7 @@ struct OverleafAccountManager: View {
                                 }
                             }
                         } else {
-                            Section { Button("Add and connect", action: save).buttonStyle(RemileActionStyle(emphasis: .primary)).disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+                            Section { Button("Add account", action: save).buttonStyle(RemileActionStyle(emphasis: .primary)).disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
                         }
                         if let error = library.error { Section { Text(error).font(RemileType.small).foregroundStyle(RemileStyle.warning).fixedSize(horizontal: false, vertical: true) } }
                     }.formStyle(.grouped).scrollContentBackground(.hidden)
@@ -127,7 +127,7 @@ struct OverleafAccountManager: View {
         if draft.adding {
             let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !library.accounts.contains(where: { $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }) else { library.error = "An account already uses this name."; return }
-            if let saved = library.saveAccount(name: name, token: "", plan: .free) { choose(saved.id); draft.signIn = true }
+            if let saved = library.saveAccount(name: name, token: "", plan: .premium) { choose(saved.id); draft.showGit = true }
         } else if let id = draft.selected { _ = library.renameAccount(id, to: draft.name) }
     }
 }

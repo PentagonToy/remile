@@ -48,17 +48,11 @@ Compile options includes a fresh rebuild and submission comparison. The comparis
 
 ## Overleaf
 
-Home → Overleaf opens your project library. Find projects by name, account or tag. Drag to reorder them. Add projects lists available projects. Press + beside one to keep it locally. Account settings hold the plan, sign-in and Git token.
+Add a project by its Overleaf or Git link and save its Git token in account settings. The local library keeps added projects, saved labels and manual order. Project title edits change the local label.
 
-Create a token in Overleaf → Account → Account settings → Git integration. Hover over Git token for this path. Web sign-in supports browsing, comments and project renaming. remile. reuses its own account session. It does not read another browser’s cookies. Some sign-in providers require a browser.
+Online groups local edits and reconciles remote changes through Git. On-device stops synchronisation. Both modes retain the local editor, PDF compilation and source navigation. Conflicts keep recovery copies and require review. See [synchronisation](../overleaf-realtime.md).
 
-The connection screen checks access before reporting success. It offers recovery for expired sessions, Keychain approval, browser verification and server errors. Removing a project moves its local copy to Trash. The online project stays available.
-
-Connected projects use the native LaTeX editor. Live synchronises text while you work. Private keeps changes local until you review and publish them. Check changes handles differences that need your attention. Git access and a local TeX installation are required for the private workspace.
-
-Live sync shares existing text edits in both directions while the project is open. It pauses Git publication. File changes and overlapping edits may need review. See [live synchronisation](../overleaf-realtime.md) for its current limits.
-
-Project tags appear as muted stripes. Click to read their names. Sync ages use whole minutes. Double-clicking the title renames the online project after server confirmation. Review reads server comments and tracked edits with source links. The speech bubble opens project Ask. Comment export remains available through the CLI. Git sync does not join Overleaf’s live presence channel. Published changes appear in project history.
+Review comments and suggestions use a separate web-session connection. Source updates, including a rejected suggestion's inverse edit, use Git. Git cannot guarantee preservation of server review metadata. Source status and review access remain independent.
 
 ## Library search
 

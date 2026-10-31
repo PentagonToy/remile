@@ -63,7 +63,11 @@ enum OverleafCredential {
 }
 
 enum OverleafGit {
-    struct Failure: LocalizedError { let errorDescription: String?; init(_ message: String) { errorDescription = message } }
+    struct Failure: LocalizedError {
+        let errorDescription: String?
+        var retryAfter: TimeInterval? = nil
+        init(_ message: String, retryAfter: TimeInterval? = nil) { errorDescription = message; self.retryAfter = retryAfter }
+    }
     struct Result { let status: Int32; let data: Data; var text: String { String(decoding: data, as: UTF8.self) } }
     struct Change: Identifiable, Sendable {
         let path: String
@@ -83,9 +87,11 @@ enum OverleafGit {
         let transport: String
         let changes: [Change]
         let localChanges: Bool
+        var localFiles: [String: Data] = [:]
     }
     /// Git output is bounded on disk, so large repositories cannot block a full pipe.
     static func run(_ args: [String], at directory: URL, credential: UUID? = nil, allowFailure: Bool = false, input: Data? = nil, index: URL? = nil) throws -> Result {
+        try Task.checkCancellation()
         let networking = args.contains { $0.hasPrefix("https://") || $0.hasPrefix("http://") || $0.hasPrefix("ssh://") }
         if networking { try NetworkAccess.requireOnline() }
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("remile-git-" + UUID().uuidString)
@@ -96,7 +102,9 @@ enum OverleafGit {
         let stdout = try FileHandle(forWritingTo: output), stderr = try FileHandle(forWritingTo: errors)
         defer { try? stdout.close(); try? stderr.close() }
         let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/git"); process.currentDirectoryURL = directory
-        process.arguments = ["-c", "credential.helper=", "-c", "core.hooksPath=/dev/null", "-c", "protocol.file.allow=never", "-c", "core.quotePath=false"] + args
+        let finished = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in finished.signal() }
+        process.arguments = ["-c", "credential.helper=", "-c", "core.hooksPath=/dev/null", "-c", "protocol.file.allow=never", "-c", "core.quotePath=false", "-c", "core.fileMode=false"] + args
         var environment = ProcessInfo.processInfo.environment
         for key in environment.keys where key.hasPrefix("GIT_") { environment.removeValue(forKey: key) }
         environment["GIT_TERMINAL_PROMPT"] = "0"; environment["LC_ALL"] = "C"; environment["GIT_CONFIG_NOSYSTEM"] = "1"; environment["GIT_CONFIG_GLOBAL"] = "/dev/null"
@@ -119,12 +127,25 @@ enum OverleafGit {
         defer { if let lease { NetworkAccess.gate.release(lease) } }
         let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + 90, execute: watchdog)
-        process.waitUntilExit(); watchdog.cancel()
+        while finished.wait(timeout: .now() + .milliseconds(50)) == .timedOut {
+            if Task.isCancelled, process.isRunning { process.terminate() }
+        }
+        watchdog.cancel()
+        try Task.checkCancellation()
         let size = (try output.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0
         guard size < 32 * 1024 * 1024 else { throw Failure("The project diff is too large to review at once.") }
         let result = Result(status: process.terminationStatus, data: try Data(contentsOf: output))
         // Never return server output: redirects, credentials and private remotes can appear in Git errors.
-        if result.status != 0 && !allowFailure { throw Failure("Could not complete the Git operation. Check the connection, project access and Git token, then retry.") }
+        if result.status != 0 && !allowFailure {
+            if networking, let error = try? FileHandle(forReadingFrom: errors) {
+                defer { try? error.close() }
+                let message = String(decoding: (try? error.read(upToCount: 65536)) ?? Data(), as: UTF8.self).lowercased()
+                if message.contains("error: 429") || message.contains("too many requests") || message.contains("rate limit") {
+                    throw Failure("Overleaf is receiving too many requests. Your work is saved locally. Sync will retry later.", retryAfter: 300)
+                }
+            }
+            throw Failure("Could not complete the Git operation. Check the connection, project access and Git token, then retry.")
+        }
         return result
     }
     static func clone(_ connection: OverleafConnection, root: URL) throws -> String {
@@ -156,17 +177,18 @@ enum OverleafGit {
         hash.update(data: try run(["rev-parse", "HEAD"], at: root).data)
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
-    static func prepare(_ connection: OverleafConnection, root: URL, reviewRoot: URL, transport: String? = nil) throws -> Review {
+    static func prepare(_ connection: OverleafConnection, root: URL, reviewRoot: URL, transport: String? = nil, includeContents: Bool = true, stageDirectory: URL? = nil) throws -> Review {
         try excludePrivateFiles(root)
-        let before = try fingerprint(root)
         let transport = transport ?? connection.remote
-        _ = try run(["fetch", "--no-tags", transport, "refs/heads/" + connection.branch], at: root, credential: connection.profileID)
+        _ = try run((transport.hasPrefix("/") ? ["-c", "protocol.file.allow=always"] : []) + ["fetch", "--no-tags", transport, "refs/heads/" + connection.branch], at: root, credential: connection.profileID)
         let remote = try run(["rev-parse", "FETCH_HEAD"], at: root).text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let stage = reviewRoot.appendingPathComponent(UUID().uuidString)
+        let stage = stageDirectory ?? reviewRoot.appendingPathComponent(UUID().uuidString)
         if try run(["rev-parse", "HEAD"], at: root).text.trimmingCharacters(in: .whitespacesAndNewlines) == remote,
            try run(["status", "--porcelain", "--untracked-files=normal"], at: root).data.isEmpty {
-            return Review(connection: connection, root: root, stage: stage, fingerprint: before, remoteHead: remote, transport: transport, changes: [], localChanges: false)
+            return Review(connection: connection, root: root, stage: stage, fingerprint: "", remoteHead: remote, transport: transport, changes: [], localChanges: false)
         }
+        let before = try fingerprint(root)
+        if stageDirectory != nil { try OverleafSyncRecovery.checkCapacity(root: root, recovery: reviewRoot) }
         try FileManager.default.createDirectory(at: stage.deletingLastPathComponent(), withIntermediateDirectories: true)
         // A private review copy keeps merges and conflicts away from the active editor.
         _ = try run(["-c", "protocol.file.allow=always", "clone", "--shared", "--no-checkout", "--", root.path, stage.path], at: reviewRoot)
@@ -183,6 +205,7 @@ enum OverleafGit {
             _ = try run(["add", "-A"], at: stage)
             let dirty = try run(["diff", "--cached", "--quiet"], at: stage, allowFailure: true).status != 0
             if dirty { _ = try run(["-c", "commit.gpgsign=false", "commit", "-m", "Local writing changes"], at: stage) }
+            let localFiles = try OverleafLiveFiles.scan(stage)
             let localHead = try run(["rev-parse", "HEAD"], at: stage).text.trimmingCharacters(in: .whitespacesAndNewlines)
             let merge = try run(["-c", "commit.gpgsign=false", "merge", "--no-commit", remote], at: stage, allowFailure: true)
             let conflicts = Set(try run(["diff", "--name-only", "--diff-filter=U", "-z"], at: stage).text.split(separator: "\0").map(String.init))
@@ -195,13 +218,15 @@ enum OverleafGit {
                 return data.count < 600_000 && !data.contains(0) ? String(data: data, encoding: .utf8) ?? "Binary file" : "Binary file"
             }
             let changes = try Set(localNames + remoteNames).sorted().map { path in
+                // Automatic sync needs paths and conflict flags, not three display copies per file.
+                if !includeContents { return Change(path: path, local: "", remote: "", result: "", conflict: conflicts.contains(path)) }
                 let url = try TeXFileSystem.url(path, root: stage)
                 let data = (try? Data(contentsOf: url)) ?? Data()
                 let text = data.count < 600_000 && !data.contains(0) ? String(data: data, encoding: .utf8) ?? "Binary file" : "Binary file"
                 return Change(path: path, local: try content(localHead, path), remote: try content(remote, path), result: text, conflict: conflicts.contains(path))
             }
             guard try fingerprint(root) == before else { throw Failure("The local files changed while checking. Check again to review the latest version.") }
-            return Review(connection: connection, root: root, stage: stage, fingerprint: before, remoteHead: remote, transport: transport, changes: changes, localChanges: dirty || !localNames.isEmpty)
+            return Review(connection: connection, root: root, stage: stage, fingerprint: before, remoteHead: remote, transport: transport, changes: changes, localChanges: dirty || !localNames.isEmpty, localFiles: localFiles)
         } catch { try? FileManager.default.removeItem(at: stage); throw error }
     }
     static func finish(_ review: Review, choices: [String: Bool], publish: Bool) throws {
@@ -224,7 +249,12 @@ enum OverleafGit {
         _ = try run(["fetch", "--no-tags", review.transport, "refs/heads/" + review.connection.branch], at: review.root, credential: review.connection.profileID)
         let current = try run(["rev-parse", "FETCH_HEAD"], at: review.root).text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard current == review.remoteHead, try fingerprint(review.root) == review.fingerprint else { throw Failure("The project changed. Check again. Your local edits are safe.") }
-        if publish { _ = try run(["push", review.transport, "HEAD:refs/heads/" + review.connection.branch], at: review.stage, credential: review.connection.profileID) }
+        if publish {
+            let tree = try run(["write-tree"], at: review.stage).text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let commit = try run(["commit-tree", tree, "-p", review.remoteHead, "-m", "Update reviewed manuscript"], at: review.stage).text.trimmingCharacters(in: .whitespacesAndNewlines)
+            _ = try run(["update-ref", "HEAD", commit], at: review.stage)
+            _ = try run(["push", review.transport, "HEAD:refs/heads/" + review.connection.branch], at: review.stage, credential: review.connection.profileID)
+        }
         // Fetch the accepted tree before dropping the private review copy.
         _ = try run(["-c", "protocol.file.allow=always", "fetch", review.stage.path, "HEAD"], at: review.root)
         guard try fingerprint(review.root) == review.fingerprint else { throw Failure("The remote action finished, but local files changed. Reopen the comparison to reconcile them.") }

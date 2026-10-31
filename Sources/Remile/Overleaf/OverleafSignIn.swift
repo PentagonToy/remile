@@ -4,6 +4,7 @@ import WebKit
 /// A short-lived authentication surface, never the document editor.
 @MainActor final class OverleafSignInSession: NSObject, ObservableObject, WKNavigationDelegate {
     let web: WKWebView
+    private let catalogue: Bool
     private let profile: UUID
     private let fetchProjects: (UUID) async throws -> Data
     private let saveSession: (UUID) async -> Bool
@@ -22,11 +23,18 @@ import WebKit
     @Published private(set) var issue: String?
     @Published private(set) var storageWarning: String?
     @Published private(set) var needsSessionAccess = false
-    init(profile: UUID,
-         fetchProjects: @escaping (UUID) async throws -> Data = { try await OverleafWebClient.request("/user/projects", profile: $0) },
+    init(profile: UUID, projectID: String? = nil, catalogue: Bool = false,
+         fetchProjects: ((UUID) async throws -> Data)? = nil,
          saveSession: @escaping (UUID) async -> Bool = { await OverleafWebIdentity.remember($0) },
          unlockSession: @escaping (UUID) async throws -> Void = { try NetworkAccess.requireOnline(); try await OverleafWebIdentity.restore($0, interactive: true) }) {
-        self.profile = profile; self.fetchProjects = fetchProjects; self.saveSession = saveSession; self.unlockSession = unlockSession
+        self.profile = profile
+        self.catalogue = catalogue
+        self.fetchProjects = fetchProjects ?? { profile in
+            if catalogue { return try await OverleafWebClient.request("/user/projects", profile: profile) }
+            guard let projectID, OverleafProjectID.parse(projectID) != nil else { throw OverleafWebClient.Failure.permission }
+            return try await OverleafWebClient.request("/project/" + projectID + "/threads", profile: profile)
+        }
+        self.saveSession = saveSession; self.unlockSession = unlockSession
         let config = WKWebViewConfiguration(); config.websiteDataStore = OverleafWebIdentity.dataStore(profile)
         web = WKWebView(frame: .zero, configuration: config)
         super.init(); web.navigationDelegate = self
@@ -46,7 +54,9 @@ import WebKit
             do {
                 if allowSavedSession { try await unlockSession(profile); try Task.checkCancellation() }
                 // A project-page redirect alone is not proof of authentication.
-                _ = try OverleafWebClient.parseProjects(await fetchProjects(profile))
+                let bytes = try await fetchProjects(profile)
+                if catalogue { _ = try OverleafWebClient.parseProjects(bytes) }
+                else if (try JSONSerialization.jsonObject(with: bytes)) is [String: [String: Any]] == false { throw OverleafWebClient.Failure.response }
                 try Task.checkCancellation()
                 let saved = await saveSession(profile)
                 try Task.checkCancellation()
@@ -171,14 +181,19 @@ struct OverleafSignIn: View {
     @StateObject private var session: OverleafSignInSession
     @StateObject private var draft = OverleafLoginDraft()
     let done: () -> Void
-    init(profile: UUID, done: @escaping () -> Void) { _session = StateObject(wrappedValue: OverleafSignInSession(profile: profile)); self.done = done }
+    let catalogue: Bool
+    init(profile: UUID, projectID: String? = nil, catalogue: Bool = false, done: @escaping () -> Void) {
+        _session = StateObject(wrappedValue: OverleafSignInSession(profile: profile, projectID: projectID, catalogue: catalogue))
+        self.catalogue = catalogue
+        self.done = done
+    }
     private func openPasswords() {
         NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: "/System/Applications/Passwords.app"), configuration: NSWorkspace.OpenConfiguration())
     }
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Connect Overleaf").font(RemileType.heading)
+                Text(catalogue ? "Connect Overleaf" : "Connect review notes").font(RemileType.heading)
                 Spacer()
                 Button("Close", action: done).keyboardShortcut(.cancelAction)
             }.padding(20)

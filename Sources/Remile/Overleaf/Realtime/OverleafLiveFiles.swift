@@ -89,7 +89,8 @@ enum OverleafLiveFiles {
     private static func files(at root: URL) throws -> [(path: String, url: URL, size: Int)] {
         var result: [(path: String, url: URL, size: Int)] = [], total = 0, folded = Set<String>()
         var traversalError: Error?
-        guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey], options: [.skipsHiddenFiles], errorHandler: { _, error in
+        let directory = root.resolvingSymlinksInPath()
+        guard let walker = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey], options: [.skipsHiddenFiles], errorHandler: { _, error in
             traversalError = error; return false
         }) else { throw Failure.invalid }
         for case let url as URL in walker {
@@ -98,7 +99,9 @@ enum OverleafLiveFiles {
             // An unsupported link must never look like a deliberate deletion of the remote file.
             guard values.isSymbolicLink != true else { throw Failure.invalid }
             guard values.isRegularFile == true else { continue }
-            let path = String(url.path.dropFirst(root.path.count + 1)), size = values.fileSize ?? Int.max
+            let canonical = url.resolvingSymlinksInPath()
+            guard canonical.path.hasPrefix(directory.path + "/") else { throw Failure.invalid }
+            let path = String(canonical.path.dropFirst(directory.path.count + 1)), size = values.fileSize ?? Int.max
             guard result.count < 10_000, validPath(path), folded.insert(path.precomposedStringWithCanonicalMapping.lowercased()).inserted, size <= fileLimit else { throw Failure.invalid }
             _ = try TeXFileSystem.url(path, root: root)
             total += size; guard total <= byteLimit else { throw Failure.invalid }
@@ -112,7 +115,7 @@ enum OverleafLiveFiles {
         var result: [String: Data] = [:], total = 0
         for file in try files(at: root) {
             try Task.checkCancellation()
-            let bytes = try buffers[file.path].map { Data($0.utf8) } ?? Data(contentsOf: file.url)
+            let bytes = try buffers[file.path].map { Data($0.utf8) } ?? Data(contentsOf: file.url, options: .mappedIfSafe)
             total += bytes.count
             guard bytes.count <= fileLimit, total <= byteLimit else { throw Failure.invalid }
             result[file.path] = bytes

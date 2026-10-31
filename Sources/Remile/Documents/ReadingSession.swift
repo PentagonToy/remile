@@ -192,6 +192,9 @@ struct ReadingShell: View {
         .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: home.texProject?.identity)
         .frame(minWidth: 560, minHeight: 450)
         .overlay { if home.opening { ProgressView("Opening document…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
+        .alert("Unable to open document", isPresented: Binding(get: { reader.url != nil && home.error != nil }, set: { if !$0 { home.error = nil } })) {
+            Button("OK") { home.error = nil }
+        } message: { Text(home.error ?? "") }
         .toolbar {
             RemileToolbarItem(placement: .automatic) { OfflineModeButton() }
         }
@@ -270,8 +273,36 @@ final class RemileWindows: ObservableObject {
     private var pending: [(HomeModel) -> Void] = []
     private var opening = false
     private var pdfTabs: [(URL, NSWindow)] = []
+    private var preparingPDFTab = false
+    private var preparedPDFTab: (url: URL, data: Data, parent: NSWindow)?
+    private var pdfTabParents: [ObjectIdentifier: NSWindow] = [:]
     private var pdfGroups: [[ObjectIdentifier]] = []
     var models: [HomeModel] { entries.values.map { $0.1 } }
+    func makeHome(recordRecent: Bool = true) -> HomeModel {
+        let model = HomeModel()
+        if let prepared = preparedPDFTab {
+            preparedPDFTab = nil
+            do {
+                try model.openPreparedDocument(prepared.url, data: prepared.data, recordRecent: recordRecent)
+                pdfTabParents[ObjectIdentifier(model)] = prepared.parent
+            } catch { model.error = error.localizedDescription }
+        }
+        return model
+    }
+    private func prepareNextPDFTab() {
+        guard !preparingPDFTab, preparedPDFTab == nil, !pdfTabs.isEmpty, createWindow != nil else { return }
+        preparingPDFTab = true
+        let (url, parent) = pdfTabs.removeFirst()
+        Task { @MainActor in
+            defer { preparingPDFTab = false; if preparedPDFTab == nil { prepareNextPDFTab() } }
+            do {
+                let data = try await Task.detached(priority: .userInitiated) { try Data(contentsOf: url, options: .mappedIfSafe) }.value
+                guard entries[ObjectIdentifier(parent)] != nil else { return }
+                preparedPDFTab = (url, data, parent)
+                createWindow?()
+            } catch { entries[ObjectIdentifier(parent)]?.1.error = error.localizedDescription }
+        }
+    }
     func register(_ model: HomeModel, window: NSWindow) {
         let isNew = entries[ObjectIdentifier(window)] == nil
         window.animationBehavior = .none
@@ -280,8 +311,7 @@ final class RemileWindows: ObservableObject {
         opening = false
         let actions = pending; pending = []
         for action in actions { action(model) }
-        if isNew, !pdfTabs.isEmpty {
-            let (url, parent) = pdfTabs.removeFirst()
+        if isNew, let parent = pdfTabParents.removeValue(forKey: ObjectIdentifier(model)) {
             let parentID = ObjectIdentifier(parent)
             let windowID = ObjectIdentifier(window)
             if let group = pdfGroups.firstIndex(where: { $0.contains(parentID) }) { pdfGroups[group].append(windowID) }
@@ -292,8 +322,7 @@ final class RemileWindows: ObservableObject {
             window.orderFront(nil); window.makeKey()
             parent.orderOut(nil)
             active = model
-            model.open(url, inNewPDFTab: false)
-            if !pdfTabs.isEmpty { DispatchQueue.main.async { self.createWindow?() } }
+            prepareNextPDFTab()
         }
     }
     struct PDFTab: Identifiable {
@@ -347,9 +376,9 @@ final class RemileWindows: ObservableObject {
         }
         guard case .pdf = model.reader.document.content, model.reader.url != nil,
               let parent = entries.values.first(where: { $0.1 === model })?.0,
-              let createWindow else { return false }
+              createWindow != nil else { return false }
         pdfTabs.append((url, parent))
-        if pdfTabs.count == 1 { createWindow() }
+        prepareNextPDFTab()
         return true
     }
     /// Finder opens join the frontmost PDF group, even when another workspace is active.

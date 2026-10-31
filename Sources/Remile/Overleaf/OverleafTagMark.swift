@@ -16,7 +16,6 @@ struct OverleafTagMark: View {
             }.buttonStyle(.plain).accessibilityLabel("Project tags: " + tags.map(\.name).joined(separator: ", "))
                 .popover(isPresented: $state.expanded) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Overleaf tags").font(RemileType.callout.weight(.semibold))
                         ForEach(tags) { tag in HStack { Capsule().fill(Self.tint(tag.color)).frame(width: 3, height: 16); Text(tag.name).font(RemileType.caption) } }
                     }.padding(16).frame(maxWidth: 320, alignment: .leading).background(RemileStyle.background)
                 }

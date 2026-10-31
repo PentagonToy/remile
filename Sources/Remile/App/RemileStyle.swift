@@ -23,6 +23,7 @@ enum RemileStyle {
     static let sourceLinked = accent
     static let sourceUnverified = ink.opacity(0.5)
     static let success = adaptive(light: NSColor(srgbRed: 0.25, green: 0.46, blue: 0.36, alpha: 1), dark: sage)
+    static let deletion = adaptive(light: NSColor(srgbRed: 0.69, green: 0.22, blue: 0.22, alpha: 1), dark: NSColor(srgbRed: 0.91, green: 0.48, blue: 0.46, alpha: 1))
     static let warning = adaptive(light: NSColor(srgbRed: 0.65, green: 0.35, blue: 0.16, alpha: 1), dark: NSColor(srgbRed: 0.83, green: 0.58, blue: 0.36, alpha: 1))
     static let surface = adaptive(light: paper.blended(withFraction: 0.4, of: .white)!, dark: slate.blended(withFraction: 0.06, of: ivory)!)
     static let sidebar = adaptive(light: paper.blended(withFraction: 0.045, of: slate)!, dark: slate.blended(withFraction: 0.13, of: .black)!)

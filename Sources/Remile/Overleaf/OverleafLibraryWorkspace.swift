@@ -67,7 +67,7 @@ struct OverleafLibraryWorkspace: View {
             Button { Task { await refresh() } } label: {
                 if state.refreshing { ProgressView().controlSize(.small) }
                 else { SymbolIcon(systemName: "arrow.clockwise") }
-            }.disabled(state.refreshing || library.offlineMode || NetworkAccess.offline).accessibilityLabel("Refresh project tags").remileHelp("Refresh Overleaf tags")
+            }.disabled(state.refreshing || library.offlineMode || NetworkAccess.offline).accessibilityLabel("Refresh local library").remileHelp("Refresh local library")
             Button { library.openLibrary(add: true) } label: {
                 SymbolIcon(systemName: "plus")
             }.disabled(library.busy).accessibilityLabel("Add Overleaf projects")

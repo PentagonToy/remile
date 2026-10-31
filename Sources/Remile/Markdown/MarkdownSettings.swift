@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The editor and app settings present the same preferences.
 struct MarkdownSettingsForm: View {
-    @AppStorage("markdown.lineNumbers") private var numbers = false
+    @AppStorage("markdown.lineNumbers") private var numbers = true
     @AppStorage("markdown.fontSize") private var size = 18.0
     @AppStorage("markdown.spellcheck") private var spelling = true
     @AppStorage("markdown.livePreview") private var live = true

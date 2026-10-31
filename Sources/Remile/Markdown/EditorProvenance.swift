@@ -3,6 +3,28 @@ import CryptoKit
 
 /// Session-only ranges: local edits remove their own overlap and shift surviving external text.
 enum EditorProvenance {
+    /// Follow a unique short context through external edits without a whole-document diff.
+    static func anchoredSelection(_ selection: NSRange, before: String, after: String) -> NSRange {
+        let old = before as NSString, new = after as NSString
+        let location = min(selection.location, new.length)
+        var fallback = NSRange(location: location, length: min(selection.length, new.length - location))
+        if Range(fallback, in: after) == nil {
+            fallback = new.rangeOfComposedCharacterSequences(for: fallback)
+            if selection.length == 0 { fallback.length = 0 }
+        }
+        let context = 64, selectionLimit = 256
+        guard old.length > 0, selection.location <= old.length,
+              selection.length <= min(selectionLimit, old.length - selection.location) else { return fallback }
+        let start = max(0, selection.location - context)
+        let end = min(old.length, NSMaxRange(selection) + context)
+        let range = old.rangeOfComposedCharacterSequences(for: NSRange(location: start, length: end - start))
+        let anchor = old.substring(with: range)
+        let match = new.range(of: anchor, options: .literal)
+        guard match.location != NSNotFound else { return fallback }
+        let remaining = NSRange(location: match.location + 1, length: new.length - match.location - 1)
+        guard new.range(of: anchor, options: .literal, range: remaining).location == NSNotFound else { return fallback }
+        return NSRange(location: match.location + selection.location - range.location, length: selection.length)
+    }
     static func change(before: String, after: String) -> (removed: NSRange, inserted: NSRange) {
         let a = Array(before.utf16), b = Array(after.utf16)
         var head = 0, tail = 0
