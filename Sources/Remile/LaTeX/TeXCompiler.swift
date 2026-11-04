@@ -10,8 +10,13 @@ struct TeXConfiguration: Sendable {
     static func validatedTimeLimit(_ value: Int?) -> Int { value.flatMap { (1...1800).contains($0) ? $0 : nil } ?? 180 }
     var timeLimitSeconds: TimeInterval { TimeInterval(Self.validatedTimeLimit(timeLimit)) }
     static var current: Self { Self(directory: UserDefaults.standard.string(forKey: "latex.binDirectory") ?? "/Library/TeX/texbin", engine: Engine(rawValue: UserDefaults.standard.string(forKey: "latex.engine") ?? "") ?? .automatic, bibliography: UserDefaults.standard.object(forKey: "latex.bibliography") as? Bool ?? true, timeLimit: validatedTimeLimit(UserDefaults.standard.object(forKey: "latex.compileTimeLimit") as? Int)) }
+    func resolvedEngine(buffers: [String: String], submissionCheck: Bool) -> Engine {
+        if submissionCheck { return .pdf }
+        if engine != .automatic { return engine }
+        return buffers.values.contains { $0.contains("fontspec") || $0.contains("\\setmainfont") } ? .xe : .pdf
+    }
     func missingTools(buffers: [String: String], submissionCheck: Bool = false) -> [String] {
-        let resolved = engine == .automatic ? (buffers.values.contains { $0.contains("fontspec") || $0.contains("\\setmainfont") } ? Engine.xe : Engine.pdf) : engine
+        let resolved = resolvedEngine(buffers: buffers, submissionCheck: submissionCheck)
         let names = (submissionCheck ? [] : ["latexmk"]) + [resolved == .xe ? "xelatex" : resolved == .lua ? "lualatex" : "pdflatex"]
         return names.filter { !FileManager.default.isExecutableFile(atPath: URL(fileURLWithPath: directory).appendingPathComponent($0).path) }
     }
@@ -41,7 +46,7 @@ final class TeXCompileJob: @unchecked Sendable {
         try TeXSourceSnapshot.write(root: root, buffers: buffers, to: source, submissionCheck: submissionCheck)
         try manager.createDirectory(at: build, withIntermediateDirectories: true)
         let executable = URL(fileURLWithPath: configuration.directory).appendingPathComponent("latexmk")
-        let engine: TeXConfiguration.Engine = configuration.engine == .automatic ? (buffers.values.contains { $0.contains("fontspec") || $0.contains("\\setmainfont") } ? .xe : .pdf) : configuration.engine
+        let engine = configuration.resolvedEngine(buffers: buffers, submissionCheck: submissionCheck)
         let flag = engine == .xe ? "-xelatex" : engine == .lua ? "-lualatex" : "-pdf"
         let logURL = output.appendingPathComponent("compiler.log"); manager.createFile(atPath: logURL.path, contents: nil)
         let handle = try FileHandle(forWritingTo: logURL); defer { try? handle.close() }
@@ -60,10 +65,10 @@ final class TeXCompileJob: @unchecked Sendable {
             }
         }
         if submissionCheck {
-            let tool = URL(fileURLWithPath: configuration.directory).appendingPathComponent(engine == .xe ? "xelatex" : engine == .lua ? "lualatex" : "pdflatex")
+            let tool = URL(fileURLWithPath: configuration.directory).appendingPathComponent("pdflatex")
             environment["TEXINPUTS"] = source.path + "//:"
             environment.removeValue(forKey: "TEXMFOUTPUT")
-            try handle.write(contentsOf: Data("Submission check: fresh snapshot, no .bib/.bbl/.bst or cached auxiliary files. Three LaTeX passes. BibTeX/Biber/latexmk not invoked. This uses the installed engine, not a publisher's historical distribution.\n".utf8))
+            try handle.write(contentsOf: Data("Submission check: fresh snapshot, no .bib/.bbl/.bst or cached auxiliary files. Three pdfLaTeX passes. BibTeX/Biber/latexmk not invoked. This uses the local TeX installation.\n".utf8))
             var status: Int32 = 0
             for pass in 1...3 {
                 try handle.write(contentsOf: Data("Submission check: LaTeX pass \(pass)/3\n".utf8))

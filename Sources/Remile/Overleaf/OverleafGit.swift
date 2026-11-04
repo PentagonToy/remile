@@ -25,7 +25,6 @@ enum OverleafCredential {
     static let service = "local.remile.overleaf.git"
     private static let lock = NSLock()
     private static var tokens: [UUID: String] = [:]
-    private static var denied = Set<UUID>()
     enum Availability { case available, missing, locked }
     static func availability(_ id: UUID) -> Availability {
         lock.lock(); let cached = tokens[id] != nil; lock.unlock()
@@ -35,15 +34,24 @@ enum OverleafCredential {
         if result.status == errSecItemNotFound { return .missing }
         return result.status == errSecSuccess && result.data != nil ? .available : .locked
     }
-    static func locked(_ id: UUID) -> Bool { lock.lock(); defer { lock.unlock() }; return denied.contains(id) }
     static func read(_ id: UUID, interactive: Bool = false) throws -> String {
         lock.lock()
         if let token = tokens[id] { lock.unlock(); return token }
-        if denied.contains(id), !interactive { lock.unlock(); throw OverleafGit.Failure("Unlock this account in the project toolbar.") }
         lock.unlock()
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: id.uuidString, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
-        guard let data = KeychainAccess.data(matching: query, interactive: interactive), let token = String(data: data, encoding: .utf8) else { lock.lock(); denied.insert(id); lock.unlock(); throw OverleafGit.Failure("Unlock this account in the project toolbar.") }
-        lock.lock(); tokens[id] = token; denied.remove(id); lock.unlock(); return token
+        let result = KeychainAccess.read(matching: query, interactive: interactive)
+        switch result.status {
+        case errSecItemNotFound:
+            throw OverleafGit.Failure("No Git token is saved for this account. Open Git token in Connection options.")
+        case errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled:
+            throw OverleafGit.Failure("Choose Sync now to allow Keychain access to the saved Git token.")
+        default:
+            guard result.status == errSecSuccess, let data = result.data,
+                  let token = String(data: data, encoding: .utf8), !token.isEmpty else {
+                throw OverleafGit.Failure("Could not read the saved Git token from Keychain.")
+            }
+            lock.lock(); tokens[id] = token; lock.unlock(); return token
+        }
     }
     static func store(_ token: String, id: UUID) throws {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: id.uuidString]
@@ -51,18 +59,20 @@ enum OverleafCredential {
         let status = SecItemAdd(query.merging(attributes, uniquingKeysWith: { _, new in new }) as CFDictionary, nil)
         guard status == errSecSuccess || status == errSecDuplicateItem else { throw OverleafGit.Failure("Unable to save the credential in Keychain.") }
         if status == errSecDuplicateItem, SecItemUpdate(query as CFDictionary, attributes as CFDictionary) != errSecSuccess { throw OverleafGit.Failure("Unable to update the Keychain credential.") }
-        lock.lock(); tokens[id] = token; denied.remove(id); lock.unlock()
+        lock.lock(); tokens[id] = token; lock.unlock()
     }
     static func erase(_ id: UUID) throws {
         let status = SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: id.uuidString] as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw OverleafGit.Failure("The saved Git token could not be removed. Unlock Keychain and try again.") }
-        lock.lock(); tokens.removeValue(forKey: id); denied.remove(id); lock.unlock()
+        lock.lock(); tokens.removeValue(forKey: id); lock.unlock()
     }
     static func remove(_ id: UUID) { try? erase(id) }
 
 }
 
 enum OverleafGit {
+    struct SnapshotChanged: Error {}
+
     static func head(_ root: URL) throws -> String {
         try run(["rev-parse", "HEAD"], at: root).text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -205,6 +215,8 @@ enum OverleafGit {
                 try FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try FileManager.default.copyItem(at: from, to: to)
             }
+            // Automatic sync reconciles later edits against this private copy.
+            if !includeContents, try fingerprint(root) != before { throw SnapshotChanged() }
             _ = try run(["add", "-A"], at: stage)
             let dirty = try run(["diff", "--cached", "--quiet"], at: stage, allowFailure: true).status != 0
             if dirty { _ = try run(["-c", "commit.gpgsign=false", "commit", "-m", "Local writing changes"], at: stage) }
@@ -228,7 +240,9 @@ enum OverleafGit {
                 let text = data.count < 600_000 && !data.contains(0) ? String(data: data, encoding: .utf8) ?? "Binary file" : "Binary file"
                 return Change(path: path, local: try content(localHead, path), remote: try content(remote, path), result: text, conflict: conflicts.contains(path))
             }
-            guard try fingerprint(root) == before else { throw Failure("The local files changed while checking. Check again to review the latest version.") }
+            if includeContents, try fingerprint(root) != before {
+                throw Failure("The local files changed while checking. Check again to review the latest version.")
+            }
             return Review(connection: connection, root: root, stage: stage, fingerprint: before, remoteHead: remote, transport: transport, changes: changes, localChanges: dirty || !localNames.isEmpty, localFiles: localFiles)
         } catch { try? FileManager.default.removeItem(at: stage); throw error }
     }

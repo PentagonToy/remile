@@ -2,6 +2,15 @@ import Foundation
 
 /// Local TeX notation to native MathML; deliberately no scripting or remote typesetter.
 enum MathMarkup {
+    static func completionPreview(_ command: String) -> String? {
+        guard command.first == "\\" else { return nil }
+        switch command {
+        case "\\frac{}{}": return "a⁄b"
+        case "\\sqrt{}": return "√x"
+        default: return Parser.symbols[String(command.dropFirst())]?.0
+        }
+    }
+
     static func escape(_ text: String) -> String {
         text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
     }
@@ -167,7 +176,7 @@ enum MathMarkup {
             var map: [String: (String, String)] = [:]
             let greek = ["alpha":"α","beta":"β","gamma":"γ","delta":"δ","epsilon":"ϵ","varepsilon":"ε","zeta":"ζ","eta":"η","theta":"θ","vartheta":"ϑ","iota":"ι","kappa":"κ","lambda":"λ","mu":"μ","nu":"ν","xi":"ξ","pi":"π","varpi":"ϖ","rho":"ρ","varrho":"ϱ","sigma":"σ","varsigma":"ς","tau":"τ","upsilon":"υ","phi":"ϕ","varphi":"φ","chi":"χ","psi":"ψ","omega":"ω","Gamma":"Γ","Delta":"Δ","Theta":"Θ","Lambda":"Λ","Xi":"Ξ","Pi":"Π","Sigma":"Σ","Upsilon":"Υ","Phi":"Φ","Psi":"Ψ","Omega":"Ω"]
             for (key, value) in greek { map[key] = (value, "mi") }
-            let operators = ["sum":"∑","prod":"∏","int":"∫","iint":"∬","iiint":"∭","oint":"∮","partial":"∂","nabla":"∇","infty":"∞","cdot":"⋅","times":"×","div":"÷","pm":"±","mp":"∓","le":"≤","leq":"≤","ge":"≥","geq":"≥","ne":"≠","neq":"≠","approx":"≈","equiv":"≡","sim":"∼","simeq":"≃","propto":"∝","to":"→","rightarrow":"→","leftarrow":"←","leftrightarrow":"↔","Rightarrow":"⇒","Leftarrow":"⇐","Leftrightarrow":"⇔","in":"∈","notin":"∉","subset":"⊂","subseteq":"⊆","supset":"⊃","supseteq":"⊇","cup":"∪","cap":"∩","bigcup":"⋃","bigcap":"⋂","forall":"∀","exists":"∃","neg":"¬","land":"∧","lor":"∨","ldots":"…","cdots":"⋯","vdots":"⋮","ddots":"⋱","langle":"⟨","rangle":"⟩","lvert":"|","rvert":"|","lVert":"‖","rVert":"‖","{":"{","}":"}","%":"%","$":"$","_":"_","#":"#","&":"&","backslash":"\\","emptyset":"∅","perp":"⊥","parallel":"∥","otimes":"⊗","oplus":"⊕","prime":"′","circ":"∘","ll":"≪","mid":"∣","|":"‖"]
+            let operators = ["sum":"∑","prod":"∏","int":"∫","iint":"∬","iiint":"∭","oint":"∮","partial":"∂","nabla":"∇","infty":"∞","cdot":"⋅","times":"×","div":"÷","pm":"±","mp":"∓","le":"≤","leq":"≤","ge":"≥","geq":"≥","ne":"≠","neq":"≠","approx":"≈","equiv":"≡","sim":"∼","simeq":"≃","propto":"∝","to":"→","rightarrow":"→","leftarrow":"←","uparrow":"↑","downarrow":"↓","leftrightarrow":"↔","Rightarrow":"⇒","Leftarrow":"⇐","Leftrightarrow":"⇔","in":"∈","notin":"∉","subset":"⊂","subseteq":"⊆","supset":"⊃","supseteq":"⊇","cup":"∪","cap":"∩","bigcup":"⋃","bigcap":"⋂","forall":"∀","exists":"∃","neg":"¬","land":"∧","lor":"∨","ldots":"…","cdots":"⋯","vdots":"⋮","ddots":"⋱","langle":"⟨","rangle":"⟩","lvert":"|","rvert":"|","lVert":"‖","rVert":"‖","{":"{","}":"}","%":"%","$":"$","_":"_","#":"#","&":"&","backslash":"\\","emptyset":"∅","perp":"⊥","parallel":"∥","otimes":"⊗","oplus":"⊕","prime":"′","circ":"∘","ll":"≪","mid":"∣","|":"‖"]
             for (key, value) in operators { map[key] = (value, "mo") }
             for name in ["sin", "cos", "tan", "arccos", "arcsin", "arctan", "cot", "sec", "csc", "sinh", "cosh", "tanh", "log", "ln", "exp", "lim", "max", "min", "sup", "inf", "det", "gcd"] { map[name] = (name, "mi") }
             return map

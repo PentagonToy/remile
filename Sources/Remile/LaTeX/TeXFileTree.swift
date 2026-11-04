@@ -156,7 +156,9 @@ struct TeXFileTree: NSViewRepresentable {
                 reload(); return true
             }
             guard let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty else { return false }
-            project.drop(urls, into: node?.file ?? ""); return true
+            let folder = node?.file ?? ""
+            Task { await project.drop(urls, into: folder) }
+            return true
         }
         func menuDidClose(_ menu: NSMenu) { menuPrepared = false }
         func menuNeedsUpdate(_ menu: NSMenu) {

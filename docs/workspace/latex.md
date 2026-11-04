@@ -14,7 +14,7 @@ A source ZIP opens into a new project folder. The ZIP stays unchanged. Source re
 
 ## Find your way
 
-Files holds the project. Outline follows its sections. Drag the divider to give either the source or PDF more room.
+Files holds the project. Drop files or folders into the list or onto a project folder. Folder imports keep their nested structure. Outline follows the project’s sections. Drag the divider to give either the source or PDF more room.
 
 Opened files appear in the bottom tab bar. Select a tab to switch source, drag it to change its order, or use + to open another project file. Double-click a tab to rename its file. Closing a tab keeps your edits and the file in the project. At least one file stays open. Source tabs stay within their window.
 
@@ -24,15 +24,15 @@ Source line numbers are on by default. Change **Settings → LaTeX → Line numb
 
 Double-click in the PDF to return to the corresponding source. Word context refines the target when it matches clearly. Ambiguous text and figures keep the SyncTeX location. Selecting text alone does not move the source. Type `\cite{` to search your bibliography and Reference while writing. [Read the citation hints →](../reference.md#read-citation-hints)
 
-Inside `\includegraphics{…}`, type part of a filename to see matching project images. `\input{…}` and `\include{…}` suggest TeX files. `\ref{…}` and `\eqref{…}` suggest labels from the project. Completing a supported `\begin{…}` inserts its matching end and places the cursor inside. These suggestions use local project data without a network request.
+Type `\input{`, `\include{` or `\includegraphics{` to see matching project files. Keep typing to narrow the list by filename or folder path. `\ref{…}` and `\eqref{…}` suggest labels from the project. Completing a supported `\begin{…}` inserts its matching end and places the cursor inside. These suggestions use local project data without a network request.
 
 ## Find and complete
 
 Press `⌘F` to open Find below the source. `⌥⌘F` also opens the replacement row. `⌘G` moves to the next match and `⇧⌘G` to the previous one. Match case, whole words and regular expressions are available beside the query or in Search options when the pane is narrow. Escape closes Find. Replace and Replace All are undoable. In regular expressions, `$1`, `$2` and later groups refer to captured text.
 
-Type a backslash and at least two letters for local command suggestions. `⌥Escape` explicitly opens completion for a shorter prefix. Arrow keys choose an item, Return or Tab accepts it, and Escape dismisses the list. Ordinary prose does not open command suggestions.
+Type a backslash and a letter for local command suggestions. `⌥Escape` opens completion after a bare backslash. Arrow keys choose an item, Return or Tab accepts it, and Escape dismisses the list. Common maths commands show a symbol or a short example beside the command.
 
-Completion includes common maths and document commands, package and class names, project files, bibliography filenames, labels and commands defined with `\newcommand` or `\DeclareMathOperator`. Project-defined environments receive a matching end. Package suggestions name common choices. They do not verify installation or install anything.
+Completion uses your project files for paths, labels, and commands defined with `\newcommand` or `\DeclareMathOperator`, including definitions in project style and class files. It also recognises selected commands from declared packages, such as `\ce{}` from `mhchem`. Accepting a command adds any required braces when there is no argument group already in place. The cursor moves inside the first argument. Project-defined environments receive a matching end.
 
 Suggestions use a bounded, lazy project index off the UI thread. Very large files or projects may have definitions outside that index. The source remains editable and compilation still uses the complete project.
 
@@ -43,6 +43,8 @@ Open the speech bubble for source-linked questions using your selected assistant
 ## When a build needs attention
 
 Open Errors beside Compile. Start with the highest-priority issue and follow its source link. A green check means the PDF matches the current source.
+
+Choose **Submission check** from the Compile menu to compare the current source with a copy that embeds its bibliography. Both variants use pdfLaTeX and check whether references resolve without external bibliography files.
 
 Use **Settings → LaTeX → Check LaTeX Environment** to inspect the local tools. remile provides guidance before any package installation.
 

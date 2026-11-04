@@ -18,6 +18,8 @@ The Overleaf tests follow the current Git implementation:
 | `OverleafOnlineBarTests` | Save states, controls and light/dark layout |
 | `OverleafConnectionNoticeTests` | First-use connection consent |
 
+Optional collaboration scenarios run with `zsh tools/check_overleaf_collaboration.sh /absolute/external/test-directory`. They use temporary local Git repositories, not an Overleaf account. They cover independent paragraph edits, continued end-of-file typing alongside a separate new line, file additions and deletion, and an offline restart while another writer renames a source. Fast merge and move safety checks remain in the standard suite. For a manual hosted session, also check independent edits inside one word, incremental versions of the same tail insertion, automatic recovery after editing a conflicted source, continuous browser typing during local edits, interruption after upload and return from offline work. Preserve both writers’ source and record whether a manual action was needed.
+
 Local Git benchmarks are opt-in through `REMILE_GIT_BENCHMARK=1`. They use temporary repositories and do not contact Overleaf. Hosted collaboration and account authentication require separate manual verification.
 
 Other `*Checks` directories retain focused integration fixtures not yet covered by the standard suite. They are not all duplicates. Run their matching `tools/check_*.sh` entry points when changing those areas. `tools/check_overleaf_safety.sh` combines Git (including review and source safety), commands, login and titlebar checks without running review twice. It does not replace `swift test`.

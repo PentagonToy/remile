@@ -90,12 +90,6 @@ import Network
             }
         } catch { if revision == syncRevision { statuses[project.id] = .offline } }
     }
-    func unlock(_ project: OverleafConnection) async {
-        guard !busy else { return }; busy = true; error = nil
-        do { _ = try await Task.detached(priority: .userInitiated) { try OverleafCredential.read(project.profileID, interactive: true) }.value }
-        catch { self.error = error.localizedDescription }
-        busy = false; await probe(project)
-    }
     func root(_ project: OverleafConnection) -> URL { directory.appendingPathComponent("Projects/" + project.id.uuidString) }
     func connection(for root: URL) -> OverleafConnection? { projects.first { self.root($0).standardizedFileURL.path == root.standardizedFileURL.path } }
     func savedAccount(_ label: String) -> OverleafConnection? { projects.first { $0.account == label.trimmingCharacters(in: .whitespacesAndNewlines) } }

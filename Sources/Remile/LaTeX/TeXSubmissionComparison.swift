@@ -25,7 +25,9 @@ enum TeXSubmissionComparison {
             progress(1, second); return Result(rows: [first, second], embedded: nil)
         }
         progress(1, Row(state: "running", detail: "Preparing bibliography…"))
-        var normalConfiguration = configuration; normalConfiguration.bibliography = true
+        var normalConfiguration = configuration
+        normalConfiguration.engine = .pdf
+        normalConfiguration.bibliography = true
         let normal = try job.run(root: root, main: main, buffers: buffers, configuration: normalConfiguration, output: output.appendingPathComponent("Prepare"), scratch: true)
         guard normal.success else {
             let second = Row(state: "failed", detail: "Could not prepare bibliography — see log", log: normal.log, logPath: output.appendingPathComponent("Prepare/compiler.log").path)

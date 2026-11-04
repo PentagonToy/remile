@@ -20,7 +20,7 @@ Keep local images beside the document or in a subfolder. Remote images use a loc
 
 Press `⌘F` to open Find below the source. Read mode switches to Edit so matches and replacements refer to the actual Markdown text. `⌥⌘F` opens Find and Replace. Use `⌘G` and `⇧⌘G` for the next and previous match. Match case, whole words and regular expressions are available beside the query or in Search options in a narrow pane. Escape closes the bar. Replace All is one undoable edit.
 
-Search and completion run locally. Find releases its result snapshot when closed, and it does not trigger AI suggestions. Inside maths, `⌥Escape` requests a supported TeX command completion.
+Search and completion run locally. Find releases its result snapshot when closed, and it does not trigger AI suggestions. Inside maths, type a backslash and a letter to see supported TeX commands, or press `⌥Escape` after a backslash.
 
 Use Outline to move between headings. Opening or closing it keeps the editor and preview in place. The short transition honours Reduce Motion.
 

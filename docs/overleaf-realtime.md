@@ -6,23 +6,26 @@ Online keeps a local project connected through Overleaf's Git integration. On-de
 
 | State | Meaning |
 | --- | --- |
-| Unsaved changes | Edits are still in the editor buffer and have not been saved on this Mac. |
-| Synced | The saved source was confirmed through Git at the displayed time. |
-| Waiting to sync | New edits are saved locally and waiting for a short pause. |
-| Syncing | Git is checking, merging or publishing a saved snapshot. |
-| Offline | Online remains selected. Work stays local until the connection returns. |
-| On-device | Automatic synchronisation is stopped until you choose Online. |
+| Editing | Online edits are still being saved on this Mac. |
+| Saved | The source is saved on this Mac. Hover for the last remote confirmation. |
+| Saved locally · retrying | A sync attempt failed. The app keeps the local save and retries. Hover for the reason. |
+| Couldn’t save | Saving on this Mac failed. Hover for the error. |
+| Unsaved changes | On-device edits have not been saved on this Mac yet. |
+| Saved locally · offline | Online remains selected. Work stays local until the connection returns. |
+| Saved on this Mac | On-device mode keeps work local until you choose Online. |
 | Review needed | Overlapping edits need your choice. Recovery copies are kept. |
 
 ## Reconnection
 
-The open project groups edits before publishing. It waits for five quiet seconds, with a twenty-second limit during continuous typing and at least fifteen seconds between automatic checks while writing. For two minutes after returning to the project or syncing changes, remote checks run fifteen seconds apart. They then slow from one to five minutes when nothing changes. Returning to the app brings the next check forward, while keeping minimum spacing and error backoff. Hidden workspaces and On-device mode stop automatic checks. Sync now checks immediately.
+The open project groups Git changes for five seconds after the last edit, or up to twenty seconds during continuous typing. Automatic attempts stay at least fifteen seconds apart and respect retry delays. For two minutes after returning to the project or syncing changes, remote checks run fifteen seconds apart. They then slow from one to five minutes when nothing changes. Returning to the app brings the next check forward, while keeping minimum spacing and error backoff. Hidden workspaces and On-device mode stop automatic checks. Sync now checks immediately.
 
 Transient failures retry with increasing delays. Rate-limit responses wait at least five minutes. A failed request does not discard local work or switch the chosen mode. A rejected push never becomes a force push.
 
-Independent changes merge in a private working copy. Changes typed during a request are reconciled before updating the editor. Ambiguous text, deletion or binary changes stop for review. Use Sync now to retry or Review changes to compare both versions.
+Independent changes merge in a private working copy. Changes typed during a request are reconciled before updating the editor. Unique source moves with unchanged content retain the other writer's edits and keep the selected tab. Competing destinations, deletion against editing and ambiguous text or binary changes still stop for review. Further writing or file operations retry recoverable conflicts automatically, keeping request spacing and error backoff. Review changes remains available when a choice is needed.
 
 Restarting remile reuses a pending recovery operation. A fetch checks an uncertain upload before sending it again. See [recovery storage and limits](workspace/overleaf.md#choose-a-mode) for the copy budget, retained records and legacy data policy.
+
+Local autosave continues during typing and network requests, rather than waiting for a quiet period. An ordinary quit saves through the document close flow. After a crash or power loss, the next launch reads the last complete local save and checks any pending upload before repeating it. Input since that save can still be lost if the process or computer stops abruptly.
 
 ## Local work
 
@@ -30,7 +33,7 @@ Download the project and install the required TeX tools, packages and fonts befo
 
 ## Review notes
 
-Comments and suggestions use a separate web-session connection when you open Review. This exception is independent of Git synchronisation and uses private web interfaces. Acceptance uses a reviewed suggestion ID. Rejection restores source through Git, verifies the restored remote text, then clears only the original suggestion marker. A small local recovery record prevents a retry from restoring the same text twice. Overleaf history can show the Git restoration and a separate accepted-range event. Grouped or moved suggestions still need review in Overleaf. Review has no background refresh timer.
+Open Review and choose **Enable review** to fetch comments and suggestions through Overleaf’s private web interfaces. The choice also applies to CLI review requests. Disable access from the Review export menu. Git synchronisation uses a separate connection. Acceptance uses a reviewed suggestion ID. Rejection restores source through Git, verifies the restored remote text, then clears only the original suggestion marker. A small local recovery record prevents a retry from restoring the same text twice. Overleaf history can show the Git restoration and a separate accepted-range event. Grouped or moved suggestions still need review in Overleaf. Review has no background refresh timer.
 
 Git updates can move or remove Overleaf comments and tracked changes. Avoid simultaneous Git publishing and sensitive collaborative review. The app does not provide live cursors or presence.
 

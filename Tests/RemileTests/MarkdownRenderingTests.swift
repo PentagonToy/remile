@@ -4,6 +4,16 @@ import XCTest
 @testable import Remile
 
 final class MarkdownRenderingTests: XCTestCase {
+    func testTeXMathSuggestionsHaveNativePreviewsAndKeepSourceCommands() throws {
+        let source = "$\\d$"
+        let completion = try XCTUnwrap(EditorCompletion.context(source, selection: NSRange(location: 3, length: 0), tex: true))
+        let previews = completion.items.compactMap { item in MathMarkup.completionPreview(item.label) }
+        XCTAssertTrue(previews.contains("δ"))
+        XCTAssertTrue(previews.contains("÷"))
+        XCTAssertTrue(previews.contains("↓"))
+        let delta = try XCTUnwrap(completion.items.first { $0.label == "\\delta" })
+        XCTAssertEqual((source as NSString).replacingCharacters(in: completion.range, with: delta.insertion), "$\\delta$")
+    }
     private var directory: URL!
 
     override func setUpWithError() throws {

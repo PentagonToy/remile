@@ -47,7 +47,7 @@ struct TeXSubmissionPopover: View {
     @ObservedObject var check: TeXSubmissionCheck
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Submission check").font(RemileType.heading)
+            Text("Submission check · pdfLaTeX").font(RemileType.heading)
             ForEach(0..<2, id: \.self) { index in
                 HStack(alignment: .top, spacing: 12) {
                     if ["waiting", "running"].contains(check.rows[index].state) { ProgressView().controlSize(.small).opacity(check.rows[index].state == "waiting" ? 0.4 : 1) }

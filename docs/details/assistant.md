@@ -16,7 +16,7 @@ Inference requests are serialised. Repeated writing suggestions use bounded sess
 
 Select up to 2,000 characters of prose and choose Proofread with the selected provider. Review the replacement, apply it or dismiss it. Code, maths and TeX commands are excluded. Select a word and right-click for macOS spelling corrections. Undo restores the source.
 
-Automatic spelling and grammar underlines use macOS. Optional grey inline completions use Apple Intelligence: Tab accepts and Escape dismisses them. Switching documents clears a pending completion. AI settings provides one Writing suggestions switch, with individual options under its disclosure.
+Automatic spelling and grammar underlines use macOS. Optional grey inline completions use Apple Intelligence to finish the word being typed or suggest one new word. Tab accepts and Escape dismisses. Switching documents clears a pending completion. AI settings provides one Writing suggestions switch, with individual options under its disclosure.
 
 LaTeX diagnostics offer Suggest fix. The proposal must match the unchanged source before it can be applied. Compilation guidance can also send bounded error summaries and package lookup results to ChatGPT on request, without source buffers. It displays advice and optional commands for review.
 

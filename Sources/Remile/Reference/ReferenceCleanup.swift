@@ -58,10 +58,13 @@ enum ReferenceCleanup {
                 else {
                     let url = repository.attachmentURL(attachment)
                     guard (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map({ $0 <= 200_000_000 }) == true, let pdf = PDFDocument(url: url), !pdf.isLocked else { continue }
-                    fields = ReferencePDFMetadata.fields(pdf, fallback: (attachment.name as NSString).deletingPathExtension)
+                    fields = ReferencePDFMetadata.fields(pdf, fallback: "")
                     cached[attachment.id] = fields
                 }
-                for (field, value) in fields where next.fields[field]?.isEmpty != false || (field == "title" && (ReferencePDFMetadata.placeholderTitle(next.title, journal: next.fields["journal"]) || next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension)) { next.fields[field] = value }
+                for (field, value) in fields where !value.isEmpty {
+                    let replacesTitle = field == "title" && (ReferencePDFMetadata.placeholderTitle(next.title, journal: next.fields["journal"]) || next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension)
+                    if next.fields[field]?.isEmpty != false || replacesTitle { next.fields[field] = value }
+                }
             }
             if let degree = ReferenceKind.thesisKind(next.fields["type"] ?? ""),
                 [ReferenceKind.note, .other].contains(ReferenceKind.classify(next)) {

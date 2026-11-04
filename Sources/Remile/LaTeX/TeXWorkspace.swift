@@ -85,7 +85,7 @@ struct TeXWorkspace: View {
             }
             editor.citationCompletion = { [weak project = project] source, range in
                 guard let project else { return nil }
-                if let local = await project.localCompletion.context(source, selection: range, file: project.selected, paths: project.treeFiles, buffers: project.buffers) { return local }
+                if let local = await project.localCompletion.context(source, selection: range, file: project.selected, paths: project.treeFiles, buffers: project.buffers, main: project.main) { return local }
                 return await project.citations.completion(source: source, selection: range, buffers: project.buffers)
             }
             editor.prepareCitation = { [weak project = project] item in

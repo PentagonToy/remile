@@ -19,7 +19,6 @@ final class RemileDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls { RemileWindows.shared.openExternalDocument(url) }
     }
-    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()
         let item = NSMenuItem(title: "New Window", action: #selector(newWindow), keyEquivalent: "")
@@ -50,7 +49,6 @@ struct RemileApp: App {
     @NSApplicationDelegateAdaptor(RemileDelegate.self) private var delegate
     var body: some Scene {
         WindowGroup("remile.", id: "home") { RemileWindow(delegate: delegate) }
-            .handlesExternalEvents(matching: [])
             .defaultSize(width: 1120, height: 800)
             .commands { RemileCommands(); WorkspaceCommands() }
         Settings { ReaderSettings().modifier(ReaderAppearanceModifier()).modifier(NetworkAccessScope()) }

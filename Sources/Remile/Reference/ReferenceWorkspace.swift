@@ -238,34 +238,34 @@ struct ReferenceWorkspace: View {
                                 if state.addingLibrary && state.parentLibrary == library.id { libraryNameField.padding(.leading, 18) }
                             }
                             if state.addingLibrary && state.parentLibrary == nil { libraryNameField }
+                            ForEach(model.activeLibraries.filter { $0.parentID == nil && $0.source == "remarkable" }) { library in
+                                libraryRow(library)
+                                ForEach(model.activeLibraries.filter { $0.parentID == library.id }) { collection in libraryRow(collection).padding(.leading, 18) }
+                                if state.addingLibrary && state.parentLibrary == library.id { libraryNameField.padding(.leading, 18) }
+                            }
+                            if model.activeLibraries.contains(where: { $0.source?.hasPrefix("zotero-import:") == true }) {
+                                DisclosureGroup("Zotero", isExpanded: $zoteroExpanded) {
+                                    ForEach(model.activeLibraries.filter { $0.parentID == nil && $0.source?.hasPrefix("zotero-import:") == true }) { library in
+                                        libraryRow(library)
+                                        ForEach(model.activeLibraries.filter { $0.parentID == library.id }) { collection in libraryRow(collection).padding(.leading, 18) }
+                                        if state.addingLibrary && state.parentLibrary == library.id { libraryNameField.padding(.leading, 18) }
+                                    }
+                                }.padding(.leading, 10)
+                            }
+                            Button { model.showingTrash = true; model.selected = model.items.first?.id; model.selectedIDs = Set([model.selected].compactMap { $0 }) } label: {
+                                HStack { SymbolLabel("Trash", systemImage: "trash"); Spacer(); Text(String(model.trashRecords.count)).foregroundStyle(.secondary) }.padding(10).background(model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                            }.buttonStyle(.plain).contextMenu {
+                                Button("Empty Trash…", systemImage: "trash", role: .destructive) { state.emptyTrash = true }.disabled(model.busy)
+                            }
+                            if model.showingTrash {
+                                ForEach(model.deletedLibraries) { library in
+                                    Button { } label: { SymbolLabel(library.name, systemImage: "folder").padding(8).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).foregroundStyle(.secondary).contextMenu {
+                                        Button("Restore", systemImage: "arrow.uturn.backward") { model.restoreLibrary(library.id) }
+                                    }
+                                }
+                            }
                         }.contextMenu {
                             Button("Add library…", systemImage: "folder.badge.plus") { addLibrary() }
-                        }
-                        ForEach(model.activeLibraries.filter { $0.parentID == nil && $0.source == "remarkable" }) { library in
-                            libraryRow(library)
-                            ForEach(model.activeLibraries.filter { $0.parentID == library.id }) { collection in libraryRow(collection).padding(.leading, 18) }
-                            if state.addingLibrary && state.parentLibrary == library.id { libraryNameField.padding(.leading, 18) }
-                        }
-                        if model.activeLibraries.contains(where: { $0.source?.hasPrefix("zotero-import:") == true }) {
-                            DisclosureGroup("Zotero", isExpanded: $zoteroExpanded) {
-                                ForEach(model.activeLibraries.filter { $0.parentID == nil && $0.source?.hasPrefix("zotero-import:") == true }) { library in
-                                    libraryRow(library)
-                                    ForEach(model.activeLibraries.filter { $0.parentID == library.id }) { collection in libraryRow(collection).padding(.leading, 18) }
-                                    if state.addingLibrary && state.parentLibrary == library.id { libraryNameField.padding(.leading, 18) }
-                                }
-                            }
-                        }
-                        Button { model.showingTrash = true; model.selected = model.items.first?.id; model.selectedIDs = Set([model.selected].compactMap { $0 }) } label: {
-                            HStack { SymbolLabel("Trash", systemImage: "trash"); Spacer(); Text(String(model.trashRecords.count)).foregroundStyle(.secondary) }.padding(10).background(model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
-                        }.buttonStyle(.plain).contextMenu {
-                            Button("Empty Trash…", systemImage: "trash", role: .destructive) { state.emptyTrash = true }.disabled(model.busy)
-                        }
-                        if model.showingTrash {
-                            ForEach(model.deletedLibraries) { library in
-                                Button { } label: { SymbolLabel(library.name, systemImage: "folder").padding(8).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).foregroundStyle(.secondary).contextMenu {
-                                    Button("Restore", systemImage: "arrow.uturn.backward") { model.restoreLibrary(library.id) }
-                                }
-                            }
                         }
                     }.font(RemileType.callout).padding(10)
                 }.scrollContentGutter().frame(maxWidth: .infinity, alignment: .leading)

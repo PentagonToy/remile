@@ -87,7 +87,7 @@ These commands run independently of the application window. Output paths identif
 | `compress /path/input.pdf --output /path/new.pdf --quality small --grayscale` | Select small, balanced or high quality and optional grayscale |
 | `inspect /path/project` | List project files and main-document candidates |
 | `build /path/project --output /path/new-directory --main main.tex` | Compile captured project sources |
-| `build /path/project --output /path/new-directory --submission-check` | Check bibliography independence with fresh LaTeX passes |
+| `build /path/project --output /path/new-directory --submission-check` | Check bibliography independence with fresh pdfLaTeX passes |
 | `comments /path/input.pdf --output /path/comments.md` | Export PDF review comments as Markdown |
 | `comments /path/input.pdf --format json` | Read comments and reply relationships as JSON |
 | `doctor` | Report TeX tools and configuration |
@@ -134,6 +134,8 @@ Replace `PROJECT_ID` with the copied 24-character ID. `list` returns project nam
 
 From 0.2.4, enable the review connection in the app before using `review`. The CLI cannot enable it.
 
+Files imported through the editor keep their project-relative paths. Use `read --file contents/section.tex` for editable sources or `inspect /absolute/project` to list files on disk, including images. The editor handles completion and folder drops.
+
 `review` reads the connected account's current server comments and tracked changes directly. It does not require opening the sidebar first. JSON is the default. Markdown carries project, document, thread and change identities, UTF-16 anchors, source hashes and bounded source excerpts. `complete: false` identifies missing or changing review locations. Read-only review access never accepts, rejects, resolves or edits a record.
 
 A review bundle contains `review.md`, `review.json`, text sources and a hash manifest. Editor buffers take precedence over saved files. A differing review snapshot is retained under `review-source/`. Figures, compiled PDFs and account credentials are omitted. Use new absolute output paths. Export is bounded to 1,000 text sources and 64 MB, including differing review sources.
@@ -165,7 +167,7 @@ Run `documents` to discover open document sessions, then pass `--target UUID` to
 | `export --kind source --output /path/new.zip` | Export a LaTeX project snapshot |
 | `logs [--tail characters]` | Read compiler output and structured diagnostics |
 | `compile [--scratch] [--submission-check]` | Compile or check the current source |
-| `submission-compare` | Start current/embedded submission checks |
+| `submission-compare` | Check current and embedded sources with pdfLaTeX |
 | `submission-compare --status` | Read both results, progress, logs and captured source hashes |
 | `comments [--format markdown\|json] [--output /path/comments.json]` | Read or export current PDF comments, including unsaved notes |
 | `review [--run\|--stop\|--clear] [--file relative.tex]` | Start a manuscript review, read saved questions, stop pending work or clear results |

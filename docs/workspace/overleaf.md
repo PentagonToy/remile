@@ -2,6 +2,8 @@
 
 Keep the local editor connected to an Overleaf project through Git. Comments and suggestions have a separate review connection.
 
+The [LaTeX editor](latex.md#find-and-complete) is shared with local projects. File paths, project commands, and known commands from declared packages complete from the local copy. Drop folders into Files to add nested sources and assets. Online mode sends supported files through the usual Git sync. Empty folders stay on this Mac until they contain a file.
+
 ## Connect a project
 
 1. Open Overleaf from Home and choose Add project.
@@ -12,9 +14,11 @@ Create a token in **Overleaf → Account settings → Git integration**. Eligibl
 
 ## Choose a mode
 
-**Online** saves locally and synchronises through Git while the project is open. It is the default for new connections. Independent remote edits merge automatically. Overlapping edits wait for review. If a collaborator uploads during your sync, remile fetches the new history and tries one fresh merge. It never force-pushes. Sync now checks the saved work immediately.
+**Online** saves locally and synchronises through Git while the project is open. It is the default for new connections. Independent remote edits merge automatically. Independent edits within one paragraph can also merge when unique word anchors separate them. When one person continues an unfinished last line and another appends a separate single content line, the continuation comes first and both are kept. Small unambiguous character edits and a longer version of the same appended text can merge automatically. Competing continuations, reordered blocks and other ambiguous or overlapping edits wait for review. Unambiguous source moves retain edits and the selected tab. Further writing or file operations automatically retry recoverable conflicts using the existing request spacing and backoff. Storage and Git history problems still need attention. If a collaborator uploads during your sync, remile fetches the new history and tries one fresh merge. If the confirmation fetch already contains newer work on top of an accepted upload, remile installs that confirmed version in the same attempt and reconciles newer local typing. It does not wait for another polling interval or send a second upload for that acknowledgement. Recovery records advance before installation, and unchanged attachments share their existing memory. It never force-pushes. Sync now is an optional immediate check. Normal writing does not need it.
 
-After returning to the project or syncing changes, remile checks for remote edits every fifteen seconds for two minutes. Quiet projects then slow to one to five minutes between checks. Rapid window changes do not trigger repeated requests, and connection errors keep their retry delay.
+The connection bar shows **Saved** when the current source is saved on this Mac. Local autosave continues during typing, network requests and offline work without waiting for a quiet period. Automatic transmission and remote checks continue separately without repeatedly changing the saved label. The last remote confirmation remains in hover help and CLI diagnostics. Save failures, offline work, retry and review states remain visible.
+
+After returning to the project or syncing changes, remile checks for remote edits every fifteen seconds for two minutes. Quiet projects then slow to one to five minutes between checks. Typing reuses the scheduled wake-up rather than creating a task for each keystroke. Rapid window changes do not trigger repeated requests, and connection errors keep their retry delay.
 
 **On-device** stops automatic synchronisation. Editing, local compilation and source navigation remain available. Choose Online when you want to reconnect.
 
@@ -28,7 +32,7 @@ Identical attachments are read once per recovery attempt and share memory. This 
 
 ## Read review notes
 
-Choose Review beside Files for comments and tracked suggestions. Review connects separately and can request sign-in without interrupting Git editing. It uses private web requests, not a collaboration socket. Refresh updates the snapshot. Exports and source-location navigation remain available.
+Choose **Review** beside Files, then **Enable review** to fetch comments and tracked suggestions. Review uses a separate web session and may ask you to sign in. Refresh updates the snapshot. The choice applies to CLI review requests too. Use the Review export menu to disable access.
 
 Cards show the author when supplied, the date and the file path. Select the path to visit its source location. Editor line numbers are controlled in **Settings → LaTeX → Line numbers**. Opened project files use the bottom tab bar, with the same behaviour as local LaTeX projects.
 
@@ -47,11 +51,9 @@ Right-click a saved project and choose Copy project ID. The [CLI](../cli.md#over
 | Button | What it does |
 | --- | --- |
 | Online / On-device | Choose whether this project synchronises. |
-| Sync now | Check and reconcile saved source through Git. |
+| Sync now | Check and reconcile saved source through Git. Approve Keychain access if macOS asks. |
 | Review changes | Compare overlapping source changes. |
 | Connection options | Open projects, edit the Git token or reveal recovery copies. |
 | Review | Read comments and suggestions through the separate review connection. |
 
 [Sync details](../overleaf-realtime.md) · [Workspace overview](../workspace-layout.md)
-
-From 0.2.4, open Review and choose **Enable review** before fetching comments or suggestions. This optional unofficial web connection is separate from Git. Use the Review export menu to disable it again. The choice also applies to CLI review requests. Disabling it keeps Git sync and imported local files available.

@@ -20,31 +20,36 @@ import SwiftUI
     private weak var library: OverleafLibrary?
     private var connection: OverleafConnection?
     private var ticker: Task<Void, Never>?
+    private var scheduledWake: Date?
     private var visible = true
     private var generation = UUID()
     private var lastEdit = Date.distantPast
     private var firstEdit: Date?
+    private var localSaveDue: Date?
     private var nextCheck = Date.distantPast
     private var failures = 0
+    private var retryConflictAfterRevision: (edit: Int, files: Int)?
     private var unchangedChecks = 0
     private var collaborationUntil = Date.distantPast
     private var lastAttempt = Date.distantPast
     private var gitChecks = 0
+    private var schedulerStarts = 0
     private var confirmedRevision = -1
     private var confirmedFileRevision = -1
     var pendingDocumentCount: Int { project.map { $0.editRevision != confirmedRevision || $0.fileRevision != confirmedFileRevision || $0.dirty ? 1 : 0 } ?? 0 }
     var automationStatus: [String: Any] {
         let pending = pendingDocumentCount
         return ["transport": "git", "mode": enabled ? "online" : "on-device", "enabled": enabled, "connected": connected, "connecting": connecting,
-         "reconnecting": reconnecting, "pendingDocuments": pending,
+         "reconnecting": reconnecting, "pendingDocuments": pending, "localSaved": project?.dirty == false,
          "syncingFiles": syncingFiles, "confirmed": connected && !syncingFiles && pending == 0 && issue == nil,
          "lastConfirmedAt": lastConfirmedAt.map { $0.timeIntervalSince1970 } as Any? ?? NSNull(),
          "reviewRequired": requiresGitReview, "issue": issue as Any? ?? NSNull(),
-         "gitChecks": gitChecks, "nextCheckAt": nextCheck.timeIntervalSince1970]
+         "schedulerStarts": schedulerStarts, "gitChecks": gitChecks, "nextCheckAt": nextCheck.timeIntervalSince1970]
     }
     func connectVisible(project: TeXProject, library: OverleafLibrary, connection: OverleafConnection) {
         self.project = project; self.library = library; self.connection = connection
         visible = true; enabled = true
+        if project.dirty { localSaveDue = Date().addingTimeInterval(1) }
         foregrounded()
     }
     func start(project: TeXProject, library: OverleafLibrary, connection: OverleafConnection) async {
@@ -53,14 +58,26 @@ import SwiftUI
     }
     func edited() {
         guard pendingDocumentCount > 0 else { return }
+        if requiresGitReview, let revision = retryConflictAfterRevision, let project,
+           project.editRevision != revision.edit || project.fileRevision != revision.files {
+            requiresGitReview = false; issue = nil; retryConflictAfterRevision = nil
+            // New writing can remove a transient overlap. Keep the existing
+            // request floor and backoff instead of requiring a comparison click.
+        }
         lastEdit = Date(); if firstEdit == nil { firstEdit = lastEdit }
+        if project?.dirty == true, localSaveDue == nil { localSaveDue = lastEdit.addingTimeInterval(1) }
         objectWillChange.send()
-        if !connecting { wake() }
+        if !connecting {
+            // Keep the existing sleeper unless this edit needs an earlier attempt.
+            // Later keystrokes are coalesced at the one-second scheduler resolution.
+            let deadline = Date().addingTimeInterval(nextDelay())
+            if scheduledWake.map({ $0.timeIntervalSince(deadline) >= 1 }) ?? true { wake() }
+        }
     }
     func setVisible(_ value: Bool) {
         visible = value
         if value { foregrounded() }
-        else { ticker?.cancel(); ticker = nil }
+        else { ticker?.cancel(); ticker = nil; scheduledWake = nil }
     }
     func foregrounded() {
         guard visible, enabled else { return }
@@ -80,15 +97,18 @@ import SwiftUI
     }
     private func startTicker() {
         guard visible, enabled, ticker == nil else { return }
+        schedulerStarts += 1
         ticker = Task { [weak self] in
             while !Task.isCancelled {
+                self?.scheduledWake = nil
                 await self?.flush()
-                guard let delay = self?.nextDelay() else { return }
+                guard !Task.isCancelled, let delay = self?.nextDelay() else { return }
+                self?.scheduledWake = Date().addingTimeInterval(delay)
                 do { try await Task.sleep(for: .seconds(delay)) } catch { return }
             }
         }
     }
-    private func wake() { ticker?.cancel(); ticker = nil; startTicker() }
+    private func wake() { ticker?.cancel(); ticker = nil; scheduledWake = nil; startTicker() }
     static func idleDelay(unchangedChecks: Int) -> TimeInterval {
         min(300, 60 * pow(2, Double(max(0, min(unchangedChecks - 1, 3)))))
     }
@@ -96,6 +116,11 @@ import SwiftUI
         max(min(last.addingTimeInterval(5), first.addingTimeInterval(20)), attempt.addingTimeInterval(15))
     }
     private func nextDelay() -> TimeInterval {
+        let remote = nextNetworkDelay()
+        guard project?.dirty == true, let localSaveDue else { return remote }
+        return max(1, localSaveDue.timeIntervalSinceNow)
+    }
+    private func nextNetworkDelay() -> TimeInterval {
         guard !requiresGitReview, library?.offlineMode == false, !NetworkAccess.offline, library?.hasNetwork == true else { return 300 }
         if library?.busy == true || library?.review != nil { return 15 }
         let deadline: Date
@@ -105,18 +130,26 @@ import SwiftUI
         } else { deadline = nextCheck }
         return max(1, deadline.timeIntervalSinceNow)
     }
-    func retry() async {
+    func retry(allowKeychainApproval: Bool = false) async {
         while connecting && enabled {
             do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
         }
         guard enabled, !reviewing else { return }
         requiresGitReview = false; issue = nil; nextCheck = .distantPast; failures = 0
-        await flush(force: true)
+        await flush(force: true, allowKeychainApproval: allowKeychainApproval)
         wake()
     }
     func flush() async { await flush(force: false) }
-    private func flush(force: Bool) async {
-        guard enabled, visible, !connecting, !requiresGitReview, (!reviewing || force), let project, let library, let connection else { return }
+    private func flush(force: Bool, allowKeychainApproval: Bool = false) async {
+        guard enabled, visible, !connecting, (!reviewing || force), let project, let library, let connection else { return }
+        // Local saving uses the same sleeper, independently of remote cadence.
+        // Never change disk files while a Git snapshot is being prepared.
+        if project.dirty, let due = localSaveDue {
+            guard force || Date() >= due else { return }
+            guard project.save() else { localSaveDue = Date().addingTimeInterval(30); return }
+            localSaveDue = nil
+        }
+        guard !requiresGitReview else { return }
         guard !library.offlineMode, !NetworkAccess.offline, library.hasNetwork else {
             connected = false; reconnecting = true; pauseReason = "Saved locally · offline"; return
         }
@@ -138,6 +171,10 @@ import SwiftUI
             let lease = try library.writerLease(connection)
             defer { withExtendedLifetime(lease) {} }
             guard project.save() else { throw OverleafGit.Failure("Save the project before syncing.") }
+            if allowKeychainApproval, transport == nil {
+                _ = try await Self.background { try OverleafCredential.read(connection.profileID, interactive: true) }
+                try active(epoch)
+            }
             let root = project.root, folder = library.directory.appendingPathComponent("GitSyncRecovery")
             recoveryDirectory = folder
             let revision = project.editRevision, fileRevision = project.fileRevision
@@ -176,10 +213,17 @@ import SwiftUI
             try await Self.background { try OverleafSyncRecovery.finish(prepared) }
             recoveryDirectory = nil
         } catch is CancellationError { connected = false }
+        catch is OverleafGit.SnapshotChanged {
+            guard generation == epoch else { return }
+            connected = false; reconnecting = true; issue = nil; failures = 0
+            nextCheck = Self.foregroundDeadline(now: Date(), attempt: lastAttempt)
+        }
         catch {
             guard generation == epoch else { return }
             connected = false; issue = error.localizedDescription
             // Merge ambiguity pauses publishing. Transient transport failures keep a bounded retry schedule.
+            let canRetry = (error as? OverleafSource.Failure) == .conflict || (error as? OverleafGitSync.ReviewRequired)?.retryAfterEditing == true
+            retryConflictAfterRevision = canRetry ? (project.editRevision, project.fileRevision) : nil
             requiresGitReview = (error as? OverleafSource.Failure) == .conflict || error is OverleafGitSync.ReviewRequired || issue?.contains("Review changes") == true
             reconnecting = !requiresGitReview
             pauseReason = requiresGitReview ? "Review needed" : "Saved locally · retrying"
@@ -199,7 +243,7 @@ import SwiftUI
             try project.installLiveFiles(plan)
             return (plan.matchesRemote, project.editRevision, project.fileRevision)
         }
-        throw OverleafGit.Failure("Your edits are kept. Sync will retry when editing settles.")
+        throw OverleafGit.SnapshotChanged()
     }
     private func active(_ epoch: UUID) throws {
         try Task.checkCancellation()
@@ -210,11 +254,14 @@ import SwiftUI
         return try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
     }
     func stop() async {
-        enabled = false; generation = UUID(); ticker?.cancel(); ticker = nil
+        enabled = false; generation = UUID(); ticker?.cancel(); ticker = nil; scheduledWake = nil; localSaveDue = nil
         connected = false; reconnecting = false; issue = nil
         // Recovery copies and legacy journals are retained. Stopping never publishes pending work.
     }
-    func suspend() async { ticker?.cancel(); ticker = nil; generation = UUID(); connected = false; reconnecting = enabled }
+    func suspend() async {
+        ticker?.cancel(); ticker = nil; scheduledWake = nil; generation = UUID(); connected = false; reconnecting = enabled
+        if project?.dirty == true { startTicker() }
+    }
     func networkChanged() async {
         if NetworkAccess.offline || library?.offlineMode == true || library?.hasNetwork == false { await suspend() }
         else if enabled { foregrounded() }

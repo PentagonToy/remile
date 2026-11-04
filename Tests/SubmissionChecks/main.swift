@@ -19,8 +19,10 @@ precondition(!rejected.success && rejected.log.contains("Unresolved citations"))
 for path in ["refs.bib", "main.bbl", "stale.aux"] { precondition(!manager.fileExists(atPath: base.appendingPathComponent("unembedded/Source/" + path).path)) }
 let embedded = try TeXSourceTools.inlineBibliography(source, bbl: bbl)
 precondition(embedded.contains("\\begin{thebibliography}") && !embedded.contains("\\bibliography{") && !embedded.contains("\\bibliographystyle{"))
-let passed = try TeXCompileJob().run(root: root, main: "main.tex", buffers: ["main.tex": embedded], configuration: configuration, output: base.appendingPathComponent("embedded"), submissionCheck: true)
-precondition(passed.success && passed.log.contains("Submission check passed"))
+var alternateConfiguration = configuration
+alternateConfiguration.engine = .xe
+let passed = try TeXCompileJob().run(root: root, main: "main.tex", buffers: ["main.tex": embedded], configuration: alternateConfiguration, output: base.appendingPathComponent("embedded"), submissionCheck: true)
+precondition(passed.success && passed.log.contains("Submission check passed") && passed.log.contains("This is pdfTeX"))
 let document = PDFDocument(data: passed.pdf!)!
 precondition(document.pageCount == 1 && document.string?.contains("Reference Test Book") == true && document.string?.contains("[?]") == false)
 let external = source.replacingOccurrences(of: "\\bibliography{refs}", with: "\\input{" + normal.output.deletingPathExtension().appendingPathExtension("bbl").path + "}")
@@ -33,10 +35,13 @@ let missingList = try TeXCompileJob().run(root: root, main: "main.tex", buffers:
 precondition(!missingList.success)
 print("Passed submission checks: normal BibTeX build, unembedded failure, cache/bibliography exclusion, embedding round trip, resolved PDF references and external-bbl rejection")
 
-let comparison = try TeXSubmissionComparison.run(root: root, main: "main.tex", buffers: ["main.tex": source, "refs.bib": bib], configuration: configuration, output: base.appendingPathComponent("comparison"), job: TeXCompileJob())
+alternateConfiguration.engine = .lua
+let comparison = try TeXSubmissionComparison.run(root: root, main: "main.tex", buffers: ["main.tex": source, "refs.bib": bib], configuration: alternateConfiguration, output: base.appendingPathComponent("comparison"), job: TeXCompileJob())
 precondition(comparison.rows.map(\.state) == ["failed", "passed"])
 precondition(comparison.embedded?.contains("\\begin{thebibliography}") == true)
 precondition(comparison.rows.allSatisfy { $0.logPath != nil && !$0.log.isEmpty })
+let preparationLog = try String(contentsOf: base.appendingPathComponent("comparison/Prepare/compiler.log"), encoding: .utf8)
+precondition(preparationLog.contains("This is pdfTeX"))
 let untouched = try String(contentsOf: root.appendingPathComponent("main.tex"), encoding: .utf8)
 precondition(untouched == source)
 let alreadyInline = try TeXSubmissionComparison.run(root: root, main: "main.tex", buffers: ["main.tex": embedded], configuration: configuration, output: base.appendingPathComponent("already-inline"), job: TeXCompileJob())

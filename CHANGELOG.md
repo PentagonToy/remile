@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Editing and submission
+
+- In LaTeX and Overleaf, suggest project commands and supported package commands after one letter. Reuse existing braces, show maths symbol previews and suggest paths as soon as a file argument opens.
+- Drop folders into the LaTeX or Overleaf file tree to add nested sources and assets. Markdown maths suggests supported commands after one letter.
+- Inline writing suggestions finish the word being typed or offer one new word. They preserve typed letters and handle sentence spacing and capitalisation.
+- Run Submission Check with pdfLaTeX in the app and CLI, including both sides of the bibliography comparison.
+
+### PDF and Reference
+
+- Show Finder-opened documents when remile starts, without waiting for a Dock click.
+- Collapse local libraries, reMarkable, Zotero and Trash together. Use All references to search across libraries.
+- Recover PDF titles from embedded metadata or the first page when the PDF title contains a publisher production code. Review corrections for existing entries with **Read metadata…**.
+
+### Overleaf sync
+
+- Save edits on this Mac during continuous typing, offline work and network requests. **Saved** indicates a local save. Hover for the last remote confirmation.
+- Merge independent text changes and unambiguous file moves. Keep the selected source tab and retry recoverable conflicts after further edits. Overlapping changes still go to review.
+- Apply newer remote edits found while confirming a push in the same sync attempt. Preserve subsequent local typing and pending recovery.
+- Reuse saved Git tokens. Choose **Sync now** if macOS needs Keychain approval after a rebuild or update.
+
 ## 0.2.4 — 31 October 2026
 
 - Reliably register document windows when they attach, bring Finder-opened PDFs and Markdown to the front on launch, and keep Home hidden while the initial document loads.

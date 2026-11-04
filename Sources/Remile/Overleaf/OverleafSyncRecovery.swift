@@ -34,6 +34,36 @@ enum OverleafSyncRecovery {
         let url = receipt(review.connection, recovery: review.stage.deletingLastPathComponent())
         try JSONEncoder().encode(value).write(to: url, options: .atomic)
     }
+    /// Consume the already fetched descendant without another remote request or
+    /// another preparation. The receipt advances before the editor can install it.
+    static func incorporatingConfirmedRemote(_ prepared: OverleafGitSync.Prepared, head: String) throws -> OverleafGitSync.Prepared {
+        if head == prepared.head { return prepared }
+        let review = prepared.review
+        guard validObject(head), try OverleafGit.head(review.root) == prepared.originalHead,
+              try OverleafGit.run(["merge-base", "--is-ancestor", prepared.head, head], at: review.stage, allowFailure: true).status == 0 else {
+            throw invalid()
+        }
+        // Seed blob identity from the previous immutable tree. Unchanged large
+        // attachments keep their existing Data storage during this transition.
+        var objects: [String: Data] = [:]
+        let listing = try OverleafGit.run(["ls-tree", "-rlz", "--full-tree", prepared.head], at: review.stage).text
+        for row in listing.split(separator: "\0") {
+            try Task.checkCancellation()
+            let parts = row.split(separator: "\t", maxSplits: 1)
+            guard parts.count == 2 else { throw invalid() }
+            let fields = parts[0].split(separator: " ")
+            guard fields.count == 4, validObject(String(fields[2])), let size = Int(fields[3]) else { throw invalid() }
+            if let bytes = prepared.files[String(parts[1])], bytes.count == size { objects[String(fields[2])] = bytes }
+        }
+        let result = try files(head, at: review.stage, objects: &objects)
+        let localHead = try OverleafGit.run(["rev-parse", "--verify", pendingReference], at: review.root).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard validObject(localHead) else { throw invalid() }
+        let latest = OverleafGitSync.Prepared(review: review, files: result, head: head, originalHead: prepared.originalHead, recovery: prepared.recovery, resumed: prepared.resumed)
+        _ = try OverleafGit.run(["update-ref", "refs/remile/prepared", head], at: review.stage)
+        try Data((head + "\n").utf8).write(to: review.stage.appendingPathComponent(".git/remile-pending"), options: .atomic)
+        try save(latest, localHead: localHead)
+        return latest
+    }
     static func resume(_ connection: OverleafConnection, root: URL, recovery: URL, transport: String?) throws -> OverleafGitSync.Prepared? {
         let url = receipt(connection, recovery: recovery)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }

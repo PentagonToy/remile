@@ -1,12 +1,16 @@
 import AppKit
+import ImageIO
 import PDFKit
 
 /// Local PDF evidence only. Missing bibliographic facts are left for review.
 enum ReferencePDFMetadata {
+    // ACS production titles can contain the article code followed by its PDF page range.
+    private static let productionTitle = try! NSRegularExpression(pattern: #"^[a-z]{2}[0-9][a-z][0-9]{5}(?: [0-9]+ *\.\. *[0-9]+)?$"#, options: .caseInsensitive)
+
     static func fields(_ pdf: PDFDocument, fallback: String) -> [String: String] {
         var fields: [String: String] = [:]
         let attributes = pdf.documentAttributes ?? [:]
-        if let title = attributes[PDFDocumentAttribute.titleAttribute] as? String, useful(title) { fields["title"] = compact(title) }
+        if let title = attributes[PDFDocumentAttribute.titleAttribute] as? String, !placeholderTitle(title) { fields["title"] = compact(title) }
         if let author = attributes[PDFDocumentAttribute.authorAttribute] as? String, useful(author) { fields["author"] = compact(author) }
         if let page = pdf.page(at: 0) {
             let text = String((page.string ?? "").prefix(40_000))
@@ -21,7 +25,10 @@ enum ReferencePDFMetadata {
             })
             if values.count == 1 { fields["doi"] = values.first }
             if let id = arxivID(in: text) { fields["eprint"] = id; fields["archiveprefix"] = "arXiv"; fields["url"] = "https://arxiv.org/abs/" + id; fields["entrysubtype"] = "preprint" }
-            if fields["title"] == nil, let title = prominentTitle(page, journal: journal) { fields["title"] = title }
+            if fields["title"] == nil {
+                let embedded = xmpTitle(pdf).flatMap { placeholderTitle($0, journal: journal) ? nil : $0 }
+                fields["title"] = embedded ?? prominentTitle(page, journal: journal)
+            }
         }
         var cover = ""
         for index in 0..<min(3, pdf.pageCount) {
@@ -40,10 +47,36 @@ enum ReferencePDFMetadata {
     }
     static func placeholderTitle(_ text: String, journal: String? = nil) -> Bool {
         if !useful(text) { return true }
+        let compactTitle = compact(text)
+        if productionTitle.firstMatch(in: compactTitle, range: NSRange(compactTitle.startIndex..., in: compactTitle)) != nil { return true }
         guard let journal else { return false }
-        let title = compact(text).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+        let title = compactTitle.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
         let publication = compact(journal).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
         return !publication.isEmpty && title == publication
+    }
+    private static func xmpTitle(_ pdf: PDFDocument) -> String? {
+        var stream: CGPDFStreamRef?
+        var format = CGPDFDataFormat.raw
+        guard let catalog = pdf.documentRef?.catalog, CGPDFDictionaryGetStream(catalog, "Metadata", &stream), let stream,
+              let data = CGPDFStreamCopyData(stream, &format), CFDataGetLength(data) <= 256_000,
+              let metadata = CGImageMetadataCreateFromXMPData(data),
+              let tags = CGImageMetadataCopyTags(metadata) as? [CGImageMetadataTag],
+              let title = tags.first(where: {
+                  CGImageMetadataTagCopyNamespace($0) as String? == "http://purl.org/dc/elements/1.1/" &&
+                      CGImageMetadataTagCopyName($0) as String? == "title"
+              }) else { return nil }
+        let value = CGImageMetadataTagCopyValue(title)
+        if let text = value as? String { return compact(text) }
+        guard let variants = value as? [CGImageMetadataTag] else { return nil }
+        let preferred = variants.first { variant in
+            let qualifiers = CGImageMetadataTagCopyQualifiers(variant) as? [CGImageMetadataTag] ?? []
+            return qualifiers.contains {
+                CGImageMetadataTagCopyNamespace($0) as String? == "http://www.w3.org/XML/1998/namespace" &&
+                    CGImageMetadataTagCopyName($0) as String? == "lang" &&
+                    CGImageMetadataTagCopyValue($0) as? String == "x-default"
+            }
+        } ?? variants.first
+        return (preferred.flatMap(CGImageMetadataTagCopyValue) as? String).map(compact)
     }
     static func degree(in text: String) -> ReferenceKind? {
         var cover = String(text.prefix(18_000))

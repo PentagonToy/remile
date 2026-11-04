@@ -20,17 +20,15 @@ Opening a shared PDF gives that reference an independent editing path. APFS keep
 
 ## Find and organise
 
-All references searches across Libraries, reMarkable and imported Zotero sources, excluding Trash. Select an individual library to narrow the results. New items added from All references go to My library. Search by the details you remember. Click a column heading to sort, then click again to reverse the order. Drag a heading's edge to adjust its width.
+Libraries contains local libraries, reMarkable and imported Zotero sources, with Trash at the bottom. Collapse Libraries to hide the whole list. All references searches across these sources, excluding Trash. Select an individual library to narrow the results. New items added from All references go to My library. Search by the details you remember. Click a column heading to sort, then click again to reverse the order. Drag a heading's edge to adjust its width.
 
 PDFs are saved locally first. While online, remile uses a detected DOI or arXiv ID to fill missing details without AI. The airplane button pauses these lookups.
 
-Double-click a metadata value or citation key to edit it. Click **Type** to choose a reference type. **Read metadata** reviews details extracted from the PDF. **Look up metadata** fills missing fields and available abstracts online by DOI, arXiv ID or an exact title match. Existing values stay unchanged, and no PDF is uploaded. Available abstracts appear below the dates in a collapsed Abstract section. [Metadata lookup details →](details/reference.md#metadata-lookup)
+Double-click a metadata value or citation key to edit it. Click **Type** to choose a reference type. Right-click and choose **Read metadata…** to review details from the attached PDF, then **Apply selected** to save checked corrections. **Look up metadata** fills missing details and available abstracts online. Available abstracts appear below the dates in a collapsed section. [Metadata lookup details →](details/reference.md#metadata-lookup)
 
 Web pages use a globe, newspaper articles use a newspaper, conference papers use a podium, and reports use a document icon. Imported website, news and report types are recognised alongside standard BibTeX types such as `online` and `techreport`. A URL alone does not change a paper's type.
 
 The interface uses **Thesis** for `mastersthesis` and **Dissertation** for `phdthesis`. BibTeX keeps its original type names. University uses `school`. Explicit degree statements on the first three PDF pages can identify a degree locally. Imported Zotero thesis types retain their degree when supplied.
-
-A verified DOI can also replace a journal masthead mistakenly stored as the paper title. Other edited titles and locked citation keys are preserved.
 
 In **Edit reference**, the **BibTeX** tab shows the current entry. Changes carry between **Details** and **BibTeX**.
 

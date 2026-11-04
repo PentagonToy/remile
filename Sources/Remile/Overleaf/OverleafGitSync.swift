@@ -4,7 +4,8 @@ import Foundation
 enum OverleafGitSync {
     struct ReviewRequired: LocalizedError {
         let errorDescription: String?
-        init(_ message: String) { errorDescription = message }
+        let retryAfterEditing: Bool
+        init(_ message: String, retryAfterEditing: Bool = false) { errorDescription = message; self.retryAfterEditing = retryAfterEditing }
     }
     struct RemoteAdvanced: LocalizedError {
         let errorDescription: String? = "Overleaf changed during sync. Your work is kept and sync will retry."
@@ -23,7 +24,10 @@ enum OverleafGitSync {
             try Task.checkCancellation()
             let prepared = try prepare(connection, root: root, recovery: recovery, transport: transport)
             if prepared.review.changes.isEmpty && !prepared.resumed { return (prepared, true) }
-            do { return (prepared, try publish(prepared)) }
+            do {
+                let confirmed = try confirmPublication(prepared)
+                return (try OverleafSyncRecovery.incorporatingConfirmedRemote(prepared, head: confirmed), true)
+            }
             catch is RemoteAdvanced {
                 guard attempt == 0 else { throw RemoteAdvanced() }
                 guard try OverleafGit.head(root) == prepared.originalHead else {
@@ -45,8 +49,8 @@ enum OverleafGitSync {
         let review = try OverleafGit.prepare(connection, root: root, reviewRoot: recovery, transport: transport, includeContents: false, stageDirectory: stage)
         if review.changes.isEmpty {
             if FileManager.default.fileExists(atPath: review.stage.path) {
-                guard try OverleafGit.fingerprint(root) == review.fingerprint,
-                      try OverleafGit.head(root) == originalHead else { throw ReviewRequired("Local files changed. Review changes before syncing.") }
+                guard try OverleafGit.head(root) == originalHead else { throw ReviewRequired("Local Git history changed. Review changes before syncing.") }
+                guard try OverleafGit.fingerprint(root) == review.fingerprint else { throw OverleafGit.SnapshotChanged() }
                 // History-only remote commits need no source install or outgoing push.
                 _ = try OverleafGit.run(["reset", "--mixed", review.remoteHead], at: root)
                 try FileManager.default.removeItem(at: review.stage)
@@ -60,7 +64,7 @@ enum OverleafGitSync {
             let remote = try source(":3:" + change.path, at: review.stage)
             guard let base, let local, let remote,
                   let merged = try? OverleafSourceText.merge(base: base, local: local, remote: remote) else {
-                throw ReviewRequired("Both sides changed “\(change.path)”. Review changes before syncing.")
+                throw ReviewRequired("Both sides changed “\(change.path)”. Review changes before syncing.", retryAfterEditing: true)
             }
             try merged.write(to: TeXFileSystem.url(change.path, root: review.stage), atomically: true, encoding: .utf8)
             _ = try OverleafGit.run(["add", "--", change.path], at: review.stage)
@@ -82,6 +86,9 @@ enum OverleafGitSync {
         return prepared
     }
     @discardableResult static func publish(_ prepared: Prepared) throws -> Bool {
+        try confirmPublication(prepared) == prepared.head
+    }
+    private static func confirmPublication(_ prepared: Prepared) throws -> String {
         try Task.checkCancellation()
         let review = prepared.review
         guard try OverleafGit.head(review.root) == prepared.originalHead else {
@@ -122,22 +129,56 @@ enum OverleafGitSync {
         guard try OverleafGit.run(["merge-base", "--is-ancestor", prepared.head, remote], at: review.stage, allowFailure: true).status == 0 else {
             throw OverleafGit.Failure("The upload could not be confirmed. Your local work is safe. Retry sync.")
         }
-        _ = try OverleafGit.run(["-c", "protocol.file.allow=always", "fetch", review.stage.path, prepared.head], at: review.root)
-        return remote == prepared.head
+        _ = try OverleafGit.run(["-c", "protocol.file.allow=always", "fetch", review.stage.path, remote], at: review.root)
+        return remote
     }
     /// Rebase typing that happened during transport onto the prepared result.
     static func reconcile(base: [String: Data], current: [String: Data], result: [String: Data]) throws -> [String: Data] {
+        var base = base, current = current, result = result
+        let localRenames = exactSourceRenames(base: base, changed: current)
+        let remoteRenames = exactSourceRenames(base: base, changed: result)
+        for path in Set(localRenames.keys).union(remoteRenames.keys) {
+            guard let target = localRenames[path] ?? remoteRenames[path],
+                  localRenames[path] == nil || remoteRenames[path] == nil || localRenames[path] == remoteRenames[path] else {
+                throw ReviewRequired("A file was moved to different places. Your edits and the recovery copy are kept.", retryAfterEditing: true)
+            }
+            // Only an unchanged, unique source move supplies identity. Never
+            // guess between copies, competing destinations or a deletion.
+            for snapshot in [current, result] {
+                guard (snapshot[path] != nil) != (snapshot[target] != nil) else {
+                    throw ReviewRequired("“\(path)” was moved while its other version changed. Your work is kept.", retryAfterEditing: true)
+                }
+            }
+            base[target] = base.removeValue(forKey: path)
+            if let bytes = current.removeValue(forKey: path) { current[target] = bytes }
+            if let bytes = result.removeValue(forKey: path) { result[target] = bytes }
+        }
         var merged = current
         for path in Set(base.keys).union(result.keys) where base[path] != result[path] {
             if current[path] == base[path] || current[path] == result[path] { merged[path] = result[path]; continue }
             guard let b = base[path].flatMap({ String(data: $0, encoding: .utf8) }),
                   let l = current[path].flatMap({ String(data: $0, encoding: .utf8) }),
                   let r = result[path].flatMap({ String(data: $0, encoding: .utf8) }) else {
-                throw ReviewRequired("“\(path)” changed during sync. Your edits and the recovery copy are kept.")
+                throw ReviewRequired("“\(path)” changed during sync. Your edits and the recovery copy are kept.", retryAfterEditing: true)
             }
             merged[path] = Data(try OverleafSourceText.merge(base: b, local: l, remote: r).utf8)
         }
         return merged
+    }
+    static func exactSourceRenames(base: [String: Data], changed: [String: Data]) -> [String: String] {
+        var removed: [Data: [String]] = [:], added: [Data: [String]] = [:]
+        for (path, bytes) in base where changed[path] == nil && OverleafSourceFiles.source(path) && bytes.count <= OverleafSource.textLimit && !bytes.isEmpty {
+            removed[bytes, default: []].append(path)
+        }
+        guard !removed.isEmpty else { return [:] }
+        for (path, bytes) in changed where base[path] == nil && OverleafSourceFiles.source(path) && bytes.count <= OverleafSource.textLimit && removed[bytes] != nil {
+            added[bytes, default: []].append(path)
+        }
+        var renames: [String: String] = [:]
+        for (bytes, paths) in removed where paths.count == 1 {
+            if let targets = added[bytes], targets.count == 1 { renames[paths[0]] = targets[0] }
+        }
+        return renames
     }
     private static func source(_ ref: String, at root: URL) throws -> String? {
         let result = try OverleafGit.run(["show", ref], at: root, allowFailure: true)

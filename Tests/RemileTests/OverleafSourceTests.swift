@@ -27,6 +27,53 @@ final class OverleafSourceTests: XCTestCase {
         XCTAssertEqual(edits.count, 3)
         XCTAssertEqual(try OverleafSourceText.replacing(local, edits: [edits[1]]), expected)
     }
+    func testDisjointEditsWithinOneParagraphMergeWithoutLosingUnicode() throws {
+        let base = "The 🧭 alpha model uses stable chemistry and gamma transport.\n"
+        let local = base.replacingOccurrences(of: "alpha", with: "ALPHA").replacingOccurrences(of: "gamma", with: "GAMMA")
+        let remote = base.replacingOccurrences(of: "chemistry", with: "CHEMISTRY")
+        let expected = local.replacingOccurrences(of: "chemistry", with: "CHEMISTRY")
+        XCTAssertEqual(try OverleafSourceText.merge(base: base, local: local, remote: remote), expected)
+        XCTAssertEqual(try OverleafSourceText.merge(base: base, local: remote, remote: local), expected)
+        XCTAssertEqual(try OverleafSourceText.replacing(base, edits: OverleafSourceText.edits(from: base, to: local)), local)
+        XCTAssertThrowsError(try OverleafSourceText.merge(base: base, local: local, remote: base.replacingOccurrences(of: "alpha", with: "another")))
+        let large = String(repeating: "repeat ", count: 10_000)
+        let changed = "start " + large + "end"
+        let fallback = try OverleafSourceText.edits(from: large, to: changed)
+        XCTAssertEqual(fallback.count, 1)
+        XCTAssertEqual(try OverleafSourceText.replacing(large, edits: fallback), changed)
+    }
+    func testReplayOfAlreadyReceivedWordsKeepsNewLocalTypingOnce() throws {
+        let base = "Local writing\nAnchor\n"
+        let local = "Local writing revised\nAnchor remote\n"
+        let remote = "Local writing\nAnchor remote\n"
+        XCTAssertEqual(try OverleafSourceText.merge(base: base, local: local, remote: remote), local)
+        XCTAssertEqual(try OverleafSourceText.merge(base: base, local: remote, remote: local), local)
+        let longBase = String(repeating: "x", count: 40_000) + "END"
+        let broadLocal = "prefix " + longBase + " remote"
+        XCTAssertThrowsError(try OverleafSourceText.merge(base: longBase, local: broadLocal, remote: longBase + " remote"), "A budget fallback must pause rather than duplicate a received suffix")
+    }
+    func testUnambiguousSmallEditsAndIncrementalTailTypingMerge() throws {
+        XCTAssertEqual(try OverleafSourceText.merge(base: "abcdef", local: "AbcdeF", remote: "abCdef"), "AbCdeF")
+        XCTAssertEqual(try OverleafSourceText.merge(base: "abcdef", local: "abCdef", remote: "AbcdeF"), "AbCdeF")
+        XCTAssertEqual(try OverleafSourceText.merge(base: "🧭abcdef", local: "🧭AbcdeF", remote: "🧭abCdef"), "🧭AbCdeF")
+        let base = "I am typ"
+        XCTAssertEqual(try OverleafSourceText.merge(base: base, local: base + "ing", remote: base + "ing a sentence."), base + "ing a sentence.")
+        XCTAssertEqual(try OverleafSourceText.merge(base: base, local: base + "ing a sentence.", remote: base + "ing"), base + "ing a sentence.")
+        XCTAssertThrowsError(try OverleafSourceText.merge(base: "abcdef", local: "abXdef", remote: "abYdef"))
+    }
+    func testLastLineContinuationAndSeparateAppendPreserveBothSides() throws {
+        let base = "A 🧭 document\nI am typin"
+        for newline in ["\n", "\r\n"] {
+            let continuation = "g another sentence." + newline + newline
+            let block = newline + "% separate note" + newline
+            let expected = base + continuation + block
+            XCTAssertEqual(try OverleafSourceText.merge(base: base, local: base + block, remote: base + continuation), expected)
+            XCTAssertEqual(try OverleafSourceText.merge(base: base, local: base + continuation, remote: base + block), expected)
+        }
+        XCTAssertThrowsError(try OverleafSourceText.merge(base: base, local: base + "g left", remote: base + "g right"))
+        XCTAssertThrowsError(try OverleafSourceText.merge(base: base, local: base + "\nfirst block", remote: base + "\nsecond block"))
+        XCTAssertThrowsError(try OverleafSourceText.merge(base: base, local: base + "\nnew block", remote: base + "g first\nsecond paragraph"))
+    }
     func testComplexDiffFallsBackWithinItsBudget() throws {
         let before = (0..<2_001).map { "line \($0)\n" }.joined()
         let after = (0..<2_001).map { "changed \($0)\n" }.joined()

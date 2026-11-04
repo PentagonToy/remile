@@ -191,6 +191,7 @@ import UniformTypeIdentifiers
         let expected: [String: Data]
         let result: [String: Data]
         let paths: Set<String>
+        let moved: [String: String]
         let matchesRemote: Bool
     }
     /// Build a validated immutable plan off-main. The editor must still match its captured revisions at install.
@@ -201,11 +202,13 @@ import UniformTypeIdentifiers
         let merged = try OverleafGitSync.reconcile(base: base, current: current, result: result)
         let touched = Set(current.keys).union(merged.keys).filter { current[$0] != merged[$0] }
         return .init(root: root, editRevision: editRevision, fileRevision: fileRevision,
-                     expected: current, result: merged, paths: Set(touched), matchesRemote: merged == result)
+                     expected: current, result: merged, paths: Set(touched),
+                     moved: OverleafGitSync.exactSourceRenames(base: current, changed: merged), matchesRemote: merged == result)
     }
     /// Apply only a current plan. Unbuffered files retain an exact final check against external edits.
     func installLiveFiles(_ plan: LiveFileInstall) throws {
         let expected = plan.expected, result = plan.result, paths = plan.paths
+        let moved = plan.moved
         let textOnly = paths.allSatisfy { buffers[$0] != nil && result[$0] != nil && OverleafSourceFiles.source($0) }
         guard root.standardizedFileURL.path == plan.root.standardizedFileURL.path, editRevision == plan.editRevision, fileRevision == plan.fileRevision,
               !compiling || textOnly else { throw OverleafSourceFiles.Failure.stale }
@@ -255,6 +258,12 @@ import UniformTypeIdentifiers
             if let bytes = result[path], let text = String(data: bytes, encoding: .utf8), bytes.count <= OverleafSource.textLimit { buffers[path] = text; original[path] = text }
         }
         files = buffers.keys.sorted()
+        openFiles = openFiles.map { moved[$0] ?? $0 }
+        backFiles = backFiles.map { moved[$0] ?? $0 }; forwardFiles = forwardFiles.map { moved[$0] ?? $0 }
+        if let destination = moved[main] { main = destination }
+        if let destination = moved[selected] {
+            navigating = true; selected = destination; navigating = false
+        }
         if buffers[main] == nil, let replacement = TeXMainDocument.choose(sources: buffers, saved: nil) { main = replacement }
         if !treeFiles.contains(selected) { selected = main }
         openFiles.removeAll { !treeFiles.contains($0) }
@@ -309,7 +318,7 @@ import UniformTypeIdentifiers
         } catch { message = "Save failed: " + error.localizedDescription; return false }
     }
     func confirmLeaving() -> Bool {
-        for file in pendingHistory { captureHistory(file: file) }; historyTask?.cancel()
+        for file in pendingHistory { captureHistory(file: file) }; historyTask?.cancel(); historyTask = nil
         guard dirty else { syncTask?.cancel(); stop(); discardDraft(); return true }
         let alert = NSAlert(); alert.messageText = "Save LaTeX project changes?"; alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Don’t Save")
         let response = alert.runModal()
@@ -380,7 +389,7 @@ import UniformTypeIdentifiers
     func releaseWorkspaceResources() {
         sourceEditor.suspend()
         compileID = UUID(); task?.cancel(); job?.stop(); submission.stop()
-        outlineTask?.cancel(); historyTask?.cancel(); syncTask?.cancel()
+        outlineTask?.cancel(); historyTask?.cancel(); historyTask = nil; syncTask?.cancel()
         citations.release(); pdf = nil; build = nil; diagnosticSource = nil
         TeXCache.discard(cachedBuild); cachedBuild = nil
         editSource = nil; compiling = false; syncing = false
@@ -408,10 +417,13 @@ import UniformTypeIdentifiers
     }
     private func scheduleHistory() {
         if !historyEnabled || isDraft {
-            historyTask?.cancel()
+            // Keep one pending save while typing, including during Git I/O.
+            // A quiet-period debounce could leave a long session only in RAM.
+            guard historyTask == nil else { return }
             historyTask = Task { @MainActor [weak self] in
                 do { try await Task.sleep(for: .milliseconds(1000)); try Task.checkCancellation() } catch { return }
-                guard let self, self.dirty else { return }; _ = self.isDraft ? self.saveWorkingCopy() : self.save()
+                guard let self else { return }; self.historyTask = nil
+                guard self.dirty else { return }; _ = self.isDraft ? self.saveWorkingCopy() : self.save()
             }
             return
         }
@@ -551,18 +563,25 @@ import UniformTypeIdentifiers
         panel.allowsMultipleSelection = true; panel.canChooseDirectories = false
         guard panel.runModal() == .OK else { return }
         let folder = treeFolders.contains(selected) ? selected : (selected as NSString).deletingLastPathComponent
-        drop(panel.urls, into: folder)
+        let urls = panel.urls
+        Task { await drop(urls, into: folder) }
     }
-    func drop(_ urls: [URL], into folder: String) {
+    func drop(_ urls: [URL], into folder: String) async {
         guard !compiling, !urls.isEmpty else { return }
-        guard urls.count <= 20 else { message = "Add up to 20 files at a time."; return }
+        guard urls.count <= 20 else { message = "Add up to 20 items at a time."; return }
+        let destinationRoot = root
         for url in urls {
+            guard !compiling, root == destinationRoot, !Task.isCancelled else { return }
             let prefix = root.standardizedFileURL.path + "/", local = url.standardizedFileURL.path
             if local.hasPrefix(prefix) {
                 let path = String(local.dropFirst(prefix.count)), target = folder.isEmpty ? url.lastPathComponent : folder + "/" + url.lastPathComponent
                 if path != target { move(path, to: target) }
             } else {
                 do {
+                    if try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true {
+                        try await importFolder(url, into: folder, root: destinationRoot)
+                        continue
+                    }
                     let path = try TeXFileSystem.importFile(url, root: root, folder: folder)
                     treeFiles = try TeXFileSystem.paths(root)
                     if ["tex", "bib", "sty", "cls"].contains(url.pathExtension.lowercased()), let source = try? String(contentsOf: root.appendingPathComponent(path), encoding: .utf8), source.utf8.count <= 4_000_000 {
@@ -572,6 +591,30 @@ import UniformTypeIdentifiers
                 } catch { message = error.localizedDescription }
             }
         }
+    }
+    private func importFolder(_ source: URL, into folder: String, root destinationRoot: URL) async throws {
+        let path = folder.isEmpty ? source.lastPathComponent : folder + "/" + source.lastPathComponent
+        guard OverleafSourceFiles.validPath(path) else { throw TeXFileSystem.Failure(errorDescription: "Choose a folder with a supported name.") }
+        let target = try TeXFileSystem.url(path, root: destinationRoot)
+        guard !FileManager.default.fileExists(atPath: target.path) else { throw CocoaError(.fileWriteFileExists) }
+        let preparation = Task.detached(priority: .userInitiated) { try TeXFileSystem.stageFolder(source, root: destinationRoot) }
+        let staged = try await withTaskCancellationHandler { try await preparation.value } onCancel: { preparation.cancel() }
+        defer { try? FileManager.default.removeItem(at: staged.staging) }
+        try Task.checkCancellation()
+        guard root == destinationRoot, !compiling, target == (try TeXFileSystem.url(path, root: destinationRoot)) else {
+            throw TeXFileSystem.Failure(errorDescription: "The destination changed. Drop the folder again.")
+        }
+        guard treeFiles.count + staged.files.count <= 10000, treeFolders.count + staged.folders.count < 10000,
+              files.count + staged.sources.count <= 2000 else { throw CocoaError(.fileReadTooLarge) }
+        try FileManager.default.moveItem(at: staged.staging, to: target)
+        let prefix = path + "/"
+        treeFiles = (treeFiles + staged.files.map { prefix + $0 }).sorted()
+        treeFolders = (treeFolders + [path] + staged.folders.map { prefix + $0 }).sorted()
+        for (relative, text) in staged.sources {
+            let name = prefix + relative
+            buffers[name] = text; original[name] = text; files.append(name)
+        }
+        files.sort(); build = nil; outputCurrent = false; fileRevision += 1
     }
     @discardableResult func renameProject(to requestedName: String) -> Bool {
         guard !compiling, !renamingProject else { return false }

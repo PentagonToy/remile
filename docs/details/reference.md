@@ -6,14 +6,14 @@ Reference keeps citations and PDFs together. Open it from Home. Libraries and co
 
 Use Add to import PDF or BibTeX files, enter details or find a paper. Drop files into Harbour to import them into the selected library. Drop a PDF on a record or its preview to attach it to that record. Imports copy PDFs into managed storage and retain the originals.
 
-PDF metadata and first-page text provide initial details without AI. The PDF appears before background lookup finishes. Cancelling lookup or a failed request keeps the saved PDF and local record.
+remile reads PDF metadata and first-page text locally. If the title is missing or remile recognises it as a journal masthead or publisher production code, it checks the embedded XMP title and then the first page. The imported PDF appears before background lookup finishes. Cancelling lookup or a failed request keeps the saved PDF and local record.
 
 ### Metadata lookup
 
 | Action | Source | How changes are applied |
 | --- | --- | --- |
-| **Automatic PDF import lookup** | A detected DOI or arXiv ID, while online and authors or year are missing. | Fill empty fields. Keep the saved PDF, citation key and existing values. |
-| **Look up metadata** | A DOI, arXiv ID or one exact title candidate. No PDF is required. | Fill empty fields even when authors and year already exist. Keep existing values. |
+| **Automatic PDF import lookup** | A detected DOI or arXiv ID for an attached PDF that needs metadata. | Fill missing fields and replace recognised placeholder titles after an identifier match. Keep the PDF and citation key. |
+| **Look up metadata** | A DOI, arXiv ID or one exact title candidate. | Fill missing fields even when authors and year already exist. Keep user edits and citation keys. |
 | **Read metadata…** | Metadata and text from the attached PDF. | Review proposed corrections before applying them. |
 
 Manual lookup remains available for a usable identifier or a full title. Work offline, an ongoing catalogue operation, or insufficient identifying information can disable it. A disabled action does not mean the metadata is complete. A successful lookup may find nothing additional to fill.
@@ -74,7 +74,7 @@ Reference metadata uses local parsing and verified bibliographic responses. Look
 
 ## Complete a library
 
-Clean up library has Metadata and Duplicates views. Opening it makes no online lookup. **Look up missing** checks records missing contributors, a year or an abstract, with up to three requests in progress. Provider pacing still applies. Stop cancels pending requests and keeps completed proposals for review. **Apply selected** writes only checked changes with revision checks and Undo.
+Clean up library has Metadata and Duplicates views. Opening it makes no online lookup. **Look up missing** checks records with incomplete metadata or a recognised placeholder title, with up to three requests in progress. Provider pacing still applies. Stop cancels pending requests and keeps completed proposals for review. **Apply selected** writes only checked changes with revision checks and Undo.
 
 Add PDFs through Add PDF or by dropping them onto a reference. Clean up does not manage missing attachments.
 

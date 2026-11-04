@@ -15,8 +15,8 @@ struct OverleafBar: View {
             OverleafSyncModePicker(isLive: live.enabled, canStart: true, switching: false, choose: changeMode)
             Spacer(minLength: RemileControl.spacing)
             status.lineLimit(1).font(RemileType.caption).layoutPriority(-1)
-            if live.connecting { ProgressView().controlSize(.small) }
-            Button { Task { await live.retry() } } label: { SymbolIcon(systemName: "arrow.triangle.2.circlepath") }
+            if live.connecting && live.lastConfirmedAt == nil { ProgressView().controlSize(.small) }
+            Button { Task { await live.retry(allowKeychainApproval: true) } } label: { SymbolIcon(systemName: "arrow.triangle.2.circlepath") }
                 .disabled(!live.enabled || live.connecting || live.reviewing || NetworkAccess.offline || library.offlineMode)
                 .accessibilityLabel("Sync now").remileHelp("Sync saved changes with Overleaf")
             if live.requiresGitReview {
@@ -56,15 +56,20 @@ struct OverleafBar: View {
             .onChange(of: library.offlineMode || NetworkAccess.offline) { Task { await live.networkChanged() } }
     }
     @ViewBuilder private var status: some View {
-        if project.dirty { Text("Unsaved changes").foregroundStyle(RemileStyle.secondaryInk).help("These changes have not been saved on this Mac.") }
-        else if !live.enabled { Text("Saved on this Mac").foregroundStyle(RemileStyle.secondaryInk) }
+        if project.dirty, let message = project.message, message.hasPrefix("Save failed:") {
+            Text("Couldn’t save").foregroundStyle(RemileStyle.warning).help(message)
+        } else if project.dirty {
+            Text(live.enabled ? "Editing" : "Unsaved changes").foregroundStyle(RemileStyle.secondaryInk)
+                .help("These changes have not been saved on this Mac yet.")
+        } else if !live.enabled { Text("Saved on this Mac").foregroundStyle(RemileStyle.secondaryInk) }
         else if !library.hasNetwork || library.offlineMode || NetworkAccess.offline { Text("Saved locally · offline").foregroundStyle(RemileStyle.secondaryInk) }
-        else if live.connecting { Text("Syncing…") }
         else if live.requiresGitReview { Text("Review needed").foregroundStyle(RemileStyle.warning) }
         else if let issue = live.issue { Text(live.pauseReason).foregroundStyle(RemileStyle.warning).help(issue) }
-        else if live.pendingDocumentCount > 0 { Text("Saved locally · waiting to sync").foregroundStyle(RemileStyle.secondaryInk) }
-        else if let date = live.lastConfirmedAt { Text("Synced " + date.formatted(date: .omitted, time: .standard)).foregroundStyle(RemileStyle.success) }
-        else { Text("Checking changes…").foregroundStyle(RemileStyle.secondaryInk) }
+        else {
+            Text("Saved").foregroundStyle(RemileStyle.secondaryInk)
+                .help(live.lastConfirmedAt.map { "Saved on this Mac. Automatic Git sync. Last remote confirmation " + $0.formatted(date: .omitted, time: .standard) + "." }
+                      ?? "Saved on this Mac. Connecting to Overleaf automatically.")
+        }
     }
     private func changeMode(_ online: Bool) {
         OverleafSyncPreference.choose(online, for: connection.id)
