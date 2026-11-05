@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.5 — 5 November 2026
 
 - Use **Fit** to match the page height. The zoom menu offers **Fit height** and **Fit width**.
 - Open PDFs and Markdown from Finder when remile starts, without a second click in the Dock.
