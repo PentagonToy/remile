@@ -47,10 +47,10 @@ struct ReferenceRepository: Sendable {
         try validate(stored.records)
         return stored
     }
-    func snapshot() throws -> (records: [ReferenceRecord], libraries: [ReferenceLibrary]) {
+    func snapshot() throws -> (records: [ReferenceRecord], libraries: [ReferenceLibrary], hasPendingTrashCleanup: Bool) {
         let stored = try readCatalogue()
         history?.observe(stored)
-        return (stored.records, stored.libraries ?? [.primary])
+        return (stored.records, stored.libraries ?? [.primary], stored.garbage?.isEmpty == false)
     }
     func records() throws -> [ReferenceRecord] { try readCatalogue().records }
     func libraries() throws -> [ReferenceLibrary] { try readCatalogue().libraries ?? [.primary] }

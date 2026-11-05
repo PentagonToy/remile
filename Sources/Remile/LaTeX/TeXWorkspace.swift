@@ -166,7 +166,7 @@ struct TeXWorkspace: View {
     private var projectSidebar: some View {
         VStack(spacing: 0) {
             if let overleafConnection {
-                RemileSegmentedControl(title: "Project sidebar", selection: $presentation.review, options: [false, true], label: { $0 ? "Review" : "Files" }).padding(8)
+                RemileSegmentedControl(title: "Project sidebar", selection: $presentation.review, options: [false, true], label: { $0 ? "Review" : "Files" }).padding(RemileControl.spacing)
                 Divider()
                 ZStack {
                     TeXProjectSidebar(project: project).opacity(presentation.review ? 0 : 1).allowsHitTesting(!presentation.review).accessibilityHidden(presentation.review)

@@ -254,10 +254,13 @@ struct WriterWorkspace: View {
                 Spacer()
                 Button { model.setZoom(model.zoom - 0.1) } label: { SymbolIcon(systemName: "minus") }.disabled(model.zoom <= 0.25).accessibilityLabel("Zoom out")
                 Menu {
+                    Button("Fit height") { model.fitPage(.height) }
+                    Button("Fit width") { model.fitWidth() }
+                    Divider()
                     ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { value in Button("\(Int(value * 100))%") { model.setZoom(value) } }
                 } label: { Text("\(Int((model.zoom * 100).rounded()))%").monospacedDigit() }.fixedSize().remileHelp("Zoom")
                 Button { model.setZoom(model.zoom + 0.1) } label: { SymbolIcon(systemName: "plus") }.disabled(model.zoom >= 2).accessibilityLabel("Zoom in")
-                Button("Fit") { model.fitWidth() }.remileHelp("Fit page width")
+                Button("Fit") { model.fitPage(.height) }.remileHelp("Fit height")
             }.buttonStyle(RemileCompactToolStyle()).font(RemileType.small).padding(.horizontal, 10).frame(height: 34).background(RemileStyle.editorBar)
             Divider()
             WriterSurface(model: model).allowsHitTesting(!model.loading)

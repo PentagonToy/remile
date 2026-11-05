@@ -114,10 +114,22 @@ enum RemileMotion {
     static let navigation = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.4)
 }
 
+enum PageFit {
+    case page, width, height
+
+    func scale(width: CGFloat, height: CGFloat) -> CGFloat {
+        switch self {
+        case .page: min(width, height)
+        case .width: width
+        case .height: height
+        }
+    }
+}
+
 struct RemilePressStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.scaleEffect(configuration.isPressed ? 0.975 : 1)
+        configuration.label.contentShape(Rectangle()).scaleEffect(configuration.isPressed ? 0.975 : 1)
             .opacity(configuration.isPressed ? 0.88 : 1)
             .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.75), value: configuration.isPressed)
     }

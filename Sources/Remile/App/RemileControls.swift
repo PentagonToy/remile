@@ -45,15 +45,19 @@ struct RemileSegmentedControl<Selection: Hashable>: View {
     @Binding var selection: Selection
     let options: [Selection]
     let label: (Selection) -> String
+    var hint: ((Selection) -> String)? = nil
     var body: some View {
         HStack(spacing: 0) {
             ForEach(options, id: \.self) { option in
-                Button { selection = option } label: {
+                let segment = Button { selection = option } label: {
                     Text(label(option)).font(RemileType.control).lineLimit(1)
                         .frame(maxWidth: .infinity).frame(height: RemileControl.height)
                         .background(selection == option ? RemileStyle.accent.opacity(inToolbar ? 0.16 : 0.22) : .clear, in: RoundedRectangle(cornerRadius: inToolbar ? 14 : RemileRadius.control))
+                        .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel(label(option))
                     .accessibilityAddTraits(selection == option ? .isSelected : [])
+                if let hint { segment.remileHelp(hint(option)) }
+                else { segment }
             }
         }.padding(inToolbar ? 3 : 0)
             .background(inToolbar ? Color.clear : RemileStyle.surface, in: RoundedRectangle(cornerRadius: inToolbar ? 16 : RemileRadius.control))

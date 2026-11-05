@@ -12,7 +12,13 @@ struct OverleafBar: View {
     }
     var body: some View {
         HStack(spacing: RemileControl.spacing) {
-            OverleafSyncModePicker(isLive: live.enabled, canStart: true, switching: false, choose: changeMode)
+            RemileSegmentedControl(
+                title: "Sync mode",
+                selection: Binding(get: { live.enabled }, set: changeMode),
+                options: [true, false],
+                label: { $0 ? "Online" : "Local" },
+                hint: { $0 ? "Sync with Overleaf" : "Keep edits on this Mac" }
+            ).frame(width: 168)
             Spacer(minLength: RemileControl.spacing)
             status.lineLimit(1).font(RemileType.caption).layoutPriority(-1)
             if live.connecting && live.lastConfirmedAt == nil { ProgressView().controlSize(.small) }
@@ -30,7 +36,8 @@ struct OverleafBar: View {
             } label: { SymbolIcon(systemName: "ellipsis") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: RemileControl.toolHit, height: RemileControl.toolHit).accessibilityLabel("Connection options")
         }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink)
-            .padding(.horizontal, RemileControl.spacing * 2).frame(height: 48).background(RemileStyle.editorBar)
+            .padding(.leading, RemileControl.spacing).padding(.trailing, RemileControl.spacing * 2)
+            .frame(height: 48).background(RemileStyle.editorBar)
             .sheet(isPresented: $accounts) { OverleafAccountManager(library: library, selected: connection.profileID, requestGitToken: true, prepareRemoval: { _ in false }) { accounts = false } }
             .onAppear {
                 project.canReviewChanges = live.connected && !live.syncingFiles && !live.reviewing && live.pendingDocumentCount == 0
@@ -80,31 +87,6 @@ struct OverleafBar: View {
     }
 }
 
-struct OverleafSyncModePicker: View {
-    let isLive: Bool
-    let canStart: Bool
-    let switching: Bool
-    var allowsGit = true
-    var localOnly = false
-    let choose: (Bool) -> Void
-    var body: some View {
-        HStack(spacing: 2) {
-            mode("Online", online: true)
-            mode("On-device", online: false)
-        }.padding(3).background(RemileStyle.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: RemileRadius.control))
-            .fixedSize().accessibilityElement(children: .contain).accessibilityLabel("Sync mode")
-    }
-    private func mode(_ title: String, online: Bool) -> some View {
-        Button { choose(online) } label: {
-            Text(title).font(RemileType.caption.weight(isLive == online ? .semibold : .regular))
-                .foregroundStyle(isLive == online ? RemileStyle.ink : RemileStyle.secondaryInk)
-                .frame(width: 80, height: RemileControl.toolHit).contentShape(Rectangle())
-                .background(isLive == online ? RemileStyle.ink.opacity(0.11) : .clear, in: RoundedRectangle(cornerRadius: RemileRadius.control))
-        }.buttonStyle(.plain).accessibilityAddTraits(isLive == online ? .isSelected : [])
-            .remileHelp(online ? "Sync through Git when connected" : "Keep working locally without syncing")
-    }
-}
-
 struct OverleafComparison: View {
     @ObservedObject var library: OverleafLibrary
     let review: OverleafGit.Review
@@ -130,7 +112,7 @@ struct OverleafComparison: View {
                     VStack(alignment: .leading, spacing: 10) {
                     Text("Files · \(review.changes.count)").font(RemileType.caption).foregroundStyle(.secondary)
                     ScrollView { VStack(alignment: .leading, spacing: 6) { ForEach(review.changes) { change in
-                        Button { state.path = change.path } label: { HStack { Text(change.path).lineLimit(2); Spacer(); if change.conflict { SymbolIcon(systemName: state.choices[change.path] == nil ? "exclamationmark.circle" : "checkmark.circle").foregroundStyle(.red) } }.padding(7).frame(maxWidth: .infinity, alignment: .leading).background(selected?.path == change.path ? RemileStyle.accent.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6)) }.buttonStyle(.plain)
+                        Button { state.path = change.path } label: { HStack { Text(change.path).lineLimit(2); Spacer(); if change.conflict { SymbolIcon(systemName: state.choices[change.path] == nil ? "exclamationmark.circle" : "checkmark.circle").foregroundStyle(.red) } }.padding(7).frame(maxWidth: .infinity, alignment: .leading).background(selected?.path == change.path ? RemileStyle.accent.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6)).contentShape(Rectangle()) }.buttonStyle(.plain)
                     } } }
                     }.padding(.trailing, 8)
                 }, content: {

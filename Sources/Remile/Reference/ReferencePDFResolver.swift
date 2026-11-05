@@ -40,21 +40,35 @@ enum ReferencePDFResolver {
         return urls.filter { seen.insert($0).inserted }.map { Candidate(url: $0) }
     }
 
-    static func resolve(_ record: ReferenceRecord, load: Loader = ReferencePDFTransfer.fetch, locations: Locations = openLocations, metadata: Metadata = ReferencePaperLookup.pdfMetadata) async throws -> Found {
+    static func resolve(_ record: ReferenceRecord, startingAt url: URL? = nil, load: Loader = ReferencePDFTransfer.fetch, locations: Locations = openLocations, metadata: Metadata = ReferencePaperLookup.pdfMetadata) async throws -> Found {
+        guard let found = try await discover(record, startingAt: url, load: load, locations: locations, metadata: metadata).1 else {
+            throw ReferenceFailure("No accessible PDF found.")
+        }
+        return found
+    }
+
+    static func fromLink(_ url: URL, target: ReferenceRecord?, load: Loader = ReferencePDFTransfer.fetch) async throws -> (ReferenceRecord, Found?) {
+        try await discover(target, startingAt: url, includeRecordSources: false, load: load, locations: openLocations, metadata: ReferencePaperLookup.pdfMetadata)
+    }
+
+    private static func discover(_ record: ReferenceRecord?, startingAt url: URL?, includeRecordSources: Bool = true, load: Loader, locations: Locations, metadata: Metadata) async throws -> (ReferenceRecord, Found?) {
         try Task.checkCancellation(); try NetworkAccess.requireOnline()
         let deadline = Date().addingTimeInterval(90)
-        var queue = seeds(record), seen = Set<URL>(), blockedHosts = Set<String>(), indexed = false, attempts = 0
-        var identified = record
+        var queue = url.map { [Candidate(url: $0)] } ?? []
+        if includeRecordSources, let record { queue += seeds(record) }
+        var seen = Set<URL>(), blockedHosts = Set<String>(), indexed = false, attempts = 0
+        var identified = record ?? ReferenceRecord()
+        var landingReference: ReferenceRecord?
         var last: Error = ReferenceFailure("No accessible PDF found. You can add a local PDF.")
         while attempts < 8 && Date() < deadline {
             try Task.checkCancellation()
             if queue.isEmpty {
-                guard !indexed else { break }
+                guard includeRecordSources, !indexed else { break }
                 indexed = true
-                if (identified.fields["doi"] ?? "").isEmpty && archiveID(identified) == nil && ReferenceRecognition.eligible(identified) {
+                if record != nil && (identified.fields["doi"] ?? "").isEmpty && archiveID(identified) == nil && ReferenceRecognition.eligible(identified) {
                     do {
                         let found = try await metadata(identified, deadline)
-                        if ReferencePaperLookup.matches(record, fields: found.fields) {
+                        if ReferencePaperLookup.matches(identified, fields: found.fields) {
                             for key in ["doi", "url", "eprint", "archiveprefix"] where identified.fields[key] == nil { identified.fields[key] = found.fields[key] }
                             queue = seeds(identified)
                         }
@@ -79,28 +93,64 @@ enum ReferencePDFResolver {
                 guard Date() < deadline else { break }
                 if resource.html {
                     // Only explicit PDF metadata and PDF alternate links, never arbitrary page links.
-                    let links = ReferencePaperLookup.landingPDFs(resource.data, base: resource.url)
-                    queue.insert(contentsOf: links.prefix(3).map { Candidate(url: $0, version: candidate.version) }, at: 0)
+                    let allowReference = record == nil && attempts == 1 && ReferencePaperLookup.citableWebURL(candidate.url)
+                    let landing = ReferencePaperLookup.landing(resource.data, base: resource.url, includeReference: allowReference)
+                    if allowReference { landingReference = landing.reference }
+                    queue.insert(contentsOf: landing.pdfs.map { Candidate(url: $0, version: candidate.version) }, at: 0)
                     continue
                 }
-                let expected = identified
-                let matches = try await Task.detached { try validate(resource.data, for: expected) }.value
+                let declaredPaper = landingReference.flatMap { $0.fields["doi"] == nil ? nil : $0 }
+                let expected = record == nil ? declaredPaper : identified
+                let result = try await Task.detached { () throws -> ReferenceRecord? in
+                    try Task.checkCancellation()
+                    guard let pdf = readablePDF(resource.data) else { return nil }
+                    var fields = ReferencePDFMetadata.fields(pdf, fallback: "")
+                    if let expected {
+                        guard matchesPDF(fields, for: expected) else { return nil }
+                        if record != nil { return expected }
+                    }
+                    if fields["title"] == "" {
+                        let name = resource.url.deletingPathExtension().lastPathComponent
+                        fields["title"] = name.lowercased().hasSuffix(".pdf") ? String(name.dropLast(4)) : name
+                    }
+                    var draft = ReferenceRecord(fields: fields)
+                    if draft.fields["entrysubtype"] == "preprint" { draft.type = "misc" }
+                    if let degree = ReferenceKind.thesisKind(draft.fields["type"] ?? "") { draft = degree.applying(to: draft) }
+                    return draft
+                }.value
                 try Task.checkCancellation()
-                guard matches else { last = ReferenceFailure("The PDF could not be matched to this reference. You can add it locally after checking."); continue }
-                return Found(data: resource.data, source: resource.url, version: candidate.version)
+                guard let result else { last = ReferenceFailure("The PDF could not be matched or opened. You can add it locally after checking."); continue }
+                return (result, Found(data: resource.data, source: resource.url, version: candidate.version))
             } catch is CancellationError { throw CancellationError() }
             catch let busy as ReferencePDFTransfer.Busy { blockedHosts.insert(candidate.url.host ?? ""); blockedHosts.insert(busy.host); last = busy }
             catch { last = error }
         }
         try Task.checkCancellation()
+        try NetworkAccess.requireOnline()
+        if let landingReference { return (landingReference, nil) }
         throw last
+    }
+
+    static func readLocal(_ url: URL, for record: ReferenceRecord) throws -> Data {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard url.isFileURL, let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size <= ReferencePaperLookup.pdfLimit else { throw ReferenceFailure("Choose a PDF smaller than 25 MB.") }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: ReferencePaperLookup.pdfLimit + 1) ?? Data()
+        guard data.count <= ReferencePaperLookup.pdfLimit else { throw ReferenceFailure("Choose a PDF smaller than 25 MB.") }
+        guard try validate(data, for: record) else { throw ReferenceFailure("This PDF does not match the selected paper. Check the downloaded file.") }
+        return data
     }
 
     static func validate(_ data: Data, for record: ReferenceRecord) throws -> Bool {
         try Task.checkCancellation()
-        guard data.count <= ReferencePaperLookup.pdfLimit, data.prefix(5) == Data("%PDF-".utf8),
-              let pdf = PDFDocument(data: data), !pdf.isLocked, pdf.pageCount > 0 else { return false }
-        let fields = ReferencePDFMetadata.fields(pdf, fallback: "")
+        guard let pdf = readablePDF(data) else { return false }
+        return matchesPDF(ReferencePDFMetadata.fields(pdf, fallback: ""), for: record)
+    }
+
+    private static func matchesPDF(_ fields: [String: String], for record: ReferenceRecord) -> Bool {
         let extractedTitle = (fields["title"] ?? "").lowercased()
         if ["supplementary", "supplemental", "supporting information"].contains(where: extractedTitle.contains), !ReferencePaperLookup.matches(record, fields: ["title": fields["title"] ?? ""]) { return false }
         if let wanted = archiveID(record) {
@@ -115,6 +165,12 @@ enum ReferencePDFResolver {
             return ReferencePaperLookup.matches(titleOnly, fields: ["title": fields["title"] ?? ""])
         }
         return ReferencePaperLookup.matches(record, fields: fields)
+    }
+
+    private static func readablePDF(_ data: Data) -> PDFDocument? {
+        guard data.count <= ReferencePaperLookup.pdfLimit, data.prefix(5) == Data("%PDF-".utf8),
+              let pdf = PDFDocument(data: data), !pdf.isLocked, pdf.pageCount > 0 else { return nil }
+        return pdf
     }
 
     static func openLocations(_ doi: String, deadline: Date) async throws -> [Candidate] {
@@ -169,7 +225,13 @@ enum ReferencePDFTransfer {
         request.setValue("remile/0.1.3 Reference", forHTTPHeaderField: "User-Agent")
         let (stream, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        if [401, 403].contains(http.statusCode) { throw ReferenceFailure("This source requires sign-in. Download the PDF in your browser and add the local file.") }
+        if [401, 403].contains(http.statusCode) {
+            let signed = URLComponents(url: http.url ?? url, resolvingAgainstBaseURL: false)?.queryItems?.contains {
+                $0.name.caseInsensitiveCompare("X-Amz-Signature") == .orderedSame
+            } == true
+            if signed { throw ReferenceFailure("The signed PDF link was refused or expired. Copy a fresh link from the article page.") }
+            throw ReferenceFailure("The source refused access. Download the PDF in your browser and add the local file.")
+        }
         // Do not retry a throttled host during this search, including its alternate links.
         if [429, 503].contains(http.statusCode) { throw Busy(host: response.url?.host ?? url.host ?? "") }
         guard http.statusCode == 200 else { throw ReferenceFailure("No accessible PDF found. You can add a local PDF.") }

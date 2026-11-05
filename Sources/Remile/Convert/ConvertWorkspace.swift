@@ -141,7 +141,7 @@ struct ConvertWorkspace: View {
     }
 
     private var emptyState: some View {
-        DocumentToolEmptyState(symbols: ["photo", "doc.text", "text.document"], title: "Make a PDF from your files", detail: "Drop files here, or choose them below.\nReview each result before saving.", button: "Choose Files…", formats: "JPG, PNG, HEIC · DOC, DOCX · MD", choose: model.choose)
+        DocumentToolEmptyState(symbols: ["photo", "doc.text", "text.document"], title: "Convert to PDF", detail: "Drop files here.", button: "Choose Files…", formats: "JPG, PNG, HEIC · DOC, DOCX · MD", choose: model.choose)
     }
 
     private var fileQueue: some View {
@@ -161,7 +161,7 @@ struct ConvertWorkspace: View {
                                     }
                                     Spacer(minLength: 0)
                                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(model.selected == item.id ? RemileStyle.accent.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: 9))
+                                    .background(model.selected == item.id ? RemileStyle.accent.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: 9)).contentShape(Rectangle())
                             }.buttonStyle(.plain)
                         }
                     } else {

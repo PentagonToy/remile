@@ -87,6 +87,26 @@ enum ReferencePaperLookup {
         let data = try await request(url.url!, limit: 1_500_000, accept: "application/json", deadline: deadline)
         return try parseCrossref(data, single: single).map { Paper(record: $0) }
     }
+    static func scienceDirectPII(_ url: URL) -> String? {
+        guard ["www.sciencedirect.com", "sciencedirect.com"].contains(url.host?.lowercased() ?? ""),
+              url.path.hasPrefix("/science/article/pii/"),
+              let pii = url.path.split(separator: "/").last,
+              pii.range(of: #"^S[0-9X]{16}$"#, options: .regularExpression) != nil else { return nil }
+        return String(pii)
+    }
+
+    static func publisherPaper(at url: URL) async throws -> Paper? {
+        guard let pii = scienceDirectPII(url) else { return nil }
+        var endpoint = URLComponents(string: "https://api.crossref.org/works")!
+        endpoint.queryItems = [URLQueryItem(name: "filter", value: "alternative-id:" + pii), URLQueryItem(name: "rows", value: "2")]
+        let data = try await request(endpoint.url!, limit: 1_500_000, accept: "application/json")
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let message = object["message"] as? [String: Any],
+              message["total-results"] as? Int == 1,
+              let items = message["items"] as? [[String: Any]], items.count == 1,
+              (items[0]["alternative-id"] as? [String])?.contains(pii) == true else { return nil }
+        return try parseCrossref(data, single: false).first.map { Paper(record: $0) }
+    }
     static func openAccessData(doi: String, deadline: Date, abstractOnly: Bool = false) async throws -> Data {
         let doi = ReferenceDuplicates.normaliseDOI(doi)
         guard doi.hasPrefix("10.") else { throw ReferenceFailure("Add a DOI to search public repositories.") }
@@ -137,23 +157,100 @@ enum ReferencePaperLookup {
         }
     }
     static func landingPDFs(_ data: Data, base: URL) -> [URL] {
-        guard data.count <= 192_000, let html = String(data: data, encoding: .utf8) else { return [] }
-        let tags = try! NSRegularExpression(pattern: #"<meta\b[^>]{0,4000}>"#, options: .caseInsensitive)
-        let attributes = try! NSRegularExpression(pattern: #"([a-zA-Z_-]+)\s*=\s*["']([^"']*)["']"#)
-        let links = try! NSRegularExpression(pattern: #"<link\b[^>]{0,4000}>"#, options: .caseInsensitive)
-        var result: [URL] = [], seen = Set<URL>()
-        let all = tags.matches(in: html, range: NSRange(html.startIndex..., in: html)) + links.matches(in: html, range: NSRange(html.startIndex..., in: html))
-        for match in all.prefix(200) {
-            let tag = (html as NSString).substring(with: match.range) as NSString
+        landing(data, base: base, includeReference: false).pdfs
+    }
+
+    private static let headTags = try! NSRegularExpression(
+        pattern: #"(?is)<!--.*?-->|<script\b[^>]*>.*?</script\s*>|<(meta|link)\b((?:"[^"]*"|'[^']*'|[^"'<>]){0,4000})>|<title\b[^>]*>(.*?)</title\s*>"#
+    )
+    private static let headAttributes = try! NSRegularExpression(
+        pattern: #"([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))"#
+    )
+
+    static func landing(_ data: Data, base: URL, includeReference: Bool) -> (pdfs: [URL], reference: ReferenceRecord?) {
+        guard data.count <= 192_000 else { return ([], nil) }
+        let html = String(decoding: data, as: UTF8.self)
+        let end = html.range(of: "</head", options: .caseInsensitive)?.lowerBound ?? html.endIndex
+        let head = String(html[..<end]) as NSString
+        var citationPDFs: [URL] = [], alternatePDFs: [URL] = []
+        var metadata: [String: [String]] = [:], title: String?, canonical: URL?
+        for match in headTags.matches(in: head as String, range: NSRange(location: 0, length: head.length)).prefix(250) {
+            if match.range(at: 3).location != NSNotFound {
+                title = title ?? text(head.substring(with: match.range(at: 3)))
+                continue
+            }
+            guard match.range(at: 1).location != NSNotFound else { continue }
+            let isMeta = head.substring(with: match.range(at: 1)).lowercased() == "meta"
+            let tag = head.substring(with: match.range(at: 2)) as NSString
             var values: [String: String] = [:]
-            for attribute in attributes.matches(in: tag as String, range: NSRange(location: 0, length: tag.length)) { values[tag.substring(with: attribute.range(at: 1)).lowercased()] = tag.substring(with: attribute.range(at: 2)) }
-            let meta = values["name"]?.lowercased() == "citation_pdf_url"
-            let alternate = values["type"]?.lowercased() == "application/pdf" && (values["rel"] ?? "").lowercased().split(separator: " ").contains("alternate")
-            guard meta || alternate, let raw = values[meta ? "content" : "href"], let url = URL(string: text(raw), relativeTo: base)?.absoluteURL, publicURL(url), seen.insert(url).inserted else { continue }
-            result.append(url)
-            if result.count == 3 { break }
+            for attribute in headAttributes.matches(in: tag as String, range: NSRange(location: 0, length: tag.length)) {
+                guard let range = (2...4).map({ attribute.range(at: $0) }).first(where: { $0.location != NSNotFound }) else { continue }
+                values[tag.substring(with: attribute.range(at: 1)).lowercased()] = tag.substring(with: range)
+            }
+            let name = (values["name"] ?? values["property"])?.lowercased()
+            let relations = (values["rel"] ?? "").lowercased().split(whereSeparator: \.isWhitespace)
+            if includeReference {
+                if isMeta, let name, let content = values["content"], !content.isEmpty {
+                    metadata[name, default: []].append(text(content))
+                } else if !isMeta, relations.contains("canonical"), let href = values["href"],
+                          let url = URL(string: text(href), relativeTo: base)?.absoluteURL,
+                          url.host?.lowercased() == base.host?.lowercased(), url.port == base.port, citableWebURL(url) {
+                    canonical = canonical ?? url
+                }
+            }
+            let meta = isMeta && name == "citation_pdf_url"
+            let alternate = !isMeta && values["type"]?.lowercased() == "application/pdf" && relations.contains("alternate")
+            guard meta || alternate, let raw = values[meta ? "content" : "href"],
+                  let url = URL(string: text(raw), relativeTo: base)?.absoluteURL, publicURL(url) else { continue }
+            if meta, citationPDFs.count < 3, !citationPDFs.contains(url) { citationPDFs.append(url) }
+            if alternate, alternatePDFs.count < 3, !alternatePDFs.contains(url) { alternatePDFs.append(url) }
         }
-        return result
+        var seen = Set<URL>()
+        let result = Array((citationPDFs + alternatePDFs).filter { seen.insert($0).inserted }.prefix(3))
+        guard includeReference, citableWebURL(base) else { return (result, nil) }
+        return (result, webReference(metadata, title: title, url: canonical ?? base))
+    }
+
+    static func citableWebURL(_ url: URL) -> Bool {
+        guard publicURL(url), url.pathExtension.lowercased() != "pdf" else { return false }
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        return !query.contains {
+            let name = $0.name.lowercased()
+            return name.hasPrefix("x-amz-") || name.hasPrefix("x-goog-") ||
+                ["token", "access_token", "auth", "authorization", "signature", "sig", "session", "sessionid", "code"].contains(name)
+        }
+    }
+
+    private static func webReference(_ metadata: [String: [String]], title: String?, url: URL) -> ReferenceRecord? {
+        func first(_ names: String...) -> String? {
+            names.lazy.compactMap { metadata[$0]?.first(where: { !$0.isEmpty }) }.first
+        }
+        guard let title = first("citation_title", "dc.title", "og:title", "twitter:title") ?? title,
+              !title.isEmpty, !["just a moment...", "access denied", "are you a robot?", "attention required! | cloudflare"].contains(title.lowercased()) else { return nil }
+        let publication = first("citation_journal_title")
+        var cleanURL = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        cleanURL?.fragment = nil
+        guard let citationURL = cleanURL?.url else { return nil }
+        var fields = ["title": title, "url": citationURL.absoluteString]
+        if let publication { fields["journal"] = publication }
+        if let site = first("og:site_name", "dc.publisher") { fields["organization"] = site }
+        if let raw = first("citation_doi", "dc.identifier") {
+            let doi = ReferenceDuplicates.normaliseDOI(raw)
+            if doi.hasPrefix("10."), doi.contains("/") { fields["doi"] = doi }
+        }
+        let authors = (metadata["citation_author"] ?? []).filter { !$0.isEmpty }
+        fields["author"] = authors.isEmpty ? first("author", "dc.creator") : authors.joined(separator: " and ")
+        let updated = first("dc.date.modified", "article:modified_time", "og:updated_time")
+        let published = first("article:published_time", "dc.date.created", "dc.date")
+        if let raw = first("citation_publication_date") ?? (publication == nil ? updated ?? published : published ?? updated) {
+            let date = raw.replacingOccurrences(of: "/", with: "-")
+            if let range = date.range(of: #"^\d{4}(?:-\d{2}(?:-\d{2})?)?(?=$|T|\s)"#, options: .regularExpression) {
+                fields["date"] = String(date[range])
+                fields["year"] = String(date[range].prefix(4))
+            }
+        }
+        fields["urldate"] = Date().formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day().dateSeparator(.dash))
+        return ReferenceRecord(type: publication == nil ? "online" : "article", fields: fields)
     }
     static func publicURL(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "https", url.user == nil, url.password == nil, let host = url.host?.lowercased(), !host.isEmpty else { return false }

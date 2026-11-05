@@ -270,6 +270,40 @@ import UniformTypeIdentifiers
         build = nil; outputCurrent = false; fileRevision += 1
     }
     var source: Binding<String> { Binding(get: { self.buffers[self.selected] ?? "" }, set: { if self.buffers[self.selected] != nil { self.buffers[self.selected] = $0 } }) }
+    /// Reconcile files placed on disk outside the editor while retaining open buffers.
+    func refreshFileTree() async throws {
+        let root = root, revision = fileRevision, known = Set(buffers.keys)
+        let snapshot = try await Task.detached(priority: .utility) {
+            let paths = try TeXFileSystem.paths(root), folders = try TeXFileSystem.folders(root)
+            var added: [String: String] = [:]
+            for path in paths where !known.contains(path) && OverleafSourceFiles.source(path) {
+                let url = try TeXFileSystem.url(path, root: root)
+                guard known.count + added.count < 2000,
+                      (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 4_000_000 else { continue }
+                if let bytes = try? Data(contentsOf: url), bytes.count <= 4_000_000,
+                   let text = String(data: bytes, encoding: .utf8) { added[path] = text }
+            }
+            return (paths, folders, added)
+        }.value
+        try Task.checkCancellation()
+        guard self.root == root, fileRevision == revision else { return }
+        let (paths, folders, added) = snapshot
+        let onDisk = Set(paths)
+        var next = buffers
+        for path in files where path != main && !onDisk.contains(path) && next[path] == original[path] {
+            next[path] = nil; original[path] = nil
+        }
+        for (path, text) in added where next[path] == nil { next[path] = text; original[path] = text }
+        let visible = onDisk.union(next.keys).sorted()
+        guard visible != treeFiles || folders != treeFolders || next != buffers else { return }
+        treeFiles = visible; treeFolders = folders; files = next.keys.sorted()
+        if next != buffers { buffers = next }
+        let available = Set(visible).union(folders)
+        if !available.contains(selected) { selected = main }
+        openFiles.removeAll { !available.contains($0) }
+        backFiles.removeAll { !available.contains($0) }; forwardFiles.removeAll { !available.contains($0) }
+        build = nil; outputCurrent = false; fileRevision += 1
+    }
     /// Refresh reviewed disk contents without replacing the editor or its document identity.
     func reloadReviewedFiles() throws {
         guard !dirty else { throw TeXFileSystem.Failure(errorDescription: "The source changed during review. Your unsaved edits were kept. Check changes again.") }
@@ -345,7 +379,7 @@ import UniformTypeIdentifiers
             Task { @MainActor [weak self] in guard let self, self.compileID == id, self.compiling else { return }; self.log = output }
         }
         self.job = job; outputCurrent = false; compiling = true; message = nil; log = ""; diagnostics = []
-        let root = root, main = main, buffers = buffers, configuration = TeXConfiguration.current
+        let root = root, main = main, configuration = TeXConfiguration.current
         let destination = output ?? TeXCache.allocate("LaTeX")
         let managed = output == nil
         diagnosticSource = destination.appendingPathComponent("Source", isDirectory: true)
@@ -353,6 +387,8 @@ import UniformTypeIdentifiers
             var retained = false
             defer { if managed && !retained { TeXCache.discard(destination) } }
             do {
+                try await self?.refreshFileTree()
+                guard let buffers = self?.buffers, self?.compileID == id else { return }
                 let result = try await Task.detached { try job.run(root: root, main: main, buffers: buffers, configuration: configuration, output: destination, scratch: scratch, submissionCheck: submissionCheck) }.value
                 guard let self, self.compileID == id else { return }; self.outputCurrent = false; self.log = result.log; self.diagnostics = TeXDiagnostics.assessed(TeXDiagnostics.parse(result.log), main: main, source: buffers[main] ?? "")
                 if let data = result.pdf, let document = PDFDocument(data: data) {
@@ -457,11 +493,10 @@ import UniformTypeIdentifiers
         if name == (path as NSString).lastPathComponent { return true }
         let parent = (path as NSString).deletingLastPathComponent
         let target = parent.isEmpty ? name : parent + "/" + name
-        move(path, to: target)
-        return FileManager.default.fileExists(atPath: root.appendingPathComponent(target).path) && !FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path)
+        return move(path, to: target)
     }
-    func move(_ path: String, to target: String) {
-        guard !compiling else { message = "Wait for compilation to finish."; return }
+    @discardableResult func move(_ path: String, to target: String) -> Bool {
+        guard !compiling else { message = "Wait for compilation to finish."; return false }
         do {
             captureHistory(file: selected); try TeXFileSystem.move(root: root, from: path, to: target)
             func mapped(_ file: String) -> String { file == path ? target : file.hasPrefix(path + "/") ? target + file.dropFirst(path.count) : file }
@@ -473,7 +508,8 @@ import UniformTypeIdentifiers
             backFiles = backFiles.map(mapped); forwardFiles = forwardFiles.map(mapped); build = nil
             outputCurrent = false; fileRevision += 1
             message = "Check TeX references after moving or renaming a file."
-        } catch { message = error.localizedDescription }
+            return true
+        } catch { message = error.localizedDescription; return false }
     }
     func trash(_ path: String) { trash([path]) }
     func trash(_ paths: [String]) {

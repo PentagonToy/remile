@@ -25,6 +25,20 @@ final class ReferenceMaintenanceTests: XCTestCase {
         XCTAssertEqual(try ReferenceCLI.response(["export"], repository: repository)["count"] as? Int, 2)
         XCTAssertEqual(try ReferenceCLI.response(["export", "--library", other.id.uuidString], repository: repository)["count"] as? Int, 1)
     }
+    func testDetachedPDFKeepsTrashCleanupAvailable() throws {
+        let record = try pdfRecord()
+        let attachment = try XCTUnwrap(record.attachments.first)
+        let url = repository.attachmentURL(attachment)
+        XCTAssertFalse(try repository.snapshot().hasPendingTrashCleanup)
+        _ = try repository.removeAttachments([attachment.id], from: record.id, expected: record.revision)
+        XCTAssertTrue(try repository.snapshot().hasPendingTrashCleanup)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+
+        try repository.emptyTrash()
+        XCTAssertFalse(try repository.snapshot().hasPendingTrashCleanup)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertEqual(try repository.records().map(\.id), [record.id])
+    }
     func testCLIImportReturnsStoredRevisionAfterAutomaticPDFLinking() throws {
         let source = try pdfRecord()
         let bib = folder.appendingPathComponent("metadata.bib")

@@ -1,6 +1,6 @@
 # Online Overleaf synchronisation
 
-Online keeps a local project connected through Overleaf's Git integration. On-device keeps editing and compilation on this Mac without synchronising. The project remembers your choice. New connections start Online.
+Choose Online to synchronise through Overleaf's Git integration. Choose Local to edit and compile on this Mac. The project remembers your choice. New connections start Online.
 
 ## Connection states
 
@@ -8,22 +8,24 @@ Online keeps a local project connected through Overleaf's Git integration. On-de
 | --- | --- |
 | Editing | Online edits are still being saved on this Mac. |
 | Saved | The source is saved on this Mac. Hover for the last remote confirmation. |
-| Saved locally · retrying | A sync attempt failed. The app keeps the local save and retries. Hover for the reason. |
+| Saved locally · sync delayed | A sync attempt failed. The app keeps the local save and retries. Hover for the reason. |
 | Couldn’t save | Saving on this Mac failed. Hover for the error. |
-| Unsaved changes | On-device edits have not been saved on this Mac yet. |
+| Unsaved changes | Local edits have not been saved on this Mac yet. |
 | Saved locally · offline | Online remains selected. Work stays local until the connection returns. |
-| Saved on this Mac | On-device mode keeps work local until you choose Online. |
-| Review needed | Overlapping edits need your choice. Recovery copies are kept. |
+| Saved on this Mac | Choose Online to resume synchronisation. |
+| Review needed | Sync needs your choice. Recovery copies are kept. |
 
 ## Reconnection
 
-The open project groups Git changes for five seconds after the last edit, or up to twenty seconds during continuous typing. Automatic attempts stay at least fifteen seconds apart and respect retry delays. For two minutes after returning to the project or syncing changes, remote checks run fifteen seconds apart. They then slow from one to five minutes when nothing changes. Returning to the app brings the next check forward, while keeping minimum spacing and error backoff. Hidden workspaces and On-device mode stop automatic checks. Sync now checks immediately.
+The open project queues local changes five seconds after the last edit, or after twenty seconds of continuous typing. Uploads follow this edit schedule. Automatic attempts stay at least fifteen seconds apart and respect retry delays. An unchanged open project checks Overleaf after thirty seconds, then every minute. After applying changes, remile checks again in fifteen seconds. Incoming changes keep checks at that interval for two minutes. Returning to the app brings the next check forward within the same limits. Hidden workspaces and Local mode stop automatic checks. Sync now checks immediately.
 
-Transient failures retry with increasing delays. Rate-limit responses wait at least five minutes. A failed request does not discard local work or switch the chosen mode. A rejected push never becomes a force push.
+Automatic retries use increasing delays. After a rate-limit response, the next automatic attempt waits at least five minutes. If the Mac reconnects, remile brings forward retries for connection failures and keeps any server cooldown. Local work and the selected mode survive a failed request. All pushes use Git's normal fast-forward checks.
 
 Independent changes merge in a private working copy. Changes typed during a request are reconciled before updating the editor. Unique source moves with unchanged content retain the other writer's edits and keep the selected tab. Competing destinations, deletion against editing and ambiguous text or binary changes still stop for review. Further writing or file operations retry recoverable conflicts automatically, keeping request spacing and error backoff. Review changes remains available when a choice is needed.
 
-Restarting remile reuses a pending recovery operation. A fetch checks an uncertain upload before sending it again. See [recovery storage and limits](workspace/overleaf.md#choose-a-mode) for the copy budget, retained records and legacy data policy.
+Overleaf Git can leave an empty folder after its files move or are deleted. Once the files have synced, check the old folder in Overleaf and remove it there if it is empty. [Overleaf Git limitations](https://docs.overleaf.com/integrations-and-add-ons/git-integration-and-github-synchronization/git-integration/advanced-git-operations#known-limitations)
+
+Restarting remile reuses the pending recovery snapshot. If an upload's outcome is uncertain, remile checks Overleaf before sending it again. If another Git process moves the local branch during sync, remile keeps that revision and stops for review. See [recovery copies](workspace/overleaf.md#recovery-copies) for storage limits.
 
 Local autosave continues during typing and network requests, rather than waiting for a quiet period. An ordinary quit saves through the document close flow. After a crash or power loss, the next launch reads the last complete local save and checks any pending upload before repeating it. Input since that save can still be lost if the process or computer stops abruptly.
 

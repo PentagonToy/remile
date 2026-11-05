@@ -71,6 +71,11 @@ final class CLIArgumentTests: XCTestCase {
 
     func testExplicitTargetsAndRevisions() {
         accepts("documents")
+        accepts("files", ["--target", target])
+        accepts("move", ["--file", "figure.pdf", "--to", "Figures/figure.pdf", "--target", target])
+        rejects("move", ["--file", "figure.pdf"])
+        rejects("move", ["--file", "figure.pdf", "--to", "../figure.pdf"])
+        rejects("move", ["--file", ".git/config", "--to", "config"])
         accepts("read", ["--target", target, "--file", "main.tex"])
         accepts("replace", ["--target", target, "--source-file", "/tmp/source", "--expected-sha256", sourceSHA256])
         rejects("read", ["--target", "invalid"])
@@ -81,6 +86,44 @@ final class CLIArgumentTests: XCTestCase {
         rejects("reference", ["update", "--id", target, "--source-file", "/tmp/input.bib"])
         rejects("reference", ["trash", "--id", target])
         rejects("reference", ["import", "--library", target, "--source-file", "relative.bib"])
+    }
+
+    func testLocalDocumentIDArguments() {
+        let id = "local:" + target
+        accepts("open", ["/tmp/project"])
+        accepts("open", ["--id", id])
+        accepts("resolve", ["--id", id])
+        rejects("open", ["/tmp/project", "--id", id])
+        rejects("open", ["--id", target])
+        rejects("resolve", ["--id", "overleaf:" + overleafID])
+        rejects("read", ["--target", id])
+    }
+
+    func testLocalDocumentIDsFollowSavedFilesAndProjectFolders() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = root.appendingPathComponent("ids", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: false)
+        let main = project.appendingPathComponent("main.tex")
+        try Data("TeX".utf8).write(to: main)
+        let projectID = try LocalDocumentIDs.register(main, kind: .latex, directory: store)
+        XCTAssertEqual(try LocalDocumentIDs.register(project, kind: .latex, directory: store), projectID)
+        XCTAssertEqual(try LocalDocumentIDs.resolve(projectID, directory: store).kind, .latex)
+
+        let document = root.appendingPathComponent("notes.md")
+        try Data("Markdown".utf8).write(to: document)
+        let id = try LocalDocumentIDs.register(document, kind: .markdown, directory: store)
+        try Data("Updated Markdown".utf8).write(to: document, options: .atomic)
+        XCTAssertEqual(try LocalDocumentIDs.resolve(id, directory: store).url.path, document.resolvingSymlinksInPath().path)
+        XCTAssertEqual(try LocalDocumentIDs.register(document, kind: .markdown, directory: store), id)
+        let moved = root.appendingPathComponent("renamed.md")
+        try FileManager.default.moveItem(at: document, to: moved)
+        XCTAssertEqual(try LocalDocumentIDs.resolve(id, directory: store).url.path, moved.resolvingSymlinksInPath().path)
+        XCTAssertEqual(try LocalDocumentIDs.register(moved, kind: .markdown, directory: store), id)
+        try FileManager.default.removeItem(at: moved)
+        XCTAssertThrowsError(try LocalDocumentIDs.resolve(id, directory: store))
     }
 
     func testAmbiguousTargets() {

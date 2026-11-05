@@ -83,7 +83,7 @@ struct CompressWorkspace: View {
             Divider()
             Group {
                 if model.input == nil {
-                    DocumentToolEmptyState(symbols: ["doc.richtext", "arrow.down.right.and.arrow.up.left", "doc"], title: "Give your PDF a lighter footprint", detail: "Drop a PDF here, or choose one below.\nCompare the result before saving.", button: "Choose PDF…", formats: "PDF", choose: model.choose)
+                    DocumentToolEmptyState(symbols: ["doc.richtext", "arrow.down.right.and.arrow.up.left", "doc"], title: "Compress a PDF", detail: "Drop a PDF here.", button: "Choose PDF…", formats: "PDF", choose: model.choose)
                 } else { content.padding(24) }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()

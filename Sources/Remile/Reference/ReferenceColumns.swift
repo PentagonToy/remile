@@ -19,14 +19,17 @@ enum ReferenceColumn: String, CaseIterable, Identifiable {
     }
     func value(_ record: ReferenceRecord) -> String {
         switch self {
-        case .title: record.displayTitle
-        case .author: record.shortContributors
-        case .year: record.year
-        case .publisher: ReferenceText.display(record.fields["publisher"] ?? "")
-        case .publication: ["journal", "booktitle", "publisher"].compactMap { record.fields[$0] }.map(ReferenceText.display).first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
-        case .key: record.citationKey
-        case .type: ReferenceKind.classify(record).label
-        case .added: record.created.formatted(date: .abbreviated, time: .omitted)
+        case .title: return record.displayTitle
+        case .author: return record.shortContributors
+        case .year: return record.year
+        case .publisher: return ReferenceText.display(record.fields["publisher"] ?? "")
+        case .publication:
+            let fields = ReferenceKind.classify(record) == .webpage
+                ? ["journal", "booktitle", "publisher", "organization"] : ["journal", "booktitle", "publisher"]
+            return fields.compactMap { record.fields[$0] }.map(ReferenceText.display).first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
+        case .key: return record.citationKey
+        case .type: return ReferenceKind.classify(record).label
+        case .added: return record.created.formatted(date: .abbreviated, time: .omitted)
         }
     }
     static func visible(_ source: String) -> [Self] { [.title] + allCases.filter { $0 != .title && source.split(separator: ",").contains(Substring($0.rawValue)) } }

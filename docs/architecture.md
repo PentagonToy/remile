@@ -19,7 +19,7 @@ Use native macOS APIs and focused source modules. Add dependencies only when the
 
 Keep document identity, unsaved buffers and user decisions separate from disposable previews and caches. Save and export have explicit destinations.
 
-Online and On-device use the same local project. Git publishes a linear snapshot with normal pushes. Web requests are limited to on-demand project listing and tags, review reads and accepting a current suggestion. Rejection restores source through Git. No editor collaboration socket is opened. Older Live recovery files are left untouched for manual recovery. They are not replayed through Git.
+Online and Local use the same local project. Git publishes a linear snapshot with normal pushes. Web requests are limited to on-demand project listing and tags, review reads and accepting a current suggestion. Rejection restores source through Git. No editor collaboration socket is opened. Older Live recovery files are left untouched for manual recovery. They are not replayed through Git.
 
 Full-project validation and reconciliation prepare an immutable plan away from the main actor. Installation checks the captured project and edit/file revisions, then verifies touched unbuffered files before writing. New typing invalidates the plan rather than being overwritten. Unchanged installs preserve the current PDF. File writes and final attachment checks remain synchronous.
 

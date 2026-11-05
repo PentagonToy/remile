@@ -2,25 +2,21 @@
 
 ## Unreleased
 
-### Editing and submission
-
-- In LaTeX and Overleaf, suggest project commands and supported package commands after one letter. Reuse existing braces, show maths symbol previews and suggest paths as soon as a file argument opens.
-- Drop folders into the LaTeX or Overleaf file tree to add nested sources and assets. Markdown maths suggests supported commands after one letter.
-- Inline writing suggestions finish the word being typed or offer one new word. They preserve typed letters and handle sentence spacing and capitalisation.
-- Run Submission Check with pdfLaTeX in the app and CLI, including both sides of the bibliography comparison.
-
-### PDF and Reference
-
-- Show Finder-opened documents when remile starts, without waiting for a Dock click.
-- Collapse local libraries, reMarkable, Zotero and Trash together. Use All references to search across libraries.
-- Recover PDF titles from embedded metadata or the first page when the PDF title contains a publisher production code. Review corrections for existing entries with **Read metadata…**.
-
-### Overleaf sync
-
-- Save edits on this Mac during continuous typing, offline work and network requests. **Saved** indicates a local save. Hover for the last remote confirmation.
-- Merge independent text changes and unambiguous file moves. Keep the selected source tab and retry recoverable conflicts after further edits. Overlapping changes still go to review.
-- Apply newer remote edits found while confirming a push in the same sync attempt. Preserve subsequent local typing and pending recovery.
-- Reuse saved Git tokens. Choose **Sync now** if macOS needs Keychain approval after a rebuild or update.
+- Use **Fit** to match the page height. The zoom menu offers **Fit height** and **Fit width**.
+- Open PDFs and Markdown from Finder when remile starts, without a second click in the Dock.
+- Paste an article, PDF or web page link into **Find a paper…**. Save the PDF when available, the citation, or a web page with its URL and access date. Open ScienceDirect in the lookup window to capture the publisher PDF and optionally remember the sign-in on this Mac.
+- Recover paper titles from embedded metadata or the first page when a PDF uses a publisher production code as its title. Review suggested corrections with **Read metadata…**.
+- Search across libraries with **All references**. Collapse the library list, reMarkable, Zotero and Trash together. Use shorter empty-state messages. **Empty Trash…** is available when items or PDFs await deletion.
+- Refresh the LaTeX and Overleaf file tree when compiling or syncing. Drop folders to add nested files, or list and move project files from the CLI while the editor is open.
+- Use the full button area in segmented controls and sidebar rows, including Files and Review.
+- Complete LaTeX and Overleaf commands after one letter, including project commands and known commands from declared packages. Show maths symbols and file paths in suggestions, and reuse existing braces. Markdown maths also suggests supported commands after one letter.
+- Finish the word being typed or suggest one new word inline, preserving typed letters and handling sentence spacing and capitalisation.
+- Use pdfLaTeX for Submission Check in the app and CLI, including both sides of the bibliography comparison.
+- Copy saved LaTeX and Markdown IDs from **Recently opened** to find or open documents from the CLI. Copy Reference library and collection IDs to scope CLI commands.
+- Choose **Online** to sync with Overleaf or **Local** to work on this Mac. **Saved** indicates a local save. Hover to see the last remote confirmation.
+- Merge independent Overleaf edits and unambiguous file moves. Keep later edits and deletions when resuming a sync. Review overlapping edits or a local Git branch that changes during sync.
+- Check idle open projects for collaborator edits at least once a minute during normal operation. Schedule uploads separately and report the latest Git transfer stages in the CLI.
+- Reuse saved Overleaf Git tokens. Choose **Sync now** if macOS asks for Keychain approval after a rebuild or update.
 
 ## 0.2.4 — 31 October 2026
 

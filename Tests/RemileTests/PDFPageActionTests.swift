@@ -25,7 +25,7 @@ import SwiftUI
         view.setFrameSize(NSSize(width: 700, height: 500))
         zoom.updateFitForLayout(pageChanged: false, selecting: false)
         XCTAssertEqual(view.scaleFactor, coverScale, accuracy: 0.001)
-        zoom.fit(width: false)
+        zoom.fit(.page)
         XCTAssertFalse(view.autoScales)
         XCTAssertNotEqual(view.scaleFactor, coverScale)
         let page = view.currentPage!
@@ -37,10 +37,22 @@ import SwiftUI
     func testFitWidthIncludesBothPages() {
         let view = PDFView(frame: NSRect(x: 0, y: 0, width: 1000, height: 800))
         view.displayMode = .twoUpContinuous; view.displaysAsBook = false; view.document = document()
-        let zoom = ReaderZoom(); zoom.attach(view); zoom.fit(width: true)
+        let zoom = ReaderZoom(); zoom.attach(view); zoom.fit(.width)
         let first = view.convert(view.document!.page(at: 0)!.bounds(for: view.displayBox), from: view.document!.page(at: 0)!)
         let second = view.convert(view.document!.page(at: 1)!.bounds(for: view.displayBox), from: view.document!.page(at: 1)!)
         XCTAssertLessThanOrEqual(first.union(second).width, view.bounds.width + 1)
+    }
+    func testFitHeightUsesAvailableHeightInANarrowViewport() {
+        let view = PDFView(frame: NSRect(x: 0, y: 0, width: 400, height: 800))
+        view.document = document()
+        let zoom = ReaderZoom(); zoom.attach(view)
+        let initial = view.scaleFactor
+        zoom.fit(.height)
+        XCTAssertGreaterThan(view.scaleFactor, initial)
+        let page = view.currentPage!
+        let rect = view.convert(page.bounds(for: view.displayBox), from: page)
+        XCTAssertGreaterThan(rect.width, view.bounds.width)
+        XCTAssertLessThanOrEqual(rect.height, view.bounds.height + 1)
     }
     func testFixedZoomSurvivesViewReplacement() {
         let doc = document()

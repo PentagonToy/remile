@@ -14,7 +14,11 @@ Find, replace and TeX completion use the local editor and project data. Closing 
 
 Questions and selected document context are sent to the AI provider when you submit a request. ChatGPT suggestions use your connected account and its limits. Read [AI and writing](assistant.md) for context boundaries and provider controls.
 
-Overleaf synchronisation sends project changes through the configured connection. PDF import can send detected DOI or arXiv identifiers to public bibliographic services to fill missing details. It does not send PDF content. Manual paper searches and title-based metadata lookup can send the title you choose. Citation suggestions compare the preceding sentence with locally stored titles and abstracts. They send neither the sentence nor reference content to a service. Work offline pauses these requests. Update checks contact GitHub.
+Overleaf synchronisation sends project changes through the configured connection. Update checks contact GitHub. Work offline pauses remile’s online requests.
+
+Reference can send a detected DOI or arXiv identifier, or a title you choose to look up, to public bibliographic services. Link lookup contacts the source you provide and may follow advertised PDF links. These lookups keep the contents of your local PDFs on your Mac. Citation suggestions compare your preceding sentence with locally stored titles and abstracts on your Mac.
+
+ScienceDirect sign-in takes place on the publisher or institution’s website. By default, remile uses a temporary browser profile. If you choose **Remember sign-in on this Mac**, WebKit keeps the session in a separate profile on this Mac. remile does not store your password or read your browser’s cookies. Choose **More actions → Forget sign-in** on the ScienceDirect page to clear the saved profile.
 
 A library inside Dropbox or iCloud Drive is handled by that provider. Keep it downloaded for offline reading, and edit on one Mac at a time after synchronisation finishes. See [Reference storage](reference.md#storage-and-other-macs).
 

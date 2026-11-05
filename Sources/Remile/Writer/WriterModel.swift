@@ -250,10 +250,13 @@ import CryptoKit
         guard value.isFinite else { return }
         zoom = min(2, max(0.25, value))
     }
-    func fitWidth() {
+    func fitPage(_ mode: PageFit) {
         guard let scroll = canvas?.enclosingScrollView else { return }
-        setZoom((scroll.contentSize.width - 64) / pageSize.width)
+        let width = (scroll.contentSize.width - 64) / pageSize.width
+        let height = (scroll.contentSize.height - 40) / pageSize.height
+        setZoom(mode.scale(width: width, height: height))
     }
+    func fitWidth() { fitPage(.width) }
     func resizePaper(_ name: String, landscape: Bool) {
         guard PaperSize(rawValue: name) != nil, name != paper || landscape != self.landscape else { return }
         let before = (paper, self.landscape)

@@ -181,8 +181,8 @@ struct LibrarySearchView: View {
             } else if !model.hasSubmittedSearch {
                 ContentUnavailableView("Press Return to search", systemImage: "return").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.results.isEmpty {
-                ContentUnavailableView { SymbolLabel("No matches", systemImage: "magnifyingglass") } description: {
-                    Text(model.indexing ? "Indexing is still in progress." : "Search covers indexed PDF and Markdown text.")
+                ContentUnavailableView {
+                    SymbolLabel(model.indexing ? "Indexing…" : "No matches", systemImage: "magnifyingglass")
                 } actions: { Button("Check Library") { model.libraryPresented = true } }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Text("\(model.resultGroups.count) \(model.resultGroups.count == 1 ? "document" : "documents") · \(model.visibleHits.count) \(model.visibleHits.count == 1 ? "match" : "matches")")

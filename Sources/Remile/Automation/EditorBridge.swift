@@ -195,6 +195,24 @@ enum EditorBridge {
         case "rename":
             guard let name = request.name else { return ["ok": false, "error": "Provide --name."] }
             return ["ok": request.kind == "project" ? project.renameProject(to: name) : project.rename(file, to: name), "message": project.message ?? ""]
+        case "files":
+            do {
+                try await project.refreshFileTree()
+                return ["ok": true, "files": project.treeFiles, "folders": project.treeFolders]
+            } catch { return ["ok": false, "error": error.localizedDescription] }
+        case "move":
+            guard !project.liveWorkspace.syncingFiles else {
+                return ["ok": false, "error": "Wait for project sync to finish."]
+            }
+            guard let source = request.file, let destination = request.name,
+                  OverleafSourceFiles.validPath(source), OverleafSourceFiles.validPath(destination),
+                  project.treeFiles.contains(source) || project.treeFolders.contains(source) else {
+                return ["ok": false, "error": "Choose a file or folder from the project file list."]
+            }
+            guard project.move(source, to: destination) else {
+                return ["ok": false, "error": project.message ?? "Could not move the file."]
+            }
+            return ["ok": true, "file": destination, "message": project.message ?? ""]
         case "transform":
             do {
                 guard let action = request.action, let before = project.buffers[file] else { throw TeXSourceTools.Failure(errorDescription: "Provide an action and editable file.") }

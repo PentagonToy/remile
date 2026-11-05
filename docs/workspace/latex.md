@@ -14,7 +14,11 @@ A source ZIP opens into a new project folder. The ZIP stays unchanged. Source re
 
 ## Find your way
 
-Files holds the project. Drop files or folders into the list or onto a project folder. Folder imports keep their nested structure. Outline follows the project’s sections. Drag the divider to give either the source or PDF more room.
+Files holds the project. Drop files or folders into the list or onto a project folder. Folder imports keep their nested structure. Compiling refreshes the list after changes made outside the app. To list or move files from a terminal, use the [CLI](../cli.md#open-editor).
+
+Outline follows the project’s sections. Drag the divider to give either the source or PDF more room.
+
+Use **Fit** to match the height or choose **Fit width** in the zoom menu. The same controls apply in Overleaf.
 
 Opened files appear in the bottom tab bar. Select a tab to switch source, drag it to change its order, or use + to open another project file. Double-click a tab to rename its file. Closing a tab keeps your edits and the file in the project. At least one file stays open. Source tabs stay within their window.
 

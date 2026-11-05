@@ -50,7 +50,7 @@ Compile options includes a fresh rebuild and submission comparison. The comparis
 
 Add a project by its Overleaf or Git link and save its Git token in account settings. The local library keeps added projects, saved labels and manual order. Project title edits change the local label.
 
-Online groups local edits and reconciles remote changes through Git. On-device stops synchronisation. Both modes retain the local editor, PDF compilation and source navigation. Conflicts keep recovery copies and require review. See [synchronisation](../overleaf-realtime.md).
+Online groups local edits and reconciles remote changes through Git. Local stops synchronisation. Both modes retain the local editor, PDF compilation and source navigation. Conflicts keep recovery copies and require review. See [synchronisation](../overleaf-realtime.md).
 
 Review comments and suggestions use a separate web-session connection. Source updates, including a rejected suggestion's inverse edit, use Git. Git cannot guarantee preservation of server review metadata. Source status and review access remain independent.
 

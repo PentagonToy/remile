@@ -189,8 +189,8 @@ struct PDFWorkspace: View {
                 Menu {
                     Button("Zoom in") { zoom.step(1) }.disabled(session.showsOverview)
                     Button("Zoom out") { zoom.step(-1) }.disabled(session.showsOverview)
-                    Button("Fit page") { zoom.fit(width: false) }.disabled(session.showsOverview)
-                    Button("Fit width") { zoom.fit(width: true) }.disabled(session.showsOverview)
+                    Button("Fit height") { zoom.fit(.height) }.disabled(session.showsOverview)
+                    Button("Fit width") { zoom.fit(.width) }.disabled(session.showsOverview)
                 } label: { SymbolIcon(systemName: "ellipsis").frame(width: RemileControl.toolHit, height: RemileControl.toolHit) }
                     .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).accessibilityLabel("View options")
             } else { ReaderZoomControls(zoom: zoom).disabled(session.showsOverview) }
@@ -295,7 +295,7 @@ struct PDFWorkspace: View {
                             .overlay(alignment: .topTrailing) {
                                 if tab == .comments && !session.comments.isEmpty { Circle().fill(RemileStyle.accent).frame(width: 6, height: 6).padding(4).accessibilityLabel("\(session.comments.count) comments") }
                             }
-                            .background(session.sidebar == tab ? RemileStyle.accent.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+                            .background(session.sidebar == tab ? RemileStyle.accent.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 4)).contentShape(Rectangle())
                     }.buttonStyle(.plain).remileHelp(tab.rawValue).accessibilityLabel("Show " + tab.rawValue).accessibilityValue(session.sidebar == tab ? "Selected" : "")
                 }
             }.padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)

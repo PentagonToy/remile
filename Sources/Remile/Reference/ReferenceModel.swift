@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
     @Published var query = "" { didSet { cachedItems = nil } }
     @Published var showingTrash = false { didSet { cachedItems = nil } }
     @Published private(set) var busy = false
+    @Published private(set) var hasPendingTrashCleanup = false
     @Published var error: String?
     @Published var notice: String?
     @Published private(set) var recognising = false
@@ -41,6 +42,9 @@ import UniformTypeIdentifiers
     deinit { recognitionTask?.cancel(); if let networkObserver { NotificationCenter.default.removeObserver(networkObserver) } }
     var canUndo: Bool { !busy && history.canUndo }
     var canRedo: Bool { !busy && history.canRedo }
+    var canEmptyTrash: Bool {
+        hasPendingTrashCleanup || libraries.contains { $0.trashed != nil } || records.contains { $0.trashed != nil }
+    }
     func undo(redo: Bool = false) { perform { try $0.undo(redo: redo); return nil } }
     var activeLibraries: [ReferenceLibrary] { libraries.filter { $0.trashed == nil } }
     var deletedLibraries: [ReferenceLibrary] { libraries.filter { child in child.trashed != nil && (child.parentID == nil || libraries.first(where: { $0.id == child.parentID })?.trashed == nil) } }
@@ -306,13 +310,16 @@ import UniformTypeIdentifiers
                         counts[record.library, default: 0] += 1
                         if let collection = record.collectionID { counts[collection, default: 0] += 1 }
                     }
-                    return (records, libraries, selection, ReferenceDuplicates.withinLibraries(active), counts, before == after ? after : nil)
+                    return (snapshot: snapshot, selection: selection, duplicates: ReferenceDuplicates.withinLibraries(active),
+                            counts: counts, version: before == after ? after : nil)
                 }.value
-                if records != result.0 { records = result.0 }
-                if libraries != result.1 { libraries = result.1 }
-                duplicates = result.3; libraryCounts = result.4; loadedVersion = result.5
+                let snapshot = result.snapshot
+                if records != snapshot.records { records = snapshot.records }
+                if libraries != snapshot.libraries { libraries = snapshot.libraries }
+                if hasPendingTrashCleanup != snapshot.hasPendingTrashCleanup { hasPendingTrashCleanup = snapshot.hasPendingTrashCleanup }
+                duplicates = result.duplicates; libraryCounts = result.counts; loadedVersion = result.version
                 if selectedLibrary != ReferenceLibrary.allID, !activeLibraries.contains(where: { $0.id == selectedLibrary }), let first = activeLibraries.first { selectedLibrary = first.id }
-                if selectResult, let id = result.2, items.contains(where: { $0.id == id }) { selected = id; selectedIDs = [id] }
+                if selectResult, let id = result.selection, items.contains(where: { $0.id == id }) { selected = id; selectedIDs = [id] }
                 if !items.contains(where: { $0.id == selected }) { selected = items.first?.id }
                 let retained = selectedIDs.intersection(Set(items.map(\.id)))
                 if selectedIDs != retained { selectedIDs = retained }

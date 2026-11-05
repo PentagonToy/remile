@@ -8,7 +8,7 @@ Keep the page in view, and leave a few useful marks for later.
 2. Use the page field, thumbnails or outline to move through it.
 3. Open the sidebar to find text, highlights or comments.
 
-New PDFs start with the whole page fitted to the window. Fit sets the zoom once for the visible page or spread. Opening a sidebar or resizing the window keeps that zoom. Press Fit again to use the new space, or choose Fit width from the zoom menu.
+New PDFs open with the whole page or spread visible. **Fit** matches the height. Choose **Fit width** in the zoom menu to fill the available width. Opening a sidebar or resizing the window keeps the chosen zoom.
 
 Use the single-rectangle or split-rectangle button to switch between one and two pages. New reading sessions start with one page.
 

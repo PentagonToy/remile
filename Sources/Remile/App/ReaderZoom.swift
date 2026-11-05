@@ -10,7 +10,7 @@ final class ReaderZoom: ObservableObject {
     private weak var pdf: PDFView?
     private weak var web: WKWebView?
     private var observers: [NSObjectProtocol] = []
-    private var fitting: Bool? // Pending one-shot fit until the initial viewport exists.
+    private var fitting: PageFit? // Pending one-shot fit until the initial viewport exists.
     private var layoutObserver: NSObjectProtocol?
     private var hasAttachedPDF = false
     init(text: Bool = false) {
@@ -25,7 +25,7 @@ final class ReaderZoom: ObservableObject {
         let restoring = hasAttachedPDF && fitting == nil
         hasAttachedPDF = true; pdf = view
         if restoring { view.autoScales = false; view.scaleFactor = scale }
-        else { scale = view.scaleFactor; fit(width: fitting ?? false) }
+        else { scale = view.scaleFactor; fit(fitting ?? .page) }
         view.postsFrameChangedNotifications = true
         observers.append(NotificationCenter.default.addObserver(forName: .PDFViewScaleChanged, object: view, queue: .main) { [weak self, weak view] _ in
             Task { @MainActor [weak self, weak view] in
@@ -49,14 +49,16 @@ final class ReaderZoom: ObservableObject {
     }
     /// Resizing only completes an initial fit that was requested before layout.
     func updateFitForLayout(pageChanged: Bool, selecting: Bool) {
-        guard let width = fitting, !pageChanged, !selecting else { return }
-        applyFit(width: width)
+        guard let mode = fitting, !pageChanged, !selecting else { return }
+        fit(mode)
     }
-    func fit(width: Bool) { applyFit(width: width) }
-    private func applyFit(width: Bool) {
+    func fitReadingWidth(wide width: Bool) {
         wide = width
-        guard let pdf else { change(1); return }
-        fitting = width
+        change(1)
+    }
+    func fit(_ mode: PageFit) {
+        fitting = mode
+        guard let pdf else { return }
         pdf.layoutDocumentView()
         let clip = pdf.documentView?.enclosingScrollView?.contentView
         let visible = clip.map { pdf.convert($0.bounds, from: $0) } ?? pdf.bounds
@@ -78,7 +80,7 @@ final class ReaderZoom: ObservableObject {
         guard paper.width > 0, paper.height > 0, viewport.width > 32, viewport.height > 24 else { return }
         let x = max(1, viewport.width - 32) / paper.width
         let y = max(1, viewport.height - 24) / paper.height
-        let target = min(5, max(0.1, width ? x : min(x, y)))
+        let target = min(5, max(0.1, mode.scale(width: x, height: y)))
         fitting = nil
         if let layoutObserver { NotificationCenter.default.removeObserver(layoutObserver); self.layoutObserver = nil }
         pdf.autoScales = false
@@ -104,7 +106,11 @@ struct ReaderZoomControls: View {
                 .menuStyle(.borderlessButton).tint(RemileStyle.ink).fixedSize().remileHelp("Zoom percentage and fit options")
             Button { zoom.step(1) } label: { SymbolIcon(systemName: "plus").frame(width: RemileControl.toolHit, height: RemileControl.toolHit).contentShape(Rectangle()) }
                 .remileHelp("Zoom in 10 percentage points (⌘+: fine)").accessibilityLabel("Zoom in")
-            Button { zoom.fit(width: text) } label: { Text("Fit").frame(width: 42, height: 32).contentShape(Rectangle()) }.remileHelp(text ? "Fit reading width" : "Fit the whole page (⌘0)").keyboardShortcut("0")
+            Button {
+                if text { zoom.fitReadingWidth(wide: true) } else { zoom.fit(.height) }
+            } label: {
+                Text("Fit").frame(width: 42, height: RemileControl.toolHit).contentShape(Rectangle())
+            }.remileHelp(text ? "Fit width (⌘0)" : "Fit height (⌘0)").keyboardShortcut("0")
         }.buttonStyle(RemileToolStyle()).font(RemileType.control).tint(.primary).fixedSize()
             .accessibilityElement(children: .contain)
             .background {
@@ -128,8 +134,13 @@ struct ReaderZoomMenuItems: View {
         Button("Zoom out") { zoom.step(-1) }
         Divider()
         Button("Actual size · 100%") { zoom.change(1) }
-        Button(text ? "Reading width" : "Fit page") { zoom.fit(width: false) }
-        Button("Fit width") { zoom.fit(width: true) }
+        if text {
+            Button("Reading width") { zoom.fitReadingWidth(wide: false) }
+            Button("Fit width") { zoom.fitReadingWidth(wide: true) }
+        } else {
+            Button("Fit height") { zoom.fit(.height) }
+            Button("Fit width") { zoom.fit(.width) }
+        }
         Divider()
         ForEach([50, 75, 100, 125, 150, 200], id: \.self) { percent in
             Button("\(percent)%") { zoom.change(CGFloat(percent) / 100) }

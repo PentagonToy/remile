@@ -47,7 +47,7 @@ struct HomeWorkspace: View {
                 do { try TeXHistory.clearAll(); model.texProject?.revisions = [] }
                 catch { model.error = error.localizedDescription }
             }
-        } message: { Text("Moves remile.’s local LaTeX revisions to Trash. Your documents and project files stay in place.") }
+        } message: { Text("Move local LaTeX revisions to Trash. Your project files stay in place.") }
 
     }
     private var homeLayout: some View {
@@ -70,8 +70,8 @@ struct HomeWorkspace: View {
                     SymbolLabel("Extensions", systemImage: "puzzlepiece.extension").labelStyle(RemileNavigationLabelStyle()).font(RemileType.control.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading).padding(11).contentShape(Rectangle())
                 }.buttonStyle(.plain).background(model.page == .extensions ? RemileStyle.accent.opacity(0.17) : .clear, in: RoundedRectangle(cornerRadius: 9))
                 Spacer()
-                Button { actions.settings = true } label: { SymbolLabel("Settings", systemImage: "gearshape").labelStyle(RemileNavigationLabelStyle()).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).tourTarget("settings")
-                Button { model.guidePresented = true } label: { SymbolLabel("User guide", systemImage: "book.closed").labelStyle(RemileNavigationLabelStyle()).frame(maxWidth: .infinity, alignment: .leading).padding(11) }.buttonStyle(.plain).remileHelp("A quick guide to remile.").tourTarget("guide")
+                Button { actions.settings = true } label: { SymbolLabel("Settings", systemImage: "gearshape").labelStyle(RemileNavigationLabelStyle()).frame(maxWidth: .infinity, alignment: .leading).padding(11).contentShape(Rectangle()) }.buttonStyle(.plain).tourTarget("settings")
+                Button { model.guidePresented = true } label: { SymbolLabel("User guide", systemImage: "book.closed").labelStyle(RemileNavigationLabelStyle()).frame(maxWidth: .infinity, alignment: .leading).padding(11).contentShape(Rectangle()) }.buttonStyle(.plain).remileHelp("A quick guide to remile.").tourTarget("guide")
             }.padding(14).frame(maxWidth: .infinity).background(.ultraThinMaterial)
         }, content: {
             Group {
@@ -94,7 +94,7 @@ struct HomeWorkspace: View {
                         Button { if let url = model.chooseDocument() { open(url) } } label: {
                             SymbolLabel("Open a document", systemImage: "doc.badge.plus").font(RemileType.body).padding(.horizontal, 20).padding(.vertical, 12)
                                 .foregroundStyle(colorScheme == .dark ? Color(nsColor: RemileStyle.slate) : .white)
-                                .background(RemileStyle.accent, in: Capsule())
+                                .background(RemileStyle.accent, in: Capsule()).contentShape(Rectangle())
                         }.buttonStyle(.plain).tourTarget("open")
                     }
                     if model.processing { ProgressView(model.message ?? "Working…").controlSize(.small) }
@@ -116,6 +116,11 @@ struct HomeWorkspace: View {
                                         Button { open(url) } label: { RecentReadingRow(url: url, openedAt: model.lastOpened(url), displayName: model.overleaf.connection(for: url)?.name, overleaf: model.overleaf.connection(for: url) != nil).frame(height: compact ? 68 : 88).onDrag { NSItemProvider(object: url as NSURL) } }.buttonStyle(RemilePressStyle())
                                             .contextMenu {
                                                 if let project = model.overleaf.connection(for: url) { OverleafProjectIDButton(project: project) }
+                                                else if let kind = LocalDocumentIDs.Kind.forRecent(url) {
+                                                    Button(kind == .latex ? "Copy project ID" : "Copy document ID") {
+                                                        copyLocalID(url, kind: kind)
+                                                    }
+                                                }
                                                 Button("Reveal in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                                                 Button("Remove from Recent", systemImage: "clock.badge.xmark") { model.removeRecent(url) }
                                             }
@@ -165,6 +170,17 @@ struct HomeWorkspace: View {
     private func navigate(_ page: HomeModel.Page) { guard model.closeWriter(), model.pdfSearchEditing.confirmLeaving() else { return }; model.page = page }
 
     private func open(_ url: URL) { model.open(url) }
+    private func copyLocalID(_ url: URL, kind: LocalDocumentIDs.Kind) {
+        Task { @MainActor in
+            do {
+                let id = try await Task.detached {
+                    try LocalDocumentIDs.register(url, kind: kind)
+                }.value
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(id, forType: .string)
+            } catch { model.error = error.localizedDescription }
+        }
+    }
 }
 
 /// Keep each name centred independently of its symbol.

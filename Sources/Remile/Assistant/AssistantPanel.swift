@@ -71,7 +71,7 @@ struct AssistantPanel: View {
                     .onSubmit { ask() }.accessibilityIdentifier("ask.message")
                 Button { ask() } label: {
                     SymbolIcon(systemName: "arrow.up").foregroundStyle(RemileStyle.onAccent)
-                        .frame(width: 28, height: 28).background(RemileStyle.brand, in: Circle())
+                        .frame(width: 28, height: 28).background(RemileStyle.brand, in: Circle()).contentShape(Rectangle())
                 }.buttonStyle(.plain).padding(4)
                     .disabled(provider == "Off" || assistant.working || (passages.isEmpty && retrieve == nil))
                     .remileHelp(provider == "Off" ? "AI is off. Choose AI above to send a message." : assistant.question.isEmpty ? "Summarize document" : "Send message").accessibilityLabel("Send message")

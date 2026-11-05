@@ -15,47 +15,50 @@ enum OverleafGitSync {
         let files: [String: Data]
         let head: String
         let originalHead: String
+        let localHead: String
         let recovery: URL
         var resumed = false
     }
-    /// One immediate retry absorbs an ordinary concurrent push without an unbounded network loop.
-    static func synchronise(_ connection: OverleafConnection, root: URL, recovery: URL, transport: String? = nil) throws -> (prepared: Prepared, caughtUp: Bool) {
+    /// Reprepare once when the remote advances or pending local work changes.
+    static func synchronise(_ connection: OverleafConnection, root: URL, recovery: URL, transport: String? = nil, record: OverleafGit.RecordTransfer? = nil) throws -> (prepared: Prepared, remoteChanged: Bool) {
         for attempt in 0..<2 {
             try Task.checkCancellation()
-            let prepared = try prepare(connection, root: root, recovery: recovery, transport: transport)
-            if prepared.review.changes.isEmpty && !prepared.resumed { return (prepared, true) }
+            let prepared = try prepare(connection, root: root, recovery: recovery, transport: transport, record: record)
+            let remoteChanged = prepared.review.remoteHead != prepared.originalHead
+            if prepared.review.changes.isEmpty && !prepared.resumed { return (prepared, remoteChanged) }
             do {
-                let confirmed = try confirmPublication(prepared)
-                return (try OverleafSyncRecovery.incorporatingConfirmedRemote(prepared, head: confirmed), true)
+                let confirmed = try confirmPublication(prepared, record: record)
+                return (try OverleafSyncRecovery.incorporatingConfirmedRemote(prepared, head: confirmed), remoteChanged || confirmed != prepared.head)
             }
-            catch is RemoteAdvanced {
-                guard attempt == 0 else { throw RemoteAdvanced() }
+            catch let error where error is RemoteAdvanced || error is OverleafGit.SnapshotChanged {
+                guard attempt == 0 else { throw error }
                 guard try OverleafGit.head(root) == prepared.originalHead else {
                     throw ReviewRequired("Local Git history changed during sync. Your work and recovery copy are kept.")
                 }
-                // The server was fetched and has not accepted this head. Retain its local snapshot before rebuilding.
+                // Retain the unconfirmed local snapshot before rebuilding from current files.
                 try OverleafSyncRecovery.finish(prepared)
             }
         }
         throw RemoteAdvanced()
     }
-    static func prepare(_ connection: OverleafConnection, root: URL, recovery: URL, transport: String? = nil) throws -> Prepared {
+    static func prepare(_ connection: OverleafConnection, root: URL, recovery: URL, transport: String? = nil, record: OverleafGit.RecordTransfer? = nil) throws -> Prepared {
         try Task.checkCancellation()
         if let pending = try OverleafSyncRecovery.resume(connection, root: root, recovery: recovery, transport: transport) { return pending }
         let stage = OverleafSyncRecovery.stage(connection, recovery: recovery)
         // No push can occur before the receipt exists. An interrupted preparation is reproducible from the root.
         if FileManager.default.fileExists(atPath: stage.path) { try FileManager.default.removeItem(at: stage) }
         let originalHead = try OverleafGit.head(root)
-        let review = try OverleafGit.prepare(connection, root: root, reviewRoot: recovery, transport: transport, includeContents: false, stageDirectory: stage)
+        let review = try OverleafGit.prepare(connection, root: root, reviewRoot: recovery, transport: transport, includeContents: false, stageDirectory: stage, record: record)
         if review.changes.isEmpty {
+            let prepared = Prepared(review: review, files: [:], head: review.remoteHead, originalHead: originalHead, localHead: originalHead, recovery: recovery)
             if FileManager.default.fileExists(atPath: review.stage.path) {
                 guard try OverleafGit.head(root) == originalHead else { throw ReviewRequired("Local Git history changed. Review changes before syncing.") }
                 guard try OverleafGit.fingerprint(root) == review.fingerprint else { throw OverleafGit.SnapshotChanged() }
                 // History-only remote commits need no source install or outgoing push.
-                _ = try OverleafGit.run(["reset", "--mixed", review.remoteHead], at: root)
+                try advanceLocalBase(prepared)
                 try FileManager.default.removeItem(at: review.stage)
             }
-            return Prepared(review: review, files: [:], head: review.remoteHead, originalHead: originalHead, recovery: recovery)
+            return prepared
         }
         try OverleafSyncRecovery.checkCapacity(root: root, recovery: recovery)
         for change in review.changes where change.conflict {
@@ -80,15 +83,41 @@ enum OverleafGitSync {
         let head = tree == remoteTree ? review.remoteHead : try OverleafGit.run(["commit-tree", tree, "-p", review.remoteHead, "-m", "Update manuscript from remile."], at: review.stage).text.trimmingCharacters(in: .whitespacesAndNewlines)
         // A lost push response is resolved by the next fetch. Keep this commit reachable meanwhile.
         _ = try OverleafGit.run(["update-ref", "refs/remile/prepared", head], at: review.stage)
-        try Data((head + "\n").utf8).write(to: review.stage.appendingPathComponent(".git/remile-pending"), options: .atomic)
-        let prepared = Prepared(review: review, files: files, head: head, originalHead: originalHead, recovery: review.stage)
-        try OverleafSyncRecovery.save(prepared, localHead: local)
+        let prepared = Prepared(review: review, files: files, head: head, originalHead: originalHead, localHead: local, recovery: review.stage)
+        try OverleafSyncRecovery.save(prepared)
         return prepared
     }
     @discardableResult static func publish(_ prepared: Prepared) throws -> Bool {
-        try confirmPublication(prepared) == prepared.head
+        try confirmPublication(prepared, record: nil) == prepared.head
     }
-    private static func confirmPublication(_ prepared: Prepared) throws -> String {
+    static func advanceLocalBase(_ prepared: Prepared) throws {
+        let root = prepared.review.root
+        let branch = "refs/heads/" + prepared.review.connection.branch
+        let checkedOut = try OverleafGit.run(["symbolic-ref", "--quiet", "HEAD"], at: root, allowFailure: true)
+        guard checkedOut.text.trimmingCharacters(in: .newlines) == branch,
+              try OverleafGit.run(["update-ref", "-m", "Confirm Overleaf sync", branch, prepared.head, prepared.originalHead], at: root, allowFailure: true).status == 0 else {
+            throw ReviewRequired("Local Git history changed during sync. Your work and recovery copy are kept.")
+        }
+        // Update the index after advancing the expected branch. Never reset a working file.
+        _ = try OverleafGit.run(["read-tree", "--reset", "HEAD"], at: root)
+    }
+    static func containsPublication(_ prepared: Prepared, at remote: String) throws -> Bool {
+        if prepared.head == remote { return true }
+        let review = prepared.review
+        if try OverleafGit.run(["merge-base", "--is-ancestor", prepared.head, remote], at: review.stage, allowFailure: true).status == 0 { return true }
+        guard prepared.head != review.remoteHead, remote != review.remoteHead else { return false }
+
+        // Overleaf can recreate the commit. Require the exact tree and parent
+        // at the start of the remote's first-parent history after preparation.
+        let publication = try OverleafGit.run(["show", "-s", "--format=%P %T", prepared.head], at: review.stage).text
+            .trimmingCharacters(in: .newlines)
+        let fields = publication.split(separator: " ")
+        guard fields.count == 2, fields[0] == review.remoteHead else { return false }
+        let range = review.remoteHead + ".." + remote
+        let history = try OverleafGit.run(["log", "--first-parent", "--ancestry-path", "--format=%P %T", range], at: review.stage).text
+        return history.split(separator: "\n").last == publication[...]
+    }
+    private static func confirmPublication(_ prepared: Prepared, record: OverleafGit.RecordTransfer?) throws -> String {
         try Task.checkCancellation()
         let review = prepared.review
         guard try OverleafGit.head(review.root) == prepared.originalHead else {
@@ -96,29 +125,29 @@ enum OverleafGitSync {
         }
         let local = review.transport.hasPrefix("/") ? ["-c", "protocol.file.allow=always"] : []
         func fetch() throws -> String {
-            _ = try OverleafGit.run(local + ["fetch", "--no-tags", review.transport, "refs/heads/" + review.connection.branch], at: review.stage, credential: review.connection.profileID)
+            try OverleafGit.transfer(.confirm, local + ["fetch", "--no-tags", review.transport, "refs/heads/" + review.connection.branch], at: review.stage, credential: review.connection.profileID, record: record)
             return try OverleafGit.run(["rev-parse", "FETCH_HEAD"], at: review.stage).text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         var observed: String?
         if prepared.resumed {
             let remote = try fetch()
-            if try OverleafGit.run(["merge-base", "--is-ancestor", prepared.head, remote], at: review.stage, allowFailure: true).status == 0 { observed = remote }
+            if try containsPublication(prepared, at: remote) { observed = remote }
             else if prepared.originalHead == prepared.head {
                 throw ReviewRequired("Overleaf history no longer contains the installed sync. Review changes. Your local work and recovery copy are kept.")
             } else if remote != review.remoteHead {
                 if try OverleafGit.run(["merge-base", "--is-ancestor", review.remoteHead, remote], at: review.stage, allowFailure: true).status == 0 { throw RemoteAdvanced() }
                 throw ReviewRequired("Overleaf history changed while sync was interrupted. Review changes. Your local work and recovery copy are kept.")
-            }
+            } else if try OverleafGit.fingerprint(review.root) != review.fingerprint { throw OverleafGit.SnapshotChanged() }
         }
         if observed == nil, prepared.head != review.remoteHead {
             do {
-                _ = try OverleafGit.run(local + ["push", review.transport, prepared.head + ":refs/heads/" + review.connection.branch], at: review.stage, credential: review.connection.profileID)
+                try OverleafGit.transfer(.push, local + ["push", review.transport, prepared.head + ":refs/heads/" + review.connection.branch], at: review.stage, credential: review.connection.profileID, record: record)
             } catch {
                 try Task.checkCancellation()
                 if (error as? OverleafGit.Failure)?.retryAfter != nil { throw error }
                 // A failed response may hide either a concurrent push or an already accepted upload.
                 let remote = try fetch()
-                if try OverleafGit.run(["merge-base", "--is-ancestor", prepared.head, remote], at: review.stage, allowFailure: true).status == 0 { observed = remote }
+                if try containsPublication(prepared, at: remote) { observed = remote }
                 else if remote != review.remoteHead,
                         try OverleafGit.run(["merge-base", "--is-ancestor", review.remoteHead, remote], at: review.stage, allowFailure: true).status == 0 { throw RemoteAdvanced() }
                 else { throw error }
@@ -126,7 +155,7 @@ enum OverleafGitSync {
         }
         // Fetch, rather than ls-remote: Overleaf materialises browser edits when fetching.
         let remote = try observed ?? fetch()
-        guard try OverleafGit.run(["merge-base", "--is-ancestor", prepared.head, remote], at: review.stage, allowFailure: true).status == 0 else {
+        guard try observed != nil || containsPublication(prepared, at: remote) else {
             throw OverleafGit.Failure("The upload could not be confirmed. Your local work is safe. Retry sync.")
         }
         _ = try OverleafGit.run(["-c", "protocol.file.allow=always", "fetch", review.stage.path, remote], at: review.root)

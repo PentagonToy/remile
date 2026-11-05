@@ -136,15 +136,15 @@ struct ReferenceWorkspace: View {
             .alert("Regenerate library citation keys?", isPresented: $state.regenerate) {
                 Button("Cancel", role: .cancel) { }
                 Button("Regenerate all") { model.regenerate() }
-            } message: { Text("Citation keys may change. You may need to update citations in existing documents. References in Trash stay unchanged.") }
-            .alert("Delete library?", isPresented: Binding(get: { state.deletingLibrary != nil }, set: { if !$0 { state.deletingLibrary = nil } })) {
+            } message: { Text("Update any changed keys in your documents.") }
+            .alert("Move to Reference Trash?", isPresented: Binding(get: { state.deletingLibrary != nil }, set: { if !$0 { state.deletingLibrary = nil } })) {
                 Button("Cancel", role: .cancel) { state.deletingLibrary = nil }
-                Button("Delete library", role: .destructive) { if let library = state.deletingLibrary { model.deleteLibrary(library) }; state.deletingLibrary = nil }
-            } message: { Text("Delete ‘\(state.deletingLibrary?.name ?? "")’ and its metadata? Its references and PDFs move to Reference Trash. Emptying Trash permanently removes its metadata and PDFs that are not used elsewhere.") }
-            .alert("Empty Reference Trash?", isPresented: $state.emptyTrash) {
+                Button("Move to Trash", role: .destructive) { if let library = state.deletingLibrary { model.deleteLibrary(library) }; state.deletingLibrary = nil }
+            } message: { Text("You can restore ‘\(state.deletingLibrary?.name ?? "")’ and its references.") }
+            .alert("Empty Trash?", isPresented: $state.emptyTrash) {
                 Button("Cancel", role: .cancel) { }
                 Button("Empty Trash", role: .destructive) { model.emptyTrash() }
-            } message: { Text("Permanently delete all references, libraries and collections in Trash? Their metadata and unshared PDFs cannot be recovered. PDFs used by active references stay in place.") }
+            } message: { Text("Permanently deletes trashed items and unreferenced PDFs.") }
             .sheet(isPresented: $showRemarkable) {
                 RemarkableConnection(model: remarkable, references: model, showReference: { showRemarkable = false })
             }
@@ -230,7 +230,7 @@ struct ReferenceWorkspace: View {
                                     SymbolLabel("All references", systemImage: "books.vertical")
                                     Spacer()
                                     Text(String(model.allRecords.count)).font(RemileType.caption).foregroundStyle(.secondary)
-                                }.padding(10).background(model.selectedLibrary == ReferenceLibrary.allID && !model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                                }.padding(10).background(model.selectedLibrary == ReferenceLibrary.allID && !model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8)).contentShape(Rectangle())
                             }.buttonStyle(.plain)
                             ForEach(model.activeLibraries.filter { $0.parentID == nil && $0.source != "remarkable" && $0.source?.hasPrefix("zotero-import:") != true }) { library in
                                 libraryRow(library)
@@ -253,9 +253,10 @@ struct ReferenceWorkspace: View {
                                 }.padding(.leading, 10)
                             }
                             Button { model.showingTrash = true; model.selected = model.items.first?.id; model.selectedIDs = Set([model.selected].compactMap { $0 }) } label: {
-                                HStack { SymbolLabel("Trash", systemImage: "trash"); Spacer(); Text(String(model.trashRecords.count)).foregroundStyle(.secondary) }.padding(10).background(model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                                HStack { SymbolLabel("Trash", systemImage: "trash"); Spacer(); Text(String(model.trashRecords.count)).foregroundStyle(.secondary) }.padding(10).background(model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8)).contentShape(Rectangle())
                             }.buttonStyle(.plain).contextMenu {
-                                Button("Empty Trash…", systemImage: "trash", role: .destructive) { state.emptyTrash = true }.disabled(model.busy)
+                                Button("Empty Trash…", systemImage: "trash", role: .destructive) { state.emptyTrash = true }
+                                    .disabled(model.busy || !model.canEmptyTrash)
                             }
                             if model.showingTrash {
                                 ForEach(model.deletedLibraries) { library in
@@ -313,7 +314,7 @@ struct ReferenceWorkspace: View {
         if state.renamingLibrary?.id == library.id { libraryNameField }
         else { Button { model.selectLibrary(library.id) } label: {
             HStack { SymbolLabel(library.name, systemImage: library.source == "remarkable" ? "scribble.variable" : (library.parentID == nil ? "tray.full" : "folder")).lineLimit(1); Spacer(minLength: 2); Text(String(count)).font(RemileType.caption).foregroundStyle(.secondary) }
-                .padding(10).background(model.selectedLibrary == library.id && !model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .padding(10).background(model.selectedLibrary == library.id && !model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8)).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityAction(named: "Rename") { renameLibrary(library) }
         }
         }.contextMenu {
@@ -332,12 +333,22 @@ struct ReferenceWorkspace: View {
             } else if library.importedZoteroScope != nil {
                 Button("Update library") { zotero.updateLibrary(library, to: model) }.disabled(zotero.busy || remarkable.busy)
             }
+            Button(library.parentID == nil ? "Copy library ID" : "Copy collection ID") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(library.id.uuidString, forType: .string)
+            }
             Button("Copy library as BibTeX", systemImage: "doc.on.clipboard") { model.copy(records) }.disabled(records.isEmpty)
             Button("Export library as BibTeX…", systemImage: "square.and.arrow.up") { model.export(records) }.disabled(records.isEmpty)
             Divider()
             Button(library.parentID == nil ? "Delete library…" : "Delete collection…", systemImage: "trash", role: .destructive) { state.deletingLibrary = library }
         }.disabled(model.busy)
     }
+    private var emptyReferenceTitle: String {
+        guard model.showingTrash else { return "No references yet" }
+        if !model.deletedLibraries.isEmpty { return "No deleted references" }
+        return model.hasPendingTrashCleanup ? "PDFs awaiting cleanup" : "Trash is empty"
+    }
+
     private var list: some View {
         VStack(spacing: 0) {
             TextField("Find a reference", text: $model.query).textFieldStyle(.roundedBorder).padding(14)
@@ -352,10 +363,13 @@ struct ReferenceWorkspace: View {
             columns(widths: fitted).font(RemileType.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.trailing, ScrollContentSpacing.gutter).padding(.bottom, 8)
             Divider()
             if model.items.isEmpty {
+                let searching = !model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 VStack(spacing: 12) {
                     SymbolIcon(systemName: model.showingTrash ? "trash" : "books.vertical").foregroundStyle(RemileStyle.accent)
-                    Text(model.showingTrash ? "No deleted references" : model.query.isEmpty ? "A place for your references" : "No matching references").font(RemileType.heading)
-                    if !model.showingTrash && model.query.isEmpty { Text("Save a PDF in your browser, then drop it here. You can also import BibTeX.").font(RemileType.callout).foregroundStyle(.secondary).multilineTextAlignment(.center) }
+                    Text(searching ? "No matching references" : emptyReferenceTitle).font(RemileType.heading)
+                    if !model.showingTrash && !searching {
+                        Text("Drop a PDF or BibTeX file here.").font(RemileType.callout).foregroundStyle(.secondary)
+                    }
                 }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { scroll in

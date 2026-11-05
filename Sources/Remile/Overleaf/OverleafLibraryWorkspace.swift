@@ -52,12 +52,12 @@ struct OverleafLibraryWorkspace: View {
             .task { if !library.offlineMode && !NetworkAccess.offline && library.hasNetwork { await refresh() } }
             .onChange(of: state.accountID) { state.selectedTag = "all" }
             .onChange(of: tags.map(\.id)) { if state.selectedTag != "all" && state.selectedTag != "untagged" && state.selectedTag != "unknown" && !tags.contains(where: { $0.id == state.selectedTag }) { state.selectedTag = "all" } }
-            .confirmationDialog("Remove from local library?", isPresented: Binding(get: { state.removing != nil }, set: { if !$0 { state.removing = nil } }), titleVisibility: .visible) {
+            .confirmationDialog("Trash the local copy?", isPresented: Binding(get: { state.removing != nil }, set: { if !$0 { state.removing = nil } }), titleVisibility: .visible) {
                 Button("Move local copy to Trash", role: .destructive) {
                     if let project = state.removing, prepareRemoval(library.root(project)) { library.remove(project) }
                     state.removing = nil
                 }
-            } message: { Text("The local project, including unpublished edits, moves to Trash. The online project stays in place.") }
+            } message: { Text("This includes unpublished edits. Your Overleaf project stays online.") }
     }
     private func header(compact: Bool) -> some View {
         HStack(spacing: RemileControl.spacing) {
@@ -127,7 +127,7 @@ struct OverleafLibraryWorkspace: View {
                     }
                 }
                 if visible.isEmpty {
-                    ContentUnavailableView(library.projects.isEmpty ? "No saved projects" : "No matching projects", systemImage: "books.vertical", description: Text(library.projects.isEmpty ? "Use Add projects to bring an Overleaf project here." : "Choose another account, tag or search term."))
+                    ContentUnavailableView(library.projects.isEmpty ? "No saved projects" : "No matching projects", systemImage: "books.vertical")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {

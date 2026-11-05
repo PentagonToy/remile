@@ -45,7 +45,7 @@ struct OverleafAccountManager: View {
                             ForEach(library.accounts) { account in
                                 Button { choose(account.id) } label: {
                                     Text(account.name).lineLimit(2).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading).padding(10)
-                                        .background(draft.selected == account.id ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: RemileRadius.control))
+                                        .background(draft.selected == account.id ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: RemileRadius.control)).contentShape(Rectangle())
                                 }.buttonStyle(.plain).accessibilityValue(draft.selected == account.id ? "Selected" : "")
                             }
                         }.scrollContentGutter()
@@ -116,7 +116,7 @@ struct OverleafAccountManager: View {
                         }
                     }
                 }
-            } message: { Text("This deletes \(projectCount) local projects and their history, including unpublished edits. Projects on Overleaf are kept.") }
+            } message: { Text("Deletes \(projectCount) local projects, their history and unpublished edits. Online projects stay on Overleaf.") }
             .onDisappear { draft.token = "" }
     }
     private func saveToken() {

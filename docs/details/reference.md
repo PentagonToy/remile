@@ -26,7 +26,7 @@ Crossref and arXiv abstracts are saved with the reference. When Crossref has non
 
 **Include abstract** in Reference settings controls BibTeX copying, export and insertion. Turning it off keeps the library's abstract available to local suggestions without adding it to the manuscript bibliography.
 
-Right-click a record and choose Find a paper. remile checks matching PDFs already open or attached, then looks for a public copy. Choose Attach PDF to keep a confirmed match. The existing record and citation key are retained.
+To find a PDF for an existing record, right-click it and choose **Find a paper…**. remile checks PDFs already open or attached, then looks for a public copy. **Attach PDF** keeps the confirmed file with the existing record and citation key.
 
 | Available details | Where remile looks |
 | --- | --- |
@@ -36,13 +36,17 @@ Right-click a record and choose Find a paper. remile checks matching PDFs alread
 | DOI after other routes fail | OpenAlex public repository and publisher locations |
 | Title only | One exact Crossref match, then its public sources |
 
-An advertised PDF link may return a sign-in page, another paper or a chapter. remile checks readable PDF bytes and extracted identifiers or title before offering the file. Whole books also need a matching book title. Uncertain matches stay unattached. Add local PDF lets you attach a copy you have checked yourself.
+An advertised PDF link may return a sign-in page, another paper or a chapter. remile checks that the file is readable. It also compares the extracted identifier or title when attaching to an existing reference or when the article page declares a DOI. Whole books need a matching book title. **Choose PDF…** lets you select a downloaded copy for the same checks.
 
-Lookup runs only on request, with up to eight candidate URLs, a 90-second search budget and a 25 MB file limit. Downloads use temporary storage and are discarded when they fail. The waiting state can be cancelled, and the airplane control blocks online retrieval. No GPT request runs. Source and the repository's reported version appear beside Include PDF during review. A version label from an index is not an independent check of the edition.
+Each public PDF search tries up to eight candidate URLs within 90 seconds. The file limit is 25 MiB. **Cancel** stops the lookup. Work offline blocks online retrieval.
 
 ### PDF access
 
-Find a paper checks local files and public PDF sources. Subscription-only papers must be downloaded in your browser and added with **Add local PDF…** or dropped onto the reference. Publisher sign-in, embedded browsing and remembered publisher sessions are not available. Existing managed attachments are unchanged.
+Paste a public HTTPS article, PDF or web page link into **Find a paper…**. For a web page, remile reads the title and any author, organisation and date supplied by the site. **Add Web Page** saves those details, the URL and the access date as an `@online` entry. Signed PDF links are used only for downloading.
+
+For a ScienceDirect link, remile looks up the article in Crossref and checks for a matching local PDF. If it needs the publisher’s copy, it opens the article in the same window. Sign in if asked, then use **View PDF** on the publisher’s page. To reuse your session across ScienceDirect journals, choose **More actions → Remember sign-in on this Mac** before signing in. **Forget sign-in** clears the saved session. The publisher or institution may require you to sign in again.
+
+If the publisher page cannot open in remile, choose **More actions → Open in browser**. After downloading the file, return to **Find a paper…** and choose **Choose PDF…**. If you only need the paper’s citation, choose **Add without PDF**.
 
 ### Libraries and selection
 

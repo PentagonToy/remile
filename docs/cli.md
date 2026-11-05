@@ -98,6 +98,8 @@ Combine accepts PDFs together or Markdown files together. Markdown output uses `
 
 `reference libraries` lists stable library/collection identities and parent IDs. `reference list [--library UUID] [--query text] [--limit 1..200] [--offset N] [--trash]` returns bounded bibliographic metadata with stable record IDs and revisions. `reference show --id UUID` returns fields, attachment paths and BibTeX. `reference export [--library UUID] [--id UUID] [--output /absolute/new.bib]` exports active records across all libraries unless scoped. Citation keys must be unique in the exported set. The output file must be new. These commands use the shared local catalogue without a running editor or model request. See [Reference](reference.md) for the native workspace and fixed citation-key formats.
 
+In Reference, right-click a library or collection and choose **Copy library ID** or **Copy collection ID**. Pass that UUID to `--library`.
+
 Reference writes use the same transaction service as the native workspace:
 
 | Command | Result |
@@ -134,6 +136,8 @@ Replace `PROJECT_ID` with the copied 24-character ID. `list` returns project nam
 
 From 0.2.4, enable the review connection in the app before using `review`. The CLI cannot enable it.
 
+`online.lastGitTransfers` lists the fetch, push and confirmation steps from the latest sync attempt, with elapsed milliseconds, success and any reported HTTP error code. The entries omit Git command output and credentials.
+
 Files imported through the editor keep their project-relative paths. Use `read --file contents/section.tex` for editable sources or `inspect /absolute/project` to list files on disk, including images. The editor handles completion and folder drops.
 
 `review` reads the connected account's current server comments and tracked changes directly. It does not require opening the sidebar first. JSON is the default. Markdown carries project, document, thread and change identities, UTF-16 anchors, source hashes and bounded source excerpts. `complete: false` identifies missing or changing review locations. Read-only review access never accepts, rejects, resolves or edits a record.
@@ -148,9 +152,16 @@ Listing, showing and reading do not fetch remote changes. `remoteFreshness: not-
 
 Run `documents` to discover open document sessions, then pass `--target UUID` to a live document command. `status` also returns this identity. An explicit target never falls back to another window, and reopening a document gives it a new session identity. Without a target, commands retain active-window behaviour. Check the target status and buffer fingerprint before applying edits. An open request creates a window when none is open.
 
+For a saved local LaTeX project or Markdown file, right-click its recent item and copy its ID. `remile resolve --id local:UUID` returns its path and kind while the app is closed. With remile running, `remile open --id local:UUID` opens it. IDs are stored on this Mac. Copy the ID again before moving or renaming a file that an editor has replaced during saving to refresh its bookmark. For buffer edits, get the current `--target` from `documents` after opening.
+
+Use `files` to refresh the sidebar and list project-relative paths. Pass one of those paths to `move --file` and specify the new path with `--to`. The destination folder must already exist. Update any affected LaTeX references after the move.
+
 | Command | Result |
 | --- | --- |
-| `open /path/document` | Open a document or project |
+| `open /path/document` or `open --id local:UUID` | Open a document or project |
+| `resolve --id local:UUID` | Find the current path of a saved local document |
+| `files [--target UUID]` | Refresh and list the open LaTeX or Overleaf project's files and folders |
+| `move --file relative-path --to relative-path [--target UUID]` | Move a file or folder to a new path in the open project and update its sidebar |
 | `documents` | List open document session identities, paths, kinds and unsaved state |
 | `status [--target UUID]` | Read document state and compile counts |
 | `writer-view [--zoom 0.25..2\|--fit] [--rulers on\|off] [--target UUID]` | Read or change the open Writer viewport without editing its contents |

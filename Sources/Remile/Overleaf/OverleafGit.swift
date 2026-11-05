@@ -78,9 +78,26 @@ enum OverleafGit {
     }
     struct Failure: LocalizedError {
         let errorDescription: String?
-        var retryAfter: TimeInterval? = nil
-        init(_ message: String, retryAfter: TimeInterval? = nil) { errorDescription = message; self.retryAfter = retryAfter }
+        let retryAfter: TimeInterval?
+        let httpStatus: Int?
+        init(_ message: String, retryAfter: TimeInterval? = nil, httpStatus: Int? = nil) {
+            errorDescription = message; self.retryAfter = retryAfter; self.httpStatus = httpStatus
+        }
     }
+    struct Transfer: Sendable {
+        enum Phase: String { case fetch, push, confirm }
+        let phase: Phase
+        let milliseconds: Int
+        let succeeded: Bool
+        let httpStatus: Int?
+
+        var status: [String: Any] {
+            var value: [String: Any] = ["phase": phase.rawValue, "milliseconds": milliseconds, "succeeded": succeeded]
+            if let httpStatus { value["httpStatus"] = httpStatus }
+            return value
+        }
+    }
+    typealias RecordTransfer = (Transfer) -> Void
     struct Result { let status: Int32; let data: Data; var text: String { String(decoding: data, as: UTF8.self) } }
     struct Change: Identifiable, Sendable {
         let path: String
@@ -153,13 +170,34 @@ enum OverleafGit {
             if networking, let error = try? FileHandle(forReadingFrom: errors) {
                 defer { try? error.close() }
                 let message = String(decoding: (try? error.read(upToCount: 65536)) ?? Data(), as: UTF8.self).lowercased()
-                if message.contains("error: 429") || message.contains("too many requests") || message.contains("rate limit") {
-                    throw Failure("Overleaf is receiving too many requests. Your work is saved locally. Sync will retry later.", retryAfter: 300)
-                }
+                throw transportFailure(message)
             }
             throw Failure("Could not complete the Git operation. Check the connection, project access and Git token, then retry.")
         }
         return result
+    }
+    static func transportFailure(_ message: String) -> Failure {
+        let status = message.range(of: "returned error: ").flatMap { Int(message[$0.upperBound...].prefix(3)) }
+            .flatMap { (400...599).contains($0) ? $0 : nil }
+        if status == 429 || message.contains("error: 429") || message.contains("too many requests") || message.contains("rate limit") {
+            return Failure("Overleaf is receiving too many requests. Your work is saved locally. Sync will retry later.", retryAfter: 300, httpStatus: status)
+        }
+        if status == 403 { return Failure("Overleaf refused the Git request (HTTP 403). Sync will try again.", retryAfter: 120, httpStatus: status) }
+        return Failure("Could not complete the Git operation. Check the connection, project access and Git token, then retry.", httpStatus: status)
+    }
+    static func transfer(_ phase: Transfer.Phase, _ args: [String], at root: URL, credential: UUID, record: RecordTransfer?) throws {
+        let start = DispatchTime.now().uptimeNanoseconds
+        func emit(_ succeeded: Bool, _ status: Int?) {
+            record?(.init(phase: phase, milliseconds: Int((DispatchTime.now().uptimeNanoseconds - start) / 1_000_000),
+                          succeeded: succeeded, httpStatus: status))
+        }
+        do {
+            _ = try run(args, at: root, credential: credential)
+            emit(true, nil)
+        } catch {
+            emit(false, (error as? Failure)?.httpStatus)
+            throw error
+        }
     }
     static func clone(_ connection: OverleafConnection, root: URL) throws -> String {
         try FileManager.default.createDirectory(at: root.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -190,10 +228,10 @@ enum OverleafGit {
         hash.update(data: try run(["rev-parse", "HEAD"], at: root).data)
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
-    static func prepare(_ connection: OverleafConnection, root: URL, reviewRoot: URL, transport: String? = nil, includeContents: Bool = true, stageDirectory: URL? = nil) throws -> Review {
+    static func prepare(_ connection: OverleafConnection, root: URL, reviewRoot: URL, transport: String? = nil, includeContents: Bool = true, stageDirectory: URL? = nil, record: RecordTransfer? = nil) throws -> Review {
         try excludePrivateFiles(root)
         let transport = transport ?? connection.remote
-        _ = try run((transport.hasPrefix("/") ? ["-c", "protocol.file.allow=always"] : []) + ["fetch", "--no-tags", transport, "refs/heads/" + connection.branch], at: root, credential: connection.profileID)
+        try transfer(.fetch, (transport.hasPrefix("/") ? ["-c", "protocol.file.allow=always"] : []) + ["fetch", "--no-tags", transport, "refs/heads/" + connection.branch], at: root, credential: connection.profileID, record: record)
         let remote = try run(["rev-parse", "FETCH_HEAD"], at: root).text.trimmingCharacters(in: .whitespacesAndNewlines)
         let stage = stageDirectory ?? reviewRoot.appendingPathComponent(UUID().uuidString)
         if try run(["rev-parse", "HEAD"], at: root).text.trimmingCharacters(in: .whitespacesAndNewlines) == remote,

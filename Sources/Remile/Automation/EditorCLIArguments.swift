@@ -17,12 +17,15 @@ enum EditorCLIArguments {
         "writer-object": Rule(values: ["--id", "--wrap", "--lock", "--expected-sha256", "--target"]),
         "writer-view": Rule(values: ["--zoom", "--rulers", "--target"], flags: ["--fit"]),
         "logs": Rule(values: ["--tail"]),
-        "open": Rule(paths: 1...1), "inspect": Rule(paths: 1...1),
+        "open": Rule(values: ["--id"], paths: 0...1), "resolve": Rule(values: ["--id"]),
+        "inspect": Rule(paths: 1...1),
         "build": Rule(values: ["--output", "--main"], flags: ["--scratch", "--submission-check"], paths: 1...1),
         "compile": Rule(flags: ["--scratch", "--submission-check"]),
         "submission-compare": Rule(flags: ["--status"]),
         "replace": Rule(values: ["--file", "--source-file", "--expected-sha256"]),
         "rename": Rule(values: ["--file", "--name", "--kind"]),
+        "files": Rule(values: ["--target"]),
+        "move": Rule(values: ["--file", "--to", "--target"]),
         "export": Rule(values: ["--kind", "--output"]),
         "transform": Rule(values: ["--action", "--file", "--start", "--length", "--expected-sha256"], flags: ["--apply"]),
         "review": Rule(values: ["--file", "--format", "--output"], flags: ["--run", "--stop", "--clear", "--criteria"], paths: 0...1),
@@ -58,6 +61,19 @@ enum EditorCLIArguments {
             index += 1
         }
         guard rule.paths.contains(positionals.count) else { throw Failure("Provide the expected input path or query. Use --cli help.") }
+        if command == "move" {
+            guard let source = values["--file"], let destination = values["--to"],
+                  OverleafSourceFiles.validPath(source), OverleafSourceFiles.validPath(destination) else {
+                throw Failure("Provide project-relative paths with --file and --to.")
+            }
+        }
+        if command == "resolve" || (command == "open" && values["--id"] != nil) {
+            guard positionals.isEmpty, values["--id"].flatMap(LocalDocumentIDs.parse) != nil else {
+                throw Failure("Use --id local:UUID from a remile copy action.")
+            }
+        } else if command == "open", positionals.isEmpty {
+            throw Failure("Provide an absolute path or a local document ID.")
+        }
         if command != "library-search", command != "reference", command != "overleaf", positionals.contains(where: { !$0.hasPrefix("/") }) { throw Failure("Provide absolute input paths.") }
         if command != "overleaf", values["--target"] != nil, !positionals.isEmpty { throw Failure("Choose a document path or --target, not both.") }
         if command == "library-search", let value = values["--offset"], Int(value).map({ $0 >= 0 && $0 <= Int.max - 201 }) != true { throw Failure("Use a non-negative search offset.") }

@@ -14,21 +14,15 @@ Create a token in **Overleaf → Account settings → Git integration**. Eligibl
 
 ## Choose a mode
 
-**Online** saves locally and synchronises through Git while the project is open. It is the default for new connections. Independent remote edits merge automatically. Independent edits within one paragraph can also merge when unique word anchors separate them. When one person continues an unfinished last line and another appends a separate single content line, the continuation comes first and both are kept. Small unambiguous character edits and a longer version of the same appended text can merge automatically. Competing continuations, reordered blocks and other ambiguous or overlapping edits wait for review. Unambiguous source moves retain edits and the selected tab. Further writing or file operations automatically retry recoverable conflicts using the existing request spacing and backoff. Storage and Git history problems still need attention. If a collaborator uploads during your sync, remile fetches the new history and tries one fresh merge. If the confirmation fetch already contains newer work on top of an accepted upload, remile installs that confirmed version in the same attempt and reconciles newer local typing. It does not wait for another polling interval or send a second upload for that acknowledgement. Recovery records advance before installation, and unchanged attachments share their existing memory. It never force-pushes. Sync now is an optional immediate check. Normal writing does not need it.
+**Online** saves on this Mac and syncs through Git while the project is open. New connections start Online. **Local** pauses sync and keeps editing, compilation and source navigation available. Choose **Online** to resume.
 
-The connection bar shows **Saved** when the current source is saved on this Mac. Local autosave continues during typing, network requests and offline work without waiting for a quiet period. Automatic transmission and remote checks continue separately without repeatedly changing the saved label. The last remote confirmation remains in hover help and CLI diagnostics. Save failures, offline work, retry and review states remain visible.
+**Saved** means the current source is on this Mac. Hover over it to see the last remote confirmation. [Connection states and retry timing](../overleaf-realtime.md) explain how local saves and remote checks relate.
 
-After returning to the project or syncing changes, remile checks for remote edits every fifteen seconds for two minutes. Quiet projects then slow to one to five minutes between checks. Typing reuses the scheduled wake-up rather than creating a task for each keystroke. Rapid window changes do not trigger repeated requests, and connection errors keep their retry delay.
+remile merges independent text edits and unambiguous source moves. Changes found while confirming an upload can be applied in the same attempt, together with later local typing. Overlapping edits or a changed local Git branch can require review. Choose **Sync now** for an immediate check.
 
-**On-device** stops automatic synchronisation. Editing, local compilation and source navigation remain available. Choose Online when you want to reconnect.
+### Recovery copies
 
-An interrupted Online connection keeps the selected mode and saves work locally. It retries when the connection returns. Repeated failures back off without opening repeated dialogs. A quick return within 45 seconds can reuse the last project and PDF. Its hidden synchronisation timer is stopped.
-
-Interrupted Git sync reuses one pending recovery copy per project, including after restarting remile. It checks the server before repeating an uncertain upload and preserves edits made since the interruption. Changed Git history or overlapping remote work can still require review.
-
-Recovery receipts contain Git object IDs, not copies of document text. Completed sync removes its temporary copy and keeps three managed recovery references. Before staging, remile checks a 256 MiB recovery budget with room for the current project. When space is insufficient, it pauses new preparation and keeps pending work. Existing Git history and older, unlabelled recovery copies are outside automatic expiry. Recovery references do not impose a hard size limit on Git's object database.
-
-Identical attachments are read once per recovery attempt and share memory. This does not create a persistent content cache. File and project size limits still count every path, including duplicate attachments.
+remile keeps one pending recovery copy per project and checks Overleaf before repeating an uncertain upload. A successful sync clears the pending copy and retains up to three managed recovery references. Before staging, remile checks a 256 MiB budget for recovery storage and the current project. It pauses new preparation when space is insufficient and keeps pending work. Existing Git history and older unlabelled recovery copies have their own lifetimes.
 
 ## Read review notes
 
@@ -50,7 +44,7 @@ Right-click a saved project and choose Copy project ID. The [CLI](../cli.md#over
 
 | Button | What it does |
 | --- | --- |
-| Online / On-device | Choose whether this project synchronises. |
+| Online / Local | Choose whether this project synchronises. |
 | Sync now | Check and reconcile saved source through Git. Approve Keychain access if macOS asks. |
 | Review changes | Compare overlapping source changes. |
 | Connection options | Open projects, edit the Git token or reveal recovery copies. |

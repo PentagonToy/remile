@@ -17,7 +17,7 @@ A local workspace for PDF, Markdown and LaTeX documents.
 - **LaTeX** — Edit in source tabs with project path completion, drop folders into Files and compile to PDF.
 - **Overleaf** — Use the same LaTeX editor with automatic Git synchronisation in Online mode. Comments and suggestions connect separately.
 - **Extensions** — Read selected reMarkable folders over SSH or import local Zotero libraries into Reference. See [setup and limits](docs/extensions.md).
-- **Reference** — Organise PDF/BibTeX records, review duplicates, edit or lock citation keys and keep shared attachments. See [Reference](docs/reference.md).
+- **Reference** — Keep citations and PDFs together. Review duplicates, lock citation keys and reuse attachments across matching records. See [Reference](docs/reference.md).
 - **AI** — Use Apple Intelligence on your Mac or connect ChatGPT for document questions, [manuscript review](docs/manuscript-review.md), grammar suggestions and reviewed LaTeX repairs.
 
 Convert, compress, combine and export documents when you need to. Suggested source changes stay reviewable and undoable.
@@ -62,7 +62,7 @@ See [installation and updates](docs/distribution.md) for package details and the
 
 ## Development
 
-remile. is a native Swift application with no external Swift package dependencies. Includes reMarkable SSH and local Zotero extensions, Thesis / Dissertation types and improved PDF metadata recognition.
+remile. is a native Swift application with no external Swift package dependencies.
 
 Sources live in `Sources/Remile`. `tools/prepare_app.sh` builds and packages `remile.app`. Set `REMILE_BUILD_DIRECTORY` to an external output directory.
 

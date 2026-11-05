@@ -10,6 +10,12 @@ Create libraries and collections from the sidebar context menu. Drop a PDF onto 
 
 Right-click a library or collection and choose **Rename…** to change its name. Return or a click elsewhere saves a valid name. An empty name cancels when you leave the field, and Escape cancels the edit. Renaming keeps its references and collections together and supports Undo.
 
+## Add from a link
+
+In current development builds, choose **Add → Find a paper…**. Paste a public HTTPS link or search by DOI or title. Choose **Add PDF to Library** when a PDF is ready, **Add without PDF** to save the paper’s citation, or **Add Web Page** to cite a website.
+
+To find a PDF for an existing reference, right-click it and choose **Find a paper…**. Choose **Attach PDF** when a match is ready. [PDF and link lookup →](details/reference.md#pdf-access)
+
 ## Connected notes and PDF storage
 
 Connect reMarkable notes to a paper from the reMarkable context menu. Confirmed DOI or arXiv matches can link automatically. Similar metadata requires review. The paper keeps its metadata, key and original PDF, with linked notes following later source updates.
@@ -35,8 +41,6 @@ In **Edit reference**, the **BibTeX** tab shows the current entry. Changes carry
 Right-click a reference and choose **Lock citation key** to keep its key during regeneration. **Unlock citation key** allows regeneration again. Both actions work on a mixed selection of locked and unlocked references. You can still edit a locked key manually.
 
 Edited books can list editors instead of authors. **Author / Editor** shows their names with `(ed.)` or `(eds.)`. New citation keys use the first editor's surname when no author is recorded. [Names and keys →](details/reference.md#columns-and-keys)
-
-Missing a PDF? Right-click the reference and choose **Find a paper…**. remile checks local files and public sources. For subscription-only papers, download the PDF in your browser and add the local file. remile does not manage publisher sign-ins. [PDF lookup details →](details/reference.md#pdf-access)
 
 Leading A, An and The are skipped when generating title words for citation keys. A Priori and A Posteriori are kept as single terms. The one-word and two-word presets remain available. This title-word rule applies to new or explicitly regenerated keys.
 

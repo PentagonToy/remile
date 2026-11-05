@@ -25,22 +25,22 @@ enum OverleafSyncRecovery {
     static func reference() -> String {
         "refs/remile/git-recovery/" + String(Int64(Date().timeIntervalSince1970 * 1000)) + "-" + UUID().uuidString.lowercased()
     }
-    static func save(_ prepared: OverleafGitSync.Prepared, localHead: String) throws {
+    static func save(_ prepared: OverleafGitSync.Prepared) throws {
         let review = prepared.review
         let value = Receipt(version: 1, connection: review.connection.id,
                             root: SourceDigest.sha256(review.root.resolvingSymlinksInPath().path), branch: review.connection.branch,
-                            originalHead: prepared.originalHead, remoteHead: review.remoteHead, localHead: localHead,
+                            originalHead: prepared.originalHead, remoteHead: review.remoteHead, localHead: prepared.localHead,
                             head: prepared.head, fingerprint: review.fingerprint)
         let url = receipt(review.connection, recovery: review.stage.deletingLastPathComponent())
         try JSONEncoder().encode(value).write(to: url, options: .atomic)
     }
-    /// Consume the already fetched descendant without another remote request or
+    /// Consume the already confirmed remote without another network request or
     /// another preparation. The receipt advances before the editor can install it.
     static func incorporatingConfirmedRemote(_ prepared: OverleafGitSync.Prepared, head: String) throws -> OverleafGitSync.Prepared {
         if head == prepared.head { return prepared }
         let review = prepared.review
         guard validObject(head), try OverleafGit.head(review.root) == prepared.originalHead,
-              try OverleafGit.run(["merge-base", "--is-ancestor", prepared.head, head], at: review.stage, allowFailure: true).status == 0 else {
+              try OverleafGitSync.containsPublication(prepared, at: head) else {
             throw invalid()
         }
         // Seed blob identity from the previous immutable tree. Unchanged large
@@ -56,12 +56,11 @@ enum OverleafSyncRecovery {
             if let bytes = prepared.files[String(parts[1])], bytes.count == size { objects[String(fields[2])] = bytes }
         }
         let result = try files(head, at: review.stage, objects: &objects)
-        let localHead = try OverleafGit.run(["rev-parse", "--verify", pendingReference], at: review.root).text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard validObject(localHead) else { throw invalid() }
-        let latest = OverleafGitSync.Prepared(review: review, files: result, head: head, originalHead: prepared.originalHead, recovery: prepared.recovery, resumed: prepared.resumed)
+        // Cleanup can already have moved the pending ref to a recovery ref.
+        let latest = OverleafGitSync.Prepared(review: review, files: result, head: head, originalHead: prepared.originalHead,
+                                             localHead: prepared.localHead, recovery: prepared.recovery, resumed: prepared.resumed)
         _ = try OverleafGit.run(["update-ref", "refs/remile/prepared", head], at: review.stage)
-        try Data((head + "\n").utf8).write(to: review.stage.appendingPathComponent(".git/remile-pending"), options: .atomic)
-        try save(latest, localHead: localHead)
+        try save(latest)
         return latest
     }
     static func resume(_ connection: OverleafConnection, root: URL, recovery: URL, transport: String?) throws -> OverleafGitSync.Prepared? {
@@ -89,7 +88,7 @@ enum OverleafSyncRecovery {
         let review = OverleafGit.Review(connection: connection, root: root, stage: stage, fingerprint: saved.fingerprint,
                                        remoteHead: saved.remoteHead, transport: transport ?? connection.remote,
                                        changes: changes, localChanges: true, localFiles: base)
-        return .init(review: review, files: result, head: saved.head, originalHead: currentHead, recovery: stage, resumed: true)
+        return .init(review: review, files: result, head: saved.head, originalHead: currentHead, localHead: saved.localHead, recovery: stage, resumed: true)
     }
     private static func validObject(_ value: String) -> Bool {
         (value.count == 40 || value.count == 64) && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }

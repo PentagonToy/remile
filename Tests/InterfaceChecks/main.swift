@@ -23,8 +23,8 @@ Task { @MainActor in
     let zoom = ReaderZoom(); zoom.attach(view)
     zoom.change(1.5)
     verify(abs(view.scaleFactor - 1.5) < 0.01, "PDF percentage controls native scale")
-    zoom.fit(width: false); let pageFit = view.scaleFactor
-    zoom.fit(width: true)
+    zoom.fit(.page); let pageFit = view.scaleFactor
+    zoom.fit(.width)
     verify(view.scaleFactor > pageFit, "Fit width differs from whole-page fit")
     zoom.change(1)
     verify(abs(view.scaleFactor - 1) < 0.01, "Actual size restores 100 percent")
@@ -34,7 +34,7 @@ Task { @MainActor in
     let textZoom = ReaderZoom(text: true), web = WKWebView()
     textZoom.attach(web); textZoom.change(1.5)
     verify(abs(web.pageZoom - 1.5) < 0.01, "Markdown web preview responds to scale")
-    textZoom.fit(width: true)
+    textZoom.fitReadingWidth(wide: true)
     verify(textZoom.wide && abs(web.pageZoom - 1) < 0.01, "Markdown fit width resets scale")
     textZoom.change(100)
     verify(textZoom.scale == 5, "Zoom bounded above")
