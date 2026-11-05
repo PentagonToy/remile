@@ -192,6 +192,7 @@ struct ReadingShell: View {
         .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: overleaf.browsing)
         .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: home.texProject?.identity)
         .frame(minWidth: 560, minHeight: 450)
+        .background(RemileStyle.background)
         .overlay { if home.opening { ProgressView("Opening document…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
         .alert("Unable to open document", isPresented: Binding(get: { reader.url != nil && home.error != nil }, set: { if !$0 { home.error = nil } })) {
             Button("OK") { home.error = nil }
