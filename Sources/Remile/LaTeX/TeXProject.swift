@@ -34,7 +34,7 @@ import UniformTypeIdentifiers
     struct NewItemDraft: Identifiable {
         let id = UUID()
         let kind: NewItemKind
-        var isCollection: Bool { switch kind { case .collection, .renameCollection: return true; default: return false } }
+        var isRename: Bool { switch kind { case .rename, .renameCollection: return true; default: return false } }
         var placeholder: String { switch kind { case .file: return "File name"; case .folder: return "Folder name"; case .collection: return "Collection name"; case .rename, .renameCollection: return "New name" } }
         var symbol: String { switch kind { case .file: return "doc.text"; case .folder: return "folder"; case .collection, .renameCollection: return "square.stack.3d.up"; case .rename: return "doc.text" } }
         var initialName: String { switch kind { case .rename(let path): return (path as NSString).lastPathComponent; case .renameCollection(_, let name): return name; default: return "" } }
@@ -100,7 +100,6 @@ import UniformTypeIdentifiers
     @Published var setupNeeded = false
     @Published var compileFailed = false
     @Published var setupIssue: TeXSetupIssue?
-    @Published var renamingFile: String?
     var editSource: ((String, String, String, String) -> Bool)?
     private var outlineTask: Task<Void, Never>?
     @Published var revisions: [TeXHistory.Revision] = []

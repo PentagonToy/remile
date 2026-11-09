@@ -3,7 +3,7 @@ import SwiftUI
 struct ReferenceCleanupReview: View {
     @ObservedObject var model: ReferenceModel
     @ObservedObject private var network = NetworkAccessState.shared
-    var target: ReferenceRecord? = nil
+    var targets: [ReferenceRecord]? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var state = Presentation()
     private final class Presentation: ObservableObject {
@@ -31,8 +31,8 @@ struct ReferenceCleanupReview: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(target == nil ? "Clean up library" : "Review metadata").font(.title2.weight(.semibold))
-            if target == nil { Picker("Review", selection: $state.tab) {
+            Text(targets == nil ? "Clean up library" : "Update metadata").font(.title2.weight(.semibold))
+            if targets == nil { Picker("Review", selection: $state.tab) {
                 Text("Metadata · \(state.changes.count)").tag(0)
                 Text("Duplicates · \(duplicateGroups.count)").tag(1)
             }.pickerStyle(.segmented).labelsHidden().disabled(state.loading) }
@@ -54,7 +54,11 @@ struct ReferenceCleanupReview: View {
             HStack {
                 Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
                 if state.progress != nil { Button("Stop") { state.lookupTask?.cancel() } }
-                else if state.tab == 0 { Button(target == nil ? "Look up missing" : "Look up") { state.lookupTask = Task { await lookup() } }.disabled(state.loading || model.busy || network.offline).remileHelp("Find missing metadata and abstracts online. Review before applying.") }
+                else if targets == nil && state.tab == 0 {
+                    Button("Look up missing") { startLookup(model.libraryRecords.filter(ReferenceCleanup.needsLookup)) }
+                        .disabled(state.loading || model.busy || network.offline)
+                        .remileHelp("Find missing metadata and abstracts online. Review before applying.")
+                }
                 Spacer()
                 if state.tab == 0 {
                     Button("Apply selected") { model.applyCleanup(state.changes.filter { state.included.contains($0.id) }) { dismiss() } }
@@ -69,7 +73,12 @@ struct ReferenceCleanupReview: View {
                 }
             }
         }.padding(24).frame(width: 580, height: 430).background(RemileStyle.background).tint(RemileStyle.accent)
-            .task { await refresh() }
+            .task {
+                await refresh()
+                if let targets, state.error == nil, !NetworkAccess.offline, !Task.isCancelled {
+                    startLookup(targets)
+                }
+            }
             .onDisappear { state.lookupTask?.cancel() }
             .sheet(item: $state.group, onDismiss: { Task { await refresh() } }) { group in ReferenceDuplicateReview(model: model, records: group.records) }
     }
@@ -117,17 +126,23 @@ struct ReferenceCleanupReview: View {
         VStack(spacing: 10) { SymbolIcon(systemName: "checkmark.circle").foregroundStyle(RemileStyle.accent); Text(text).font(RemileType.callout).foregroundStyle(.secondary) }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    @MainActor private func lookup() async {
-        let records = target.map { [$0] } ?? model.libraryRecords.filter(ReferenceCleanup.needsLookup)
-        guard !records.isEmpty else { state.error = "No missing metadata to look up."; return }
+    @MainActor private func startLookup(_ records: [ReferenceRecord]) {
+        let locals = Dictionary(uniqueKeysWithValues: state.changes.map { ($0.id, $0.after) })
+        let eligible = records.filter { ReferenceRecognition.eligible(locals[$0.id] ?? $0) }
+        guard !eligible.isEmpty else {
+            if targets == nil { state.error = "No missing metadata to look up." }
+            return
+        }
         state.loading = true; state.error = nil
-        state.progress = "Looking up 0 of \(records.count)…"
+        state.progress = "Looking up 0 of \(eligible.count)…"
+        state.lookupTask = Task { await lookup(eligible, locals: locals) }
+    }
+    @MainActor private func lookup(_ records: [ReferenceRecord], locals: [UUID: ReferenceRecord]) async {
         defer { state.loading = false; state.progress = nil }
         do {
             var failed = 0, completed = 0
             let originals = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
-            let locals = Dictionary(uniqueKeysWithValues: state.changes.map { ($0.id, $0.after) })
-            try await ReferenceCleanup.lookup(records.map { locals[$0.id] ?? $0 }) { local, fetched in
+            try await ReferenceCleanup.lookup(records.map { locals[$0.id] ?? $0 }, load: model.recognitionLookup) { local, fetched in
                 completed += 1
                 state.progress = "Looking up \(completed) of \(records.count)…"
                 guard let record = originals[local.id], let fetched else { failed += 1; return }
@@ -143,18 +158,22 @@ struct ReferenceCleanupReview: View {
         catch { state.error = error.localizedDescription }
     }
     @MainActor private func refresh() async {
-        let records = target.map { [$0] } ?? model.libraryRecords.filter { $0.trashed == nil }, repository = model.repository
+        let records = targets ?? model.libraryRecords.filter { $0.trashed == nil }
+        let repository = model.repository
+        let worker = Task.detached(priority: .userInitiated) { try ReferenceCleanup.proposals(records, repository: repository) }
         do {
-            let changes = try await Task.detached(priority: .userInitiated) { try ReferenceCleanup.proposals(records, repository: repository) }.value
+            let changes = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+            try Task.checkCancellation()
             state.changes = changes
             let ids = Set(changes.map(\.id))
             let duplicateIDs = Set(duplicateGroups.map(\.id))
             if state.loaded { state.duplicateIncluded.formIntersection(duplicateIDs) }
             else { state.duplicateIncluded = duplicateIDs }
             if state.loaded { state.included.formIntersection(ids) }
-            else { state.included = ids; if target == nil && changes.isEmpty && !duplicateGroups.isEmpty { state.tab = 1 } }
+            else { state.included = ids; if targets == nil && changes.isEmpty && !duplicateGroups.isEmpty { state.tab = 1 } }
             state.loaded = true
-        } catch { state.error = error.localizedDescription }
+        } catch is CancellationError { }
+        catch { state.error = error.localizedDescription }
         state.loading = false
     }
 }

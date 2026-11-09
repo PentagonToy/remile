@@ -52,7 +52,14 @@ enum ReferenceCleanup {
                 if let value = next.fields[field] { next.fields[field] = value.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
             }
             if let doi = next.fields["doi"], !doi.isEmpty { next.fields["doi"] = ReferenceDuplicates.normaliseDOI(doi) }
-            for attachment in record.attachments where next.fields["doi"]?.isEmpty != false || next.authors.isEmpty || ReferencePDFMetadata.placeholderTitle(next.title, journal: next.fields["journal"]) || next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension {
+            let singlePDFName = record.originalCitation.isEmpty && record.zotero == nil
+                && ReferenceText.authors(next.authors).count == 1 ? next.authors : nil
+            for attachment in record.attachments {
+                let needsFields = next.fields["doi"]?.isEmpty != false || next.authors.isEmpty
+                    || ReferencePDFMetadata.placeholderTitle(next.title, journal: next.fields["journal"])
+                    || next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension
+                let needsAuthors = singlePDFName == next.authors
+                guard needsFields || needsAuthors else { continue }
                 let fields: [String: String]
                 if let saved = cached[attachment.id] { fields = saved }
                 else {
@@ -63,7 +70,12 @@ enum ReferenceCleanup {
                 }
                 for (field, value) in fields where !value.isEmpty {
                     let replacesTitle = field == "title" && (ReferencePDFMetadata.placeholderTitle(next.title, journal: next.fields["journal"]) || next.title == attachment.name || next.title == (attachment.name as NSString).deletingPathExtension)
-                    if next.fields[field]?.isEmpty != false || replacesTitle { next.fields[field] = value }
+                    let completesAuthors = field == "author" && needsAuthors
+                        && ReferencePaperLookup.matches(record, fields: fields)
+                        && completesPDFAuthors(next.authors, with: value)
+                    if completesAuthors || (needsFields && (next.fields[field]?.isEmpty != false || replacesTitle)) {
+                        next.fields[field] = value
+                    }
                 }
             }
             if let degree = ReferenceKind.thesisKind(next.fields["type"] ?? ""),
@@ -74,5 +86,10 @@ enum ReferenceCleanup {
             if next.fields != record.fields || next.type != record.type { result.append(Change(before: record, after: next)) }
         }
         return result
+    }
+
+    private static func completesPDFAuthors(_ local: String, with extracted: String) -> Bool {
+        let names = ReferenceText.authors(extracted)
+        return names.count > 1 && ReferenceText.display(local) == ReferenceText.display(names[0])
     }
 }

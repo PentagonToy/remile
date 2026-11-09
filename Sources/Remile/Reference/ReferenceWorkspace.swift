@@ -5,7 +5,6 @@ import UniformTypeIdentifiers
 struct ReferenceWorkspace: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
-    @ObservedObject private var network = NetworkAccessState.shared
     @ObservedObject var model: ReferenceModel
     let goHome: () -> Void
     var openPDF: (URL, Int) -> Void = { _, _ in }
@@ -18,7 +17,7 @@ struct ReferenceWorkspace: View {
         @Published var paneReset = UUID()
         @Published var editor: Entry?
         @Published var cleanup = false
-        @Published var metadata: ReferenceRecord?
+        @Published var metadata: MetadataSelection?
         @Published var paperSearch = false
         @Published var paperTarget: ReferenceRecord?
         @Published var storageID = UUID()
@@ -52,6 +51,7 @@ struct ReferenceWorkspace: View {
     @AppStorage("reference.zoteroExpanded") private var zoteroExpanded = true
     @AppStorage("reference.harbourExpanded") private var harbourExpanded = true
     private struct Entry: Identifiable { let id = UUID(); var record: ReferenceRecord?; var citation = "" }
+    private struct MetadataSelection: Identifiable { let id = UUID(); let records: [ReferenceRecord] }
     private struct DuplicateGroup: Identifiable { let id = UUID(); let records: [ReferenceRecord] }
     private var toolbar: some View {
         HStack(spacing: RemileControl.spacing) {
@@ -152,7 +152,7 @@ struct ReferenceWorkspace: View {
             .sheet(item: $state.attachments) { record in ReferenceAttachments(model: model, recordID: record.id) }
             .sheet(item: $state.evidence) { record in ReferenceEvidenceView(record: record) }
             .sheet(isPresented: $state.paperSearch) { ReferencePaperSearch(model: model, target: state.paperTarget) }
-            .sheet(item: $state.metadata) { record in ReferenceCleanupReview(model: model, target: record) }
+            .sheet(item: $state.metadata) { selection in ReferenceCleanupReview(model: model, targets: selection.records) }
             .sheet(isPresented: $state.cleanup) { ReferenceCleanupReview(model: model) }
             .sheet(item: $state.editor) { entry in ReferenceEditor(model: model, record: entry.record, citation: entry.citation) }
             .sheet(item: $state.duplicateReview) { group in ReferenceDuplicateReview(model: model, records: group.records) }
@@ -406,9 +406,10 @@ struct ReferenceWorkspace: View {
             Divider()
             if record.trashed != nil { Button("Restore", systemImage: "arrow.uturn.backward") { if let library = model.libraries.first(where: { ($0.id == record.library || $0.id == record.collectionID) && $0.trashed != nil }) { model.restoreLibrary(library.id) } else { model.trash(record, restore: true) } } }
             else {
-                Button("Look up metadata", systemImage: "arrow.triangle.2.circlepath") { model.recognise(model.contextRecords(record)) }.disabled(network.offline || model.busy || !model.contextRecords(record).contains(where: ReferenceRecognition.eligible))
-                    .remileHelp(network.offline ? "Turn off Work offline to look up metadata." : "Fill missing fields by DOI, arXiv ID or exact title. Keep existing values.")
-                Button("Read metadata…", systemImage: "doc.text.viewfinder") { state.metadata = record }
+                Button("Update metadata…", systemImage: "arrow.triangle.2.circlepath") {
+                    model.error = nil
+                    state.metadata = MetadataSelection(records: chosen)
+                }.disabled(model.busy).remileHelp("Read attached PDFs and find missing details online. Review changes before applying.")
                 Button("Find a paper…", systemImage: "doc.text.magnifyingglass") { model.error = nil; state.paperTarget = record; state.paperSearch = true }
                 Button("View source", systemImage: "doc.text.magnifyingglass") { state.evidence = record }.disabled(model.showingTrash)
                 Button("Edit…", systemImage: "square.and.pencil") { model.error = nil; state.editor = Entry(record: record) }

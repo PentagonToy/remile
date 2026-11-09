@@ -11,7 +11,9 @@ enum ReferencePDFMetadata {
         var fields: [String: String] = [:]
         let attributes = pdf.documentAttributes ?? [:]
         if let title = attributes[PDFDocumentAttribute.titleAttribute] as? String, !placeholderTitle(title) { fields["title"] = compact(title) }
-        if let author = attributes[PDFDocumentAttribute.authorAttribute] as? String, useful(author) { fields["author"] = compact(author) }
+        let xmp = xmpTags(pdf)
+        if let creators = xmpAuthors(xmp) { fields["author"] = creators }
+        else if let author = attributes[PDFDocumentAttribute.authorAttribute] as? String, useful(author) { fields["author"] = compact(author) }
         if let page = pdf.page(at: 0) {
             let text = String((page.string ?? "").prefix(40_000))
             let journal = journalHeader(in: text)
@@ -26,7 +28,7 @@ enum ReferencePDFMetadata {
             if values.count == 1 { fields["doi"] = values.first }
             if let id = arxivID(in: text) { fields["eprint"] = id; fields["archiveprefix"] = "arXiv"; fields["url"] = "https://arxiv.org/abs/" + id; fields["entrysubtype"] = "preprint" }
             if fields["title"] == nil {
-                let embedded = xmpTitle(pdf).flatMap { placeholderTitle($0, journal: journal) ? nil : $0 }
+                let embedded = xmpTitle(xmp["title"]).flatMap { placeholderTitle($0, journal: journal) ? nil : $0 }
                 fields["title"] = embedded ?? prominentTitle(page, journal: journal)
             }
         }
@@ -54,17 +56,33 @@ enum ReferencePDFMetadata {
         let publication = compact(journal).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
         return !publication.isEmpty && title == publication
     }
-    private static func xmpTitle(_ pdf: PDFDocument) -> String? {
+    private static func xmpTags(_ pdf: PDFDocument) -> [String: CGImageMetadataTag] {
         var stream: CGPDFStreamRef?
         var format = CGPDFDataFormat.raw
         guard let catalog = pdf.documentRef?.catalog, CGPDFDictionaryGetStream(catalog, "Metadata", &stream), let stream,
               let data = CGPDFStreamCopyData(stream, &format), CFDataGetLength(data) <= 256_000,
               let metadata = CGImageMetadataCreateFromXMPData(data),
-              let tags = CGImageMetadataCopyTags(metadata) as? [CGImageMetadataTag],
-              let title = tags.first(where: {
-                  CGImageMetadataTagCopyNamespace($0) as String? == "http://purl.org/dc/elements/1.1/" &&
-                      CGImageMetadataTagCopyName($0) as String? == "title"
-              }) else { return nil }
+              let tags = CGImageMetadataCopyTags(metadata) as? [CGImageMetadataTag] else { return [:] }
+        var result: [String: CGImageMetadataTag] = [:]
+        for tag in tags where CGImageMetadataTagCopyNamespace(tag) as String? == "http://purl.org/dc/elements/1.1/" {
+            if let name = CGImageMetadataTagCopyName(tag) as String?, result[name] == nil { result[name] = tag }
+        }
+        return result
+    }
+    private static func xmpAuthors(_ tags: [String: CGImageMetadataTag]) -> String? {
+        guard let creator = tags["creator"], CGImageMetadataTagGetType(creator) == .arrayOrdered,
+              let entries = CGImageMetadataTagCopyValue(creator) as? [CGImageMetadataTag], !entries.isEmpty else { return nil }
+        var names: [String] = []
+        for entry in entries {
+            guard let raw = CGImageMetadataTagCopyValue(entry) as? String, useful(raw) else { return nil }
+            let name = compact(raw)
+            guard name.rangeOfCharacter(from: CharacterSet(charactersIn: #"{\}"#)) == nil else { return nil }
+            names.append(name.contains(" and ") ? "{" + name + "}" : name)
+        }
+        return names.joined(separator: " and ")
+    }
+    private static func xmpTitle(_ title: CGImageMetadataTag?) -> String? {
+        guard let title else { return nil }
         let value = CGImageMetadataTagCopyValue(title)
         if let text = value as? String { return compact(text) }
         guard let variants = value as? [CGImageMetadataTag] else { return nil }

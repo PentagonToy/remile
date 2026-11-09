@@ -14,13 +14,15 @@ A source ZIP opens into a new project folder. The ZIP stays unchanged. Source re
 
 ## Find your way
 
-Files holds the project. Drop files or folders into the list or onto a project folder. Folder imports keep their nested structure. Compiling refreshes the list after changes made outside the app. To list or move files from a terminal, use the [CLI](../cli.md#open-editor).
+Drop files or folders into **Files** or onto a project folder. Folder imports keep their nested structure. Compiling refreshes the list after changes made outside the app. To list or move files from a terminal, use the [CLI](../cli.md#open-editor).
+
+Right-click a file, folder or collection and choose **Rename** to edit its row. For a file such as `figure.svg`, typing replaces the selected name `figure` and keeps `.svg`. Return or a click elsewhere saves a valid name. Escape cancels. EPS, SVG and raster graphics use the image icon. PDFs use the document icon.
 
 Outline follows the project’s sections. Drag the divider to give either the source or PDF more room.
 
 Use **Fit** to match the height or choose **Fit width** in the zoom menu. The same controls apply in Overleaf.
 
-Opened files appear in the bottom tab bar. Select a tab to switch source, drag it to change its order, or use + to open another project file. Double-click a tab to rename its file. Closing a tab keeps your edits and the file in the project. At least one file stays open. Source tabs stay within their window.
+Opened files appear in the bottom tab bar. Select a tab to switch source, drag it to change its order, or use + to open another project file. Double-click a tab to edit its file name in **Files**. Closing a tab keeps your edits and the file in the project. At least one file stays open. Source tabs stay within their window.
 
 Use **Control-Tab** and **Control-Shift-Tab** to move between source tabs. **Command-W** closes the current tab. When only one source tab remains, it closes the project through the usual save confirmation.
 

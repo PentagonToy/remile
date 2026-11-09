@@ -364,7 +364,7 @@ struct ReferenceRepository: Sendable {
     func applyCleanup(_ changes: [ReferenceCleanup.Change]) throws {
         try transaction { records in
             for change in changes {
-                guard let index = records.firstIndex(where: { $0.id == change.id }), records[index].revision == change.before.revision, records[index].trashed == nil else { throw ReferenceFailure("A reference changed. Run Clean up again before applying.") }
+                guard let index = records.firstIndex(where: { $0.id == change.id }), records[index].revision == change.before.revision, records[index].trashed == nil else { throw ReferenceFailure("A reference changed. Review metadata again before applying.") }
                 _ = try destination(records[index].collectionID ?? records[index].library)
                 records[index].fields = change.after.fields; records[index].type = change.after.type
                 if records[index].remarkable?.generatedKey == change.before.key, records[index].citationKeyLocked != true,

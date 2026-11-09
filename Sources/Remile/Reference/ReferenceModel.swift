@@ -19,7 +19,7 @@ import UniformTypeIdentifiers
     private var recognitionTask: Task<Void, Never>?
     private var recognitionGeneration = UUID()
     private var networkObserver: NSObjectProtocol?
-    private let recognitionLookup: @Sendable (ReferenceRecord) async throws -> ReferenceRecord
+    let recognitionLookup: @Sendable (ReferenceRecord) async throws -> ReferenceRecord
     private var reloadRequested = false
     private var pendingEdits: [() -> Void] = []
     private(set) var duplicates: [UUID: [UUID]] = [:]

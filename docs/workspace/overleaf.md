@@ -2,7 +2,7 @@
 
 Keep the local editor connected to an Overleaf project through Git. Comments and suggestions have a separate review connection.
 
-The [LaTeX editor](latex.md#find-and-complete) is shared with local projects. File paths, project commands, and known commands from declared packages complete from the local copy. Drop folders into Files to add nested sources and assets. Online mode sends supported files through the usual Git sync. Empty folders stay on this Mac until they contain a file.
+Overleaf shares the [file tree](latex.md#find-your-way) and [source editor](latex.md#find-and-complete) with local LaTeX. Rename items directly in **Files**. File paths and commands complete from the local copy. Drop folders into **Files** to add nested sources and assets. Online mode syncs supported files through Git. Empty folders stay on this Mac until they contain a file.
 
 ## Connect a project
 

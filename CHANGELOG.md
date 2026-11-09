@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Read full author lists from PDF XMP metadata. Use **Update metadata…** to review PDF corrections and online results for selected references, then apply the changes together.
+- Rename files, folders and collections in place in LaTeX and Overleaf. File renaming selects the name before the extension. Graphics use an image icon and PDFs use a document icon.
+
 ## 0.2.5 — 5 November 2026
 
 - Use **Fit** to match the page height. The zoom menu offers **Fit height** and **Fit width**.

@@ -6,21 +6,20 @@ Reference keeps citations and PDFs together. Open it from Home. Libraries and co
 
 Use Add to import PDF or BibTeX files, enter details or find a paper. Drop files into Harbour to import them into the selected library. Drop a PDF on a record or its preview to attach it to that record. Imports copy PDFs into managed storage and retain the originals.
 
-remile reads PDF metadata and first-page text locally. If the title is missing or remile recognises it as a journal masthead or publisher production code, it checks the embedded XMP title and then the first page. The imported PDF appears before background lookup finishes. Cancelling lookup or a failed request keeps the saved PDF and local record.
+On import, remile reads the ordered author list from the PDF's XMP metadata when available. If the document title is missing or looks like a journal masthead or publisher production code, remile checks the XMP title and then the first page. The PDF is saved locally before background lookup begins.
+
+For an existing entry with one author, **Update metadata…** can recover the rest of the list when the attachment matches the reference and its first author matches the stored name.
 
 ### Metadata lookup
 
 | Action | Source | How changes are applied |
 | --- | --- | --- |
 | **Automatic PDF import lookup** | A detected DOI or arXiv ID for an attached PDF that needs metadata. | Fill missing fields and replace recognised placeholder titles after an identifier match. Keep the PDF and citation key. |
-| **Look up metadata** | A DOI, arXiv ID or one exact title candidate. | Fill missing fields even when authors and year already exist. Keep user edits and citation keys. |
-| **Read metadata…** | Metadata and text from the attached PDF. | Review proposed corrections before applying them. |
+| **Update metadata…** | Attached PDFs, then online lookup by DOI, arXiv ID or one exact title match. | Review the changes for one or more selected references, then apply the checked rows together. |
 
-Manual lookup remains available for a usable identifier or a full title. Work offline, an ongoing catalogue operation, or insufficient identifying information can disable it. A disabled action does not mean the metadata is complete. A successful lookup may find nothing additional to fill.
+With **Work offline** on, **Update metadata…** reads attached PDFs. Online, remile sends the identifier or title to the lookup service to fill missing fields and abstracts. PDF files stay on this Mac.
 
-Title lookup sends the title to the bibliographic service. Automatic lookup sends identifiers. Neither uploads the PDF. Ambiguous title matches ask for a DOI or arXiv ID. Unknown fields remain unknown, and scanned PDFs may need manual details.
-
-Lookups follow Work offline, cancel active requests and reuse results within a batch. arXiv uses the original submission date for the preprint year and retains the requested version ID. Published journal or conference details are not replaced with a preprint's publication fields.
+arXiv uses the original submission date for the preprint year and retains the requested version ID. Published journal or conference details are not replaced with a preprint's publication fields.
 
 Crossref and arXiv abstracts are saved with the reference. When Crossref has none, remile can try an identifier-matched OpenAlex record and reconstruct its abstract from the [word-position index](https://help.openalex.org/data/works/attributes/#abstract_inverted_index). The response and reconstructed text have fixed size limits. An unavailable abstract keeps the other recognised fields. Existing abstracts are preserved. No PDF text is uploaded.
 
@@ -73,8 +72,6 @@ Double-click a metadata value or citation key to edit it. Click Type to choose a
 Clean up reviews local metadata proposals and duplicate candidates. Merge selected is available for related records. Review the base record and conflicting fields before merging. Distinct PDFs are retained and extra records are removed without going to Trash. Manuscript citations are not rewritten.
 
 Undo and Redo retain up to 30 session changes within an 8 MB metadata limit. PDF bytes are not copied into Undo. External catalogue changes clear incompatible history. Empty Trash clears Undo.
-
-Reference metadata uses local parsing and verified bibliographic responses. Look up metadata fills missing fields without guessing unknown facts. Read metadata reviews local PDF evidence. Neither action uses a language model.
 
 ## Complete a library
 

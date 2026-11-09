@@ -27,7 +27,7 @@ struct TeXFileTree: NSViewRepresentable {
         var children: [Node]
         init(key: String, title: String, group: UUID? = nil, file: String? = nil, folder: Bool = false, children: [Node] = []) { self.key = key; self.title = title; self.group = group; self.file = file; self.folder = folder; self.children = children }
     }
-    @MainActor final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate {
+    @MainActor final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate, NSTextFieldDelegate {
         static let type = NSPasteboard.PasteboardType("local.remile.tex-items")
         var showCollections: Bool
         var project: TeXProject
@@ -39,9 +39,18 @@ struct TeXFileTree: NSViewRepresentable {
         private var expanded = Set<String>()
         private var menuPrepared = false
         private var context: Node?
+        private var renameField: (draft: TeXProject.NewItemDraft, field: NSTextField)?
+        private var renameScheduled = false
+        private var finishingRename = false
         init(_ project: TeXProject, showCollections: Bool) { self.project = project; self.showCollections = showCollections }
         func reload() {
             guard let outline else { return }
+            if let renameField {
+                // Keep the field editor attached while typing, even if a sync changes other rows.
+                if project.newItemDraft?.id == renameField.draft.id { return }
+                closeRename()
+            }
+            defer { scheduleRename() }
             let current = project.main + "\n" + String(showCollections) + project.treeFolders.joined(separator: "|") + project.treeFiles.joined(separator: "|") + String(decoding: (try? JSONEncoder().encode(project.collections)) ?? Data(), as: UTF8.self)
             guard current != signature else {
                 if lastOpened != project.selected {
@@ -93,7 +102,7 @@ struct TeXFileTree: NSViewRepresentable {
             label.setAccessibilityHelp(isMain ? "Main document used for compilation" : nil)
             label.font = .systemFont(ofSize: 13); label.lineBreakMode = .byTruncatingMiddle; label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             let ext = ((node.file ?? "") as NSString).pathExtension.lowercased()
-            let symbol = ["pdf": "doc.richtext", "png": "photo", "jpg": "photo", "jpeg": "photo", "svg": "photo", "eps": "photo", "bib": "books.vertical", "sty": "curlybraces", "cls": "curlybraces"][ext] ?? "doc.text"
+            let symbol = Self.fileSymbol(for: ext)
             icon.image = SymbolIcon.nativeImage(systemName: node.group != nil ? "square.stack.3d.up" : node.folder ? "folder" : symbol, description: node.group != nil ? "Virtual collection" : "File")
             icon.contentTintColor = node.group != nil ? NSColor(RemileStyle.accent) : .secondaryLabelColor
             let stack = NSStackView(views: [icon, label]); stack.spacing = 6; stack.translatesAutoresizingMaskIntoConstraints = false
@@ -104,8 +113,17 @@ struct TeXFileTree: NSViewRepresentable {
             cell.toolTip = node.group != nil ? "Virtual collection · files stay in place" : isMain ? "Main document · " + project.main : node.file
             return cell
         }
+        static func fileSymbol(for fileExtension: String) -> String {
+            switch fileExtension.lowercased() {
+            case "pdf": return "doc.richtext"
+            case "png", "jpg", "jpeg", "svg", "eps", "gif", "tif", "tiff": return "photo"
+            case "bib": return "books.vertical"
+            case "sty", "cls": return "curlybraces"
+            default: return "doc.text"
+            }
+        }
         func outlineViewSelectionDidChange(_ notification: Notification) {
-            guard !reloading, let outline, outline.selectedRowIndexes.count == 1, let node = outline.item(atRow: outline.selectedRow) as? Node, let path = node.file else { return }
+            guard !reloading, let outline, outline.selectedRowIndexes.count == 1, let node = outline.item(atRow: outline.selectedRow) as? Node, !node.folder, let path = node.file else { return }
             project.selected = path
         }
         func outlineViewItemDidExpand(_ notification: Notification) { expansion(notification, value: true) }
@@ -169,10 +187,10 @@ struct TeXFileTree: NSViewRepresentable {
                 add("New file", #selector(newFile)); add("New folder", #selector(newFolder)); add("New collection", #selector(newCollection)); return
             }
             if node.group != nil {
-                add("Rename", #selector(renameGroup)); add("Add files…", #selector(addFiles))
+                add("Rename", #selector(beginRename)); add("Add files…", #selector(addFiles))
                 add("New collection inside", #selector(newCollection)); menu.addItem(.separator()); add("Remove collection", #selector(removeGroup))
             } else if let path = node.file {
-                add("Rename", #selector(renameFile)); add("Copy relative path", #selector(copyPath)); add("Reveal in Finder", #selector(revealFile))
+                add("Rename", #selector(beginRename)); add("Copy relative path", #selector(copyPath)); add("Reveal in Finder", #selector(revealFile))
                 if project.connected && !node.folder { add("Download…", #selector(downloadFile)) }
                 if !node.folder { add("Duplicate", #selector(duplicateFiles)) }
                 if node.folder { menu.addItem(.separator()); add("New file", #selector(newFile)); add("New folder", #selector(newFolder)) }
@@ -207,23 +225,123 @@ struct TeXFileTree: NSViewRepresentable {
         @objc private func addFiles() { if let id = context?.group { project.chooseCollectionFiles(id) } }
         @objc private func addGroup() { project.addCollection(parent: context?.group) }
         @objc private func removeGroup() { if let id = context?.group { project.updateCollections(TeXCollections.removing(id, groups: project.collections)) } }
-        @objc private func renameGroup() { beginRename() }
         @objc private func moveFiles(_ sender: NSMenuItem) {
             guard let outline else { return }
             let selected = outline.selectedRowIndexes.compactMap { outline.item(atRow: $0) as? Node }
             let nodes = selected.contains(where: { $0.key == context?.key }) ? selected : context.map { [$0] } ?? []
             project.updateCollections(TeXCollections.assigning(project.treeFiles.filter { path in nodes.compactMap(\.file).contains { path == $0 || path.hasPrefix($0 + "/") } }, to: (sender.representedObject as? String).flatMap(UUID.init(uuidString:)), groups: project.collections, allowed: Set(project.treeFiles)))
         }
-        @objc private func renameFile() { beginRename() }
-        private func beginRename() {
+        @objc private func beginRename() {
             guard !project.compiling, let node = context else { return }
-            // Let native menu tracking finish before the name field takes focus.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                guard let self, !self.project.compiling else { return }
-                self.project.newItemError = nil
-                if let id = node.group { self.project.newItemDraft = .init(kind: .renameCollection(id, node.title)) }
-                else if let path = node.file { self.project.newItemDraft = .init(kind: .rename(path)) }
+            project.newItemError = nil
+            if let id = node.group { project.newItemDraft = .init(kind: .renameCollection(id, node.title)) }
+            else if let path = node.file { project.newItemDraft = .init(kind: .rename(path)) }
+            scheduleRename()
+        }
+        private func scheduleRename() {
+            guard !renameScheduled, project.newItemDraft?.isRename == true else { return }
+            renameScheduled = true
+            // End menu tracking and complete the outline layout before taking focus.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.renameScheduled = false
+                self.focusRename()
             }
+        }
+        private func focusRename() {
+            guard renameField == nil, let outline, outline.window != nil,
+                  let draft = project.newItemDraft, draft.isRename else { return }
+            let key: String
+            switch draft.kind {
+            case .rename(let path): key = "file:" + path
+            case .renameCollection(let id, _): key = id.uuidString
+            default: return
+            }
+            func reveal(_ nodes: [Node]) -> Node? {
+                for node in nodes {
+                    if node.key == key { return node }
+                    if let target = reveal(node.children) {
+                        outline.expandItem(node)
+                        return target
+                    }
+                }
+                return nil
+            }
+            guard let node = reveal(roots) else { project.cancelNewItem(); return }
+            let row = outline.row(forItem: node)
+            guard row >= 0 else { return }
+            outline.scrollRowToVisible(row)
+            guard let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView,
+                  let field = cell.textField else { return }
+            renameField = (draft, field)
+            field.delegate = self
+            field.setAccessibilityLabel("New name")
+            field.isEditable = true
+            field.isSelectable = true
+            field.drawsBackground = true
+            field.backgroundColor = .textBackgroundColor
+            field.selectText(nil)
+            if node.group == nil, !node.folder, let editor = field.currentEditor() {
+                let name = field.stringValue as NSString
+                let stem = name.deletingPathExtension as NSString
+                editor.selectedRange = NSRange(location: 0, length: stem.length)
+            }
+        }
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard let renameField, control === renameField.field else { return false }
+            switch commandSelector {
+            case #selector(NSResponder.insertNewline(_:)):
+                finishRename(textView.string, returnFocus: true)
+            case #selector(NSResponder.cancelOperation(_:)):
+                project.cancelNewItem()
+                closeRename(returnFocus: true)
+                reload()
+            default: return false
+            }
+            return true
+        }
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard let renameField, notification.object as? NSTextField === renameField.field else { return }
+            finishRename(renameField.field.stringValue, returnFocus: false)
+        }
+        private func finishRename(_ name: String, returnFocus: Bool) {
+            guard !finishingRename, let renameField, project.newItemDraft?.id == renameField.draft.id else { return }
+            finishingRename = true
+            defer { finishingRename = false }
+            guard project.finishNewItem(name) else {
+                renameField.field.toolTip = project.newItemError
+                project.message = project.newItemError
+                if !returnFocus {
+                    DispatchQueue.main.async { [weak self] in self?.renameField?.field.selectText(nil) }
+                }
+                return
+            }
+            if case .rename(let path) = renameField.draft.kind {
+                let oldKey = "file:" + path
+                let parent = (path as NSString).deletingLastPathComponent
+                let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                let newKey = "file:" + (parent.isEmpty ? name : parent + "/" + name)
+                if !name.isEmpty && oldKey != newKey {
+                    expanded = Set(expanded.map { key in
+                        key == oldKey || key.hasPrefix(oldKey + "/") ? newKey + key.dropFirst(oldKey.count) : key
+                    })
+                }
+            }
+            closeRename(returnFocus: returnFocus)
+            reload()
+        }
+        private func closeRename(returnFocus: Bool = false) {
+            guard let rename = renameField else { return }
+            renameField = nil
+            rename.field.delegate = nil
+            if returnFocus, let outline { outline.window?.makeFirstResponder(outline) }
+            else { rename.field.abortEditing() }
+            rename.field.isEditable = false
+            rename.field.isSelectable = false
+            rename.field.drawsBackground = false
+            rename.field.toolTip = nil
+            rename.field.setAccessibilityLabel(nil)
+            rename.field.stringValue = rename.draft.initialName
         }
 
         @objc private func downloadFile() {

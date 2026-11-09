@@ -66,6 +66,9 @@ struct TeXProjectSidebar: View {
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.files)
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.outline)
             .onChange(of: state.files) { state.dragOrigin = nil }
+            .onChange(of: project.newItemDraft?.id, initial: true) {
+                if project.newItemDraft?.isRename == true { state.files = true }
+            }
             .onChange(of: state.outline) { state.dragOrigin = nil }
     }
     private var filesPane: some View {
@@ -76,7 +79,7 @@ struct TeXProjectSidebar: View {
             }.padding(.horizontal, 12).frame(height: 44)
             Divider()
             if state.files {
-                if let draft = project.newItemDraft { TeXSidebarCreation(project: project, draft: draft).id(draft.id) }
+                if let draft = project.newItemDraft, !draft.isRename { TeXSidebarCreation(project: project, draft: draft).id(draft.id) }
                 TeXFileTree(project: project, showCollections: showCollections)
                 TeXFileTrashTarget(project: project).frame(height: 32)
             }
@@ -164,14 +167,12 @@ private struct TeXSidebarCreation: View {
                     .accessibilityLabel(draft.placeholder).onSubmit { commit() }.onExitCommand { cancel() }
             }.padding(5).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 5))
             if let error = project.newItemError { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).fixedSize(horizontal: false, vertical: true) }
-        }.background(InlineEditBoundary(cancel: { cancel() }) { leave() }).padding(.horizontal, 12).padding(.vertical, 6)
+        }.background(InlineEditBoundary(cancel: { cancel() }) { cancel() }).padding(.horizontal, 12).padding(.vertical, 6)
             .onAppear { state.name = draft.initialName; state.finished = false; focused = true }
-            .onDisappear { if InlineNamePolicy.isEmpty(state.name) { cancel() } else if isRename { commit() } }
-            .remileHelp(isRename ? "Return or click elsewhere to save · Esc cancels" : "Return confirms. Click elsewhere or press Esc to cancel.")
+            .onDisappear { cancel() }
+            .remileHelp("Return confirms. Click elsewhere or press Esc to cancel.")
     }
-    private var isRename: Bool { switch draft.kind { case .rename, .renameCollection: return true; default: return false } }
     private func cancel() { state.finished = true; if project.newItemDraft?.id == draft.id { project.cancelNewItem() } }
-    private func leave() { if isRename { commit() } else { cancel() } }
     private func commit() {
         guard !state.finished, project.newItemDraft?.id == draft.id else { return }
         guard !InlineNamePolicy.isEmpty(state.name) else { cancel(); return }

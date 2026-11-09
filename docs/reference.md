@@ -30,7 +30,9 @@ Libraries contains local libraries, reMarkable and imported Zotero sources, with
 
 PDFs are saved locally first. While online, remile uses a detected DOI or arXiv ID to fill missing details without AI. The airplane button pauses these lookups.
 
-Double-click a metadata value or citation key to edit it. Click **Type** to choose a reference type. Right-click and choose **Read metadata…** to review details from the attached PDF, then **Apply selected** to save checked corrections. **Look up metadata** fills missing details and available abstracts online. Available abstracts appear below the dates in a collapsed section. [Metadata lookup details →](details/reference.md#metadata-lookup)
+Double-click a metadata value or citation key to edit it. Click **Type** to choose a reference type. Expand **Abstract** below the dates to read an available abstract.
+
+To update several references together, select them and choose **Update metadata…** from the context menu. remile reads attached PDFs and checks online sources when available. Review the changes and choose **Apply selected**. [Metadata lookup details →](details/reference.md#metadata-lookup)
 
 Web pages use a globe, newspaper articles use a newspaper, conference papers use a podium, and reports use a document icon. Imported website, news and report types are recognised alongside standard BibTeX types such as `online` and `techreport`. A URL alone does not change a paper's type.
 
@@ -48,7 +50,7 @@ Leading A, An and The are skipped when generating title words for citation keys.
 
 Use the book button and **Use for citations** to check one or more libraries for the current document. Then choose a reference and its bibliography destination. In LaTeX and Overleaf, type `\cite{` to search keys, titles, authors and stored abstracts. Arrow keys move through the list. Return or Tab inserts a key, and Escape closes the list.
 
-The preceding sentence helps put related sources first. This works offline without AI calls. An inserted library reference is added to the selected project bibliography. Existing entries are kept, and a conflicting key asks for attention.
+The preceding sentence helps put related sources first. This works offline without AI calls. An inserted library reference is added to the selected project bibliography. A conflicting key asks for attention. To refresh an entry already in the project, copy the updated BibTeX from Reference and replace that entry under the same citation key.
 
 ## Read citation hints
 
@@ -69,7 +71,7 @@ The selected candidate also shows what was compared:
 | **Title only** | No stored abstract is available for comparison. |
 | **Title and abstract** | Both the title and stored abstract are available. |
 
-An excerpt, when shown, comes from the stored abstract. It is not an AI summary or a verified quotation from an attached PDF. Use **Look up metadata** to try filling a missing abstract while online.
+An excerpt, when shown, comes from the stored abstract. It is not an AI summary or a verified quotation from an attached PDF. Use **Update metadata…** while online to look for a missing abstract.
 
 Background, fact, method and comparison hints describe possible uses of your sentence. They can overlap. [What each purpose asks you to check →](details/reference.md#citation-purpose-hints)
 

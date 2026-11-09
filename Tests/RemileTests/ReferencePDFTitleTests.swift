@@ -1,6 +1,7 @@
 import AppKit
 import CoreText
 import PDFKit
+import SwiftUI
 import XCTest
 @testable import Remile
 
@@ -18,6 +19,89 @@ final class ReferencePDFTitleTests: XCTestCase {
 
         let ordinary = try makePDF(infoTitle: "A report on material ef0c03685", xmpTitle: articleTitle)
         XCTAssertEqual(ReferencePDFMetadata.fields(ordinary, fallback: "File name")["title"], "A report on material ef0c03685")
+    }
+
+    func testOrderedXMPCreatorsSurvivePDFImportAndBibTeXExport() throws {
+        let expected = "Ada Example and Zoë Coauthor and {Research and Development Lab}"
+        let pdf = try makePDF(infoTitle: articleTitle, infoAuthor: "Ada Example",
+                              creators: ["Ada Example", "Zoë Coauthor", "Research and Development Lab"])
+        XCTAssertEqual(pdf.documentAttributes?[PDFDocumentAttribute.authorAttribute] as? String, "Ada Example")
+        XCTAssertEqual(ReferencePDFMetadata.fields(pdf, fallback: "")["author"], expected)
+        let fallback = try makePDF(infoTitle: articleTitle, infoAuthor: "Ada Example")
+        XCTAssertEqual(ReferencePDFMetadata.fields(fallback, fallback: "")["author"], "Ada Example")
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("paper.pdf")
+        try XCTUnwrap(pdf.dataRepresentation()).write(to: file)
+        let repository = ReferenceRepository(root: root.appendingPathComponent("Library"))
+        let imported = try XCTUnwrap(repository.importFiles([file]).first)
+        let bibtex = try ReferenceBibTeX.export([imported])
+        XCTAssertEqual(try ReferenceBibTeX.parse(bibtex).first?.authors, expected)
+
+        var legacy = imported
+        legacy.fields["author"] = "Ada Example"
+        let repaired = try XCTUnwrap(ReferenceCleanup.proposals([legacy], repository: repository).first?.after)
+        XCTAssertEqual(repaired.authors, expected)
+        XCTAssertEqual(repaired.citationKey, legacy.citationKey)
+        XCTAssertEqual(repaired.attachments, legacy.attachments)
+
+        for name in ["A manually corrected name", "Ada Example and A retained coauthor"] {
+            legacy.fields["author"] = name
+            XCTAssertTrue(try ReferenceCleanup.proposals([legacy], repository: repository).isEmpty)
+        }
+        legacy.fields["author"] = "Ada Example"
+        legacy.fields["title"] = "A different paper about reaction kinetics"
+        XCTAssertTrue(try ReferenceCleanup.proposals([legacy], repository: repository).isEmpty)
+    }
+
+    @MainActor func testMetadataUpdateLooksUpOnlySelectedRecordsAfterReadingPDF() async throws {
+        _ = NSApplication.shared
+        let defaults = UserDefaults.standard
+        let domain = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        var online = domain
+        online[NetworkAccessGate.preference] = false
+        defaults.setVolatileDomain(online, forName: UserDefaults.argumentDomain)
+        defer { defaults.setVolatileDomain(domain, forName: UserDefaults.argumentDomain) }
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { if FileManager.default.fileExists(atPath: root.path) { try? FileManager.default.removeItem(at: root) } }
+        let repository = ReferenceRepository(root: root)
+        let pdf = try makePDF(infoTitle: articleTitle, infoAuthor: "Ada Example", creators: ["Ada Example", "Zoë Coauthor"])
+        let incomplete = ReferenceRecord(fields: ["title": articleTitle, "author": "Ada Example", "doi": "10.1000/one"])
+        let first = try repository.addFetched(incomplete, pdf: XCTUnwrap(pdf.dataRepresentation()), libraryID: ReferenceLibrary.primaryID)
+        let rows = try repository.add([
+            ReferenceRecord(fields: ["title": "Another selected study", "doi": "10.1000/two"]),
+            ReferenceRecord(fields: ["title": "A paper outside the selection", "doi": "10.1000/three"])
+        ])
+        let before = try repository.records()
+        let lookups = MetadataLookups()
+        let model = ReferenceModel(repository: repository, recognitionLookup: { record in
+            await lookups.record(record)
+            var result = record
+            result.fields["year"] = "2026"
+            return result
+        })
+        let host = NSHostingView(rootView: ReferenceCleanupReview(model: model, targets: [first, rows[0]]))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 580, height: 430), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.contentView = nil }
+        host.layoutSubtreeIfNeeded()
+        _ = host.bitmapImageRepForCachingDisplay(in: host.bounds)
+        for _ in 0..<100 {
+            if await lookups.inputs.count >= 2 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let inputs = await lookups.inputs
+        XCTAssertEqual(Set(inputs.map(\.id)), [first.id, rows[0].id])
+        XCTAssertEqual(inputs.first { $0.id == first.id }?.authors, "Ada Example and Zoë Coauthor")
+        XCTAssertEqual(try repository.records(), before)
+    }
+
+    private actor MetadataLookups {
+        var inputs: [ReferenceRecord] = []
+        func record(_ input: ReferenceRecord) { inputs.append(input) }
     }
 
     func testCleanupRepairsStoredProductionTitleWithoutChangingCitationKey() throws {
@@ -176,19 +260,23 @@ final class ReferencePDFTitleTests: XCTestCase {
         XCTAssertFalse(ReferencePublisherSource.isPDFResponse(try response(200, "application/octet-stream"), filename: "data.zip"))
     }
 
-    private func makePDF(infoTitle: String, xmpTitle: String? = nil, printedTitle: String? = nil) throws -> PDFDocument {
+    private func makePDF(infoTitle: String, xmpTitle: String? = nil, printedTitle: String? = nil, infoAuthor: String? = nil, creators: [String] = []) throws -> PDFDocument {
         let bytes = NSMutableData()
         var bounds = CGRect(x: 0, y: 0, width: 612, height: 792)
-        let context = try XCTUnwrap(CGContext(consumer: try XCTUnwrap(CGDataConsumer(data: bytes)), mediaBox: &bounds, [kCGPDFContextTitle: infoTitle] as CFDictionary))
-        if let xmpTitle {
+        var attributes = [kCGPDFContextTitle as String: infoTitle]
+        attributes[kCGPDFContextAuthor as String] = infoAuthor
+        let context = try XCTUnwrap(CGContext(consumer: try XCTUnwrap(CGDataConsumer(data: bytes)), mediaBox: &bounds, attributes as CFDictionary))
+        if xmpTitle != nil || !creators.isEmpty {
+            let creatorEntries = creators.map { "<rdf:li>\($0)</rdf:li>" }.joined()
             let xml = """
             <x:xmpmeta xmlns:x="adobe:ns:meta/">
               <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
                 <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">
                   <dc:title><rdf:Alt>
                     <rdf:li xml:lang="fr">Un autre titre</rdf:li>
-                    <rdf:li xml:lang="x-default">\(xmpTitle)</rdf:li>
+                    <rdf:li xml:lang="x-default">\(xmpTitle ?? infoTitle)</rdf:li>
                   </rdf:Alt></dc:title>
+                  <dc:creator><rdf:Seq>\(creatorEntries)</rdf:Seq></dc:creator>
                 </rdf:Description>
               </rdf:RDF>
             </x:xmpmeta>
