@@ -10,7 +10,7 @@ import SwiftUI
     private var job: TeXCompileJob?
     private var task: Task<Void, Never>?
     private var generation = UUID()
-    func start(root: URL, main: String, buffers: [String: String], completion: @escaping () -> Void) {
+    func start(root: URL, main: String, buffers: [String: String], compareEmbedded: Bool, completion: @escaping () -> Void) {
         guard !running else { return }
         self.buffers = buffers; self.main = main; embedded = nil
         rows = [.init(), .init()]; running = true
@@ -26,7 +26,8 @@ import SwiftUI
             let owner = self; defer { withExtendedLifetime(owner) { } }
             do {
                 let result = try await Task.detached {
-                    try TeXSubmissionComparison.run(root: root, main: main, buffers: buffers, configuration: configuration, output: output, job: job, progress: publish)
+                    try TeXSubmissionComparison.run(root: root, main: main, buffers: buffers, configuration: configuration,
+                                                    output: output, job: job, compareEmbedded: compareEmbedded, progress: publish)
                 }.value
                 guard let self, self.generation == generation else { return }; self.rows = result.rows; self.embedded = result.embedded
             } catch {
@@ -45,29 +46,50 @@ import SwiftUI
 struct TeXSubmissionPopover: View {
     @ObservedObject var project: TeXProject
     @ObservedObject var check: TeXSubmissionCheck
+    private var result: TeXSubmissionComparison.Row { check.rows[0] }
+    private var sourceChanged: Bool { check.buffers != project.buffers || check.main != project.main }
+
     var body: some View {
+        let diagnostic = result.issue == .compiler ? TeXDiagnostics.primaryError(TeXDiagnostics.parse(result.log)) : nil
+        let source = result.logPath.map { URL(fileURLWithPath: $0).deletingLastPathComponent().appendingPathComponent("Source") }
+        let location = diagnostic.flatMap { project.diagnosticLocation($0, snapshot: source) }
         VStack(alignment: .leading, spacing: 16) {
-            Text("Submission check · pdfLaTeX").font(RemileType.heading)
-            ForEach(0..<2, id: \.self) { index in
-                HStack(alignment: .top, spacing: 12) {
-                    if ["waiting", "running"].contains(check.rows[index].state) { ProgressView().controlSize(.small).opacity(check.rows[index].state == "waiting" ? 0.4 : 1) }
-                    else { SymbolIcon(systemName: check.rows[index].state == "passed" ? "checkmark.circle.fill" : "exclamationmark.circle").foregroundStyle(check.rows[index].state == "passed" ? Color.green : RemileStyle.accent) }
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(index == 0 ? "Current source" : "With bibliography embedded").font(RemileType.callout.weight(.semibold))
-                        Text(check.rows[index].detail).font(RemileType.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Submission check").font(RemileType.heading)
+            if check.running {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Checking source…")
+                }
+            } else if sourceChanged {
+                Text("Source changed. Check again.")
+            } else if result.state == "passed" {
+                SymbolLabel(result.detail, systemImage: "checkmark.circle.fill")
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(diagnostic.map { String($0.message.prefix(260)) } ?? result.detail)
+                    if let location {
+                        Text("\(location.file):\(location.line + 1)").font(RemileType.caption).foregroundStyle(.secondary)
                     }
-                    Spacer(minLength: 0)
-                    if let path = check.rows[index].logPath { Button("Log") { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }.font(RemileType.caption) }
+                }.fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 8) {
+                if check.running { Button("Stop") { check.stop() } }
+                else if sourceChanged || result.detail == "Stopped" {
+                    Button("Check again") { project.compareSubmission(compareEmbedded: false) }
+                } else if result.state != "passed", let path = result.logPath {
+                    Button("View log") { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+                }
+                Spacer()
+                Button("Done") { project.showsSubmission = false }.keyboardShortcut(.cancelAction)
+                if !check.running, !sourceChanged {
+                    if let location {
+                        Button("Go to source") {
+                            project.showsSubmission = false
+                            project.visit(file: location.file, line: location.line)
+                        }.buttonStyle(RemileActionStyle(emphasis: .primary))
+                    }
                 }
             }
-            if check.buffers != project.buffers || check.main != project.main { Text("Source changed. Run the check again.").font(RemileType.caption).foregroundStyle(.secondary) }
-            Text("Fresh LaTeX passes without external bibliography files. Uses your installed engine. Your source stays unchanged.").font(RemileType.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack {
-                if check.running { Button("Stop") { check.stop() } }
-                else { Button("Check again") { project.compareSubmission() } }
-                Spacer()
-                Button("Done") { project.showsSubmission = false }
-            }
-        }.padding(20).frame(width: 390).background(RemileStyle.background)
+        }.padding(20).frame(width: 380).background(RemileStyle.background)
     }
 }

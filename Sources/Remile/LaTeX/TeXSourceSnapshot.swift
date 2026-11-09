@@ -2,7 +2,9 @@ import Foundation
 
 /// Snapshot copying is shared by compilation and source export. Original files are never changed.
 enum TeXSourceSnapshot {
-    static func write(root: URL, buffers: [String: String], to destination: URL, submissionCheck: Bool = false) throws {
+    enum Mode { case regular, projectCheck, embeddedCheck }
+
+    static func write(root: URL, buffers: [String: String], to destination: URL, mode: Mode = .regular) throws {
         let manager = FileManager.default
         guard !manager.fileExists(atPath: destination.path), !destination.resolvingSymlinksInPath().path.hasPrefix(root.resolvingSymlinksInPath().path + "/") else { throw CocoaError(.fileWriteFileExists) }
         guard let items = manager.enumerator(at: root, includingPropertiesForKeys: [.isSymbolicLinkKey, .isDirectoryKey, .fileSizeKey], options: [.skipsHiddenFiles]) else { throw CocoaError(.fileReadUnknown) }
@@ -12,18 +14,22 @@ enum TeXSourceSnapshot {
             let values = try url.resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey, .fileSizeKey]); count += 1; size += values.fileSize ?? 0
             guard values.isSymbolicLink != true, count <= 10000, size <= 512 * 1024 * 1024 else { throw CocoaError(.fileReadTooLarge) }
             let path = String(url.path.dropFirst(root.path.count + 1)), target = destination.appendingPathComponent(path)
-            if submissionCheck, values.isDirectory != true, isBuildOrBibliographyFile(url) { continue }
+            if values.isDirectory != true, excludes(url, mode: mode) { continue }
             if values.isDirectory == true { try manager.createDirectory(at: target, withIntermediateDirectories: true) }
             else { try manager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true); try manager.copyItem(at: url, to: target) }
         }
         for (file, source) in buffers {
-            if submissionCheck, isBuildOrBibliographyFile(URL(fileURLWithPath: file)) { continue }
+            if excludes(URL(fileURLWithPath: file), mode: mode) { continue }
             guard source.utf8.count <= 4_000_000, !file.hasPrefix("/"), !file.split(separator: "/").contains("..") else { throw CocoaError(.fileReadInvalidFileName) }
             try source.write(to: destination.appendingPathComponent(file), atomically: true, encoding: .utf8)
         }
     }
-    private static func isBuildOrBibliographyFile(_ url: URL) -> Bool {
-        ["bib", "bbl", "bst", "aux", "bcf", "blg", "toc", "out", "lof", "lot", "fls", "fdb_latexmk"].contains(url.pathExtension.lowercased()) || url.lastPathComponent.hasSuffix(".run.xml") || url.lastPathComponent.hasSuffix(".synctex.gz")
+    private static func excludes(_ url: URL, mode: Mode) -> Bool {
+        guard mode != .regular else { return false }
+        let ext = url.pathExtension.lowercased()
+        if mode == .embeddedCheck, ["bib", "bbl", "bst"].contains(ext) { return true }
+        return ["aux", "bcf", "blg", "toc", "out", "lof", "lot", "fls", "fdb_latexmk", "log"].contains(ext)
+            || url.lastPathComponent.hasSuffix(".run.xml") || url.lastPathComponent.hasSuffix(".synctex.gz")
     }
     static func export(root: URL, buffers: [String: String], to output: URL) throws {
         let manager = FileManager.default

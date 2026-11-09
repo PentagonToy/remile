@@ -1,5 +1,10 @@
 import Foundation
 
+@_cdecl("__isPlatformVersionAtLeast")
+public func hostVersionAtLeast(_ major: Int32, _ minor: Int32, _ patch: Int32) -> Int32 {
+    ProcessInfo.processInfo.isOperatingSystemAtLeast(.init(majorVersion: Int(major), minorVersion: Int(minor), patchVersion: Int(patch))) ? 1 : 0
+}
+
 var checks = 0
 func expect(_ condition: @autoclosure () -> Bool, _ message: String) { precondition(condition(), message); checks += 1 }
 let text = "\\section{Heading} % comment\nPrice \\% escaped\n\\\\% comment after a line break\n$y &= 2$"

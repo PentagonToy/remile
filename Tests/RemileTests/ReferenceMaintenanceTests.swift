@@ -18,12 +18,51 @@ final class ReferenceMaintenanceTests: XCTestCase {
         context.beginPDFPage(nil); context.endPDFPage(); context.closePDF()
         return try repository.addFetched(ReferenceRecord(fields: ["title": "A paper", "doi": "10.1000/paper"]), pdf: Data(contentsOf: url), libraryID: ReferenceLibrary.primaryID)
     }
+    func testReferenceSearchPreservesFormattedNamesAndPhraseMatching() {
+        let record = ReferenceRecord(key: "fixedkey", fields: [
+            "title": "{Flame} mixing",
+            "author": #"Garc{\'i}a, Ana and Doe, Jane"#,
+            "abstract": "Ammonia and hydrogen combustion."
+        ])
+        XCTAssertTrue(record.matchesSearch(""))
+        XCTAssertTrue(record.matchesSearch("FLAME"))
+        XCTAssertTrue(record.matchesSearch("ammonia"))
+        XCTAssertTrue(record.matchesSearch("García"))
+        XCTAssertTrue(record.matchesSearch("fixedkey Flame"))
+        XCTAssertFalse(record.matchesSearch("fixedkeyFlame"))
+        XCTAssertFalse(record.matchesSearch("methane"))
+    }
+
     func testCLIExportIncludesAllLibrariesAndHonoursExplicitScope() throws {
         _ = try repository.add([ReferenceRecord(fields: ["title": "First paper"])])
         let other = try repository.addLibrary("Other")
         _ = try repository.add([ReferenceRecord(fields: ["title": "Second paper"])], libraryID: other.id)
         XCTAssertEqual(try ReferenceCLI.response(["export"], repository: repository)["count"] as? Int, 2)
         XCTAssertEqual(try ReferenceCLI.response(["export", "--library", other.id.uuidString], repository: repository)["count"] as? Int, 1)
+    }
+    func testPDFInventoryIgnoresMetadataAndTracksRestoredOrChangedAttachments() throws {
+        let original = try pdfRecord()
+        let library = try repository.addLibrary("Other")
+        let libraries = [ReferenceLibrary.primary, library]
+        let before = ReferenceRepository.activePDFs(records: [original], libraries: libraries)
+        XCTAssertEqual(before.count, 1)
+
+        var edited = original
+        edited.fields["year"] = "2026"
+        edited.key = "newkey"
+        XCTAssertEqual(ReferenceRepository.activePDFs(records: [edited], libraries: libraries), before)
+
+        var linked = ReferenceRecord(libraryID: library.id)
+        linked.attachments = edited.attachments
+        XCTAssertEqual(ReferenceRepository.activePDFs(records: [edited, linked], libraries: libraries), before)
+
+        edited.trashed = Date()
+        var trashedLibrary = library
+        trashedLibrary.trashed = Date()
+        XCTAssertTrue(ReferenceRepository.activePDFs(records: [edited, linked], libraries: [.primary, trashedLibrary]).isEmpty)
+
+        linked.attachments[0].sha256 = String(repeating: "a", count: 64)
+        XCTAssertFalse(ReferenceRepository.activePDFs(records: [linked], libraries: libraries).isSubset(of: before))
     }
     func testDetachedPDFKeepsTrashCleanupAvailable() throws {
         let record = try pdfRecord()

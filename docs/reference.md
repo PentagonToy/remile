@@ -14,7 +14,7 @@ Right-click a library or collection and choose **Rename…** to change its name.
 
 In current development builds, choose **Add → Find a paper…**. Paste a public HTTPS link or search by DOI or title. Choose **Add PDF to Library** when a PDF is ready, **Add without PDF** to save the paper’s citation, or **Add Web Page** to cite a website.
 
-To find a PDF for an existing reference, right-click it and choose **Find a paper…**. Choose **Attach PDF** when a match is ready. [PDF and link lookup →](details/reference.md#pdf-access)
+To find a PDF for an existing reference, right-click it and choose **PDF → Find a paper…**. Choose **Attach PDF** when a match is ready. [PDF and link lookup →](details/reference.md#pdf-access)
 
 ## Connected notes and PDF storage
 
@@ -40,7 +40,7 @@ The interface uses **Thesis** for `mastersthesis` and **Dissertation** for `phdt
 
 In **Edit reference**, the **BibTeX** tab shows the current entry. Changes carry between **Details** and **BibTeX**.
 
-Right-click a reference and choose **Lock citation key** to keep its key during regeneration. **Unlock citation key** allows regeneration again. Both actions work on a mixed selection of locked and unlocked references. You can still edit a locked key manually.
+Right-click a reference and choose **Citation key → Lock citation key** to keep its key during regeneration. **Unlock citation key** allows regeneration again. Both actions work on a mixed selection of locked and unlocked references. You can still edit a locked key manually.
 
 Edited books can list editors instead of authors. **Author / Editor** shows their names with `(ed.)` or `(eds.)`. New citation keys use the first editor's surname when no author is recorded. [Names and keys →](details/reference.md#columns-and-keys)
 

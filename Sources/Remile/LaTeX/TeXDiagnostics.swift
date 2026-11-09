@@ -8,10 +8,24 @@ struct TeXDiagnostic: Identifiable {
     let file: String?
     let line: Int?
     var isBuildSummary: Bool { message.hasPrefix("Latexmk: Errors") || message.hasPrefix("Latexmk: Could not") }
-    var displayMessage: String { isBuildSummary ? "Build stopped. See Terminal for details." : message }
+    var displayMessage: String {
+        if isBuildSummary { return "Build stopped. See Terminal for details." }
+        return message.replacingOccurrences(of: #"^(?:!\s+|LaTeX (?:Font )?(?:Warning|Error):\s*)"#,
+                                            with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"^Package ([^\s]+) Warning:\s*"#, with: "$1: ", options: .regularExpression)
+    }
 }
 
 enum TeXDiagnostics {
+    static func displayed(_ entries: [TeXDiagnostic]) -> [TeXDiagnostic] {
+        let ordered = prioritised(entries)
+        guard ordered.contains(where: { $0.severity == .error && !isFollowUp($0) }) else { return ordered }
+        return ordered.filter { !isFollowUp($0) }
+    }
+    private static func isFollowUp(_ entry: TeXDiagnostic) -> Bool {
+        entry.severity == .error && (entry.isBuildSummary || entry.message.contains("Emergency stop")
+            || entry.message.contains("Fatal error occurred"))
+    }
     static func priority(_ entry: TeXDiagnostic) -> Int {
         let text = entry.message.lowercased()
         if entry.severity == .error {
@@ -85,23 +99,59 @@ enum TeXDiagnostics {
         let biberWarnings = allLines[..<finalPass].filter { $0.contains("> WARN - ") }
         let lines = Array(allLines[finalPass...]) + biberWarnings
         let location = try! NSRegularExpression(pattern: #"^(.+?):(\d+):\s*(.+)$"#)
-        let inputLine = try! NSRegularExpression(pattern: #"(?:input line|l\.)\s*(\d+)"#)
-        var result: [TeXDiagnostic] = [], seen = Set<String>()
+        let inputLine = try! NSRegularExpression(pattern: #"(?:\b(?:input )?lines?\s+|^l\.)\s*(\d+)"#)
+        let groups = try! NSRegularExpression(pattern: #"\((?:"([^"]+\.(?:tex|ltx|sty|cls|bbl|cfg|def|fd))"|([^\s()"]+\.(?:tex|ltx|sty|cls|bbl|cfg|def|fd)))(?=[\s()]|$)|[()]"#, options: .caseInsensitive)
+        let continuation = try! NSRegularExpression(pattern: #"^\s*\([\w.@-]+\)\s{2,}(.+)$"#)
+        let box = try! NSRegularExpression(pattern: #"^(?:Overfull|Underfull) \\[hv]box .*?(?:at lines? \d+(?:--\d+)?|while \\output is active)"#)
+        var result: [TeXDiagnostic] = [], seen = Set<String>(), files: [String?] = []
+        func sourceLine(_ text: String) -> Int? {
+            let value = text as NSString
+            guard let match = inputLine.firstMatch(in: text, range: NSRange(location: 0, length: value.length)) else { return nil }
+            return Int(value.substring(with: match.range(at: 1)))
+        }
+        func trackFiles(_ line: String, in value: NSString) {
+            for match in groups.matches(in: line, range: NSRange(location: 0, length: value.length)) {
+                if value.character(at: match.range.location) == 41 {
+                    if !files.isEmpty { files.removeLast() }
+                } else {
+                    let path = [match.range(at: 1), match.range(at: 2)].first { $0.location != NSNotFound }
+                    files.append(path.map { value.substring(with: $0) })
+                }
+            }
+        }
         for (index, line) in lines.enumerated() {
             var file: String?, number: Int?, text = line.trimmingCharacters(in: .whitespaces), severity: TeXDiagnostic.Severity?
             let ns = line as NSString
             if let match = location.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) {
                 file = ns.substring(with: match.range(at: 1)); number = Int(ns.substring(with: match.range(at: 2)))
                 text = ns.substring(with: match.range(at: 3)); severity = text.localizedCaseInsensitiveContains("warning") ? .warning : .error
-            } else if text.hasPrefix("! ") || text.contains("LaTeX Error:") || text.contains("Package ") && text.contains(" Error:") { severity = .error }
-            else if text.contains("Warning:") || text.hasPrefix("Overfull ") || text.hasPrefix("Underfull ") || text.contains("> WARN - ") { severity = .warning }
+            } else if text.hasPrefix("! ") || text.hasPrefix("Runaway argument?") || text.contains("LaTeX Error:") || text.contains("Package ") && text.contains(" Error:") { severity = .error }
+            else if text.hasPrefix("Overfull ") || text.hasPrefix("Underfull ") { severity = .info }
+            else if text.contains("Warning:") || text.contains("> WARN - ") { severity = .warning }
             else if text.hasPrefix("Latexmk: Errors") || text.hasPrefix("Latexmk: Could not") || text.hasPrefix("Submission check failed:") { severity = .error }
-            guard let severity else { continue }
-            if number == nil {
-                let following = lines[index..<min(lines.count, index + 5)].prefix { !$0.isEmpty }.joined(separator: " ")
-                let value = following as NSString
-                if let match = inputLine.firstMatch(in: following, range: NSRange(location: 0, length: value.length)) { number = Int(value.substring(with: match.range(at: 1))) }
-                text = following
+            guard let severity else { trackFiles(line, in: ns); continue }
+            if file == nil, !text.contains("> WARN - "), !text.hasPrefix("Latexmk:"),
+               !text.hasPrefix("Submission check failed:") { file = files.reversed().compactMap { $0 }.first }
+            if severity == .warning {
+                for next in lines[(index + 1)..<min(lines.count, index + 5)] {
+                    let value = next as NSString
+                    guard let match = continuation.firstMatch(in: next, range: NSRange(location: 0, length: value.length)) else { break }
+                    text += " " + value.substring(with: match.range(at: 1))
+                }
+            } else if severity == .info {
+                let value = text as NSString
+                if let match = box.firstMatch(in: text, range: NSRange(location: 0, length: value.length)) {
+                    let suffix = value.substring(from: NSMaxRange(match.range))
+                    trackFiles(suffix, in: suffix as NSString)
+                    text = value.substring(with: match.range)
+                }
+            }
+            if number == nil { number = sourceLine(text) }
+            if number == nil, severity == .error {
+                for next in lines[(index + 1)..<min(lines.count, index + 7)] {
+                    if next.hasPrefix("! ") || next.contains("Warning:") || next.range(of: #"^.+?:\d+:"# , options: .regularExpression) != nil { break }
+                    if next.hasPrefix("l."), let line = sourceLine(next) { number = line; break }
+                }
             }
             if text == "Undefined control sequence." {
                 let context = lines[(index + 1)..<min(lines.count, index + 4)].joined(separator: " ")

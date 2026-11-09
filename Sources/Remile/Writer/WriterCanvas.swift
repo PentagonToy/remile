@@ -11,6 +11,8 @@ struct WriterSurface: NSViewRepresentable {
 }
 
 @MainActor final class WriterCanvas: NSView, NSTextViewDelegate {
+    static let pageInsets = CGSize(width: 32, height: 20)
+    private static let pageGap: CGFloat = 24
     let model: WriterModel
     private(set) var sheets: [WriterPaper] = []
     private var shapeViews: [UUID: WriterShapeView] = [:]
@@ -46,7 +48,7 @@ struct WriterSurface: NSViewRepresentable {
     }
     func synchronise(reflow: Bool = true) {
         if model.pageSize != configuredSize || configuredColumns != model.pageStyle.columnCount || sheets.isEmpty { paginate() }
-        if reflow, syncExclusions() { paginate() }
+        else if reflow, syncExclusions(wrappingObjectsByPage()) { paginate() }
         syncShapes(); needsDisplay = true
         sheets.forEach { $0.needsDisplay = true }
     }
@@ -67,11 +69,12 @@ struct WriterSurface: NSViewRepresentable {
         text.typingAttributes = model.attributes
         return text
     }
-    private func addSheet() {
+    @discardableResult private func addSheet() -> WriterPaper {
         let texts = columnFrames().map { makeText($0) }
         let paper = WriterPaper(frame: CGRect(origin: .zero, size: model.pageSize), texts: texts, model: model, number: sheets.count + 1)
         addSubview(paper); sheets.append(paper)
         if model.activeText == nil { model.activeText = texts.first }
+        return paper
     }
     func paginate() {
         if configuredColumns != 0, configuredColumns != model.pageStyle.columnCount { rebuild(); return }
@@ -85,47 +88,60 @@ struct WriterSurface: NSViewRepresentable {
                 for (text, frame) in zip(sheet.texts, columnFrames()) { text.frame = frame; text.textContainer?.containerSize = frame.size }
             }
         }
+        let wrappingObjects = wrappingObjectsByPage()
         if sheets.isEmpty { addSheet() }
-        _ = syncExclusions()
+        syncExclusions(wrappingObjects)
         let required = max(1, (model.objects.map(\.page).max() ?? 0) + 1)
         while let container = sheets.last?.texts.last?.textContainer, sheets.count < 40 {
             model.layout.ensureLayout(for: container)
             if NSMaxRange(model.layout.glyphRange(for: container)) >= model.layout.numberOfGlyphs && sheets.count >= required { break }
-            addSheet(); _ = syncExclusions()
+            let page = sheets.count
+            let sheet = addSheet()
+            let paths = exclusionRects(for: sheet, objects: wrappingObjects[page] ?? [])
+            for (text, rects) in zip(sheet.texts, paths) {
+                if !rects.isEmpty { text.textContainer?.exclusionPaths = rects.map { NSBezierPath(rect: $0) } }
+            }
+            exclusions.append(contentsOf: paths)
         }
         while sheets.count > required, let last = sheets.last, let container = last.text.textContainer, model.layout.glyphRange(for: container).length == 0 {
             if last.texts.contains(where: { model.activeText === $0 }) { model.activeText = sheets.first?.text }
             for text in last.texts.reversed() { text.delegate = nil; model.layout.removeTextContainer(at: model.layout.textContainers.count - 1) }
             last.removeFromSuperview(); sheets.removeLast()
         }
-        if exclusions.count != sheets.count * configuredColumns { _ = syncExclusions() }
-        let visibleWidth = enclosingScrollView?.documentVisibleRect.width ?? size.width + 64
-        frame.size = CGSize(width: max(size.width + 64, visibleWidth), height: Double(sheets.count) * (size.height + 24) + 40)
-        for (index, sheet) in sheets.enumerated() { sheet.frame.origin = CGPoint(x: max(32, (frame.width - size.width) / 2), y: 24 + Double(index) * (size.height + 24)) }
+        let columns = sheets.count * configuredColumns
+        if exclusions.count > columns { exclusions.removeLast(exclusions.count - columns) }
+        fitViewport()
         syncShapes()
         let count = sheets.count
         if model.pages != count { DispatchQueue.main.async { [weak model] in model?.setPages(count) } }
         if let last = sheets.last?.texts.last?.textContainer, NSMaxRange(model.layout.glyphRange(for: last)) < model.layout.numberOfGlyphs { model.error = "Writer supports up to 40 pages. Shorten this document before exporting." }
     }
-    @discardableResult private func syncExclusions() -> Bool {
+    private func wrappingObjectsByPage() -> [Int: [WriterObject]] {
+        Dictionary(grouping: model.objects.filter { $0.wrapsText == true }, by: \.page)
+    }
+    @discardableResult private func syncExclusions(_ objectsByPage: [Int: [WriterObject]]) -> Bool {
         let next: [[CGRect]] = sheets.indices.flatMap { page in
-            let objects = model.objects.filter { $0.page == page && $0.wrapsText == true }
-            return sheets[page].texts.map { text in
-                let body = CGRect(origin: .zero, size: text.bounds.size)
-                return objects.map { object in
-                    var rect = object.bounds.insetBy(dx: -8, dy: -8).offsetBy(dx: -text.frame.minX, dy: -text.frame.minY).intersection(body)
-                    guard !rect.isNull && !rect.isEmpty else { return rect }
-                    // Avoid word-sized columns between an object and the page margin.
-                    if rect.minX < 72 { rect.size.width += rect.minX; rect.origin.x = 0 }
-                    if body.maxX - rect.maxX < 72 { rect.size.width = body.maxX - rect.minX }
-                    return rect
-                }.filter { !$0.isNull && !$0.isEmpty }
-            }
+            exclusionRects(for: sheets[page], objects: objectsByPage[page] ?? [])
         }
         guard next != exclusions else { return false }
+        for (index, text) in sheets.flatMap(\.texts).enumerated() where !exclusions.indices.contains(index) || exclusions[index] != next[index] {
+            text.textContainer?.exclusionPaths = next[index].map { NSBezierPath(rect: $0) }
+        }
         exclusions = next
-        for (text, paths) in zip(sheets.flatMap(\.texts), next) { text.textContainer?.exclusionPaths = paths.map { NSBezierPath(rect: $0) } }
         return true
+    }
+    private func exclusionRects(for sheet: WriterPaper, objects: [WriterObject]) -> [[CGRect]] {
+        sheet.texts.map { text in
+            let body = CGRect(origin: .zero, size: text.bounds.size)
+            return objects.compactMap { object in
+                var rect = object.bounds.insetBy(dx: -8, dy: -8).offsetBy(dx: -text.frame.minX, dy: -text.frame.minY).intersection(body)
+                guard !rect.isNull && !rect.isEmpty else { return nil }
+                // Avoid word-sized columns between an object and the page margin.
+                if rect.minX < 72 { rect.size.width += rect.minX; rect.origin.x = 0 }
+                if body.maxX - rect.maxX < 72 { rect.size.width = body.maxX - rect.minX }
+                return rect
+            }
+        }
     }
     func baselines(on page: Int) -> [CGFloat] {
         guard sheets.indices.contains(page) else { return [] }
@@ -143,9 +159,20 @@ struct WriterSurface: NSViewRepresentable {
         for (index, sheet) in sheets.enumerated() { sheet.guides = index == page ? guides : []; sheet.needsDisplay = true }
     }
     override func setFrameSize(_ newSize: NSSize) {
-        let width = enclosingScrollView?.documentVisibleRect.width ?? newSize.width
-        super.setFrameSize(CGSize(width: max(model.pageSize.width + 64, width), height: newSize.height))
-        for sheet in sheets { sheet.frame.origin.x = max(32, (frame.width - model.pageSize.width) / 2) }
+        guard !sheets.isEmpty else { super.setFrameSize(newSize); return }
+        let viewport = enclosingScrollView?.contentView.bounds.size ?? .zero
+        let paper = model.pageSize
+        let insets = Self.pageInsets
+        let step = paper.height + Self.pageGap
+        let stack = paper.height + CGFloat(sheets.count - 1) * step
+        let size = CGSize(width: max(paper.width + 2 * insets.width, viewport.width),
+                          height: max(stack + 2 * insets.height, viewport.height))
+        if frame.size != size { super.setFrameSize(size) }
+        let x = (size.width - paper.width) / 2, top = (size.height - stack) / 2
+        for (index, sheet) in sheets.enumerated() {
+            let origin = CGPoint(x: x, y: top + CGFloat(index) * step)
+            if sheet.frame.origin != origin { sheet.frame.origin = origin }
+        }
     }
     func fitViewport() { setFrameSize(frame.size) }
     private func syncShapes() {

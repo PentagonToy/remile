@@ -20,10 +20,10 @@ import SwiftUI
         let zoom = ReaderZoom(); zoom.attach(view)
         let coverScale = view.scaleFactor
         view.go(to: view.document!.page(at: 1)!)
-        zoom.updateFitForLayout(pageChanged: true, selecting: false)
+        zoom.completePendingFit(in: view)
         XCTAssertEqual(view.scaleFactor, coverScale, accuracy: 0.001)
         view.setFrameSize(NSSize(width: 700, height: 500))
-        zoom.updateFitForLayout(pageChanged: false, selecting: false)
+        zoom.completePendingFit(in: view)
         XCTAssertEqual(view.scaleFactor, coverScale, accuracy: 0.001)
         zoom.fit(.page)
         XCTAssertFalse(view.autoScales)
@@ -33,6 +33,9 @@ import SwiftUI
         XCTAssertLessThanOrEqual(rectangle.height, view.bounds.height + 1)
         XCTAssertGreaterThanOrEqual(rectangle.minY, -1)
         XCTAssertLessThanOrEqual(rectangle.maxY, view.bounds.maxY + 1)
+        let clip = view.documentView!.enclosingScrollView!.contentView
+        let visible = view.convert(clip.bounds, from: clip)
+        XCTAssertEqual(rectangle.midY, visible.midY, accuracy: 2)
     }
     func testFitWidthIncludesBothPages() {
         let view = PDFView(frame: NSRect(x: 0, y: 0, width: 1000, height: 800))
@@ -41,6 +44,10 @@ import SwiftUI
         let first = view.convert(view.document!.page(at: 0)!.bounds(for: view.displayBox), from: view.document!.page(at: 0)!)
         let second = view.convert(view.document!.page(at: 1)!.bounds(for: view.displayBox), from: view.document!.page(at: 1)!)
         XCTAssertLessThanOrEqual(first.union(second).width, view.bounds.width + 1)
+        let fittedScale = view.scaleFactor
+        zoom.change(1.8)
+        zoom.fit(.width)
+        XCTAssertEqual(view.scaleFactor, fittedScale, accuracy: 0.01)
     }
     func testFitHeightUsesAvailableHeightInANarrowViewport() {
         let view = PDFView(frame: NSRect(x: 0, y: 0, width: 400, height: 800))
@@ -68,12 +75,41 @@ import SwiftUI
         let view = PDFView(frame: .zero); view.document = document()
         let zoom = ReaderZoom(); zoom.attach(view)
         view.setFrameSize(NSSize(width: 800, height: 600))
-        zoom.updateFitForLayout(pageChanged: false, selecting: false)
+        zoom.completePendingFit(in: view)
         let scale = view.scaleFactor
         XCTAssertGreaterThan(scale, 0.1); XCTAssertLessThan(scale, 1)
         view.setFrameSize(NSSize(width: 1000, height: 800))
-        zoom.updateFitForLayout(pageChanged: false, selecting: false)
+        zoom.completePendingFit(in: view)
         XCTAssertEqual(view.scaleFactor, scale, accuracy: 0.001)
+    }
+    func testInitialFitCompletesWhenTheDocumentArrivesAfterLayout() {
+        let view = PDFView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let zoom = ReaderZoom(); zoom.attach(view)
+        view.document = document()
+        zoom.completePendingFit(in: view)
+        XCTAssertFalse(view.autoScales)
+        XCTAssertLessThan(view.scaleFactor, 1)
+        let scale = view.scaleFactor
+        view.setFrameSize(NSSize(width: 950, height: 750))
+        zoom.completePendingFit(in: view)
+        XCTAssertEqual(view.scaleFactor, scale, accuracy: 0.001)
+    }
+    func testTeXPreviewReplacementKeepsPageAndReadingPosition() throws {
+        let view = PDFView(frame: NSRect(x: 0, y: 0, width: 760, height: 510))
+        view.displayMode = .singlePageContinuous
+        let original = document()
+        view.document = original
+        let zoom = ReaderZoom(); zoom.attach(view); zoom.change(1.25)
+        let second = try XCTUnwrap(original.page(at: 1))
+        view.go(to: PDFDestination(page: second, at: CGPoint(x: 0, y: 370)))
+        let position = try XCTUnwrap(view.currentDestination)
+
+        let rebuilt = document()
+        TeXPDFPreview(document: rebuilt, zoom: zoom, controller: TeXPDFController(), jump: nil).updateDocument(in: view)
+        let restored = try XCTUnwrap(view.currentDestination)
+        XCTAssertTrue(restored.page === rebuilt.page(at: 1))
+        XCTAssertEqual(restored.point.y, position.point.y, accuracy: 2)
+        XCTAssertEqual(view.scaleFactor, 1.25, accuracy: 0.001)
     }
     func testFitUsesRotatedPageGeometry() {
         let view = PDFView(frame: NSRect(x: 0, y: 0, width: 1000, height: 600))

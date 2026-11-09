@@ -60,6 +60,20 @@ Download [remile. 0.2.5 for Apple Silicon](https://github.com/PentagonToy/remile
 
 See [installation and updates](docs/distribution.md) for package details and the optional CLI setup after a DMG install.
 
+## Demo
+
+Browse papers in **Reference**, find passages across PDFs with **Search**, and cite a paper in **LaTeX**.
+
+<img src="others/demo/workflow.webp" alt="remile. browses a Reference library, compares highlighted passages across ranked PDFs, and uses LaTeX completion to add a BibTeX entry and compile the manuscript." width="960">
+
+Watch how to [embed a BibTeX bibliography](docs/workspace/latex.md#writing-tools) or [fix a LaTeX compile error with ChatGPT](docs/workspace/latex.md#when-a-build-needs-attention).
+
+### Write in Markdown
+
+Use **Split** to keep the source and rendered reading notes side by side.
+
+<img src="others/demo/markdown-split.webp" alt="Markdown source and its rendered preview side by side in remile." width="960">
+
 ## Development
 
 remile. is a native Swift application with no external Swift package dependencies.

@@ -2,6 +2,64 @@ import XCTest
 @testable import Remile
 
 final class TeXProjectInputTests: XCTestCase {
+    @MainActor func testBuildLogSeparatesMessagesAndRevealsNestedSource() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let manager = FileManager.default
+        let sections = root.appendingPathComponent("Sections")
+        try manager.createDirectory(at: sections, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        try "\\documentclass{article}".write(to: root.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+        let file = "Sections/Study design.tex"
+        try String(repeating: "A line.\n", count: 25).write(to: root.appendingPathComponent(file), atomically: true, encoding: .utf8)
+        let project = try TeXProject(root, historyEnabled: false)
+        let log = #"""
+        This is pdfTeX, Version 3
+        (./main.tex
+        ("./Sections/Study design.tex"
+        LaTeX Font Warning: Font shape unavailable
+        (Font)              size substituted on input line 7.
+        Underfull \hbox (badness 10000) in paragraph at lines 12--18
+        []\OT1/cmr/m/n/10 text ignored
+        Overfull \vbox (4.56pt too high) has occurred while \output is active []
+        )
+        LaTeX Warning: Citation undefined on input line 2.
+        )
+        """#
+        let diagnostics = TeXDiagnostics.parse(log)
+        XCTAssertEqual(diagnostics.map(\.severity), [.warning, .info, .info, .warning])
+        XCTAssertEqual(diagnostics.map(\.line), [7, 12, nil, 2])
+        XCTAssertEqual(diagnostics.map(\.file), ["./" + file, "./" + file, "./" + file, "./main.tex"])
+        XCTAssertEqual(diagnostics[0].displayMessage, "Font shape unavailable size substituted on input line 7.")
+        XCTAssertFalse(diagnostics[1].message.contains("ignored"))
+        XCTAssertFalse(diagnostics[2].message.contains("[]"))
+        project.reveal(diagnostics[1])
+        XCTAssertEqual(project.selected, file)
+        XCTAssertEqual(project.sourceJump?.location.line, 11)
+        project.reveal(diagnostics[2])
+        XCTAssertEqual(project.sourceJump?.marksLine, false)
+    }
+
+    @MainActor func testRestoreBibliographyRequiresTheOriginalProjectFile() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let manager = FileManager.default
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let source = "\\documentclass{article}\n\\bibliographystyle{plain}\n\\bibliography{reference}\n"
+        let compiled = "\\begin{thebibliography}{1}\n\\bibitem{demo} Example.\n\\end{thebibliography}"
+        let embedded = try TeXSourceTools.inlineBibliography(source, bbl: compiled, keepOrigin: true)
+        let main = root.appendingPathComponent("main.tex")
+        let references = root.appendingPathComponent("reference.bib")
+        try embedded.write(to: main, atomically: true, encoding: .utf8)
+        try "@misc{demo, title={Example}}".write(to: references, atomically: true, encoding: .utf8)
+        let project = try TeXProject(root, historyEnabled: false)
+        let edit = try TeXTools.prepare("restore-bibliography", project: project, file: "main.tex")
+        XCTAssertEqual(edit.source, source)
+        XCTAssertEqual(edit.references, ["reference.bib"])
+        try manager.removeItem(at: references)
+        XCTAssertThrowsError(try TeXTools.prepare("restore-bibliography", project: project, file: "main.tex"))
+        XCTAssertEqual(project.buffers["main.tex"], embedded)
+    }
+
     func testInputSuggestionsNarrowFromOpeningBraceAndReplaceAnExistingArgument() async throws {
         let completion = TeXLocalCompletion()
         let paths = ["code/sample.txt", "contents/0_acronyms.tex", "contents/1_introduction", "setup/settings.tex"]

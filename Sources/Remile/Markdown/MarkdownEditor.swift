@@ -244,12 +244,21 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
             }
         }
     }
-    func apply(_ change: MarkdownEditing.Change, name: String) {
+    func apply(_ change: MarkdownEditing.Change, name: String, focus: Bool = true) {
         guard let view = textView, !view.hasMarkedText() else { return }
-        view.window?.makeFirstResponder(view)
+        let origin = focus ? nil : scroll?.contentView.bounds.origin
+        if focus { view.window?.makeFirstResponder(view) }
         view.breakUndoCoalescing()
         view.insertText(change.text, replacementRange: change.range)
         view.setSelectedRange(change.selection); view.undoManager?.setActionName(name); view.breakUndoCoalescing()
+        if !focus {
+            completionTask?.cancel()
+            assistance.cancel()
+        }
+        if let origin, let scroll {
+            scroll.contentView.scroll(to: origin)
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
     }
     func wrap(_ before: String, _ after: String, name: String) {
         guard let view = textView else { return }

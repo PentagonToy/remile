@@ -42,7 +42,7 @@ struct SearchMarkdownPreview: View {
                 Button { open(URL(fileURLWithPath: hit.path)) } label: { SymbolLabel("Open", systemImage: "arrow.up.right.square") }
             }.padding(16)
             Divider()
-            if let html = model.html { SearchMarkdownCanvas(html: html, section: hit.page, query: query, dark: colorScheme == .dark, citation: citation, zoom: zoom) }
+            if let html = model.html { SearchMarkdownCanvas(html: html, section: hit.page, query: query, dark: colorScheme == .dark, citation: citation, zoom: zoom, wide: zoom.wide) }
             else if let error = model.error { ContentUnavailableView(error, systemImage: "exclamationmark.triangle") }
             else { ProgressView("Loading Markdown…").frame(maxWidth: .infinity, maxHeight: .infinity) }
         }.task(id: hit.path + revision.uuidString) { await model.load(path: hit.path) }
@@ -56,8 +56,11 @@ struct SearchMarkdownCanvas: NSViewRepresentable {
     let dark: Bool
     var citation: AssistantCitation? = nil
     var zoom: ReaderZoom? = nil
+    var wide = false
     @MainActor final class Coordinator: NSObject, WKNavigationDelegate {
         var html = "", section = 0, query = "", dark = false, loaded = false
+        var wide = false
+        private var readingWidth: String { wide ? "none" : "850px" }
         var generation = UUID()
         var citation: AssistantCitation?
         let remoteImages = MarkdownRemoteImages()
@@ -79,6 +82,10 @@ struct SearchMarkdownCanvas: NSViewRepresentable {
             decisionHandler(action.navigationType == .other && action.request.url?.scheme == "about" ? .allow : .cancel)
         }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { loaded = true; refresh(webView) }
+        func applyReadingWidth(_ web: WKWebView) {
+            guard loaded else { return }
+            web.evaluateJavaScript("document.body.style.maxWidth='\(readingWidth)'", completionHandler: nil)
+        }
         func refresh(_ web: WKWebView) {
             guard loaded else { return }
             applyRemotePolicy()
@@ -111,7 +118,7 @@ struct SearchMarkdownCanvas: NSViewRepresentable {
                     let script = """
                     (() => {
                       document.documentElement.style.background='\(paper)';
-                      document.body.style.cssText='padding:32px 32px 80vh;max-width:850px;margin:auto;background:\(paper);color:\(ink);font-size:15px;';
+                      document.body.style.cssText='padding:32px 32px 80vh;max-width:\(self.readingWidth);margin:auto;background:\(paper);color:\(ink);font-size:15px;';
                       let style=document.getElementById('search-theme');
                       if(!style){style=document.createElement('style');style.id='search-theme';document.head.append(style);}
                       style.textContent='th{background:\(self.dark ? "#34414C" : "#E1D6C5");color:\(ink)}pre{background:\(self.dark ? "#1B242C" : "#E8DECF")}th,td{border-color:\(self.dark ? "#56616A" : "#B8ADA0")}';
@@ -144,9 +151,12 @@ struct SearchMarkdownCanvas: NSViewRepresentable {
         zoom?.attach(web)
         let state = context.coordinator, newDocument = state.html != html
         let changed = state.section != section || state.query != query || state.dark != dark || state.citation?.id != citation?.id
+        let widthChanged = state.wide != wide
         state.section = section; state.query = query; state.dark = dark; state.citation = citation
+        state.wide = wide
         if newDocument { state.html = html; state.loaded = false; state.generation = UUID(); web.loadHTMLString(html, baseURL: nil) }
         else if changed { state.refresh(web) }
+        else if widthChanged { state.applyReadingWidth(web) }
     }
     static func dismantleNSView(_ web: WKWebView, coordinator: Coordinator) { coordinator.generation = UUID(); coordinator.remoteImages.cancelAll(); web.stopLoading(); web.navigationDelegate = nil }
 }

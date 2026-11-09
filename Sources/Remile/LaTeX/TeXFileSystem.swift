@@ -15,29 +15,35 @@ enum TeXFileSystem {
         try FileManager.default.moveItem(at: source, to: destination)
     }
     static func paths(_ root: URL) throws -> [String] {
-        let base = root.resolvingSymlinksInPath()
-        guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) else { throw CocoaError(.fileReadUnknown) }
-        var paths: [String] = []
-        for case let url as URL in items {
-            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-            if values.isSymbolicLink == true { items.skipDescendants(); continue }
-            guard values.isRegularFile == true else { continue }
-            guard paths.count < 10000 else { throw CocoaError(.fileReadTooLarge) }
-            paths.append(String(url.resolvingSymlinksInPath().path.dropFirst(base.path.count + 1)))
-        }
-        return paths.sorted()
+        try snapshot(root, includeFolders: false).paths
     }
     static func folders(_ root: URL) throws -> [String] {
+        try snapshot(root, includeFiles: false).folders
+    }
+    static func snapshot(_ root: URL, includeFiles: Bool = true, includeFolders: Bool = true,
+                         visitFile: ((URL, String, Int?) throws -> Void)? = nil) throws -> (paths: [String], folders: [String]) {
         let base = root.resolvingSymlinksInPath()
-        guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) else { throw CocoaError(.fileReadUnknown) }
-        var result: [String] = []
+        var keys: Set<URLResourceKey> = [.isSymbolicLinkKey]
+        if includeFiles { keys.insert(.isRegularFileKey) }
+        if includeFolders { keys.insert(.isDirectoryKey) }
+        if visitFile != nil { keys.insert(.fileSizeKey) }
+        guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles]) else { throw CocoaError(.fileReadUnknown) }
+        var paths: [String] = [], folders: [String] = []
         for case let url as URL in items {
-            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-            if values.isSymbolicLink == true { items.skipDescendants(); continue }
-            if values.isDirectory == true { result.append(String(url.resolvingSymlinksInPath().path.dropFirst(base.path.count + 1))) }
-            guard result.count < 10000 else { throw CocoaError(.fileReadTooLarge) }
+            let values = try url.resourceValues(forKeys: keys)
+            // The enumerator does not descend into symlinks. Skipping descendants here can skip the next folder.
+            if values.isSymbolicLink == true { continue }
+            if includeFiles, values.isRegularFile == true {
+                guard paths.count < 10_000 else { throw CocoaError(.fileReadTooLarge) }
+                let path = String(url.resolvingSymlinksInPath().path.dropFirst(base.path.count + 1))
+                paths.append(path)
+                try visitFile?(url, path, values.fileSize)
+            } else if includeFolders, values.isDirectory == true {
+                guard folders.count < 9_999 else { throw CocoaError(.fileReadTooLarge) }
+                folders.append(String(url.resolvingSymlinksInPath().path.dropFirst(base.path.count + 1)))
+            }
         }
-        return result.sorted()
+        return (paths.sorted(), folders.sorted())
     }
     static func reference(_ path: String) -> String { path.hasSuffix(".tex") ? String(path.dropLast(4)) : path }
     static func topLevel(_ paths: [String]) -> [String] { paths.filter { path in !paths.contains { $0 != path && path.hasPrefix($0 + "/") } } }

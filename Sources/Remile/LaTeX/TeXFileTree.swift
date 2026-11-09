@@ -33,7 +33,15 @@ struct TeXFileTree: NSViewRepresentable {
         var project: TeXProject
         weak var outline: NSOutlineView?
         private var roots: [Node] = []
-        private var signature = ""
+        private struct TreeState: Equatable {
+            let project: UUID
+            let main: String
+            let showCollections: Bool
+            let files: [String]
+            let folders: [String]
+            let collections: [TeXCollections.Group]
+        }
+        private var loadedTree: TreeState?
         private var reloading = false
         private var lastOpened = ""
         private var expanded = Set<String>()
@@ -51,28 +59,37 @@ struct TeXFileTree: NSViewRepresentable {
                 closeRename()
             }
             defer { scheduleRename() }
-            let current = project.main + "\n" + String(showCollections) + project.treeFolders.joined(separator: "|") + project.treeFiles.joined(separator: "|") + String(decoding: (try? JSONEncoder().encode(project.collections)) ?? Data(), as: UTF8.self)
-            guard current != signature else {
+            let current = TreeState(project: project.identity, main: project.main, showCollections: showCollections,
+                                    files: project.treeFiles, folders: project.treeFolders,
+                                    collections: showCollections ? project.collections : [])
+            guard current != loadedTree else {
                 if lastOpened != project.selected {
                     lastOpened = project.selected
                     if let row = (0..<outline.numberOfRows).first(where: { (outline.item(atRow: $0) as? Node)?.file == project.selected }) { reloading = true; outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false); reloading = false }
                 }
                 return
-            }; let animated = !signature.isEmpty; signature = current; reloading = true
+            }
+            let animated = loadedTree != nil
+            loadedTree = current
+            reloading = true
             let selected = Set(outline.selectedRowIndexes.compactMap { (outline.item(atRow: $0) as? Node)?.key })
             func file(_ item: TeXFileNode) -> Node { Node(key: "file:" + item.path, title: item.name, file: item.path, folder: item.children != nil, children: (item.children ?? []).map(file)) }
+            let collectionsByParent = Dictionary(grouping: current.collections, by: \.parent)
+            let availableFiles = current.collections.isEmpty ? [] : Set(current.files)
             func groups(_ parent: UUID?, seen: Set<UUID> = []) -> [Node] {
-                project.collections.filter { $0.parent == parent && !seen.contains($0.id) }.map { group in
-                    let paths = group.paths.filter { project.treeFiles.contains($0) }
+                (collectionsByParent[parent] ?? []).filter { !seen.contains($0.id) }.map { group in
+                    let paths = group.paths.filter(availableFiles.contains)
                     return Node(key: group.id.uuidString, title: group.name, group: group.id, children: groups(group.id, seen: seen.union([group.id])) + paths.map { Node(key: "file:" + $0, title: ($0 as NSString).lastPathComponent, file: $0) })
                 }
             }
-            let grouped = showCollections ? Set(project.collections.flatMap(\.paths)) : []
-            roots = (showCollections ? groups(nil) : []) + TeXFileNode.tree(project.treeFiles.filter { !grouped.contains($0) }, folders: project.treeFolders).map(file)
+            let grouped = Set(current.collections.flatMap(\.paths))
+            let files = grouped.isEmpty ? current.files : current.files.filter { !grouped.contains($0) }
+            roots = groups(nil) + TeXFileNode.tree(files, folders: current.folders).map(file)
             outline.reloadData()
+            let expandedGroups = Dictionary(current.collections.map { ($0.id, $0.expanded) }, uniquingKeysWith: { first, _ in first })
             func restore(_ nodes: [Node]) {
                 for node in nodes {
-                    if node.group.flatMap({ id in project.collections.first { $0.id == id }?.expanded }) ?? expanded.contains(node.key) { outline.expandItem(node) }
+                    if node.group.flatMap({ expandedGroups[$0] }) ?? expanded.contains(node.key) { outline.expandItem(node) }
                     restore(node.children)
                 }
             }
@@ -195,18 +212,37 @@ struct TeXFileTree: NSViewRepresentable {
                 if !node.folder { add("Duplicate", #selector(duplicateFiles)) }
                 if node.folder { menu.addItem(.separator()); add("New file", #selector(newFile)); add("New folder", #selector(newFolder)) }
                 if showCollections && !project.collections.isEmpty {
+                    let paths = Set(collectionPaths)
                     let submenu = NSMenu()
-                    for group in project.collections { let item = NSMenuItem(title: group.name, action: #selector(moveFiles(_:)), keyEquivalent: ""); item.target = self; item.representedObject = group.id.uuidString; submenu.addItem(item) }
-                    let ungroup = NSMenuItem(title: "Ungrouped files", action: #selector(moveFiles(_:)), keyEquivalent: ""); ungroup.target = self; submenu.addItem(ungroup)
-                    let item = NSMenuItem(title: "Move to collection", action: nil, keyEquivalent: ""); item.submenu = submenu; menu.addItem(item)
+                    for group in project.collections where !paths.isSubset(of: Set(group.paths)) {
+                        let item = NSMenuItem(title: group.name, action: #selector(moveFiles(_:)), keyEquivalent: "")
+                        item.target = self; item.representedObject = group.id.uuidString; submenu.addItem(item)
+                    }
+                    if project.collections.contains(where: { !paths.isDisjoint(with: $0.paths) }) {
+                        let ungroup = NSMenuItem(title: "Ungrouped files", action: #selector(moveFiles(_:)), keyEquivalent: "")
+                        ungroup.target = self; submenu.addItem(ungroup)
+                    }
+                    if !submenu.items.isEmpty {
+                        let item = NSMenuItem(title: "Move to collection", action: nil, keyEquivalent: "")
+                        item.submenu = submenu; menu.addItem(item)
+                    }
                 }
                 if path != project.main { menu.addItem(.separator()); add("Move to Trash", #selector(trashFile)) }
             }
         }
 
-        private var selectedPaths: [String] {
+        private var selectedNodes: [Node] {
             guard let outline else { return [] }; let selected = outline.selectedRowIndexes.compactMap { outline.item(atRow: $0) as? Node }
-            return (selected.contains(where: { $0.key == context?.key }) ? selected : context.map { [$0] } ?? []).compactMap(\.file)
+            return selected.contains(where: { $0.key == context?.key }) ? selected : context.map { [$0] } ?? []
+        }
+        private var selectedPaths: [String] { selectedNodes.compactMap(\.file) }
+        private var collectionPaths: [String] {
+            let nodes = selectedNodes
+            let files = nodes.filter { !$0.folder }.compactMap(\.file)
+            let prefixes = nodes.filter(\.folder).compactMap(\.file).map { $0 + "/" }
+            guard !prefixes.isEmpty else { return files }
+            let paths = Set(files)
+            return project.treeFiles.filter { path in paths.contains(path) || prefixes.contains(where: path.hasPrefix) }
         }
         @objc private func newFile() {
             let parent = context?.folder == true ? context?.file ?? "" : ((context?.file ?? "") as NSString).deletingLastPathComponent
@@ -223,13 +259,10 @@ struct TeXFileTree: NSViewRepresentable {
         @objc private func copyPath() { let paths = selectedPaths.map(TeXFileSystem.reference); NSPasteboard.general.clearContents(); NSPasteboard.general.setString(paths.joined(separator: "\n"), forType: .string) }
         @objc private func duplicateFiles() { project.duplicate(selectedPaths) }
         @objc private func addFiles() { if let id = context?.group { project.chooseCollectionFiles(id) } }
-        @objc private func addGroup() { project.addCollection(parent: context?.group) }
-        @objc private func removeGroup() { if let id = context?.group { project.updateCollections(TeXCollections.removing(id, groups: project.collections)) } }
+            @objc private func removeGroup() { if let id = context?.group { project.updateCollections(TeXCollections.removing(id, groups: project.collections)) } }
         @objc private func moveFiles(_ sender: NSMenuItem) {
-            guard let outline else { return }
-            let selected = outline.selectedRowIndexes.compactMap { outline.item(atRow: $0) as? Node }
-            let nodes = selected.contains(where: { $0.key == context?.key }) ? selected : context.map { [$0] } ?? []
-            project.updateCollections(TeXCollections.assigning(project.treeFiles.filter { path in nodes.compactMap(\.file).contains { path == $0 || path.hasPrefix($0 + "/") } }, to: (sender.representedObject as? String).flatMap(UUID.init(uuidString:)), groups: project.collections, allowed: Set(project.treeFiles)))
+            let destination = (sender.representedObject as? String).flatMap(UUID.init(uuidString:))
+            project.updateCollections(TeXCollections.assigning(collectionPaths, to: destination, groups: project.collections, allowed: Set(project.treeFiles)))
         }
         @objc private func beginRename() {
             guard !project.compiling, let node = context else { return }

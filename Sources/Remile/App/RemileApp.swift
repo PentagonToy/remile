@@ -34,14 +34,18 @@ struct RemileEntry {
         if CommandLine.arguments.dropFirst().first == "--cli" { exit(EditorCLI.run(Array(CommandLine.arguments.dropFirst(2)))) }
         do { try LegacyMigration.run() }
         catch { let alert = NSAlert(); alert.messageText = "Could not migrate your library"; alert.informativeText = error.localizedDescription + " Your previous data is unchanged."; alert.runModal(); return }
-        do { try StoragePaths.applyPendingStorage() }
-        catch {
-            let alert = NSAlert(); alert.messageText = "Storage was not changed"
-            alert.informativeText = error.localizedDescription + " Your current storage is unchanged."
-            alert.addButton(withTitle: "Use current storage"); alert.addButton(withTitle: "Try next launch")
-            if alert.runModal() == .alertFirstButtonReturn { UserDefaults.standard.removeObject(forKey: StorageLocation.pendingPreference) }
-        }
+        applyStorageChange("Storage", keys: [StorageLocation.pendingPreference]) { try StoragePaths.applyPendingStorage() }
+        applyStorageChange("Reference", keys: [StoragePaths.pendingReferencePreference, StoragePaths.pendingReferenceOpen]) { try StoragePaths.applyPendingReference() }
         RemileApp.main()
+    }
+    @MainActor private static func applyStorageChange(_ label: String, keys: [String], _ apply: () throws -> Void) {
+        do { try apply() }
+        catch {
+            let alert = NSAlert(); alert.messageText = "Could not change the " + label + " folder"
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: "Keep Current Folder"); alert.addButton(withTitle: "Try Next Launch")
+            if alert.runModal() == .alertFirstButtonReturn { keys.forEach(UserDefaults.standard.removeObject(forKey:)) }
+        }
     }
 }
 

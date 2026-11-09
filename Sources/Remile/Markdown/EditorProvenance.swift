@@ -1,7 +1,6 @@
 import Foundation
-import CryptoKit
 
-/// Session-only ranges: local edits remove their own overlap and shift surviving external text.
+/// Local edits remove their own overlap and shift surviving external text.
 enum EditorProvenance {
     /// Follow a unique short context through external edits without a whole-document diff.
     static func anchoredSelection(_ selection: NSRange, before: String, after: String) -> NSRange {
@@ -34,30 +33,55 @@ enum EditorProvenance {
     }
     static func highlight(before: String, after: String) -> NSRange {
         guard before != after else { return NSRange(location: 0, length: 0) }
-        let edit = change(before: before, after: after)
-        if edit.inserted.length > 0 || after.isEmpty { return edit.inserted }
-        let raw = after as NSString, anchor = min(edit.inserted.location, raw.length - 1)
+        return highlight(after: after, inserted: change(before: before, after: after).inserted)
+    }
+    private static func highlight(after: String, inserted: NSRange) -> NSRange {
+        if inserted.length > 0 || after.isEmpty { return inserted }
+        let raw = after as NSString, anchor = min(inserted.location, raw.length - 1)
         let pattern = try? NSRegularExpression(pattern: #"\\[A-Za-z@]+|[\p{L}\p{N}_]+"#)
         if let word = pattern?.matches(in: after, range: NSRange(location: 0, length: raw.length)).map(\.range).first(where: { anchor >= $0.location && anchor <= NSMaxRange($0) }) { return word }
         return raw.rangeOfComposedCharacterSequence(at: anchor)
     }
+    private static func highlights(before: String, after: String) -> [NSRange] {
+        let edit = change(before: before, after: after)
+        // Bound the cost of finding separate changes in a bulk edit.
+        guard (1...2048).contains(edit.removed.length), (1...2048).contains(edit.inserted.length) else {
+            return [highlight(after: after, inserted: edit.inserted)]
+        }
+        let removed = Array(before.utf16.dropFirst(edit.removed.location).prefix(edit.removed.length))
+        let inserted = Array(after.utf16.dropFirst(edit.inserted.location).prefix(edit.inserted.length))
+        let changes = inserted.difference(from: removed).insertions.compactMap { change -> NSRange? in
+            guard case .insert(let offset, _, _) = change else { return nil }
+            return NSRange(location: edit.inserted.location + offset, length: 1)
+        }
+        return changes.isEmpty ? [highlight(after: after, inserted: edit.inserted)] : changes
+    }
     struct Tracker {
-        private(set) var ranges: [NSRange] = []
+        private(set) var ranges: [NSRange]
         private var lastBefore: [NSRange] = []
         private var transitioned = false
         private var undo: (before: String, after: String, beforeBytes: Int, afterBytes: Int, ranges: [NSRange])?
-        private static func key(_ source: String) -> String { SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined() }
-        mutating func transition(before: String, after: String) {
-            if let undo, before.utf8.count == undo.afterBytes, after.utf8.count == undo.beforeBytes, undo.after == Self.key(before), undo.before == Self.key(after) { ranges = undo.ranges; self.undo = nil }
-            else { lastBefore = ranges; ranges = EditorProvenance.rebase(ranges, before: before, after: after) }
+        init(ranges: [NSRange] = []) { self.ranges = ranges }
+        mutating func transition(before: String, after: String, preserveUnchanged: Bool = false) {
+            if let undo, before.utf8.count == undo.afterBytes, after.utf8.count == undo.beforeBytes,
+               undo.after == SourceDigest.sha256(before), undo.before == SourceDigest.sha256(after) {
+                ranges = undo.ranges; self.undo = nil
+            } else {
+                lastBefore = ranges
+                if !ranges.isEmpty {
+                    if preserveUnchanged {
+                        ranges = EditorEditMarks.Snapshot(source: before, ranges: ranges).restore(in: after)
+                    } else { ranges = EditorProvenance.rebase(ranges, before: before, after: after) }
+                }
+            }
             transitioned = true
         }
         mutating func mark(before: String, after: String) {
-            let first = Self.key(before), second = Self.key(after)
+            guard before != after else { return }
+            let first = SourceDigest.sha256(before), second = SourceDigest.sha256(after)
             undo = (first, second, before.utf8.count, after.utf8.count, transitioned ? lastBefore : ranges)
             transitioned = false
-            let range = EditorProvenance.highlight(before: before, after: after)
-            ranges = EditorProvenance.merged(ranges + (range.length > 0 ? [range] : []))
+            ranges = EditorProvenance.merged(ranges + EditorProvenance.highlights(before: before, after: after))
         }
     }
     static func merged(_ ranges: [NSRange]) -> [NSRange] {

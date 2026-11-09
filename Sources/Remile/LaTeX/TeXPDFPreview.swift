@@ -160,12 +160,26 @@ struct TeXPDFPreview: NSViewRepresentable {
         ReaderScrolling.configure(view); zoom.attach(view); controller.attach(view); return view
     }
     func updateNSView(_ view: PDFView, context: Context) {
-        if view.document !== document {
-            let page = view.currentPage.map { view.document?.index(for: $0) ?? 0 } ?? 0; view.document = document
-            if let target = document.page(at: min(page, max(0, document.pageCount - 1))) { view.go(to: target) }
-            Task { @MainActor in controller.updatePage() }
-        }
+        updateDocument(in: view)
         ReaderScrolling.configure(view); controller.show(jump)
+    }
+    func updateDocument(in view: PDFView) {
+        guard view.document !== document else { return }
+        let destination = view.currentDestination
+        let page = destination?.page ?? view.currentPage
+        let previousIndex = page.flatMap { view.document?.index(for: $0) } ?? 0
+        let index = previousIndex == NSNotFound ? 0 : previousIndex
+        view.document = document
+        zoom.completePendingFit(in: view)
+        if let target = document.page(at: min(index, max(0, document.pageCount - 1))) {
+            if let destination, index < document.pageCount {
+                let bounds = target.bounds(for: view.displayBox)
+                let point = CGPoint(x: min(max(destination.point.x, bounds.minX), bounds.maxX),
+                                    y: min(max(destination.point.y, bounds.minY), bounds.maxY))
+                view.go(to: PDFDestination(page: target, at: point))
+            } else { view.go(to: target) }
+        }
+        Task { @MainActor in controller.updatePage() }
     }
     static func dismantleNSView(_ view: PDFView, coordinator: TeXPDFController) { view.document = nil; if coordinator.view === view { coordinator.detach() } }
 }

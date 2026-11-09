@@ -10,9 +10,9 @@ final class ReaderZoom: ObservableObject {
     private weak var pdf: PDFView?
     private weak var web: WKWebView?
     private var observers: [NSObjectProtocol] = []
-    private var fitting: PageFit? // Pending one-shot fit until the initial viewport exists.
+    private var fitting: (mode: PageFit, centre: Bool)?
     private var layoutObserver: NSObjectProtocol?
-    private var hasAttachedPDF = false
+    private var lastPDFScale: CGFloat?
     init(text: Bool = false) {
         let saved = UserDefaults.standard.double(forKey: Self.preference)
         scale = text && saved > 0 ? min(3, max(0.5, saved / 100)) : 1
@@ -22,51 +22,71 @@ final class ReaderZoom: ObservableObject {
         guard pdf !== view else { return }
         observers.forEach(NotificationCenter.default.removeObserver); observers = []
         if let layoutObserver { NotificationCenter.default.removeObserver(layoutObserver); self.layoutObserver = nil }
-        let restoring = hasAttachedPDF && fitting == nil
-        hasAttachedPDF = true; pdf = view
-        if restoring { view.autoScales = false; view.scaleFactor = scale }
-        else { scale = view.scaleFactor; fit(fitting ?? .page) }
+        let retainedScale = pdf?.scaleFactor ?? lastPDFScale
+        pdf = view
+        if let retainedScale, fitting == nil {
+            view.autoScales = false
+            view.scaleFactor = retainedScale
+            publishPDFScaleAfterLayout(in: view)
+        } else { fitting = fitting ?? (.page, false) }
         view.postsFrameChangedNotifications = true
         observers.append(NotificationCenter.default.addObserver(forName: .PDFViewScaleChanged, object: view, queue: .main) { [weak self, weak view] _ in
             Task { @MainActor [weak self, weak view] in
-                guard let self, let view, self.pdf === view else { return }; self.scale = view.scaleFactor
+                guard let self, let view, self.pdf === view else { return }
+                self.publishPDFScale(view.scaleFactor)
             }
         })
+        completePendingFit(in: view)
         if fitting != nil {
-            layoutObserver = NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: view, queue: .main) { [weak self] _ in
-                Task { @MainActor [weak self] in self?.updateFitForLayout(pageChanged: false, selecting: false) }
+            observeLayout(of: view)
+            Task { @MainActor [weak self, weak view] in
+                if let view { self?.completePendingFit(in: view) }
             }
         }
     }
 
-    func attach(_ view: WKWebView) { web = view; view.pageZoom = scale }
+    func attach(_ view: WKWebView) {
+        web = view
+        if view.pageZoom != scale { view.pageZoom = scale }
+    }
     func step(_ direction: CGFloat, fine: Bool = false) { change(scale + direction * (fine ? 0.02 : 0.1)) }
     func change(_ value: CGFloat) {
         fitting = nil; scale = min(5, max(0.25, value))
         if let layoutObserver { NotificationCenter.default.removeObserver(layoutObserver); self.layoutObserver = nil }
-        if let pdf { pdf.autoScales = false; pdf.scaleFactor = scale }
+        if let pdf { pdf.autoScales = false; pdf.scaleFactor = scale; lastPDFScale = pdf.scaleFactor }
         web?.pageZoom = scale
     }
-    /// Resizing only completes an initial fit that was requested before layout.
-    func updateFitForLayout(pageChanged: Bool, selecting: Bool) {
-        guard let mode = fitting, !pageChanged, !selecting else { return }
-        fit(mode)
+    private func observeLayout(of view: PDFView) {
+        guard layoutObserver == nil else { return }
+        layoutObserver = NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: view, queue: .main) { [weak self, weak view] _ in
+            Task { @MainActor [weak self, weak view] in
+                if let view { self?.completePendingFit(in: view) }
+            }
+        }
     }
     func fitReadingWidth(wide width: Bool) {
         wide = width
         change(1)
     }
     func fit(_ mode: PageFit) {
-        fitting = mode
+        fitting = (mode, true)
         guard let pdf else { return }
+        completePendingFit(in: pdf)
+        if fitting != nil { observeLayout(of: pdf) }
+    }
+    /// Complete a pending fit once the document and its viewport are ready.
+    func completePendingFit(in pdf: PDFView) {
+        guard self.pdf === pdf, let (mode, shouldCentre) = fitting,
+              let document = pdf.document, document.pageCount > 0, !document.isLocked else { return }
         pdf.layoutDocumentView()
         let clip = pdf.documentView?.enclosingScrollView?.contentView
         let visible = clip.map { pdf.convert($0.bounds, from: $0) } ?? pdf.bounds
         let viewport = visible.size
+        let nearest = pdf.page(for: NSPoint(x: visible.midX, y: visible.midY), nearest: true)
         guard viewport.width > 32, viewport.height > 24,
-              let page = pdf.page(for: NSPoint(x: visible.midX, y: visible.midY), nearest: true) ?? pdf.currentPage ?? pdf.document?.page(at: 0) else { return }
+              let page = (shouldCentre ? nearest ?? pdf.currentPage : pdf.currentPage ?? nearest) ?? document.page(at: 0) else { return }
         var pages = [page]
-        if (pdf.displayMode == .twoUp || pdf.displayMode == .twoUpContinuous), let document = pdf.document {
+        if pdf.displayMode == .twoUp || pdf.displayMode == .twoUpContinuous {
             let index = document.index(for: page)
             if index != NSNotFound {
                 let start = pdf.displaysAsBook ? (index == 0 ? -1 : 1 + ((index - 1) / 2) * 2) : (index / 2) * 2
@@ -77,8 +97,8 @@ final class ReaderZoom: ObservableObject {
         let spread = rectangles.dropFirst().reduce(rectangles.first ?? .zero) { $0.union($1) }
         guard pdf.scaleFactor > 0 else { return }
         let paper = CGSize(width: spread.width / pdf.scaleFactor, height: spread.height / pdf.scaleFactor)
-        guard paper.width > 0, paper.height > 0, viewport.width > 32, viewport.height > 24 else { return }
-        let x = max(1, viewport.width - 32) / paper.width
+        guard paper.width > 0, paper.height > 0 else { return }
+        let x = (viewport.width - 32) / paper.width
         let y = max(1, viewport.height - 24) / paper.height
         let target = min(5, max(0.1, mode.scale(width: x, height: y)))
         fitting = nil
@@ -86,8 +106,37 @@ final class ReaderZoom: ObservableObject {
         pdf.autoScales = false
         if abs(pdf.scaleFactor - target) > 0.001 { pdf.scaleFactor = target }
         pdf.layoutDocumentView()
-        pdf.go(to: page)
-        scale = pdf.scaleFactor
+        if shouldCentre {
+            pdf.go(to: page)
+            centre(pages, in: pdf, vertically: mode != .width)
+            publishPDFScale(pdf.scaleFactor)
+        } else {
+            publishPDFScaleAfterLayout(in: pdf)
+        }
+    }
+    private func publishPDFScale(_ value: CGFloat) {
+        lastPDFScale = value
+        if scale != value { scale = value }
+    }
+    private func publishPDFScaleAfterLayout(in pdf: PDFView) {
+        lastPDFScale = pdf.scaleFactor
+        Task { @MainActor [weak self, weak pdf] in
+            guard let self, let pdf, self.pdf === pdf else { return }
+            self.publishPDFScale(pdf.scaleFactor)
+        }
+    }
+    private func centre(_ pages: [PDFPage], in pdf: PDFView, vertically: Bool) {
+        guard let scroll = pdf.documentView?.enclosingScrollView, let first = pages.first else { return }
+        let clip = scroll.contentView
+        let spread = pages.dropFirst().reduce(pdf.convert(first.bounds(for: pdf.displayBox), from: first)) {
+            $0.union(pdf.convert($1.bounds(for: pdf.displayBox), from: $1))
+        }
+        let page = clip.convert(spread, from: pdf)
+        var bounds = clip.bounds
+        bounds.origin.x = page.midX - bounds.width / 2
+        if vertically, page.height <= bounds.height { bounds.origin.y = page.midY - bounds.height / 2 }
+        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        scroll.reflectScrolledClipView(clip)
     }
 
     deinit { observers.forEach(NotificationCenter.default.removeObserver); if let layoutObserver { NotificationCenter.default.removeObserver(layoutObserver) } }

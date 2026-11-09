@@ -65,7 +65,7 @@ import UniformTypeIdentifiers
     var items: [ReferenceRecord] {
         if let cachedItems { return cachedItems }
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered = (showingTrash ? trashRecords : libraryRecords.filter { $0.trashed == nil }).filter { text.isEmpty || $0.searchText.localizedCaseInsensitiveContains(text) }
+        let filtered = (showingTrash ? trashRecords : libraryRecords.filter { $0.trashed == nil }).filter { $0.matchesSearch(text) }
         let result = sorting.sorted(filtered)
         cachedItems = result
         return result
@@ -293,16 +293,22 @@ import UniformTypeIdentifiers
         busy = true; error = nil
         if !preserveNotice { notice = nil }
         let repository = repository, previousVersion = loadedVersion
+        let previousRecords = records, previousLibraries = libraries
         Task {
             defer { busy = false; if !pendingEdits.isEmpty { pendingEdits.removeFirst()() } else if reloadRequested { reloadRequested = false; Task { await self.reloadIfChanged() } } }
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     let selection = try await operation(repository)
-                    if repository.version() != previousVersion { _ = try? repository.optimisePDFs() }
                     let before = repository.version()
                     let snapshot = try repository.snapshot()
-                    let after = repository.version()
                     let records = snapshot.records, libraries = snapshot.libraries
+                    if before != previousVersion {
+                        let previous = ReferenceRepository.activePDFs(records: previousRecords, libraries: previousLibraries)
+                        let current = ReferenceRepository.activePDFs(records: records, libraries: libraries)
+                        let added = current.subtracting(previous)
+                        if !added.isEmpty { _ = try? repository.optimisePDFs(attachmentIDs: Set(added.map(\.id))) }
+                    }
+                    let after = repository.version()
                     let hidden = Set(libraries.filter { $0.trashed != nil }.map(\.id))
                     let active = records.filter { !hidden.contains($0.library) && $0.collectionID.map(hidden.contains) != true }
                     var counts: [UUID: Int] = [:]

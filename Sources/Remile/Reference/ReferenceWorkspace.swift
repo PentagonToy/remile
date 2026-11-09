@@ -404,48 +404,73 @@ struct ReferenceWorkspace: View {
             Button("Copy BibTeX", systemImage: "doc.on.clipboard") { model.copy(chosen) }
             Button("Export BibTeX…", systemImage: "square.and.arrow.up") { model.export(chosen) }
             Divider()
-            if record.trashed != nil { Button("Restore", systemImage: "arrow.uturn.backward") { if let library = model.libraries.first(where: { ($0.id == record.library || $0.id == record.collectionID) && $0.trashed != nil }) { model.restoreLibrary(library.id) } else { model.trash(record, restore: true) } } }
-            else {
+            if model.showingTrash || record.trashed != nil {
+                if chosen.count == 1 {
+                    Button("Restore", systemImage: "arrow.uturn.backward") {
+                        if let library = model.libraries.first(where: { ($0.id == record.library || $0.id == record.collectionID) && $0.trashed != nil }) {
+                            model.restoreLibrary(library.id)
+                        } else {
+                            model.trash(record, restore: true)
+                        }
+                    }
+                }
+            } else {
                 Button("Update metadata…", systemImage: "arrow.triangle.2.circlepath") {
                     model.error = nil
                     state.metadata = MetadataSelection(records: chosen)
-                }.disabled(model.busy).remileHelp("Read attached PDFs and find missing details online. Review changes before applying.")
-                Button("Find a paper…", systemImage: "doc.text.magnifyingglass") { model.error = nil; state.paperTarget = record; state.paperSearch = true }
-                Button("View source", systemImage: "doc.text.magnifyingglass") { state.evidence = record }.disabled(model.showingTrash)
-                Button("Edit…", systemImage: "square.and.pencil") { model.error = nil; state.editor = Entry(record: record) }
-                Button("Duplicate", systemImage: "plus.square.on.square") { model.duplicate(record) }
-                if model.activeLibraries.count > 1 {
-                    Menu("Add to library") { ForEach(model.activeLibraries.filter { $0.parentID == nil && $0.id != record.library }) { library in Button(library.name) { model.duplicate(record, to: library.id) } } }
-                }
-                if model.activeLibraries.contains(where: { $0.parentID == record.library }) {
-                    Menu("Move to collection") {
-                        Button("Library") { model.move(record, to: nil) }
-                        ForEach(model.activeLibraries.filter { $0.parentID == record.library }) { collection in Button(collection.name) { model.move(record, to: collection.id) } }
-                    }
-                }
-                if chosen.count > 1 {
-                    Button("Merge selected…", systemImage: "square.stack") {
-                        if let records = model.selectedDuplicates(record) { state.duplicateReview = DuplicateGroup(records: records) }
-                    }.disabled(model.selectedDuplicates(record) == nil)
-                } else if let ids = model.duplicates[record.id] {
-                    Button("Review duplicates…", systemImage: "square.stack") { state.duplicateReview = DuplicateGroup(records: model.records.filter { ids.contains($0.id) }) }
-                }
-                Button("Regenerate citation key", systemImage: "key") { model.regenerate(record) }
-                if chosen.count > 1 {
-                    Button("Lock citation key") { model.setKeyLock(chosen, locked: true) }
-                    Button("Unlock citation key") { model.setKeyLock(chosen, locked: false) }
+                }.remileHelp("Read attached PDFs and find missing details online. Review changes before applying.")
+                if chosen.count == 1 {
+                    singleReferenceActions(record)
                 } else {
-                    Button(record.citationKeyLocked == true ? "Unlock citation key" : "Lock citation key") {
-                        model.setKeyLock([record], locked: record.citationKeyLocked != true)
+                    if let records = model.selectedDuplicates(record) {
+                        Button("Merge selected…", systemImage: "square.stack") { state.duplicateReview = DuplicateGroup(records: records) }
                     }
+                    citationKeyLocks(chosen)
                 }
-                Button("Add files…", systemImage: "paperclip") { model.chooseFiles(target: record) }
-                if !record.attachments.isEmpty { Button(record.attachments.count == 1 ? "Remove attachment" : "Remove attachments…", systemImage: "paperclip.badge.ellipsis") { removeAttachments(record) } }
-                Divider()
-                Button("Delete", systemImage: "trash", role: .destructive) { model.trash(record) }
             }
         }.disabled(model.busy)
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: rowTarget(record.id)) { receive($0, target: record, pdfOnly: true) }
+    }
+    @ViewBuilder private func singleReferenceActions(_ record: ReferenceRecord) -> some View {
+        Button("Edit…", systemImage: "square.and.pencil") { model.error = nil; state.editor = Entry(record: record) }
+        Menu("PDF") {
+            Button("Find a paper…", systemImage: "doc.text.magnifyingglass") { model.error = nil; state.paperTarget = record; state.paperSearch = true }
+            Button("Attach PDF…", systemImage: "paperclip") { model.chooseFiles(target: record) }
+            if !record.attachments.isEmpty {
+                Button(record.attachments.count == 1 ? "Remove attachment" : "Remove attachments…", systemImage: "paperclip.badge.ellipsis") { removeAttachments(record) }
+            }
+        }
+        Button("View source", systemImage: "doc.text.magnifyingglass") { state.evidence = record }
+        Button("Duplicate", systemImage: "plus.square.on.square") { model.duplicate(record) }
+        let libraries = model.activeLibraries
+        let destinations = libraries.filter { $0.parentID == nil && $0.id != record.library }
+        if !destinations.isEmpty {
+            Menu("Add to library") { ForEach(destinations) { library in Button(library.name) { model.duplicate(record, to: library.id) } } }
+        }
+        let collections = libraries.filter { $0.parentID == record.library && $0.id != record.collectionID }
+        if record.collectionID != nil || !collections.isEmpty {
+            Menu("Move to collection") {
+                if record.collectionID != nil { Button("Library") { model.move(record, to: nil) } }
+                ForEach(collections) { collection in Button(collection.name) { model.move(record, to: collection.id) } }
+            }
+        }
+        if let ids = model.duplicates[record.id] {
+            Button("Review duplicates…", systemImage: "square.stack") { state.duplicateReview = DuplicateGroup(records: model.records.filter { ids.contains($0.id) }) }
+        }
+        Menu("Citation key") {
+            Button("Regenerate citation key", systemImage: "key") { model.regenerate(record) }
+            citationKeyLocks([record])
+        }
+        Divider()
+        Button("Move to Trash", systemImage: "trash", role: .destructive) { model.trash(record) }
+    }
+    @ViewBuilder private func citationKeyLocks(_ records: [ReferenceRecord]) -> some View {
+        if records.contains(where: { $0.citationKeyLocked != true }) {
+            Button("Lock citation key") { model.setKeyLock(records, locked: true) }
+        }
+        if records.contains(where: { $0.citationKeyLocked == true }) {
+            Button("Unlock citation key") { model.setKeyLock(records, locked: false) }
+        }
     }
     private func columns(widths: [String: Double]) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) { Color.clear.frame(width: 22, height: 1); columnCells(nil, widths: widths) }

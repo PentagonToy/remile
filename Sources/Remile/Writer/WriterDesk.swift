@@ -8,11 +8,15 @@ import AppKit
     private weak var model: WriterModel?
     private var applying = false
     private var observations: [NSObjectProtocol] = []
-    private var centredWidth: CGFloat = 0
+    private var centredSize: CGSize = .zero
     private var centredZoom: CGFloat = 0
+    private var fitScheduled = false
+    private var fittedViewport: CGSize = .zero
+    private var fittedPaper: CGSize = .zero
     init(model: WriterModel) {
         self.model = model
         super.init(frame: .zero)
+        model.desk = self
         scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true
         scroll.allowsMagnification = true; scroll.minMagnification = 0.25; scroll.maxMagnification = 2
         scroll.backgroundColor = NSColor(RemileStyle.background)
@@ -21,12 +25,16 @@ import AppKit
         horizontal.canvas = canvas; vertical.canvas = canvas
         addSubview(scroll); addSubview(horizontal); addSubview(vertical)
         scroll.contentView.postsBoundsChangedNotifications = true
+        scroll.contentView.postsFrameChangedNotifications = true
+        observations.append(NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.scheduleFit() }
+        })
         for name in [NSView.boundsDidChangeNotification, NSScrollView.didEndLiveMagnifyNotification] {
             let object: Any = name == NSView.boundsDidChangeNotification ? scroll.contentView : scroll
             observations.append(NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, !self.applying else { return }
-                    if abs((self.model?.zoom ?? 1) - self.scroll.magnification) > 0.001 { self.model?.zoom = self.scroll.magnification }
+                    if abs((self.model?.zoom ?? 1) - self.scroll.magnification) > 0.001 { self.model?.setZoom(self.scroll.magnification) }
                     self.horizontal.needsDisplay = true; self.vertical.needsDisplay = true
                 }
             })
@@ -43,6 +51,7 @@ import AppKit
         vertical.frame = CGRect(x: bounds.width - edge, y: edge, width: edge, height: max(0, bounds.height - edge))
         horizontal.needsDisplay = true; vertical.needsDisplay = true
         alignViewport()
+        scheduleFit()
     }
     func update() {
         applying = true; defer { applying = false }
@@ -55,19 +64,52 @@ import AppKit
         (scroll.documentView as? WriterCanvas)?.synchronise()
         alignViewport()
     }
-    private func alignViewport() {
-        let width = scroll.contentSize.width, zoom = scroll.magnification
-        guard width > 0, abs(width - centredWidth) > 0.5 || abs(zoom - centredZoom) > 0.001,
+    private func scheduleFit() {
+        let size = scroll.contentView.frame.size
+        guard let model, model.fitMode != nil, !fitScheduled, size.width > 0, size.height > 0,
+              abs(size.width - fittedViewport.width) > 0.5 || abs(size.height - fittedViewport.height) > 0.5
+                  || model.pageSize != fittedPaper else { return }
+        fitScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.fitScheduled = false
+            if let mode = self.model?.fitMode { self.fitPage(mode) }
+        }
+    }
+    func fitPage(_ mode: PageFit) {
+        guard let model, let canvas = scroll.documentView as? WriterCanvas else { return }
+        let size = scroll.contentView.frame.size, insets = WriterCanvas.pageInsets
+        guard size.width > 0, size.height > 0 else { return }
+        let visible = scroll.documentVisibleRect
+        let page = canvas.sheets.min { abs($0.frame.midY - visible.midY) < abs($1.frame.midY - visible.midY) }
+        let width = size.width / (model.pageSize.width + 2 * insets.width)
+        let height = size.height / (model.pageSize.height + 2 * insets.height)
+        fittedViewport = size; fittedPaper = model.pageSize
+        applying = true; defer { applying = false }
+        model.setZoom(mode.scale(width: width, height: height), fit: mode)
+        if abs(scroll.magnification - model.zoom) > 0.001 {
+            scroll.setMagnification(model.zoom, centeredAt: CGPoint(x: visible.midX, y: visible.midY))
+        }
+        alignViewport(force: true, centredPage: mode == .width ? nil : page)
+    }
+    private func alignViewport(force: Bool = false, centredPage: WriterPaper? = nil) {
+        let size = scroll.contentView.frame.size, zoom = scroll.magnification
+        let centreHorizontally = force || abs(size.width - centredSize.width) > 0.5 || abs(zoom - centredZoom) > 0.001
+        guard size.width > 0, centreHorizontally || abs(size.height - centredSize.height) > 0.5,
               let canvas = scroll.documentView as? WriterCanvas else { return }
         canvas.fitViewport()
         let visible = scroll.documentVisibleRect
         guard visible.width > 0, let page = canvas.sheets.first else { return }
-        let x = min(max(0, canvas.bounds.width - visible.width), max(0, page.frame.midX - visible.width / 2))
-        scroll.contentView.scroll(to: CGPoint(x: x, y: visible.minY))
+        let x = centreHorizontally
+            ? min(max(0, canvas.bounds.width - visible.width), max(0, page.frame.midX - visible.width / 2))
+            : visible.minX
+        let y = centredPage.map { min(max(0, canvas.bounds.height - visible.height), max(0, $0.frame.midY - visible.height / 2)) } ?? visible.minY
+        scroll.contentView.scroll(to: CGPoint(x: x, y: y))
         scroll.reflectScrolledClipView(scroll.contentView)
-        centredWidth = width; centredZoom = zoom
+        centredSize = size; centredZoom = zoom
     }
     func suspend() {
+        if model?.desk === self { model?.desk = nil }
         observations.forEach { NotificationCenter.default.removeObserver($0) }; observations = []
         (scroll.documentView as? WriterCanvas)?.suspend(); scroll.documentView = nil
     }

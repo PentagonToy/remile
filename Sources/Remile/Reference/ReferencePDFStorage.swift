@@ -46,13 +46,28 @@ extension ReferenceRepository {
             }
         }
     }
+    struct ActivePDF: Hashable {
+        let id: UUID
+        let sha256: String
+    }
+    static func activePDFs(records: [ReferenceRecord], libraries: [ReferenceLibrary]) -> Set<ActivePDF> {
+        let hidden = Set(libraries.filter { $0.trashed != nil }.map(\.id))
+        var files = Set<ActivePDF>()
+        for record in records where record.trashed == nil && !hidden.contains(record.library) && record.collectionID.map(hidden.contains) != true {
+            for attachment in record.attachments {
+                files.insert(ActivePDF(id: attachment.id, sha256: attachment.sha256))
+            }
+        }
+        return files
+    }
     /// APFS clones share disk blocks while retaining separate paths and independent edits.
-    @discardableResult func optimisePDFs(library: UUID? = nil) throws -> Int {
+    @discardableResult func optimisePDFs(library: UUID? = nil, attachmentIDs: Set<UUID>? = nil) throws -> Int {
         try withLibraryLock {
             let snapshot = try snapshot()
             let hidden = Set(snapshot.libraries.filter { $0.trashed != nil }.map(\.id))
             let active = snapshot.records.filter { $0.trashed == nil && !hidden.contains($0.library) && $0.collectionID.map(hidden.contains) != true }
-            let selected = Set(active.filter { library == nil || $0.library == library || $0.collectionID == library }.flatMap(\.attachments).map(\.id))
+            var selected = Set(active.filter { library == nil || $0.library == library || $0.collectionID == library }.flatMap(\.attachments).map(\.id))
+            if let attachmentIDs { selected.formIntersection(attachmentIDs) }
             let files = Dictionary(active.flatMap(\.attachments).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }).values
             let groups = Dictionary(grouping: files, by: \.sha256).values.filter { $0.count > 1 }
             let cacheURL = root.appendingPathComponent("PDFSharing.json")

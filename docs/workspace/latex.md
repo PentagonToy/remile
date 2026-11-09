@@ -20,7 +20,7 @@ Right-click a file, folder or collection and choose **Rename** to edit its row. 
 
 Outline follows the project’s sections. Drag the divider to give either the source or PDF more room.
 
-Use **Fit** to match the height or choose **Fit width** in the zoom menu. The same controls apply in Overleaf.
+Use **Fit** to match the page height or choose **Fit width** in the zoom menu. Recompiling keeps your place in the preview. The same behaviour applies in Overleaf.
 
 Opened files appear in the bottom tab bar. Select a tab to switch source, drag it to change its order, or use + to open another project file. Double-click a tab to edit its file name in **Files**. Closing a tab keeps your edits and the file in the project. At least one file stays open. Source tabs stay within their window.
 
@@ -48,15 +48,37 @@ Open the speech bubble for source-linked questions using your selected assistant
 
 ## When a build needs attention
 
-Open Errors beside Compile. Start with the highest-priority issue and follow its source link. A green check means the PDF matches the current source.
+Open **Errors** beside **Compile**. Use the **Go to source** button on a diagnostic to open its file or line. **Errors**, **Warnings** and **Info** show separate counts. **Terminal** holds the full build output.
 
-Choose **Submission check** from the Compile menu to compare the current source with a copy that embeds its bibliography. Both variants use pdfLaTeX and check whether references resolve without external bibliography files.
+The preview shows any PDF the compiler produces. If a build produces no PDF, the previous preview stays visible when available. A green check means the PDF matches the current source.
+
+With ChatGPT connected, use **Go to source** on the diagnostic, then choose **Suggest fix**. Review the proposed edit and choose **Apply and compile** to check the result.
+
+<details>
+<summary>Watch ChatGPT correct a misspelled command</summary>
+
+<img src="../assets/latex-repair.webp" alt="A misspelled LaTeX command stops the build. ChatGPT suggests a correction, and applying it recompiles the PDF." width="960" loading="lazy">
+
+</details>
+
+Choose **Submission check** from the Compile menu to build a clean copy with your local TeX engine and the current project files. A supplied `.bbl` is checked without regenerating it. If the check fails, open the source error or build log.
 
 Use **Settings → LaTeX → Check LaTeX Environment** to inspect the local tools. remile provides guidance before any package installation.
 
 Click the source background control beside the text size to switch between **Default** and **Paper**. Default follows the app appearance. Paper stays softly white.
 
 The terminal and PDF share one button. Open logs, then click the PDF icon to return to the previous preview position.
+
+## Writing tools
+
+In **Writing tools**, choose **Embed references**, then **Review changes**. Check the bibliography block before choosing **Apply to editor**. **Restore references** reconnects the original `.bib` files if they are still present and the embedded block is intact. Edits elsewhere in the source stay in place.
+
+<details>
+<summary>Watch how to embed a BibTeX bibliography</summary>
+
+<img src="../assets/latex-writing-tools.webp" alt="Writing tools previews embedding the bibliography in the LaTeX source, then applies the change." width="960" loading="lazy">
+
+</details>
 
 ## Buttons at a glance
 

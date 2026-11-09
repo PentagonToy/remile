@@ -23,6 +23,7 @@ struct MarkdownWorkspace: View {
     @AppStorage("markdown.fontSize") private var fontSize = 18.0
     @AppStorage("reader.markdownSerif") private var serif = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.undoManager) private var undoManager
     init(source: Binding<String>, mode: Mode = .read, fileURL: URL? = nil, session: ReadingSession? = nil) {
         _source = source; _presentation = StateObject(wrappedValue: Presentation(mode: mode)); self.fileURL = fileURL; self.session = session
     }
@@ -38,6 +39,12 @@ struct MarkdownWorkspace: View {
         @Published var paneReset = UUID()
         @Published var error: String?
         init(mode: Mode) { self.mode = mode }
+    }
+    private struct PreviewRequest: Equatable {
+        let source: String
+        let url: URL
+        let visible: Bool
+        let live: Bool
     }
     private var editorView: some View { MarkdownEditor(source: $source, controller: editor, size: min(32, max(11, fontSize)), serif: serif, documentID: fileURL?.path, externalRanges: session?.externalEdits ?? [], showExternalEdits: showExternalEdits) }
     private var previewView: some View { MarkdownPreview(source: source, scale: zoom.scale, wide: zoom.wide, fileURL: fileURL, serif: serif, model: preview) }
@@ -73,21 +80,24 @@ struct MarkdownWorkspace: View {
         .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.outline)
         .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.ask)
         .task(id: source + String(spellcheck) + language) { await writing.check(source, enabled: spellcheck, language: language, editor: editor) }
-        .task(id: source) { if livePreview || preview.html == nil { await preview.render(source, url: previewURL) } }
-        .onChange(of: livePreview) { if livePreview { render() } }
+        .task(id: PreviewRequest(source: source, url: previewURL, visible: presentation.mode != .edit, live: livePreview)) {
+            let includeHTML = presentation.mode != .edit && (livePreview || preview.html == nil)
+            await preview.render(source, url: previewURL, includeHTML: includeHTML)
+        }
+        .onChange(of: livePreview) { if livePreview, presentation.mode != .edit { preview.retryRemoteImages() } }
         .onDisappear { editor.suspend(); session?.editSource = nil; writing.dismissSuggestion(); editor.proofreadRequested = nil; editor.dismissWriting = nil }
         .onAppear {
             assistant.useHistory(fileURL?.path)
             editor.proofreadRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return }; writing?.proofread(range, in: view, editor: editor) }
             editor.dismissWriting = { [weak writing = writing] in writing?.dismissSuggestion() }
-            session?.editSource = { [weak editor = editor, weak state = presentation, weak session = session] before, after in
-                guard let session, case .markdown(let current) = session.document.content, current == before else { return false }
-                let identity = session.identity
-                state?.mode = .split
-                try? await Task.sleep(for: .milliseconds(100))
-                guard session.identity == identity, case .markdown(let current) = session.document.content, current == before,
-                      let editor, let view = editor.textView, view.window != nil, view.string == before else { return false }
-                editor.apply(.init(range: NSRange(location: 0, length: (before as NSString).length), text: after, selection: NSRange(location: 0, length: 0)), name: "CLI edit")
+            session?.editSource = { [weak editor = editor, weak state = presentation, weak session = session, weak undoManager = undoManager] before, after in
+                guard let session, let state, !Task.isCancelled, case .markdown(let current) = session.document.content, current == before else { return false }
+                if state.mode == .read {
+                    return session.replaceMarkdown(before: before, after: after, undoManager: undoManager)
+                }
+                guard let editor, let view = editor.textView, view.window != nil, view.string == before else { return false }
+                let selection = EditorProvenance.anchoredSelection(view.selectedRange(), before: before, after: after)
+                editor.apply(.init(range: NSRange(location: 0, length: (before as NSString).length), text: after, selection: selection), name: "CLI edit", focus: false)
                 return view.string == after
             }
             preview.sourceSelection = { [weak editor = editor, weak state = presentation] line, text in state?.mode = .split; editor?.reveal(line: line, text: text) }

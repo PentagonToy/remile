@@ -46,6 +46,8 @@ import UniformTypeIdentifiers
         didSet {
             if !openFiles.contains(selected) { openFiles.append(selected) }
             guard oldValue != selected else { return }
+            restoreEditMarks(for: selected)
+            refreshSharedEditMarks(for: selected)
             captureHistory(file: oldValue)
             if !navigating { backFiles.append(oldValue); forwardFiles = [] }
         }
@@ -88,19 +90,36 @@ import UniformTypeIdentifiers
             for file in changed {
                 bufferHashes.removeValue(forKey: file)
                 pendingHistory.insert(file)
-                if var tracker = provenance[file], let before = oldValue[file], let after = buffers[file] { tracker.transition(before: before, after: after); provenance[file] = tracker; externalEdits[file] = tracker.ranges }
+                if let before = oldValue[file], let after = buffers[file] {
+                    if var tracker = provenance[file] {
+                        tracker.transition(before: before, after: after, preserveUnchanged: importingSource)
+                        provenance[file] = tracker
+                    }
+                    if var tracker = sharedEditRanges[file] {
+                        tracker.transition(before: before, after: after, preserveUnchanged: importingSource)
+                        sharedEditRanges[file] = tracker
+                    }
+                    updateEditRanges(for: file)
+                } else if buffers[file] == nil {
+                    provenance[file] = nil; sharedEditRanges[file] = nil; externalEdits[file] = nil; inspectedEditMarks.remove(file)
+                }
             }
             scheduleHistory(); scheduleOutline()
         }
     }
     @Published private(set) var externalEdits: [String: [NSRange]] = [:]
     private var provenance: [String: EditorProvenance.Tracker] = [:]
+    private let editMarkStore: EditorEditMarks.Store
+    private let sharedEditMarks: EditorEditMarks.Shared?
+    private var sharedEditRanges: [String: EditorProvenance.Tracker] = [:]
+    private var inspectedEditMarks = Set<String>()
+    private var importingSource = false
     private var pendingHistory = Set<String>()
     @Published var outline: [TeXOutlineItem] = []
     @Published var setupNeeded = false
     @Published var compileFailed = false
     @Published var setupIssue: TeXSetupIssue?
-    var editSource: ((String, String, String, String) -> Bool)?
+    var editSource: ((String, String, String, String, Bool) -> Bool)?
     private var outlineTask: Task<Void, Never>?
     @Published var revisions: [TeXHistory.Revision] = []
     @Published var showsHistory = false
@@ -140,31 +159,31 @@ import UniformTypeIdentifiers
     private var job: TeXCompileJob?
     private var task: Task<Void, Never>?
     private let historyEnabled: Bool
-    init(_ root: URL, historyEnabled: Bool = true, displayName: String? = nil, draft: Bool = false) throws {
+    init(_ root: URL, historyEnabled: Bool = true, displayName: String? = nil, draft: Bool = false,
+         editMarkStore: EditorEditMarks.Store = .local, sharedEditMarks: EditorEditMarks.Shared? = nil) throws {
+        self.editMarkStore = editMarkStore
+        self.sharedEditMarks = sharedEditMarks
         self.historyEnabled = historyEnabled; connectedName = displayName; isDraft = draft; draftDirectory = draft ? root : nil
-        self.root = root.standardizedFileURL
-        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey], options: [.skipsHiddenFiles]) else { throw CocoaError(.fileReadUnknown) }
-        var sources: [String: String] = [:], paths: [String] = []
-        for case let url as URL in enumerator {
-            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
-            guard values.isRegularFile == true, values.isSymbolicLink != true else { continue }
-            let relative = String(url.resolvingSymlinksInPath().path.dropFirst(root.resolvingSymlinksInPath().path.count + 1))
-            guard paths.count < 10000 else { throw CocoaError(.fileReadTooLarge) }
-            paths.append(relative)
-            guard ["tex", "bib", "sty", "cls"].contains(url.pathExtension.lowercased()) else { continue }
-            guard (values.fileSize ?? 0) <= 4_000_000 else { throw CocoaError(.fileReadTooLarge) }
+        let root = root.standardizedFileURL
+        self.root = root
+        var sources: [String: String] = [:]
+        let (paths, folders) = try TeXFileSystem.snapshot(root) { url, relative, size in
+            guard OverleafSourceFiles.source(relative) else { return }
+            guard (size ?? 0) <= 4_000_000 else { throw CocoaError(.fileReadTooLarge) }
             let data = try Data(contentsOf: url)
             guard data.count <= 4_000_000, sources.count < 2000, let text = String(data: data, encoding: .utf8) else { throw CocoaError(.fileReadTooLarge) }
             sources[relative] = text
         }
-        let saved = (UserDefaults.standard.dictionary(forKey: "latex.mainDocuments") as? [String: String])?[root.standardizedFileURL.path]
+        let saved = (UserDefaults.standard.dictionary(forKey: "latex.mainDocuments") as? [String: String])?[root.path]
         guard let initial = TeXMainDocument.choose(sources: sources, saved: saved) else { throw TeXFileSystem.Failure(errorDescription: "Add a .tex file to open this project.") }
         draftBaseline = draft ? sources : [:]
-        treeFiles = paths.sorted(); files = sources.keys.sorted(); buffers = sources; original = sources; main = initial; selected = initial
+        treeFiles = paths; files = sources.keys.sorted(); buffers = sources; original = sources; main = initial; selected = initial
         openFiles = [initial]
-        treeFolders = try TeXFileSystem.folders(self.root)
+        treeFolders = folders
         collections = TeXCollections.read(self.root)
         revisions = historyEnabled ? TeXHistory.read(self.root) : []; outline = TeXOutlineItem.project(sources, main: initial); captureHistory(file: initial)
+        restoreEditMarks(for: initial)
+        refreshSharedEditMarks(for: initial)
     }
     deinit { task?.cancel(); job?.stop(); outlineTask?.cancel(); historyTask?.cancel(); syncTask?.cancel(); TeXCache.discard(cachedBuild); if let draftDirectory { try? FileManager.default.removeItem(at: draftDirectory) } }
     var draftChanged: Bool { isDraft && (buffers != draftBaseline || Set(treeFiles) != Set(draftBaseline.keys) || connectedName != nil) }
@@ -180,8 +199,14 @@ import UniformTypeIdentifiers
         guard disk == expectedDisk || disk == expected else { throw OverleafSource.Failure.staleDraft }
         try OverleafSource.validate(text)
         if disk != text { try text.write(to: url, atomically: true, encoding: .utf8) }
-        if expected != text { buffers[file] = text }
+        if expected != text {
+            importingSource = true
+            buffers[file] = text
+            importingSource = false
+        }
         original[file] = text
+        saveEditMarks(for: file, text: text)
+        if file == selected { refreshSharedEditMarks(for: file) }
     }
     struct LiveFileInstall: Sendable {
         let root: URL
@@ -247,11 +272,31 @@ import UniformTypeIdentifiers
             }
             throw error
         }
-        for path in paths {
-            if OverleafSourceFiles.source(path), let bytes = result[path], let text = String(data: bytes, encoding: .utf8) { buffers[path] = text; original[path] = text }
-            else { buffers[path] = nil; original[path] = nil; externalEdits[path] = nil; provenance[path] = nil; pendingHistory.remove(path) }
+        for (source, destination) in moved where OverleafSourceFiles.source(source) {
+            editMarkStore.move(from: root.appendingPathComponent(source), to: root.appendingPathComponent(destination))
+            sharedEditMarks?.move(from: source, to: destination)
+            sharedEditRanges[destination] = sharedEditRanges[source]
+            if let tracker = provenance[source] {
+                provenance[destination] = tracker
+                inspectedEditMarks.insert(destination)
+            }
+            updateEditRanges(for: destination)
         }
-        treeFiles = try TeXFileSystem.paths(root); treeFolders = try TeXFileSystem.folders(root)
+        importingSource = true
+        for path in paths {
+            if OverleafSourceFiles.source(path), let bytes = result[path], let text = String(data: bytes, encoding: .utf8) {
+                buffers[path] = text; original[path] = text
+                saveEditMarks(for: path, text: text)
+            } else {
+                buffers[path] = nil; original[path] = nil; pendingHistory.remove(path)
+                if OverleafSourceFiles.source(path), moved[path] == nil {
+                    editMarkStore.remove(for: root.appendingPathComponent(path))
+                    sharedEditMarks?.remove(path)
+                }
+            }
+        }
+        importingSource = false
+        (treeFiles, treeFolders) = try TeXFileSystem.snapshot(root)
         for path in buffers.keys where !treeFiles.contains(path) { buffers[path] = nil; original[path] = nil }
         for path in treeFiles where buffers[path] == nil && OverleafSourceFiles.source(path) {
             if let bytes = result[path], let text = String(data: bytes, encoding: .utf8), bytes.count <= OverleafSource.textLimit { buffers[path] = text; original[path] = text }
@@ -265,6 +310,7 @@ import UniformTypeIdentifiers
         }
         if buffers[main] == nil, let replacement = TeXMainDocument.choose(sources: buffers, saved: nil) { main = replacement }
         if !treeFiles.contains(selected) { selected = main }
+        refreshSharedEditMarks(for: selected)
         openFiles.removeAll { !treeFiles.contains($0) }
         build = nil; outputCurrent = false; fileRevision += 1
     }
@@ -273,7 +319,7 @@ import UniformTypeIdentifiers
     func refreshFileTree() async throws {
         let root = root, revision = fileRevision, known = Set(buffers.keys)
         let snapshot = try await Task.detached(priority: .utility) {
-            let paths = try TeXFileSystem.paths(root), folders = try TeXFileSystem.folders(root)
+            let (paths, folders) = try TeXFileSystem.snapshot(root)
             var added: [String: String] = [:]
             for path in paths where !known.contains(path) && OverleafSourceFiles.source(path) {
                 let url = try TeXFileSystem.url(path, root: root)
@@ -306,10 +352,18 @@ import UniformTypeIdentifiers
     /// Refresh reviewed disk contents without replacing the editor or its document identity.
     func reloadReviewedFiles() throws {
         guard !dirty else { throw TeXFileSystem.Failure(errorDescription: "The source changed during review. Your unsaved edits were kept. Check changes again.") }
-        let snapshot = try TeXProject(root, historyEnabled: false, displayName: connectedName)
+        let snapshot = try TeXProject(root, historyEnabled: false, displayName: connectedName, editMarkStore: editMarkStore)
         let selectedBefore = selected
+        let trackedChanges = provenance.keys.filter { buffers[$0] != snapshot.buffers[$0] }
         treeFiles = snapshot.treeFiles; treeFolders = snapshot.treeFolders; files = snapshot.files
+        importingSource = true
         buffers = snapshot.buffers; original = snapshot.buffers
+        importingSource = false
+        for file in trackedChanges {
+            if let text = buffers[file] { saveEditMarks(for: file, text: text) }
+            else { editMarkStore.remove(for: root.appendingPathComponent(file)) }
+        }
+        refreshSharedEditMarks(for: selected)
         if buffers[main] == nil { main = snapshot.main }
         if !treeFiles.contains(selectedBefore) { selected = main }
         openFiles.removeAll { !treeFiles.contains($0) }
@@ -333,6 +387,7 @@ import UniformTypeIdentifiers
             catch { try? FileManager.default.removeItem(at: destination); throw error }
             citations.release(); citations = ReferenceCitationSession(context: destination.path)
             root = destination.standardizedFileURL; isDraft = false; draftDirectory = nil; draftBaseline = [:]; connectedName = nil
+            for file in provenance.keys { if let text = original[file] { saveEditMarks(for: file, text: text) } }
             try? FileManager.default.removeItem(at: old)
             savedDraft?(root); message = nil; return true
         } catch { message = "Save failed: " + error.localizedDescription; return false }
@@ -346,7 +401,11 @@ import UniformTypeIdentifiers
             }
             for file in changed { captureHistory(file: file) }
             for file in changed { guard try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8) == original[file] else { throw CocoaError(.fileWriteFileExists) } }
-            for (file, source) in staged { try source.write(to: root.appendingPathComponent(file), atomically: true, encoding: .utf8); original[file] = source }
+            for (file, source) in staged {
+                try source.write(to: root.appendingPathComponent(file), atomically: true, encoding: .utf8)
+                original[file] = source
+                saveEditMarks(for: file, text: source)
+            }
             message = nil; return true
         } catch { message = "Save failed: " + error.localizedDescription; return false }
     }
@@ -365,19 +424,20 @@ import UniformTypeIdentifiers
     }
     func compile(output: URL? = nil, scratch: Bool = false, submissionCheck: Bool = false) {
         guard !compiling else { return }
+        self.submissionCheck = submissionCheck
+        outputCurrent = false
         if !TeXConfiguration.current.missingTools(buffers: buffers, submissionCheck: submissionCheck).isEmpty {
-            setupIssue = nil; setupNeeded = false; compileFailed = true; showsLog = true; showsHistory = false
+            setupIssue = nil; setupNeeded = false; compileFailed = true; showsLog = submissionCheck || pdf == nil; showsHistory = false
             message = "TeX tools are missing."
             diagnostics = [TeXDiagnostic(id: 0, severity: .error, message: message!, file: nil, line: nil)]
             return
         }
         setupIssue = nil; setupNeeded = false; compileFailed = false
-        self.submissionCheck = submissionCheck
         compileID = UUID(); let id = compileID
         let job = TeXCompileJob { [weak self] output in
             Task { @MainActor [weak self] in guard let self, self.compileID == id, self.compiling else { return }; self.log = output }
         }
-        self.job = job; outputCurrent = false; compiling = true; message = nil; log = ""; diagnostics = []
+        self.job = job; compiling = true; message = nil; log = ""; diagnostics = []
         let root = root, main = main, configuration = TeXConfiguration.current
         let destination = output ?? TeXCache.allocate("LaTeX")
         let managed = output == nil
@@ -389,18 +449,18 @@ import UniformTypeIdentifiers
                 try await self?.refreshFileTree()
                 guard let buffers = self?.buffers, self?.compileID == id else { return }
                 let result = try await Task.detached { try job.run(root: root, main: main, buffers: buffers, configuration: configuration, output: destination, scratch: scratch, submissionCheck: submissionCheck) }.value
-                guard let self, self.compileID == id else { return }; self.outputCurrent = false; self.log = result.log; self.diagnostics = TeXDiagnostics.assessed(TeXDiagnostics.parse(result.log), main: main, source: buffers[main] ?? "")
+                guard let self, self.compileID == id else { return }; self.log = result.log; self.diagnostics = TeXDiagnostics.assessed(TeXDiagnostics.parse(result.log), main: main, source: buffers[main] ?? "")
                 if let data = result.pdf, let document = PDFDocument(data: data) {
                     self.outputCurrent = self.buffers == buffers && self.main == main
                     self.pdf = document; self.message = self.outputCurrent ? nil : "Edited · recompile"
                     self.compileFailed = !result.success || self.diagnostics.contains { $0.severity == .error }
-                    self.showsLog = submissionCheck || self.compileFailed; self.showsHistory = false
-                    if submissionCheck { self.message = self.buffers == buffers && self.main == main ? "Submission check passed" : "Source changed · recheck"; self.showsLog = true }
+                    self.showsLog = submissionCheck; self.showsHistory = false
+                    if submissionCheck { self.message = self.outputCurrent ? "Submission check passed" : "Source changed · recheck" }
                     TeXCache.discard(self.cachedBuild); self.cachedBuild = managed ? destination : nil; retained = managed
                     self.build = TeXBuild(pdf: result.output, source: destination.appendingPathComponent("Source"), executable: URL(fileURLWithPath: configuration.directory).appendingPathComponent("synctex"), buffers: buffers, main: main)
                 }
                 else {
-                    self.message = submissionCheck ? "Submission check failed" : "Compilation failed"; self.showsLog = true
+                    self.message = submissionCheck ? "Submission check failed" : "Compilation failed"; self.showsLog = submissionCheck || self.pdf == nil
                     self.setupIssue = TeXSetupIssue.detect(result.log); self.setupNeeded = false; self.showsHistory = false; self.compileFailed = true
                 }
             } catch {
@@ -409,16 +469,16 @@ import UniformTypeIdentifiers
                     let captured = (try? String(contentsOf: destination.appendingPathComponent("compiler.log"), encoding: .utf8)) ?? ""
                     self.log = String((captured + "\n" + (self.message ?? "Compilation failed")).suffix(150000))
                     self.diagnostics = TeXDiagnostics.assessed(TeXDiagnostics.parse(self.log), main: main, source: buffers[main] ?? "")
-                    if !(error is CancellationError) { self.showsLog = true; self.setupIssue = TeXSetupIssue.detect(self.log); self.setupNeeded = false; self.showsHistory = false; self.compileFailed = true }
+                    if !(error is CancellationError) { self.showsLog = submissionCheck || self.pdf == nil; self.setupIssue = TeXSetupIssue.detect(self.log); self.setupNeeded = false; self.showsHistory = false; self.compileFailed = true }
                 }
             }
             self?.compiling = false; self?.job = nil
         }
     }
-    func compareSubmission() {
+    func compareSubmission(compareEmbedded: Bool = true) {
         guard !compiling else { return }
         showsSubmission = true; compiling = true
-        submission.start(root: root, main: main, buffers: buffers) { [weak self] in self?.compiling = false }
+        submission.start(root: root, main: main, buffers: buffers, compareEmbedded: compareEmbedded) { [weak self] in self?.compiling = false }
     }
     /// Closing a workspace must release previews even if a presentation temporarily retains its model.
     func releaseWorkspaceResources() {
@@ -479,7 +539,46 @@ import UniformTypeIdentifiers
         catch { message = "Unable to save local history." }
     }
     func markExternalEdit(file: String, before: String, after: String) {
-        var tracker = provenance[file] ?? EditorProvenance.Tracker(); tracker.mark(before: before, after: after); provenance[file] = tracker; externalEdits[file] = tracker.ranges
+        guard before != after else { return }
+        var tracker = provenance[file] ?? EditorProvenance.Tracker()
+        tracker.mark(before: before, after: after); provenance[file] = tracker
+        updateEditRanges(for: file)
+    }
+    func editRanges(in file: String) -> [NSRange] {
+        restoreEditMarks(for: file)
+        refreshSharedEditMarks(for: file)
+        return externalEdits[file] ?? []
+    }
+    private func restoreEditMarks(for file: String) {
+        guard !isDraft, provenance[file] == nil, let text = buffers[file], inspectedEditMarks.insert(file).inserted else { return }
+        let url = root.appendingPathComponent(file)
+        guard let snapshot = editMarkStore.read(for: url) ?? sharedEditMarks?.ownSnapshot(for: file) else { return }
+        let ranges = snapshot.restore(in: text)
+        provenance[file] = EditorProvenance.Tracker(ranges: ranges)
+        updateEditRanges(for: file)
+    }
+    func refreshSharedEditMarks(for file: String) {
+        guard let sharedEditMarks, sharedEditMarks.available, let text = buffers[file], text == original[file] else { return }
+        let local = editMarkStore.read(for: root.appendingPathComponent(file))
+        if let local, local != sharedEditMarks.ownSnapshot(for: file) { sharedEditMarks.save(local, for: file) }
+        let ranges = sharedEditMarks.ranges(fromOtherMacsFor: file, in: text)
+        sharedEditRanges[file] = ranges.isEmpty ? nil : EditorProvenance.Tracker(ranges: ranges)
+        updateEditRanges(for: file)
+    }
+    private func updateEditRanges(for file: String) {
+        let local = provenance[file]?.ranges ?? []
+        let shared = sharedEditRanges[file]?.ranges ?? []
+        let ranges = shared.isEmpty ? local : EditorProvenance.merged(local + shared)
+        if ranges != externalEdits[file] ?? [] { externalEdits[file] = ranges.isEmpty ? nil : ranges }
+    }
+    private func saveEditMarks(for file: String, text: String) {
+        guard !isDraft, let tracker = provenance[file] else { return }
+        let url = root.appendingPathComponent(file)
+        if let sharedEditMarks {
+            let snapshot = EditorEditMarks.Snapshot(source: text, ranges: tracker.ranges)
+            editMarkStore.write(snapshot, for: url)
+            sharedEditMarks.save(snapshot, for: file)
+        } else { editMarkStore.save(for: url, text: text, ranges: tracker.ranges) }
     }
     func restore(_ revision: TeXHistory.Revision) {
         guard buffers[revision.file] != nil else { message = "The file no longer exists in this project."; return }
@@ -499,6 +598,12 @@ import UniformTypeIdentifiers
         do {
             captureHistory(file: selected); try TeXFileSystem.move(root: root, from: path, to: target)
             func mapped(_ file: String) -> String { file == path ? target : file.hasPrefix(path + "/") ? target + file.dropFirst(path.count) : file }
+            for file in files where mapped(file) != file {
+                editMarkStore.move(from: root.appendingPathComponent(file), to: root.appendingPathComponent(mapped(file)))
+                sharedEditMarks?.move(from: file, to: mapped(file))
+            }
+            inspectedEditMarks = Set(inspectedEditMarks.map(mapped))
+            sharedEditRanges = Dictionary(uniqueKeysWithValues: sharedEditRanges.map { (mapped($0.key), $0.value) })
             externalEdits = Dictionary(uniqueKeysWithValues: externalEdits.map { (mapped($0.key), $0.value) }); provenance = Dictionary(uniqueKeysWithValues: provenance.map { (mapped($0.key), $0.value) }); pendingHistory = Set(pendingHistory.map(mapped))
             buffers = Dictionary(uniqueKeysWithValues: buffers.map { (mapped($0.key), $0.value) })
             original = Dictionary(uniqueKeysWithValues: original.map { (mapped($0.key), $0.value) })
@@ -526,7 +631,11 @@ import UniformTypeIdentifiers
                 let removed = files.filter { $0 == path || $0.hasPrefix(path + "/") }
                 for file in removed { captureHistory(file: file) }
                 try FileManager.default.trashItem(at: TeXFileSystem.url(path, root: root), resultingItemURL: nil)
-                for file in removed { buffers.removeValue(forKey: file); original.removeValue(forKey: file); externalEdits.removeValue(forKey: file); provenance.removeValue(forKey: file); pendingHistory.remove(file) }
+                for file in removed {
+                    buffers.removeValue(forKey: file); original.removeValue(forKey: file); pendingHistory.remove(file)
+                    editMarkStore.remove(for: root.appendingPathComponent(file))
+                    sharedEditMarks?.remove(file)
+                }
                 files.removeAll { removed.contains($0) }; treeFiles.removeAll { $0 == path || $0.hasPrefix(path + "/") }; treeFolders.removeAll { $0 == path || $0.hasPrefix(path + "/") }
                 openFiles.removeAll { $0 == path || $0.hasPrefix(path + "/") }
                 if removed.contains(selected) { selected = main }; backFiles.removeAll { removed.contains($0) }; forwardFiles.removeAll { removed.contains($0) }; build = nil; outputCurrent = false; fileRevision += 1
@@ -618,11 +727,11 @@ import UniformTypeIdentifiers
                         continue
                     }
                     let path = try TeXFileSystem.importFile(url, root: root, folder: folder)
-                    treeFiles = try TeXFileSystem.paths(root)
+                    (treeFiles, treeFolders) = try TeXFileSystem.snapshot(root)
                     if ["tex", "bib", "sty", "cls"].contains(url.pathExtension.lowercased()), let source = try? String(contentsOf: root.appendingPathComponent(path), encoding: .utf8), source.utf8.count <= 4_000_000 {
                         buffers[path] = source; original[path] = source; files.append(path); files.sort()
                     }
-                    build = nil; outputCurrent = false; treeFolders = try TeXFileSystem.folders(root); fileRevision += 1
+                    build = nil; outputCurrent = false; fileRevision += 1
                 } catch { message = error.localizedDescription }
             }
         }
@@ -676,17 +785,34 @@ import UniformTypeIdentifiers
             let history = TeXHistory.directory(old), destination = TeXHistory.directory(target)
             if FileManager.default.fileExists(atPath: history.path), !FileManager.default.fileExists(atPath: destination.path) { try? FileManager.default.copyItem(at: history, to: destination) }
             do { try review.relocate(to: target) } catch { try? FileManager.default.moveItem(at: target, to: old); throw error }
+            for file in files { editMarkStore.move(from: old.appendingPathComponent(file), to: target.appendingPathComponent(file)) }
             root = target; main = String(main); renamedRoot?(old, target); return true
         } catch { message = error.localizedDescription; return false }
     }
-    @discardableResult func applyTool(file: String, before: String, after: String, name: String, feedback: Bool = true) -> Bool {
+    @discardableResult func applyTool(file: String, before: String, after: String, name: String, feedback: Bool = true, reveal: Bool = true) -> Bool {
         guard !compiling, buffers[file] == before else { message = "The source changed. Prepare this action again."; return false }
+        restoreEditMarks(for: file)
         captureHistory(file: file, marker: "Before · " + name)
         if let editSource {
-            guard editSource(file, before, after, name) else { message = "Finish composing text before applying this action."; return false }
+            guard editSource(file, before, after, name, reveal) else { message = "Finish composing text before applying this action."; return false }
         } else { buffers[file] = after }
         captureHistory(file: file, marker: "After · " + name)
         if feedback, UserDefaults.standard.object(forKey: "editor.toolSounds") as? Bool ?? true, let sound = NSSound(named: "Tink") { sound.volume = 0.16; sound.play() }
+        return true
+    }
+    @discardableResult func editBackgroundBuffer(file: String, before: String, after: String, name: String, undo: UndoManager?) -> Bool {
+        guard !compiling, buffers[file] == before else { return false }
+        guard before != after else { return true }
+        buffers[file] = after
+        if let undo {
+            let opensGroup = undo.groupingLevel == 0
+            if opensGroup { undo.beginUndoGrouping() }
+            undo.registerUndo(withTarget: self) { [weak undo] project in
+                _ = project.editBackgroundBuffer(file: file, before: after, after: before, name: name, undo: undo)
+            }
+            undo.setActionName(name)
+            if opensGroup { undo.endUndoGrouping() }
+        }
         return true
     }
     /// Additive only. Existing keys and bibliography configuration remain untouched.
@@ -754,23 +880,23 @@ import UniformTypeIdentifiers
             } catch { self?.message = error.localizedDescription }
         }
     }
-    func diagnosticLocation(_ diagnostic: TeXDiagnostic) -> TeXSync.SourceLocation? {
-        guard let path = diagnostic.file, let line = diagnostic.line, line > 0 else { return nil }
-        let roots = [diagnosticSource, build?.source, root].compactMap { $0 }
+    func diagnosticLocation(_ diagnostic: TeXDiagnostic, snapshot: URL? = nil, allowFileOnly: Bool = false) -> TeXSync.SourceLocation? {
+        guard let path = diagnostic.file, diagnostic.line.map({ $0 > 0 }) ?? allowFileOnly else { return nil }
+        let roots = [snapshot, diagnosticSource, build?.source, root].compactMap { $0 }
         for source in roots {
             let base = URL(fileURLWithPath: source.path, isDirectory: true).standardizedFileURL
             let url = path.hasPrefix("/") ? URL(fileURLWithPath: path).standardizedFileURL : base.appendingPathComponent(path).standardizedFileURL
             let prefix = base.path + "/"
             guard url.path.hasPrefix(prefix) else { continue }
             let file = String(url.path.dropFirst(prefix.count))
-            if buffers[file] != nil { return .init(file: file, line: line - 1) }
+            if buffers[file] != nil { return .init(file: file, line: (diagnostic.line ?? 1) - 1) }
         }
         return nil
     }
     func reveal(_ diagnostic: TeXDiagnostic) {
-        guard let location = diagnosticLocation(diagnostic) else { return }
+        guard let location = diagnosticLocation(diagnostic, allowFileOnly: true) else { return }
         showsHistory = false
-        selected = location.file; sourceJump = SourceJump(location: location)
+        selected = location.file; sourceJump = SourceJump(location: location, marksLine: diagnostic.line != nil)
     }
 
     func export() {

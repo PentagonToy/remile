@@ -31,32 +31,56 @@ final class TeXCompileJob: @unchecked Sendable {
         case timeLimit
         var errorDescription: String? { "Compilation time limit reached. Increase it in Settings → LaTeX → Compilation, then try again." }
     }
-    struct Result { let pdf: Data?; let log: String; let output: URL; let success: Bool }
+    enum SubmissionIssue: String, Codable, Sendable {
+        case compiler, bibliography, unresolved, incomplete, externalSource
+    }
+    struct Result {
+        let pdf: Data?; let log: String; let output: URL; let success: Bool
+        var submissionIssue: SubmissionIssue? = nil
+        var usedSuppliedBibliography = false
+    }
     private let lock = NSLock()
     private var process: Process?
     private var cancelled = false
     private let publish: @Sendable (String) -> Void
     init(publish: @escaping @Sendable (String) -> Void = { _ in }) { self.publish = publish }
     func stop() { lock.lock(); cancelled = true; let active = process; lock.unlock(); if active?.isRunning == true { active?.interrupt() } }
-    func run(root: URL, main: String, buffers: [String: String], configuration: TeXConfiguration, output: URL, scratch: Bool = false, submissionCheck: Bool = false) throws -> Result {
-        guard configuration.missingTools(buffers: buffers, submissionCheck: submissionCheck).isEmpty else { throw CocoaError(.executableNotLoadable) }
+    func run(root: URL, main: String, buffers: [String: String], configuration: TeXConfiguration, output: URL, scratch: Bool = false, submissionCheck: Bool = false, checkProject: Bool = false) throws -> Result {
+        if !checkProject, !configuration.missingTools(buffers: buffers, submissionCheck: submissionCheck).isEmpty {
+            throw CocoaError(.executableNotLoadable)
+        }
         let manager = FileManager.default
         try manager.createDirectory(at: output, withIntermediateDirectories: true)
         let source = output.appendingPathComponent("Source"), build = output.appendingPathComponent("Build")
-        try TeXSourceSnapshot.write(root: root, buffers: buffers, to: source, submissionCheck: submissionCheck)
+        let snapshotMode: TeXSourceSnapshot.Mode = submissionCheck ? .embeddedCheck : checkProject ? .projectCheck : .regular
+        try TeXSourceSnapshot.write(root: root, buffers: buffers, to: source, mode: snapshotMode)
         try manager.createDirectory(at: build, withIntermediateDirectories: true)
         let executable = URL(fileURLWithPath: configuration.directory).appendingPathComponent("latexmk")
         let engine = configuration.resolvedEngine(buffers: buffers, submissionCheck: submissionCheck)
         let flag = engine == .xe ? "-xelatex" : engine == .lua ? "-lualatex" : "-pdf"
+        let name = ((main as NSString).lastPathComponent as NSString).deletingPathExtension
+        let pdfURL = build.appendingPathComponent(name + ".pdf")
+        let engineName = engine == .xe ? "xelatex" : engine == .lua ? "lualatex" : "pdflatex"
+        if checkProject, !manager.isExecutableFile(atPath: URL(fileURLWithPath: configuration.directory).appendingPathComponent(engineName).path) {
+            throw TeXFileSystem.Failure(errorDescription: "\(engine.rawValue) is unavailable. Check the TeX folder in Settings.")
+        }
         let logURL = output.appendingPathComponent("compiler.log"); manager.createFile(atPath: logURL.path, contents: nil)
         let handle = try FileHandle(forWritingTo: logURL); defer { try? handle.close() }
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = configuration.executablePath
+        if checkProject {
+            for key in ["TEXINPUTS", "BIBINPUTS", "BSTINPUTS", "TEXMFOUTPUT"] { environment.removeValue(forKey: key) }
+        }
         let deadline = Date().addingTimeInterval(configuration.timeLimitSeconds)
         try handle.write(contentsOf: Data("Compilation time limit: \(Int(configuration.timeLimitSeconds)) seconds.\n".utf8))
-        if engine == .pdf, let items = manager.enumerator(at: source, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) {
+        var hasSuppliedBibliography = false
+        if engine == .pdf || checkProject,
+           let items = manager.enumerator(at: source, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) {
             let converter = URL(fileURLWithPath: configuration.directory).appendingPathComponent("epstopdf")
-            for case let image as URL in items where image.pathExtension.lowercased() == "eps" {
+            for case let image as URL in items {
+                let ext = image.pathExtension.lowercased()
+                if checkProject, ext == "bbl" { hasSuppliedBibliography = true }
+                guard engine == .pdf, ext == "eps" else { continue }
                 let target = image.deletingPathExtension().path + "-eps-converted-to.pdf"
                 guard !manager.fileExists(atPath: target) else { continue }
                 guard manager.isExecutableFile(atPath: converter.path) else { throw TeXFileSystem.Failure(errorDescription: "EPS graphics need epstopdf from your TeX installation.") }
@@ -64,33 +88,70 @@ final class TeXCompileJob: @unchecked Sendable {
                 guard status == 0, manager.fileExists(atPath: target) else { throw TeXFileSystem.Failure(errorDescription: "Could not prepare the EPS graphic “\(image.lastPathComponent)”. See the build log.") }
             }
         }
-        if submissionCheck {
-            let tool = URL(fileURLWithPath: configuration.directory).appendingPathComponent("pdflatex")
-            environment["TEXINPUTS"] = source.path + "//:"
-            environment.removeValue(forKey: "TEXMFOUTPUT")
-            try handle.write(contentsOf: Data("Submission check: fresh snapshot, no .bib/.bbl/.bst or cached auxiliary files. Three pdfLaTeX passes. BibTeX/Biber/latexmk not invoked. This uses the local TeX installation.\n".utf8))
+        func latexOnly() throws -> Int32 {
+            let tool = URL(fileURLWithPath: configuration.directory).appendingPathComponent(engineName)
             var status: Int32 = 0
             for pass in 1...3 {
                 try handle.write(contentsOf: Data("Submission check: LaTeX pass \(pass)/3\n".utf8))
                 status = try execute(tool, arguments: ["-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-no-shell-escape", "-recorder", "-synctex=1", "-output-directory=\(build.path)", "./" + main], directory: source, environment: environment, log: handle, logURL: logURL, deadline: deadline)
                 if status != 0 { break }
             }
-            let name = ((main as NSString).lastPathComponent as NSString).deletingPathExtension
+            return status
+        }
+        func assess(_ status: Int32) throws -> Result {
             let finalLog = (try? Data(contentsOf: build.appendingPathComponent(name + ".log"))).map { String(decoding: $0, as: UTF8.self) } ?? ""
             let recorder = (try? String(contentsOf: build.appendingPathComponent(name + ".fls"), encoding: .utf8)) ?? ""
-            let dependency = recorder.components(separatedBy: .newlines).contains { line in
-                guard line.hasPrefix("INPUT ") else { return false }
-                return ["bib", "bbl", "bst"].contains((String(line.dropFirst(6)) as NSString).pathExtension.lowercased())
+            let rootPaths = [root.standardizedFileURL.path, root.resolvingSymlinksInPath().path]
+            let sourcePrefix = source.resolvingSymlinksInPath().path + "/"
+            let buildPrefix = build.resolvingSymlinksInPath().path + "/"
+            var bibliographyDependency = false, suppliedBibliography = false, externalSource = false
+            for line in recorder.split(whereSeparator: \.isNewline) where line.hasPrefix("INPUT ") {
+                let input = String(line.dropFirst(6))
+                let ext = (input as NSString).pathExtension.lowercased()
+                if ["bib", "bbl", "bst"].contains(ext) { bibliographyDependency = true }
+                guard checkProject else { continue }
+                let url = input.hasPrefix("/") ? URL(fileURLWithPath: input) : source.appendingPathComponent(input)
+                let path = url.resolvingSymlinksInPath().path
+                if path.hasPrefix(sourcePrefix) { suppliedBibliography = suppliedBibliography || ext == "bbl" }
+                else if !path.hasPrefix(buildPrefix), ext == "bbl" || rootPaths.contains(where: { path.hasPrefix($0 + "/") }) {
+                    externalSource = true
+                }
             }
             let needsBibliography = finalLog.range(of: #"No file [^\n]*\.bbl"#, options: .regularExpression) != nil || finalLog.contains("Please (re)run Biber") || finalLog.contains("Please (re)run BibTeX")
             let unresolved = needsBibliography || finalLog.contains("undefined citations") || finalLog.contains("undefined references") || finalLog.range(of: #"Citation[^\n]*undefined"#, options: .regularExpression) != nil || finalLog.contains("Rerun to get cross-references right")
-            let passed = status == 0 && !recorder.isEmpty && !finalLog.isEmpty && !dependency && !unresolved
-            let summary = passed ? "Submission check passed: references resolved without bibliography files or bibliography processors." : "Submission check failed: " + (status != 0 ? "LaTeX compilation failed." : dependency ? "A bibliography file was read, including an external path." : unresolved ? "Unresolved citations or references remain after three passes." : "No dependency record was produced.")
-            try handle.write(contentsOf: Data((summary + "\n").utf8))
+            let issue: SubmissionIssue?
+            if externalSource { issue = .externalSource }
+            else if status != 0 { issue = .compiler }
+            else if (submissionCheck && bibliographyDependency) || needsBibliography { issue = .bibliography }
+            else if unresolved { issue = .unresolved }
+            else if recorder.isEmpty || finalLog.isEmpty { issue = .incomplete }
+            else { issue = nil }
+            let pdf = issue == nil ? try? Data(contentsOf: pdfURL) : nil
             let text = String(decoding: try Data(contentsOf: logURL), as: UTF8.self)
-            let pdfURL = build.appendingPathComponent(name + ".pdf")
-            let pdf = passed ? try? Data(contentsOf: pdfURL) : nil
-            return Result(pdf: pdf, log: String(text.suffix(150000)), output: pdfURL, success: pdf != nil)
+            let summary = pdf != nil
+                ? (submissionCheck ? "Submission check passed: references resolved without bibliography files or bibliography processors." : "Submission check passed with the current project files.")
+                : "Submission check failed: " + (externalSource ? "A source file was read outside the snapshot." : status != 0 ? "LaTeX compilation failed." : submissionCheck && bibliographyDependency ? "A bibliography file was read, including an external path." : unresolved ? "Unresolved citations or references remain after compilation." : "No complete build was produced.")
+            try handle.write(contentsOf: Data((summary + "\n").utf8))
+            return Result(pdf: pdf, log: String((text + summary + "\n").suffix(150000)), output: pdfURL, success: pdf != nil,
+                          submissionIssue: pdf != nil ? nil : issue ?? .incomplete, usedSuppliedBibliography: suppliedBibliography)
+        }
+        if submissionCheck {
+            environment["TEXINPUTS"] = source.path + "//:"
+            environment.removeValue(forKey: "TEXMFOUTPUT")
+            try handle.write(contentsOf: Data("Submission check: fresh snapshot, no .bib/.bbl/.bst or cached auxiliary files. Three pdfLaTeX passes. BibTeX/Biber/latexmk not invoked. This uses the local TeX installation.\n".utf8))
+            return try assess(latexOnly())
+        }
+        if checkProject, hasSuppliedBibliography {
+            try handle.write(contentsOf: Data("Checking the supplied .bbl without a bibliography processor.\n".utf8))
+            let result = try assess(latexOnly())
+            if result.success || result.usedSuppliedBibliography || result.submissionIssue != .bibliography || !configuration.bibliography {
+                return result
+            }
+            try manager.removeItem(at: build)
+            try manager.createDirectory(at: build, withIntermediateDirectories: true)
+        }
+        if checkProject, !manager.isExecutableFile(atPath: executable.path) {
+            throw TeXFileSystem.Failure(errorDescription: "latexmk is unavailable. Check the TeX folder in Settings.")
         }
         if configuration.bibliography {
             let biber = URL(fileURLWithPath: configuration.directory).appendingPathComponent("biber")
@@ -115,9 +176,9 @@ final class TeXCompileJob: @unchecked Sendable {
                 }
             }
         }
-        let status = try execute(executable, arguments: (scratch ? ["-gg"] : []) + ["-norc", flag, configuration.bibliography ? "-bibtex" : "-bibtex-", "-interaction=nonstopmode", "-file-line-error", "-no-shell-escape", "-synctex=1", "-outdir=\(build.path)", "./" + main], directory: source, environment: environment, log: handle, logURL: logURL, deadline: deadline)
-        let name = ((main as NSString).lastPathComponent as NSString).deletingPathExtension
-        let pdfURL = build.appendingPathComponent(name + ".pdf")
+        let buildOptions = checkProject ? ["-halt-on-error", "-recorder"] : ["-f"]
+        let status = try execute(executable, arguments: (scratch ? ["-gg"] : []) + buildOptions + ["-norc", flag, configuration.bibliography ? "-bibtex" : "-bibtex-", "-interaction=nonstopmode", "-file-line-error", "-no-shell-escape", "-synctex=1", "-outdir=\(build.path)", "./" + main], directory: source, environment: environment, log: handle, logURL: logURL, deadline: deadline)
+        if checkProject { return try assess(status) }
         var pdf = try? Data(contentsOf: pdfURL)
         if pdf == nil, engine == .xe {
             let xdv = build.appendingPathComponent(name + ".xdv")

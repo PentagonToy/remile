@@ -25,7 +25,7 @@ Crossref and arXiv abstracts are saved with the reference. When Crossref has non
 
 **Include abstract** in Reference settings controls BibTeX copying, export and insertion. Turning it off keeps the library's abstract available to local suggestions without adding it to the manuscript bibliography.
 
-To find a PDF for an existing record, right-click it and choose **Find a paper…**. remile checks PDFs already open or attached, then looks for a public copy. **Attach PDF** keeps the confirmed file with the existing record and citation key.
+To find a PDF for an existing record, right-click it and choose **PDF → Find a paper…**. remile checks PDFs already open or attached, then looks for a public copy. **Attach PDF** keeps the confirmed file with the existing record and citation key.
 
 | Available details | Where remile looks |
 | --- | --- |
@@ -81,13 +81,13 @@ Add PDFs through Add PDF or by dropping them onto a reference. Clean up does not
 
 ## Storage and other Macs
 
-Settings → Storage offers one location for Reference and search data. Change → Move storage creates a `remile-storage` folder at the chosen location. The change runs before workspaces open on the next launch. remile copies Reference and search data before switching locations and verifies the copied Reference files. Previous files remain intact.
+In **Settings → Storage → Locations**, **Reference folder** sets the location of the catalogue and managed PDFs. **Move library…** copies the library into a `remile-reference` folder and verifies the copy before switching. The change applies on the next launch. Previous files remain available.
 
-Reference uses `Reference/` and relative attachment paths. Search uses `Search/<Mac identity>/`. Another Mac opens the shared storage through Change → Open storage and keeps a separate search database. Machine identity and storage paths are excluded from presets. Existing customised Reference locations keep working until a storage move is requested.
+Reference keeps attachment paths relative to its library. **Storage folder** controls the search indexes and Overleaf edit marks. A storage move preserves the chosen Reference location. Machine identity and storage paths are excluded from presets.
 
 If copying fails, the active location is unchanged. If the selected drive is missing, reconnect it. Keep cloud files downloaded before opening storage. This uses a local folder or mounted drive, rather than a remote database service.
 
-An opened library starts read only. Catalogue changes, passage saves and saving over managed PDFs are blocked. Copies can be saved outside the library. To edit, turn off Read only on one Mac after folder sync finishes. Wait for changes to finish syncing before editing on another Mac. The local file lock does not coordinate writers on different computers, and remile does not merge cloud conflicts automatically. Keep unresolved conflict files until they have been reviewed.
+An opened library starts read only. Catalogue changes, passage saves and saving over managed PDFs are blocked. Copies can be saved outside the library. To edit, turn off **Reference read only** on one Mac after folder sync finishes. Wait for changes to finish syncing before editing on another Mac. The local file lock does not coordinate writers on different computers, and remile does not merge cloud conflicts automatically. Keep unresolved conflict files until they have been reviewed.
 
 Keep the library downloaded on every Mac that needs offline access. Apple documents [Keep Downloaded](https://support.apple.com/en-gb/guide/mac-help/mchl1a02d711/mac). Dropbox describes [conflicted copies](https://help.dropbox.com/organize/conflicted-copy) caused by concurrent or offline edits. Shared-folder behaviour is tested with local copies at different paths. Two physical Macs and provider conflict recovery require separate validation.
 

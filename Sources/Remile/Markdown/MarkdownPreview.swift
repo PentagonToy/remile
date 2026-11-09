@@ -5,6 +5,8 @@ import WebKit
 final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelegate {
     var sourceSelection: ((Int, String) -> Void)?
     @Published var html: String?
+    private static let emptyHTML = "<!doctype html><html><head><meta charset=\"utf-8\"></head><body></body></html>"
+    var showsWebPreview: Bool { loaded || (html != nil && html != Self.emptyHTML) }
     @Published var message: String?
     @Published var sections: [SearchMarkdown.Section] = []
     @Published var wordCount = 0
@@ -21,6 +23,7 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     private var appliedOffline: Bool?
     private var generation = UUID()
     private var renderGeneration = UUID()
+    private var analysedSource: String?
     private var renderedSource: String?
     private var renderedURL: URL?
     private let remoteImages = MarkdownRemoteImages()
@@ -44,24 +47,39 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
         web.navigationDelegate = self; web.setAccessibilityLabel("Markdown preview")
         return web
     }()
-    func render(_ source: String, url: URL) async {
+    func render(_ source: String, url: URL, includeHTML: Bool = true) async {
         let token = UUID(); renderGeneration = token
-        if renderedSource == source, renderedURL == url, html != nil, message == nil { return }
+        let analyse = analysedSource != source
+        let renderHTML = includeHTML && (renderedSource != source || renderedURL != url || html == nil || message != nil)
+        guard analyse || renderHTML else { return }
         do { try await Task.sleep(for: .milliseconds(180)); try Task.checkCancellation() } catch { return }
         guard renderGeneration == token else { return }
-        let worker = Task.detached(priority: .userInitiated) { () throws -> (String, [SearchMarkdown.Section], Int) in
-            let sections = SearchMarkdown.sections(source)
-            var renderer = MarkdownHTML(baseURL: url, preview: true)
-            let anchors = Dictionary(uniqueKeysWithValues: sections.map { ($0.line, $0.number) })
-            let html = source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "<!doctype html><html><head><meta charset=\"utf-8\"></head><body></body></html>" : try renderer.document(source, anchors: anchors)
+        let emptyHTML = Self.emptyHTML
+        let cachedSections = sections
+        let worker = Task.detached(priority: .userInitiated) {
+            let sections = analyse ? SearchMarkdown.sections(source) : cachedSections
+            let wordCount = analyse ? source.split(whereSeparator: \.isWhitespace).count : nil
+            let html: Result<String, Error>? = renderHTML ? Result {
+                guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return emptyHTML }
+                var renderer = MarkdownHTML(baseURL: url, preview: true)
+                let anchors = Dictionary(uniqueKeysWithValues: sections.map { ($0.line, $0.number) })
+                return try renderer.document(source, anchors: anchors)
+            } : nil
             try Task.checkCancellation()
-            return (html, sections, source.split(whereSeparator: \.isWhitespace).count)
+            return (html: html, sections: sections, wordCount: wordCount)
         }
         do {
             let result = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
             try Task.checkCancellation(); guard renderGeneration == token else { return }
-            renderedSource = source; renderedURL = url
-            html = result.0; sections = result.1; wordCount = result.2; message = nil
+            if let count = result.wordCount {
+                analysedSource = source
+                sections = result.sections
+                if wordCount != count { wordCount = count }
+            }
+            if let output = try result.html?.get() {
+                renderedSource = source; renderedURL = url
+                html = output; message = nil
+            }
         } catch is CancellationError { }
         catch {
             guard !Task.isCancelled, renderGeneration == token else { return }
@@ -72,6 +90,8 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     }
     func display(dark: Bool, scale: CGFloat, wide: Bool, serif: Bool) {
         self.dark = dark; self.scale = scale; self.wide = wide; self.serif = serif
+        let appearance: NSAppearance.Name = dark ? .darkAqua : .aqua
+        if web.appearance?.name != appearance { web.appearance = NSAppearance(named: appearance) }
         let background = dark ? RemileStyle.slate : RemileStyle.paper
         if web.underPageBackgroundColor != background { web.underPageBackgroundColor = background }
         guard let html else { return }
@@ -94,7 +114,7 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     private static func json(_ value: String) -> String { String(data: try! JSONEncoder().encode(value), encoding: .utf8)! }
     private var themeCSS: String {
         """
-        html,body{background:\(dark ? "#202c35" : "#f3efe7");color:\(dark ? "#f3eadb" : "#293944")}body{font:18px \(serif ? "Georgia,serif" : "-apple-system,BlinkMacSystemFont,sans-serif");line-height:1.65;max-width:\(wide ? "none" : "760px");margin:auto;padding:32px 36px 64px}h1{font-size:2em}h2{font-size:1.6em}h3{font-size:1.3em}code{font:0.9em ui-monospace,monospace}pre{background:\(dark ? "#2b3740" : "#eeeae2");border-radius:6px;padding:16px;overflow:auto}th{background:\(dark ? "#34424c" : "#eeeae2")}th,td{border-color:\(dark ? "#596b77" : "#c4bdb3")}math[display=block]{font-size:1.15em}img{max-height:none}.picture-light{display:\(dark ? "none" : "inline")}.picture-dark{display:\(dark ? "inline" : "none")}a{color:\(dark ? "#d6b777" : "#a13f3b")} .source-anchor{display:block;height:0;scroll-margin-top:24px}
+        :root{color-scheme:\(dark ? "dark" : "light")}html,body{background:\(dark ? "#202c35" : "#f3efe7");color:\(dark ? "#f3eadb" : "#293944")}body{font:18px \(serif ? "Georgia,serif" : "-apple-system,BlinkMacSystemFont,sans-serif");line-height:1.65;max-width:\(wide ? "none" : "760px");margin:auto;padding:32px 36px 64px}h1{font-size:2em}h2{font-size:1.6em}h3{font-size:1.3em}code{font:0.9em ui-monospace,monospace}pre{background:\(dark ? "#2b3740" : "#eeeae2");border-radius:6px;padding:16px;overflow:auto}th{background:\(dark ? "#34424c" : "#eeeae2")}th,td{border-color:\(dark ? "#596b77" : "#c4bdb3")}math[display=block]{font-size:1.15em}img{max-height:none}.picture-light{display:\(dark ? "none" : "inline")}.picture-dark{display:\(dark ? "inline" : "none")}a{color:\(dark ? "#d6b777" : "#a13f3b")} .source-anchor{display:block;height:0;scroll-margin-top:24px}
         """
     }
     private static let navigationScript = """
@@ -181,7 +201,11 @@ struct MarkdownPreview: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            MarkdownCanvas(model: rendering, dark: colorScheme == .dark, scale: scale, wide: wide, serif: serif)
+            if rendering.showsWebPreview {
+                MarkdownCanvas(model: rendering, dark: colorScheme == .dark, scale: scale, wide: wide, serif: serif)
+            } else {
+                Color.clear.accessibilityHidden(true)
+            }
             if let message = rendering.message { Text(message).font(.system(size: 13)).foregroundStyle(.secondary).padding(10) }
         }.background(RemileStyle.background).onAppear { rendering.retryRemoteImages() }.onDisappear { rendering.pauseRemoteImages() }
             .task(id: source) { if schedulesRender { await rendering.render(source, url: fileURL ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Untitled.md")) } }

@@ -5,15 +5,24 @@ struct TeXFileNode: Identifiable {
     let name: String
     var children: [TeXFileNode]?
     var id: String { path }
-    static func tree(_ paths: [String], folders: [String] = [], prefix: String = "") -> [Self] {
-        let groups = Dictionary(grouping: Array(Set(paths + folders))) { $0.dropFirst(prefix.count).split(separator: "/").first.map(String.init) ?? "" }
-        return groups.keys.sorted { a, b in
-            let aFolder = folders.contains(prefix + a) || groups[a]!.contains { $0 != prefix + a }, bFolder = folders.contains(prefix + b) || groups[b]!.contains { $0 != prefix + b }
-            return aFolder == bFolder ? a.localizedStandardCompare(b) == .orderedAscending : aFolder
-        }.map { name in
-            let path = prefix + name, descendants = groups[name]!.filter { $0 != path }
-            return Self(path: path, name: name, children: folders.contains(path) || !descendants.isEmpty ? tree(descendants, folders: folders.filter { $0.hasPrefix(path + "/") }, prefix: path + "/") : nil)
+    static func tree(_ paths: [String], folders: [String] = []) -> [Self] {
+        let directories = Set(folders)
+        func build(_ paths: [String], prefix: String) -> [Self] {
+            let groups = Dictionary(grouping: paths) {
+                $0.dropFirst(prefix.count).split(separator: "/", maxSplits: 1).first.map(String.init) ?? ""
+            }
+            let nodes = groups.map { name, paths in
+                let path = prefix + name
+                let descendants = paths.filter { $0 != path }
+                let isFolder = directories.contains(path) || !descendants.isEmpty
+                return Self(path: path, name: name, children: isFolder ? build(descendants, prefix: path + "/") : nil)
+            }
+            return nodes.sorted { left, right in
+                let leftIsFolder = left.children != nil, rightIsFolder = right.children != nil
+                return leftIsFolder == rightIsFolder ? left.name.localizedStandardCompare(right.name) == .orderedAscending : leftIsFolder
+            }
         }
+        return build(Array(directories.union(paths)), prefix: "")
     }
 }
 

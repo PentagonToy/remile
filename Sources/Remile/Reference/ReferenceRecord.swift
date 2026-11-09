@@ -37,7 +37,17 @@ struct ReferenceRecord: Codable, Identifiable, Equatable, Sendable {
     var contributors: String { usesEditors ? editors : authors }
     var year: String { fields["year"] ?? "" }
     var citationKey: String { key.isEmpty ? "ref" + id.uuidString.replacingOccurrences(of: "-", with: "").prefix(12) : key }
-    var searchText: String { ([citationKey, displayTitle, displayAuthors] + Array(fields.values)).joined(separator: " ") }
+    func matchesSearch(_ query: String) -> Bool {
+        guard !query.isEmpty else { return true }
+        // Keep phrase and Unicode matching across fields for queries beyond a plain word.
+        guard query.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) }) else {
+            return ([citationKey, displayTitle, displayAuthors] + Array(fields.values))
+                .joined(separator: " ").localizedCaseInsensitiveContains(query)
+        }
+        return citationKey.localizedCaseInsensitiveContains(query) || displayTitle.localizedCaseInsensitiveContains(query)
+            || fields.values.contains { $0.localizedCaseInsensitiveContains(query) }
+            || displayAuthors.localizedCaseInsensitiveContains(query)
+    }
 }
 
 struct ReferenceFailure: LocalizedError {

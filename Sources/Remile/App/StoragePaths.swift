@@ -5,6 +5,8 @@ import SQLite3
 /// Locations are local preferences. Moving a library never removes its recovery copy.
 enum StoragePaths {
     static let referencePreference = "storage.referenceDirectory"
+    static let pendingReferencePreference = "storage.pendingReferenceDirectory"
+    static let pendingReferenceOpen = "storage.pendingReferenceOpen"
     static let settingsPreference = "storage.settingsFile"
     static let readOnlyPreference = StorageFileAccess.readOnlyPreference
     static let changed = Notification.Name("remile.storageChanged")
@@ -12,10 +14,8 @@ enum StoragePaths {
     static var support: URL { FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app") }
     static var defaultReference: URL { support.appendingPathComponent("Reference") }
     static func reference(defaults: UserDefaults = .standard) -> URL {
-        if defaults.string(forKey: StorageLocation.preference) != nil {
-            return StorageLocation.root(defaults: defaults).appendingPathComponent("Reference")
-        }
-        var url = defaults.string(forKey: referencePreference).flatMap { $0.hasPrefix("/") ? URL(fileURLWithPath: $0) : nil } ?? defaultReference
+        var url = defaults.string(forKey: referencePreference).flatMap { $0.hasPrefix("/") ? URL(fileURLWithPath: $0) : nil }
+            ?? StorageLocation.root(defaults: defaults).appendingPathComponent("Reference")
         for _ in 0..<8 {
             let marker = url.appendingPathComponent("relocated.json")
             guard let size = try? marker.resourceValues(forKeys: [.fileSizeKey]).fileSize, size < 16_000,
@@ -25,11 +25,41 @@ enum StoragePaths {
         return url
     }
     static func requireAvailable(_ url: URL) throws {
-        try StorageLocation.requireAvailable()
         if url.standardizedFileURL != defaultReference.standardizedFileURL {
             var directory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: url.path, isDirectory: &directory), directory.boolValue else { throw Failure("Connect the disk containing your reference library.") }
         }
+    }
+    static func scheduleReference(_ folder: URL, opening: Bool, defaults: UserDefaults = .standard) throws {
+        let folder = folder.resolvingSymlinksInPath().standardizedFileURL
+        if opening {
+            try validateReference(folder)
+            guard folder.path != reference(defaults: defaults).standardizedFileURL.path else { throw Failure("This Reference folder is already open.") }
+        } else {
+            let source = reference(defaults: defaults).resolvingSymlinksInPath()
+            let destination = folder.appendingPathComponent("remile-reference")
+            guard folder.path != source.path, !folder.path.hasPrefix(source.path + "/"),
+                  !FileManager.default.fileExists(atPath: destination.path) else { throw Failure("Choose a parent folder without a remile-reference folder.") }
+        }
+        defaults.set(opening, forKey: pendingReferenceOpen)
+        defaults.set(folder.path, forKey: pendingReferencePreference)
+    }
+    static func applyPendingReference(defaults: UserDefaults = .standard) throws {
+        guard let path = defaults.string(forKey: pendingReferencePreference), path.hasPrefix("/") else { return }
+        let folder = URL(fileURLWithPath: path)
+        if defaults.bool(forKey: pendingReferenceOpen) {
+            try connect(to: folder, defaults: defaults)
+        } else {
+            let source = reference(defaults: defaults)
+            let readOnly = isReadOnly(source, defaults: defaults)
+            let move = { try relocate(from: source, into: folder, defaults: defaults, redirectSource: false) }
+            let moved = FileManager.default.fileExists(atPath: source.path)
+                ? try ReferenceRepository(root: source).withLibraryLock(allowReadOnly: true, move)
+                : try move()
+            defaults.set(readOnly ? moved.path : "", forKey: readOnlyPreference)
+        }
+        defaults.removeObject(forKey: pendingReferencePreference)
+        defaults.removeObject(forKey: pendingReferenceOpen)
     }
     static func isReadOnly(_ root: URL, defaults: UserDefaults = .standard) -> Bool {
         defaults.string(forKey: readOnlyPreference) == root.standardizedFileURL.path
@@ -38,17 +68,21 @@ enum StoragePaths {
     static func connect(to folder: URL, defaults: UserDefaults = .standard, commit: (() throws -> Void) throws -> Void = { try $0() }) throws {
         gate.lock(); defer { gate.unlock() }
         let folder = folder.resolvingSymlinksInPath().standardizedFileURL
-        guard !FileManager.default.fileExists(atPath: folder.appendingPathComponent("relocated.json").path),
-              FileManager.default.fileExists(atPath: folder.appendingPathComponent("library.json").path) else {
-            throw Failure("Choose the synced library folder containing library.json.")
-        }
-        _ = try ReferenceRepository(root: folder).snapshot()
+        try validateReference(folder)
         try commit {
             defaults.set(folder.path, forKey: readOnlyPreference)
             defaults.set(folder.path, forKey: referencePreference)
         }
     }
-    static func relocate(from source: URL, into parent: URL, defaults: UserDefaults = .standard, commit: (() throws -> Void) throws -> Void = { try $0() }) throws -> URL {
+    private static func validateReference(_ folder: URL) throws {
+        guard !FileManager.default.fileExists(atPath: folder.appendingPathComponent("relocated.json").path),
+              FileManager.default.fileExists(atPath: folder.appendingPathComponent("library.json").path) else {
+            throw Failure("Choose the synced library folder containing library.json.")
+        }
+        _ = try ReferenceRepository(root: folder).snapshot()
+    }
+    static func relocate(from source: URL, into parent: URL, defaults: UserDefaults = .standard, redirectSource: Bool = true,
+                         commit: (() throws -> Void) throws -> Void = { try $0() }) throws -> URL {
         gate.lock(); defer { gate.unlock() }
         let manager = FileManager.default
         let source = source.resolvingSymlinksInPath().standardizedFileURL
@@ -62,13 +96,19 @@ enum StoragePaths {
         defer { if !published { try? manager.removeItem(at: stage) } }
         let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey]
         var enumerationError: Error?
-        guard let files = manager.enumerator(at: source, includingPropertiesForKeys: keys, options: [], errorHandler: { _, error in enumerationError = error; return false }) else { throw Failure("Could not read the reference folder.") }
+        let files = manager.fileExists(atPath: source.path)
+            ? manager.enumerator(at: source, includingPropertiesForKeys: keys, options: [], errorHandler: { _, error in enumerationError = error; return false })
+            : nil
+        guard files != nil || (!redirectSource && source == defaultReference) else { throw Failure("Could not read the reference folder.") }
         var manifest: [(String, Data)] = []
-        for case let file as URL in files {
-            let name = String(file.path.dropFirst(source.path.count + 1))
-            if ["library.lock", "relocated.json"].contains(name) { continue }
+        while let file = files?.nextObject() as? URL {
             let values = try file.resourceValues(forKeys: Set(keys))
             guard values.isSymbolicLink != true else { throw Failure("The reference folder contains a symbolic link. Keep the current location and check its files.") }
+            let path = file.resolvingSymlinksInPath().path
+            let prefix = source.path + "/"
+            guard path.hasPrefix(prefix) else { throw Failure("A Reference file is outside its library folder.") }
+            let name = String(path.dropFirst(prefix.count))
+            if ["library.lock", "relocated.json"].contains(name) { continue }
             let copy = stage.appendingPathComponent(name)
             if values.isDirectory == true { try manager.createDirectory(at: copy, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]) }
             else {
@@ -89,8 +129,10 @@ enum StoragePaths {
         for (name, hash) in manifest { guard try digest(source.appendingPathComponent(name)) == hash else { throw Failure("The reference library changed during the copy. Try again.") } }
         try commit {
             try manager.moveItem(at: stage, to: destination)
-            do { try JSONEncoder().encode(destination.path).write(to: source.appendingPathComponent("relocated.json"), options: .atomic) }
-            catch { try? manager.removeItem(at: destination); throw error }
+            if redirectSource {
+                do { try JSONEncoder().encode(destination.path).write(to: source.appendingPathComponent("relocated.json"), options: .atomic) }
+                catch { try? manager.removeItem(at: destination); throw error }
+            }
             defaults.set(destination.path, forKey: referencePreference)
             published = true
         }
@@ -98,18 +140,12 @@ enum StoragePaths {
     }
     static func scheduleStorage(_ destination: URL, defaults: UserDefaults = .standard) throws {
         let destination = destination.resolvingSymlinksInPath().standardizedFileURL
-        let old = reference(defaults: defaults).resolvingSymlinksInPath().standardizedFileURL
+        let old = StorageLocation.root(defaults: defaults).resolvingSymlinksInPath()
+        let library = reference(defaults: defaults).resolvingSymlinksInPath()
         guard destination.path != old.path, !destination.path.hasPrefix(old.path + "/"),
-              !destination.path.hasPrefix("/Applications/"), destination.path != StorageLocation.root(defaults: defaults).path else {
-            throw Failure("Choose another storage folder.")
-        }
-        if FileManager.default.fileExists(atPath: destination.path) {
-            guard FileManager.default.fileExists(atPath: destination.appendingPathComponent("remile-storage.json").path),
-                  FileManager.default.fileExists(atPath: destination.appendingPathComponent("Reference/library.json").path) else {
-                throw Failure("Choose a remile storage folder or a new destination.")
-            }
-            _ = try ReferenceRepository(root: destination.appendingPathComponent("Reference")).snapshot()
-        }
+              destination.path != library.path, !destination.path.hasPrefix(library.path + "/"),
+              !destination.path.hasPrefix("/Applications/") else { throw Failure("Choose another storage folder.") }
+        if FileManager.default.fileExists(atPath: destination.path) { try validateStorage(destination) }
         defaults.set(destination.path, forKey: StorageLocation.pendingPreference)
     }
     /// Runs before document windows and the automation server open.
@@ -128,41 +164,25 @@ enum StoragePaths {
         var published = false
         defer { if !existing && !published { try? manager.removeItem(at: stage) } }
         if existing {
-            guard manager.fileExists(atPath: destination.appendingPathComponent("remile-storage.json").path),
-                  FileManager.default.fileExists(atPath: destination.appendingPathComponent("Reference/library.json").path) else { throw Failure("The destination is no longer a remile storage folder.") }
-            _ = try ReferenceRepository(root: destination.appendingPathComponent("Reference")).snapshot()
+            try validateStorage(destination)
         } else {
             try StorageLocation.requireAvailable(defaults: defaults)
             try manager.createDirectory(at: stage, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-            let newReference = stage.appendingPathComponent("Reference")
-            if manager.fileExists(atPath: oldReference.path) {
-                let repository = ReferenceRepository(root: oldReference)
-                try repository.withLibraryLock(allowReadOnly: true) {
-                    _ = try repository.snapshot()
-                    try manager.copyItem(at: oldReference, to: newReference)
-                    guard let files = manager.enumerator(at: oldReference, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { throw Failure("Could not read Reference storage.") }
-                    for case let file as URL in files {
-                        let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-                        guard values.isSymbolicLink != true else { throw Failure("Remove symbolic links before moving storage.") }
-                        if values.isRegularFile == true {
-                            let relative = String(file.path.dropFirst(oldReference.path.count + 1))
-                            guard try digest(file) == digest(newReference.appendingPathComponent(relative)) else { throw Failure("Reference changed while copying. The current storage is unchanged.") }
-                        }
-                    }
-                }
-                try? manager.removeItem(at: newReference.appendingPathComponent("library.lock"))
-                try? manager.removeItem(at: newReference.appendingPathComponent("relocated.json"))
-            } else {
-                guard oldReference.standardizedFileURL == defaultReference.standardizedFileURL else { throw Failure("Reconnect your current Reference storage before moving it.") }
-                try manager.createDirectory(at: newReference, withIntermediateDirectories: true)
-                try Data(#"{"schema":1,"records":[]}"#.utf8).write(to: newReference.appendingPathComponent("library.json"))
-            }
-            if !manager.fileExists(atPath: newReference.appendingPathComponent("library.json").path) {
-                try Data(#"{"schema":1,"records":[]}"#.utf8).write(to: newReference.appendingPathComponent("library.json"))
-            }
             try Data(#"{"schema":1}"#.utf8).write(to: stage.appendingPathComponent("remile-storage.json"))
         }
-        let machine = defaults.string(forKey: StorageLocation.machinePreference).flatMap(UUID.init(uuidString:))?.uuidString ?? UUID().uuidString
+        let machine = StorageLocation.machineID(defaults: defaults)
+        let oldRoot = StorageLocation.root(defaults: defaults)
+        let ownMarks = StorageLocation.overleafMarksFolder + "/" + machine
+        let oldMarks = oldRoot.appendingPathComponent(ownMarks)
+        let newMarks = target.appendingPathComponent(ownMarks)
+        if manager.fileExists(atPath: oldMarks.path), !manager.fileExists(atPath: newMarks.path) {
+            let parent = newMarks.deletingLastPathComponent()
+            let incoming = parent.appendingPathComponent(".incoming-" + UUID().uuidString)
+            try manager.createDirectory(at: parent, withIntermediateDirectories: true)
+            defer { try? manager.removeItem(at: incoming) }
+            try manager.copyItem(at: oldMarks, to: incoming)
+            try manager.moveItem(at: incoming, to: newMarks)
+        }
         let newSearch = target.appendingPathComponent("Search/" + machine + "/library-v1.sqlite")
         if manager.fileExists(atPath: oldSearch.path), !manager.fileExists(atPath: newSearch.path) {
             try manager.createDirectory(at: newSearch.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -180,12 +200,17 @@ enum StoragePaths {
             }
         }
         if !existing { try manager.moveItem(at: stage, to: destination); published = true }
-        let reference = destination.appendingPathComponent("Reference")
-        defaults.set(reference.path, forKey: referencePreference)
-        defaults.set(existing || isReadOnly(oldReference, defaults: defaults) ? reference.path : "", forKey: readOnlyPreference)
-        defaults.set(machine, forKey: StorageLocation.machinePreference)
+        defaults.set(oldReference.path, forKey: referencePreference)
         defaults.set(destination.path, forKey: StorageLocation.preference)
         defaults.removeObject(forKey: StorageLocation.pendingPreference)
+    }
+    private static func validateStorage(_ root: URL) throws {
+        let marker = root.appendingPathComponent("remile-storage.json")
+        guard let size = try? marker.resourceValues(forKeys: [.fileSizeKey]).fileSize, size < 16_000,
+              let data = try? Data(contentsOf: marker),
+              let schema = try? JSONDecoder().decode([String: Int].self, from: data), schema["schema"] == 1 else {
+            throw Failure("Choose an existing remile storage folder.")
+        }
     }
     private static func snapshotSearch(from source: URL, to destination: URL) throws {
         var input: OpaquePointer?, output: OpaquePointer?

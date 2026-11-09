@@ -357,7 +357,6 @@
     {
       "name": "exclamationmark.circle",
       "sources": [
-        "Sources/Remile/LaTeX/TeXSubmissionCheck.swift",
         "Sources/Remile/Overleaf/OverleafViews.swift",
         "Sources/Remile/PDF/PDFWorkspace.swift"
       ]
@@ -372,7 +371,6 @@
       "name": "exclamationmark.triangle",
       "sources": [
         "Sources/Remile/Convert/ConvertWorkspace.swift",
-        "Sources/Remile/LaTeX/TeXLogPanel.swift",
         "Sources/Remile/LaTeX/TeXSetupGuide.swift",
         "Sources/Remile/PDF/PDFWorkspace.swift",
         "Sources/Remile/Search/SearchMarkdownPreview.swift",
@@ -857,8 +855,8 @@
     {
       "name": "wand.and.stars",
       "sources": [
-        "Sources/Remile/LaTeX/EditorToolsMenu.swift",
         "Sources/Remile/LaTeX/TeXHistoryPanel.swift",
+        "Sources/Remile/LaTeX/TeXWorkspace.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift"
       ]
     },
@@ -882,12 +880,6 @@
       "name": "xmark.circle.fill",
       "sources": [
         "Sources/Remile/Search/LibrarySearchView.swift"
-      ]
-    },
-    {
-      "name": "xmark.octagon",
-      "sources": [
-        "Sources/Remile/LaTeX/TeXLogPanel.swift"
       ]
     }
   ]

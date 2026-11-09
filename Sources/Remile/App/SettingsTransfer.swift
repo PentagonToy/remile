@@ -3,13 +3,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsTransferView: View {
-    var compact = false
     @StateObject private var state = Presentation()
     private final class Presentation: ObservableObject { @Published var pending: PortableSettings.Snapshot?; @Published var message: String? }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack { Button("Save preset…", action: export).remileHelp("Save appearance and editing preferences without accounts or library paths"); Button("Load preset…", action: choose).remileHelp("Load preferences from a preset") }
-            if !compact { SettingsHint("Save a preset to use your preferences on another Mac.") }
+            SettingsHint("Save a preset to use your preferences on another Mac.")
             if let message = state.message { Text(message).font(RemileType.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }.alert("Load preset?", isPresented: Binding(get: { state.pending != nil }, set: { if !$0 { state.pending = nil } })) {
             Button("Cancel", role: .cancel) { state.pending = nil }

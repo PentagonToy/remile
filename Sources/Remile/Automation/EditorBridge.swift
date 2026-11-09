@@ -170,13 +170,13 @@ enum EditorBridge {
             return ["ok": true, "compiling": project.compiling, "log": String(project.log.suffix(min(150000, max(1, request.length ?? 150000)))), "diagnostics": project.diagnostics.map { ["id": $0.id, "severity": String(describing: $0.severity), "message": $0.message, "file": $0.file ?? "", "line": $0.line ?? 0] as [String: Any] }, "sourceHashes": project.sourceHashes]
         case "read":
             guard let source = project.buffers[file] else { return ["ok": false, "error": "No editable file at this project-relative path."] }
-            return ["ok": true, "file": file, "source": source, "sha256": digest(source), "dirty": project.dirty, "externalEdits": (project.externalEdits[file] ?? []).map { ["start": $0.location, "length": $0.length] }, "externalEditsSessionOnly": true]
+            return ["ok": true, "file": file, "source": source, "sha256": digest(source), "dirty": project.dirty, "externalEdits": project.editRanges(in: file).map { ["start": $0.location, "length": $0.length] }, "externalEditsSessionOnly": false]
         case "select":
             guard project.buffers[file] != nil else { return ["ok": false, "error": "No editable file at this project-relative path."] }
             project.visit(file: file); return ["ok": true, "file": file]
         case "replace":
             guard !project.compiling, let current = project.buffers[file], request.expectedSHA256 == digest(current), let source = request.source, source.utf8.count <= 4_000_000 else { return ["ok": false, "error": "Source conflict, invalid file or compilation in progress. Read the current source hash first."] }
-            guard project.applyTool(file: file, before: current, after: source, name: "CLI edit", feedback: false) else { return ["ok": false, "error": project.message ?? "Could not apply edit."] }
+            guard project.applyTool(file: file, before: current, after: source, name: "CLI edit", feedback: false, reveal: false) else { return ["ok": false, "error": project.message ?? "Could not apply edit."] }
             project.markExternalEdit(file: file, before: current, after: source)
             return ["ok": true, "file": file, "sha256": digest(source), "saved": false]
         case "save":
@@ -220,7 +220,7 @@ enum EditorBridge {
                 let edit = try TeXTools.prepare(action, project: project, file: file, range: range)
                 if request.apply == true {
                     guard request.expectedSHA256 == digest(before) else { throw TeXSourceTools.Failure(errorDescription: "Source conflict. Read the current SHA-256 before applying.") }
-                    let applied = project.applyTool(file: file, before: before, after: edit.source, name: edit.title, feedback: false)
+                    let applied = project.applyTool(file: file, before: before, after: edit.source, name: edit.title, feedback: false, reveal: false)
                     if applied { project.markExternalEdit(file: file, before: before, after: edit.source) }
                     return ["ok": applied, "saved": false, "sha256": digest(project.buffers[file] ?? "")]
                 }
@@ -241,10 +241,10 @@ enum EditorBridge {
     @MainActor private static func markdown(_ request: Request, reader: ReadingSession, source: String) async -> [String: Any] {
         if let file = request.file, file != reader.url?.path, file != reader.url?.lastPathComponent { return ["ok": false, "error": "The requested Markdown file is not open."] }
         switch request.operation {
-        case "read": return ["ok": true, "file": reader.url?.path ?? "", "source": source, "sha256": digest(source), "dirty": reader.dirty, "externalEdits": reader.externalEdits.map { ["start": $0.location, "length": $0.length] }, "externalEditsSessionOnly": true]
+        case "read": return ["ok": true, "file": reader.url?.path ?? "", "source": source, "sha256": digest(source), "dirty": reader.dirty, "externalEdits": reader.externalEdits.map { ["start": $0.location, "length": $0.length] }, "externalEditsSessionOnly": false]
         case "replace":
             guard request.expectedSHA256 == digest(source), let after = request.source, after.utf8.count <= 4_000_000, let edit = reader.editSource else { return ["ok": false, "error": "Source conflict or editor not ready. Read the current source hash first."] }
-            guard await edit(source, after) else { return ["ok": false, "error": "The source changed or editor is not ready. Read it again before retrying."] }
+            guard edit(source, after) else { return ["ok": false, "error": "The source changed or editor is not ready. Read it again before retrying."] }
             if let target = request.target, reader.identity != target { return ["ok": false, "error": "The target document changed during the edit. Read the document state before retrying."] }
             reader.markExternalEdit(before: source, after: after)
             return ["ok": true, "sha256": digest(after), "saved": false]

@@ -15,7 +15,7 @@ struct ReferenceLinkReview: View {
         let eligible = Set(model.activeLibraries.filter { $0.source != "remarkable" }.map(\.id))
         let candidates = model.allRecords.filter { record in
             record.remarkable == nil && eligible.contains(record.library) &&
-            (query.isEmpty || record.searchText.localizedCaseInsensitiveContains(query))
+            record.matchesSearch(query)
         }
         let matches = Set(candidates.filter { ReferenceLinkMatch.reason(source, $0) != nil }.map(\.id))
         return candidates.sorted {

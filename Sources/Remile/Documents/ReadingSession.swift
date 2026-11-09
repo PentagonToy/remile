@@ -14,11 +14,28 @@ final class ReadingSession: ObservableObject {
     }
     @Published private(set) var externalEdits: [NSRange] = []
     private var provenance = EditorProvenance.Tracker()
+    private let editMarkStore: EditorEditMarks.Store
+    private var hasSavedEditMarks = false
+    init(editMarkStore: EditorEditMarks.Store = .local) { self.editMarkStore = editMarkStore }
     weak var pdfSession: PDFSession?
     var pdfInspection: ((Int?, String?, String?) throws -> [String: Any])?
     var commentsExport: (() throws -> PDFCommentExport.Archive)?
-    var editSource: ((String, String) async -> Bool)?
+    var editSource: ((String, String) -> Bool)?
     func markExternalEdit(before: String, after: String) { provenance.mark(before: before, after: after); externalEdits = provenance.ranges }
+    @discardableResult func replaceMarkdown(before: String, after: String, undoManager: UndoManager?) -> Bool {
+        guard case .markdown(let current) = document.content, current == before else { return false }
+        guard before != after else { return true }
+        let target = identity
+        undoManager?.registerUndo(withTarget: self) { [weak undoManager] session in
+            MainActor.assumeIsolated {
+                guard session.identity == target else { return }
+                session.replaceMarkdown(before: after, after: before, undoManager: undoManager)
+            }
+        }
+        undoManager?.setActionName("CLI edit")
+        document.content = .markdown(after)
+        return true
+    }
     @Published private(set) var url: URL?
     @Published private(set) var isUntitled = false
     private var original = Data()
@@ -42,13 +59,19 @@ final class ReadingSession: ObservableObject {
         pdfSession?.protection.finish()
         externalEdits = []; provenance = EditorProvenance.Tracker(); editSource = nil; commentsExport = nil; pdfInspection = nil; pdfSession = nil
         identity = UUID(); document.content = content; original = data; url = destination; isUntitled = false
+        hasSavedEditMarks = false
+        if case .markdown(let source) = content, let snapshot = editMarkStore.read(for: destination) {
+            hasSavedEditMarks = true
+            externalEdits = snapshot.restore(in: source)
+            provenance = EditorProvenance.Tracker(ranges: externalEdits)
+        }
         if recordRecent { NSDocumentController.shared.noteNewRecentDocumentURL(destination) }
     }
     @discardableResult func newMarkdown() -> Bool {
         guard confirmLeaving() else { return false }
         pdfSession?.protection.finish()
         externalEdits = []; provenance = EditorProvenance.Tracker(); editSource = nil; commentsExport = nil; pdfInspection = nil; pdfSession = nil
-        identity = UUID(); document.content = .markdown(""); original = Data(); isUntitled = true
+        identity = UUID(); document.content = .markdown(""); original = Data(); isUntitled = true; hasSavedEditMarks = false
         url = URL(fileURLWithPath: "/remile-untitled-" + UUID().uuidString + "/Untitled.md")
         return true
     }
@@ -109,7 +132,7 @@ final class ReadingSession: ObservableObject {
         if isUntitled {
             let panel = NSSavePanel(); panel.nameFieldStringValue = "Untitled.md"; panel.allowedContentTypes = [.remileMarkdown]
             guard panel.runModal() == .OK, let destination = panel.url else { return false }
-            do { try bytes.write(to: destination, options: .atomic); original = bytes; self.url = destination; isUntitled = false; NSDocumentController.shared.noteNewRecentDocumentURL(destination); return true }
+            do { try bytes.write(to: destination, options: .atomic); original = bytes; self.url = destination; isUntitled = false; saveEditMarks(at: destination); NSDocumentController.shared.noteNewRecentDocumentURL(destination); return true }
             catch { NSAlert(error: error).runModal(); return false }
         }
         do {
@@ -118,9 +141,15 @@ final class ReadingSession: ObservableObject {
                 throw NSError(domain: "Remile", code: 1, userInfo: [NSLocalizedDescriptionKey: "This file changed in another app. Keep this window open and save a copy before replacing it."])
             }
             let data = bytes; try data.write(to: url, options: .atomic); original = data
+            saveEditMarks(at: url)
             pdfSession?.protection.committed()
             objectWillChange.send(); return true
         } catch { NSAlert(error: error).runModal(); return false }
+    }
+    private func saveEditMarks(at url: URL) {
+        guard case .markdown(let source) = document.content, hasSavedEditMarks || !externalEdits.isEmpty else { return }
+        editMarkStore.save(for: url, text: source, ranges: externalEdits)
+        hasSavedEditMarks = !externalEdits.isEmpty
     }
     @discardableResult func confirmLeaving() -> Bool {
         pdfSession?.persistReadingPosition()

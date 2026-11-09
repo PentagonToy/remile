@@ -35,8 +35,12 @@ struct PDFReader: NSViewRepresentable {
         if view.displaysAsBook { view.displaysAsBook = false }
         context.coordinator.citations.update(session.activeCitation)
         if session.activeCitation != nil { view.highlightedSelections = [] }
-        guard view.document !== session.document else { return }
+        guard view.document !== session.document else {
+            zoom?.completePendingFit(in: view)
+            return
+        }
         view.document = session.document
+        zoom?.completePendingFit(in: view)
         session.applyLibraryDestination()
         session.restoreReadingPosition()
         context.coordinator.citations.update(session.activeCitation)

@@ -17,7 +17,7 @@ let indent = EditorSourceEditing.indent("one\ntwo\n", selection: NSRange(locatio
 check(indent.text == "    one\n    two\n", "block indent")
 check(EditorSourceEditing.indent(indent.text, selection: NSRange(location: 0, length: (indent.text as NSString).length), reverse: true)!.text == "one\ntwo\n", "block outdent")
 check(EditorSourceEditing.indent("hello", selection: NSRange(location: 2, length: 0), reverse: false)!.text == "    ", "Tab inserts source spaces")
-let item = EditorCompletion.context("it", selection: NSRange(location: 2, length: 0), tex: true)!
+let item = EditorCompletion.context("\\it", selection: NSRange(location: 3, length: 0), tex: true)!
 check(item.items.first?.insertion == "\\item ", "item is first")
 check(item.items.allSatisfy { !$0.label.contains("environment") }, "clear candidate labels")
 check(EditorCompletion.context("\\begin{al", selection: NSRange(location: 9, length: 0), tex: true)?.items.first?.insertion == "align}\n    \n\\end{align}", "begin completion includes its matching end")

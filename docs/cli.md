@@ -71,7 +71,7 @@ remile replace --target TARGET_UUID --file main.tex --source-file /absolute/revi
 remile save --target TARGET_UUID
 ```
 
-Prepare the complete revised source from the `read` response and the citation response above. Use the exact returned SHA-256. An edit made since that read is rejected. The replacement is undoable and does not save or compile until you request those actions. This recipe edits the source. It does not automatically choose or update a bibliography file. The in-app Reference picker performs that paired citation and bibliography action.
+Prepare the complete revised source from the `read` response and the citation response above. Use the exact returned SHA-256. An edit made since that read is rejected. The replacement keeps the open tabs and active file in place. Save or compile separately when needed. This recipe edits the source. It does not automatically choose or update a bibliography file. The in-app Reference picker performs that paired citation and bibliography action.
 
 `status`, `read` and `diagnostics` inspect the running app through the same document sessions as the UI. For a loaded PDF, `status` reports its page count and one-based `currentPage`. A value of zero means no loaded PDF page is available. `reference citation` returns text. It does not simulate a click in the editor. `overleaf show` reports the locally observed Git sync state, not an independently verified remote snapshot.
 
@@ -185,19 +185,19 @@ Use `files` to refresh the sidebar and list project-relative paths. Pass one of 
 | `review --criteria` | Read the bundled review criteria and question instructions |
 | `review [/path/project] [--format markdown\|json] [--output /path/new-questions.md]` | Read or export saved manuscript questions and source evidence |
 | `history` | Read project checkpoints and tool markers |
-| `select --file relative.tex` | Select a source file |
+| `select --file relative.tex` | Show a source file in the editor and open its tab if needed |
 | `rename --file relative.tex --name NEW` | Rename a project file |
 | `rename --kind project --name NEW` | Rename the project |
 
-Markdown supports read, replace, save and export. Source replacement switches to Split and retains native Undo. Save is explicit. The eye control shows session-only CLI edit ranges in the source.
+Markdown supports read, replace, save and export. Source replacement preserves the current view and supports Undo. Save is explicit. The eye control shows tracked edits in Markdown, LaTeX and Overleaf. Saving the source also saves the marks on this Mac. When a file changes elsewhere, remile restores marks where it can match unchanged text uniquely.
 
 [Manuscript review](manuscript-review.md) returns questions linked to captured source versions. Starting, stopping and clearing require the running app. Starting also requires the target LaTeX project to be open. `--run` returns immediately, so read `review` again for progress and results. An explicit project directory supports offline reading and export of saved results.
 
 ## Source tools
 
-`transform --action strip-notes|embed-bibliography|toggle-comment|indent|outdent --file relative.tex` returns a proposal and its source fingerprint. Add `--apply --expected-sha256 HASH` to apply it. Comment and indentation actions accept UTF-16 `--start` and `--length` offsets.
+`transform --action strip-notes|embed-bibliography|restore-bibliography|toggle-comment|indent|outdent --file relative.tex` returns a proposal and its source fingerprint. Add `--apply --expected-sha256 HASH` to apply it without opening a tab. Restore requires the original `.bib` files and an intact block embedded by remile with recovery markers. Comment and indentation actions accept UTF-16 `--start` and `--length` offsets.
 
-Bibliography embedding prepares classic BibTeX output. Submission comparison checks current and hypothetical embedded sources in separate snapshots and returns per-result logs. The installed TeX engine performs each check. Source changes during a check appear as `sourceChanged` in the comparison response.
+Bibliography embedding prepares classic BibTeX output. Submission comparison runs local pdfLaTeX on the current and hypothetical embedded sources in separate snapshots. It returns a log for each result and reports source changes during the check as `sourceChanged`.
 
 ## Transport
 

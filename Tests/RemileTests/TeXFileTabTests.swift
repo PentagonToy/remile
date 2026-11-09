@@ -3,6 +3,22 @@ import SwiftUI
 @testable import Remile
 
 @MainActor final class TeXFileTabTests: XCTestCase {
+    func testFileTreeSnapshotKeepsEmptyFoldersAndSkipsLinksAndHiddenFiles() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let folders = root.appendingPathComponent("Figures/Empty")
+        try FileManager.default.createDirectory(at: folders, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "Main".write(to: root.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+        try "Figure".write(to: root.appendingPathComponent("Figures/panel.pdf"), atomically: true, encoding: .utf8)
+        try "Hidden".write(to: root.appendingPathComponent(".hidden.tex"), atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("Alias"), withDestinationURL: folders.deletingLastPathComponent())
+        let snapshot = try TeXFileSystem.snapshot(root)
+        XCTAssertEqual(snapshot.paths, ["Figures/panel.pdf", "main.tex"])
+        XCTAssertEqual(snapshot.folders, ["Figures", "Figures/Empty"])
+        XCTAssertEqual(try TeXFileSystem.paths(root), snapshot.paths)
+        XCTAssertEqual(try TeXFileSystem.folders(root), snapshot.folders)
+    }
+
     func testTabStripLightDarkAndNarrowCaptures() throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
@@ -108,11 +124,98 @@ import SwiftUI
         XCTAssertEqual(project.openFiles, ["main.tex"])
     }
 
+    func testFileTreeOrdersFoldersAndKeepsEmptyAndInferredDirectories() {
+        let roots = TeXFileNode.tree(
+            ["figures/panel10.pdf", "figures/panel2.pdf", "main.tex", "figures/panel2.pdf", "a|b.tex"],
+            folders: ["notes", "figures/empty"]
+        )
+        XCTAssertEqual(roots.map(\.path), ["figures", "notes", "a|b.tex", "main.tex"])
+        XCTAssertEqual(roots[0].children?.map(\.path), ["figures/empty", "figures/panel2.pdf", "figures/panel10.pdf"])
+        XCTAssertEqual(roots[0].children?.first?.children?.count, 0)
+        XCTAssertEqual(roots[1].children?.count, 0)
+        XCTAssertNil(roots[2].children)
+    }
+
     func testFileTreeUsesDistinctPDFAndGraphicSymbols() {
         for ext in ["eps", "svg", "jpeg", "PNG", "gif", "tiff"] {
             XCTAssertEqual(TeXFileTree.Coordinator.fileSymbol(for: ext), "photo")
         }
         XCTAssertEqual(TeXFileTree.Coordinator.fileSymbol(for: "PDF"), "doc.richtext")
+    }
+
+    func testCLIFileEditsKeepTabsAndActiveSelection() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        let source = root.appendingPathComponent("project")
+        let mailbox = root.appendingPathComponent("mailbox")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: mailbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let main = "Introduction\nKeep the cursor within this sentence.\n"
+        let section = "A project section.\n"
+        try main.write(to: source.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+        try section.write(to: source.appendingPathComponent("section.tex"), atomically: true, encoding: .utf8)
+        let project = try TeXProject(source, historyEnabled: false)
+        let home = HomeModel(index: LibraryIndex(location: root.appendingPathComponent("index.sqlite")),
+                             overleaf: OverleafLibrary(directory: root.appendingPathComponent("overleaf")))
+        home.texProject = project
+        let frame = NSRect(x: 0, y: 0, width: 1200, height: 600)
+        let window = NSWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: TeXWorkspace(project: project, close: {}))
+        window.contentView = host
+        host.frame = frame
+        host.layoutSubtreeIfNeeded()
+        defer { window.contentView = nil }
+        let editor = try XCTUnwrap(project.sourceEditor.textView)
+        XCTAssertNotNil(project.editSource)
+        XCTAssertEqual(project.selected, "main.tex")
+        let selection = (main as NSString).range(of: "cursor")
+        editor.setSelectedRange(selection)
+
+        let service = Task { @MainActor in await EditorBridge.serve({ home }, directory: mailbox) }
+        defer { service.cancel() }
+        func call(_ request: EditorBridge.Request) async throws -> [String: Any] {
+            let requestURL = mailbox.appendingPathComponent(request.id.uuidString + ".request.json")
+            let replyURL = mailbox.appendingPathComponent(request.id.uuidString + ".response.json")
+            try JSONEncoder().encode(request).write(to: requestURL, options: .atomic)
+            for _ in 0..<200 where !FileManager.default.fileExists(atPath: replyURL.path) {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let reply = try JSONSerialization.jsonObject(with: Data(contentsOf: replyURL))
+            return try XCTUnwrap(reply as? [String: Any])
+        }
+
+        let read = try await call(.init(operation: "read", file: "section.tex"))
+        let withNote = section + "% TODO author note\n"
+        let replaced = try await call(.init(operation: "replace", file: "section.tex", source: withNote,
+                                            expectedSHA256: try XCTUnwrap(read["sha256"] as? String)))
+        XCTAssertEqual(replaced["ok"] as? Bool, true)
+        XCTAssertEqual(project.buffers["section.tex"], withNote)
+        let undo = try XCTUnwrap(editor.undoManager)
+        undo.undo()
+        XCTAssertEqual(project.buffers["section.tex"], section)
+        undo.redo()
+        XCTAssertEqual(project.buffers["section.tex"], withNote)
+
+        let transformed = try await call(.init(operation: "transform", file: "section.tex",
+                                               expectedSHA256: EditorBridge.digest(withNote), action: "strip-notes", apply: true))
+        XCTAssertEqual(transformed["ok"] as? Bool, true)
+        XCTAssertEqual(project.buffers["section.tex"], section)
+        XCTAssertEqual(project.openFiles, ["main.tex"])
+        XCTAssertEqual(project.selected, "main.tex")
+        XCTAssertTrue(project.backFiles.isEmpty)
+        XCTAssertEqual(editor.selectedRange(), selection)
+
+        let prefix = "Added line.\n"
+        let active = try await call(.init(operation: "replace", file: "main.tex", source: prefix + main, expectedSHA256: EditorBridge.digest(main)))
+        XCTAssertEqual(active["ok"] as? Bool, true)
+        XCTAssertEqual(project.buffers["main.tex"], prefix + main)
+        XCTAssertEqual((editor.string as NSString).substring(with: editor.selectedRange()), "cursor")
+        XCTAssertEqual(project.openFiles, ["main.tex"])
+
+        let selected = try await call(.init(operation: "select", file: "section.tex"))
+        XCTAssertEqual(selected["ok"] as? Bool, true)
+        XCTAssertEqual(project.openFiles, ["main.tex", "section.tex"])
     }
 
     func testSelectReorderAndCloseKeepUnsavedBuffers() throws {

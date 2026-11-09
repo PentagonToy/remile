@@ -72,8 +72,31 @@ Task { @MainActor in
     verify(preview.web.isHidden, "Cold preview stays hidden before its first themed document")
     verify(preview.web.underPageBackgroundColor == RemileStyle.slate, "Dark background is set even before HTML exists")
     let fixture = output.appendingPathComponent("experience.md")
+    let editOnly = MarkdownPreviewModel()
+    await editOnly.render("# Draft\n\nTwo words.", url: fixture, includeHTML: false)
+    verify(editOnly.html == nil && editOnly.sections.first?.title == "Draft" && editOnly.wordCount == 4, "Edit-only mode updates the outline and word count without rendering HTML")
+    await editOnly.render("# Draft\n\nTwo words.", url: fixture)
+    let draftHTML = editOnly.html
+    await editOnly.render("# Revised draft", url: fixture, includeHTML: false)
+    verify(draftHTML != nil && editOnly.html == draftHTML && editOnly.sections.first?.title == "Revised draft", "Editing retains the last HTML while the outline follows the source")
+    await editOnly.render("# Revised draft", url: fixture)
+    verify(editOnly.html?.contains("Revised draft") == true, "Returning to the preview renders the latest source")
+
+    let session = ReadingSession()
+    session.document.content = .markdown("Before")
+    let undo = UndoManager()
+    verify(!session.replaceMarkdown(before: "Stale", after: "After", undoManager: undo), "Read-only CLI edits reject stale source")
+    verify(session.replaceMarkdown(before: "Before", after: "After", undoManager: undo), "Read-only CLI edits update the document")
+    undo.undo()
+    verify(String(decoding: session.bytes, as: UTF8.self) == "Before", "Read-only CLI edits can be undone")
+    undo.redo()
+    verify(String(decoding: session.bytes, as: UTF8.self) == "After", "Read-only CLI edits can be redone")
+
+    await preview.render("   ", url: fixture)
+    verify(preview.html != nil && !preview.showsWebPreview, "Blank Markdown keeps the native preview background")
     let source = "# A readable document\n\n한국어 and **emphasis**, $k-\\epsilon$.\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"
     await preview.render(source, url: fixture)
+    verify(preview.showsWebPreview, "Nonempty Markdown displays the web preview")
     verify(preview.html?.contains("<math") == true && preview.html?.contains("<table>") == true, "Preview supports math and tables")
     let good = preview.html
     await preview.render("```unfinished", url: fixture)
@@ -96,6 +119,18 @@ Task { @MainActor in
     verify(preview.web.underPageBackgroundColor == RemileStyle.paper, "Light native canvas updates without replacing WebKit")
     preview.display(dark: true, scale: 1.5, wide: false, serif: true)
     verify(preview.web.pageZoom == 1.5, "Preview zoom updates persistent WebKit view")
+    preview.display(dark: true, scale: 1, wide: true, serif: true)
+    let wide = try? await preview.web.evaluateJavaScript("getComputedStyle(document.body).maxWidth") as? String
+    verify(wide == "none" && preview.web.pageZoom == 1, "Fit width uses the preview viewport at normal text scale")
+    let searchPreview = SearchMarkdownCanvas.Coordinator()
+    searchPreview.loaded = true; searchPreview.wide = true
+    searchPreview.applyReadingWidth(preview.web)
+    let searchWide = try? await preview.web.evaluateJavaScript("document.body.style.maxWidth") as? String
+    verify(searchWide == "none", "Search preview honours Fit width")
+    searchPreview.wide = false
+    searchPreview.applyReadingWidth(preview.web)
+    let readingWidth = try? await preview.web.evaluateJavaScript("document.body.style.maxWidth") as? String
+    verify(readingWidth == "850px", "Search preview restores its reading width")
     let start = Date()
     let large = "# Large fixture\n\n" + String(repeating: "A paragraph with **emphasis** and 한국어.\n\n", count: 2500)
     await preview.render(large, url: fixture)

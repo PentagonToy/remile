@@ -398,7 +398,10 @@ final class HomeModel: ObservableObject {
             texProject = warm; overleaf.browsing = false; recordRecent(warm.root)
             if warm.pdf == nil && !warm.compileFailed { warm.compile() }; return
         }
-        do { let connection = overleaf.connection(for: root); let project = try TeXProject(root, historyEnabled: connection == nil, displayName: connection?.name); guard reader.close(), closeTeX() else { return }; texProject = project; overleaf.browsing = false
+        do { let connection = overleaf.connection(for: root)
+            let marks = connection.map { EditorEditMarks.Shared(root: StorageLocation.root(), machine: StorageLocation.machineID(), project: $0.projectID) }
+            let project = try TeXProject(root, historyEnabled: connection == nil, displayName: connection?.name, sharedEditMarks: marks)
+            guard reader.close(), closeTeX() else { return }; texProject = project; overleaf.browsing = false
             if let connection { project.renameConnectedProject = { [weak library = overleaf] name in
                 guard let library else { throw OverleafProjectRename.Failure.unavailable }
                 try await library.renameProject(connection.id, to: name)

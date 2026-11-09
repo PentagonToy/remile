@@ -2,8 +2,16 @@
 
 ## Unreleased
 
+- Preview changes in **Writing tools** before embedding or restoring classic BibTeX references.
+- Run **Submission check** on a clean copy of the project with its bibliography files.
+- Keep reading the PDF when LaTeX reports errors. If a build produces no PDF, keep the previous preview.
+- See diagnostic counts by severity. Use **Go to source** to open the relevant file or line, or open **Terminal** for the full build log.
+- Choose separate folders for storage and the Reference library in Settings. Open the same storage folder on another Mac to see saved Overleaf edit marks in remile.
+- Keep edit marks when reopening saved Markdown and LaTeX sources. Restore unchanged marked text after collaborator edits. CLI edits preserve the current view and open tabs.
 - Read full author lists from PDF XMP metadata. Use **Update metadata…** to review PDF corrections and online results for selected references, then apply the changes together.
 - Rename files, folders and collections in place in LaTeX and Overleaf. File renaming selects the name before the extension. Graphics use an image icon and PDFs use a document icon.
+- Open Writer with the whole page centred. Use **Fit** to centre the current page at the available height.
+- Fit PDFs on first load, keep the reading position when recompiling in LaTeX or Overleaf, and use **Fit width** to widen Markdown search previews.
 
 ## 0.2.5 — 5 November 2026
 

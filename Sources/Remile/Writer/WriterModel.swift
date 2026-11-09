@@ -21,7 +21,8 @@ import CryptoKit
     @Published var list = WriterList.none
     @Published var alignment = 0
     @Published var leading = 1.0
-    @Published var zoom = 1.0
+    @Published private(set) var zoom = 1.0
+    private(set) var fitMode: PageFit? = .page
     @Published var showRulers = false
     @Published var palette = WriterPalette.okabeIto
     @Published var colour: UInt32 = 0x000000
@@ -42,6 +43,7 @@ import CryptoKit
     private var sourceFingerprint: String?
     weak var activeText: NSTextView?
     weak var canvas: WriterCanvas?
+    weak var desk: WriterDesk?
     var didVisit: ((URL) -> Void)?
     var textChanged: (() -> Void)?
     var pageSize: CGSize { (PaperSize(rawValue: paper) ?? .a4).points(landscape: landscape) }
@@ -246,15 +248,14 @@ import CryptoKit
         }
         for (range, replacement) in replacements { storage.addAttribute(.attachment, value: replacement, range: range) }
     }
-    func setZoom(_ value: Double) {
+    func setZoom(_ value: Double, fit: PageFit? = nil) {
         guard value.isFinite else { return }
-        zoom = min(2, max(0.25, value))
+        fitMode = fit
+        let scale = min(2, max(0.25, value))
+        if zoom != scale { zoom = scale }
     }
     func fitPage(_ mode: PageFit) {
-        guard let scroll = canvas?.enclosingScrollView else { return }
-        let width = (scroll.contentSize.width - 64) / pageSize.width
-        let height = (scroll.contentSize.height - 40) / pageSize.height
-        setZoom(mode.scale(width: width, height: height))
+        desk?.fitPage(mode)
     }
     func fitWidth() { fitPage(.width) }
     func resizePaper(_ name: String, landscape: Bool) {

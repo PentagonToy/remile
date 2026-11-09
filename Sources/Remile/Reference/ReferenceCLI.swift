@@ -87,7 +87,7 @@ enum ReferenceCLI {
         case "list":
             let trash = options.contains("--trash"), text = option("--query") ?? ""
             let sorting = ReferenceSort(column: ReferenceColumn(rawValue: option("--sort") ?? "title") ?? .title, ascending: option("--order") != "desc")
-            let rows = sorting.sorted(records.filter { inTrash($0) == trash && (library == nil || $0.library == library || $0.collectionID == library) && (text.isEmpty || $0.searchText.localizedCaseInsensitiveContains(text)) })
+            let rows = sorting.sorted(records.filter { inTrash($0) == trash && (library == nil || $0.library == library || $0.collectionID == library) && $0.matchesSearch(text) })
             let offset = Int(option("--offset") ?? "0") ?? 0, limit = Int(option("--limit") ?? "50") ?? 50
             return ["ok": true, "schema": 1, "total": rows.count, "offset": offset, "references": rows.dropFirst(offset).prefix(limit).map { record in
                 ["collectionID": record.collectionID?.uuidString ?? "", "libraryID": record.library.uuidString, "id": record.id.uuidString, "revision": record.revision.uuidString, "title": String(record.title.prefix(1000)), "authors": String(record.authors.prefix(500)), "editors": String(record.editors.prefix(500)), "contributors": String(record.displayContributors.prefix(500)), "contributorRole": record.usesEditors ? "editor" : "author", "year": String(record.year.prefix(32)), "publication": String(ReferenceColumn.publication.value(record).prefix(500)), "type": record.type, "summaryTruncated": record.title.count > 1000 || record.authors.count > 500 || record.year.count > 32 || ReferenceColumn.publication.value(record).count > 500, "key": record.citationKey, "attachments": record.attachments.count] as [String: Any]

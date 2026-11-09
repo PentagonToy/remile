@@ -287,6 +287,7 @@ struct SearchPDFCanvas: NSViewRepresentable {
         guard let target = document.page(at: destination - 1) else { return }
         let selections = citation.map { PDFCitation.selections(on: target, excerpt: $0.text) } ?? Self.selections(on: target, query: query)
         view.go(to: target)
+        zoom?.completePendingFit(in: view)
         if let first = selections.first { view.go(to: first) }
         view.highlightedSelections = []
         // PDFKit finalises page layout after the representable update.

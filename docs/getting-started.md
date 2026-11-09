@@ -23,7 +23,7 @@ The app is Developer ID signed and Apple-notarised. See [installation](distribut
 
 Settings controls appearance, reading and editing. In Storage, save a preset to bring supported preferences to another Mac. Your account connections and library paths stay local.
 
-To share a Reference library through Dropbox or iCloud Drive, use Move storage to put it in a synced folder. On another Mac, wait for the folder to download, then use **Storage → Change → Open storage**. Restart remile to apply the change. Reference opens read only. See [storage and other Macs](reference.md#storage-and-other-macs) before enabling editing.
+To use a Reference library through Dropbox or iCloud Drive, choose **Reference folder → Change… → Move library…**. On another Mac, wait for the library to download, choose **Open library…**, then restart remile. Reference opens read only. See [storage and other Macs](reference.md#storage-and-other-macs) before enabling editing.
 
 ## Connect when you need to
 

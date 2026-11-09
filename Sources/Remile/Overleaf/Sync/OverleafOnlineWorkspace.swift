@@ -305,7 +305,7 @@ import SwiftUI
             let prepared = try OverleafReviewRejection.prepare(change, root: project.root, source: change.anchor.source)
             let after = prepared.restored
             if after != change.anchor.source {
-                guard let edit = project.editSource, edit(change.anchor.file, change.anchor.source, after, "Reject Overleaf change") else {
+                guard let edit = project.editSource, edit(change.anchor.file, change.anchor.source, after, "Reject Overleaf change", true) else {
                     throw OverleafGit.Failure("Open the source editor before rejecting this change.")
                 }
                 edited(); await flush(force: true)

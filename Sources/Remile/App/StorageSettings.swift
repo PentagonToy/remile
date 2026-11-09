@@ -2,94 +2,84 @@ import SwiftUI
 import AppKit
 
 struct StorageSettings: View {
-    @AppStorage(StorageLocation.preference) private var storagePath = ""
     @AppStorage(StorageLocation.pendingPreference) private var pendingPath = ""
-    @AppStorage(StoragePaths.referencePreference) private var referencePath = ""
-    @AppStorage(StoragePaths.settingsPreference) private var settingsPath = ""
+    @AppStorage(StoragePaths.pendingReferencePreference) private var pendingReference = ""
+    @AppStorage(StoragePaths.pendingReferenceOpen) private var pendingReferenceOpen = false
     @AppStorage(StoragePaths.readOnlyPreference) private var readOnlyPath = ""
-    @StateObject private var state = Presentation()
-    private final class Presentation: ObservableObject { @Published var message: String?; @Published var showsLocations = false }
+    @State private var message: String?
+
+    private enum Location {
+        case storage, reference
+
+        var title: String { self == .storage ? "Storage folder" : "Reference folder" }
+        var hint: String {
+            self == .storage ? "Search indexes and Overleaf edit marks." : "Reference records and PDFs."
+        }
+    }
+
     var body: some View {
-        let root = StoragePaths.reference()
-        let preferences = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences/local.remile.app.plist")
+        let reference = StoragePaths.reference()
         Form {
-            Section("Storage") {
-                HStack(spacing: 10) {
-                    SymbolIcon(systemName: "folder").foregroundStyle(RemileStyle.accent)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Storage folder").font(RemileType.callout.weight(.medium))
-                        Text((StorageLocation.root().path as NSString).abbreviatingWithTildeInPath).font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                    }.frame(maxWidth: .infinity, alignment: .leading).remileHelp(StorageLocation.root().path)
-                    Menu("Change…") {
-                        Button("Move storage…") { chooseStorage(existing: false) }
-                        Button("Open storage…") { chooseStorage(existing: true) }
-                    }.fixedSize()
-                    reveal(StorageLocation.root(), directory: true)
-                }
-                Text("Reference and search data. Search indexes stay separate for each Mac.").font(RemileType.caption).foregroundStyle(.secondary)
-                if !pendingPath.isEmpty {
-                    HStack {
-                        Text("Restart remile to apply the storage change.").font(RemileType.caption)
-                        Spacer()
-                        Button("Cancel change") { pendingPath = ""; state.message = nil }
-                    }
-                }
-                if !referencePath.isEmpty {
-                    Toggle("Read only", isOn: Binding(get: { StoragePaths.isReadOnly(root) }, set: { value in
-                        readOnlyPath = value ? root.standardizedFileURL.path : ""
+            Section("Locations") {
+                location(.storage, url: StorageLocation.root())
+                location(.reference, url: reference)
+                if reference.standardizedFileURL != StoragePaths.defaultReference.standardizedFileURL || readOnlyPath == reference.standardizedFileURL.path {
+                    Toggle("Reference read only", isOn: Binding(get: { readOnlyPath == reference.standardizedFileURL.path }, set: { value in
+                        readOnlyPath = value ? reference.standardizedFileURL.path : ""
                         NotificationCenter.default.post(name: StoragePaths.changed, object: nil)
                     })).remileHelp("Enable editing on one Mac at a time after folder sync finishes")
                 }
-            }
-            Section("Settings") {
-                HStack {
-                    Text("Preferences")
-                    Spacer()
-                    Text("~/Library/Preferences").font(RemileType.caption).foregroundStyle(.secondary)
-                    reveal(preferences)
+                if !pendingPath.isEmpty || !pendingReference.isEmpty {
+                    HStack {
+                        Text("Restart remile to apply folder changes.").font(RemileType.caption)
+                        Spacer()
+                        Button("Cancel changes") { pendingPath = ""; pendingReference = ""; pendingReferenceOpen = false; message = nil }
+                    }
                 }
-            }
-            Section("Presets") { SettingsTransferView(compact: true) }
-            Section {
-                DisclosureGroup("Locations", isExpanded: $state.showsLocations) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        location("Reference", url: root, directory: true)
-                        location("Search index", url: StorageLocation.search())
-                        location("Preferences", url: preferences)
-                        if !settingsPath.isEmpty { location("Settings export", url: URL(fileURLWithPath: settingsPath)) }
-                    }.padding(.top, 10).padding(.leading, 18)
-                }
-            }
-            if let message = state.message {
-                Section {
+                if let message {
                     Text(message).font(RemileType.caption).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                 }
             }
+            Section("Presets") { SettingsTransferView() }
         }.formStyle(.grouped).scrollContentBackground(.hidden).font(RemileType.control).toggleStyle(.switch)
     }
-    private func reveal(_ url: URL, directory: Bool = false) -> some View {
-        Button {
-            if directory { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path) }
-            else { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-        } label: { SymbolIcon(systemName: "arrow.up.forward.square") }
-            .accessibilityLabel("Show in Finder").remileHelp("Show in Finder")
+
+    private func location(_ location: Location, url: URL) -> some View {
+        HStack(spacing: 10) {
+            SymbolIcon(systemName: "folder").foregroundStyle(RemileStyle.accent)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(location.title).font(RemileType.callout.weight(.medium)).foregroundStyle(.primary)
+                Text((url.path as NSString).abbreviatingWithTildeInPath)
+                    .lineLimit(1).truncationMode(.middle).remileHelp(url.path)
+                Text(location.hint).fixedSize(horizontal: false, vertical: true)
+            }.font(RemileType.caption).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Menu("Change…") {
+                Button(location == .storage ? "Move storage…" : "Move library…") { choose(location, opening: false) }
+                Button(location == .storage ? "Open storage…" : "Open library…") { choose(location, opening: true) }
+            }.fixedSize().accessibilityLabel("Change " + location.title.lowercased())
+            Button { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path) } label: {
+                SymbolIcon(systemName: "arrow.up.forward.square")
+            }.accessibilityLabel("Show " + location.title.lowercased() + " in Finder").remileHelp("Show in Finder")
+        }
     }
-    private func location(_ title: String, url: URL, directory: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack { Text(title).font(RemileType.caption.weight(.medium)); Spacer(); reveal(url, directory: directory) }
-            Text((url.path as NSString).abbreviatingWithTildeInPath).font(RemileType.caption).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true).remileHelp(url.path)
-        }.padding(.vertical, 4)
-    }
-    private func chooseStorage(existing: Bool) {
+
+    private func choose(_ location: Location, opening: Bool) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
-        panel.prompt = existing ? "Open" : "Choose"
+        panel.prompt = opening ? "Open" : "Choose"
         guard panel.runModal() == .OK, let selected = panel.url else { return }
         do {
-            let destination = existing ? selected : selected.appendingPathComponent("remile-storage", isDirectory: true)
-            try StoragePaths.scheduleStorage(destination)
-            pendingPath = destination.path
-            state.message = nil
-        } catch { state.message = error.localizedDescription }
+            if location == .storage {
+                let destination = opening ? selected : selected.appendingPathComponent("remile-storage", isDirectory: true)
+                if !opening, FileManager.default.fileExists(atPath: destination.path) {
+                    throw StoragePaths.Failure("Choose a parent folder without a remile-storage folder.")
+                }
+                try StoragePaths.scheduleStorage(destination)
+            } else {
+                try StoragePaths.scheduleReference(selected, opening: opening)
+            }
+            message = nil
+        } catch { message = error.localizedDescription }
     }
 }

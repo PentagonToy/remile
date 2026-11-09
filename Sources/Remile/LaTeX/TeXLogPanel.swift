@@ -2,79 +2,142 @@ import SwiftUI
 
 struct TeXLogPanel: View {
     @ObservedObject var project: TeXProject
-    @StateObject private var state = LogState()
-    private enum Tab: String, CaseIterable { case all = "All logs", errors = "Errors", warnings = "Warnings", terminal = "Terminal" }
-    private final class LogState: ObservableObject { @Published var tab = Tab.all }
-    private var entries: [TeXDiagnostic] {
-        switch state.tab { case .errors: return TeXDiagnostics.prioritised(project.diagnostics).filter { $0.severity == .error }; case .warnings: return TeXDiagnostics.prioritised(project.diagnostics).filter { $0.severity == .warning }; default: return TeXDiagnostics.prioritised(project.diagnostics) }
+    @State private var tab = Tab.all
+
+    private enum Tab: String, CaseIterable {
+        case all = "All", errors = "Errors", warnings = "Warnings", info = "Info", terminal = "Terminal"
+
+        var severity: TeXDiagnostic.Severity? {
+            switch self {
+            case .errors: .error
+            case .warnings: .warning
+            case .info: .info
+            default: nil
+            }
+        }
+
+        var emptyMessage: String {
+            switch self {
+            case .errors: "No errors"
+            case .warnings: "No warnings"
+            case .info: "No info messages"
+            default: "No diagnostics"
+            }
+        }
     }
+
     var body: some View {
-        let firstErrorID = TeXDiagnostics.primaryError(project.diagnostics)?.id
+        let all = TeXDiagnostics.displayed(project.diagnostics)
+        let grouped = Dictionary(grouping: all, by: \.severity)
+        let entries = tab.severity.map { grouped[$0] ?? [] } ?? all
+        let firstErrorID = TeXDiagnostics.primaryError(all)?.id
         VStack(spacing: 0) {
             if project.setupIssue != nil || !TeXConfiguration.current.missingTools(buffers: project.buffers).isEmpty {
-                HStack { Spacer(); Button("TeX setup") { project.setupNeeded = true }.remileHelp("View missing tools and packages") }.padding(.horizontal, 10).padding(.top, 8)
+                HStack {
+                    Spacer()
+                    Button("TeX setup") { project.setupNeeded = true }.remileHelp("View missing tools and packages")
+                }.padding(.horizontal, 10).padding(.top, 8)
             }
-            if project.pdf != nil && !project.outputCurrent && !project.compiling && !project.log.isEmpty { Text("Previous build · recompile changes").font(RemileType.caption).foregroundStyle(RemileStyle.warning).padding(.top, 8) }
-            if project.submissionCheck { Text("LaTeX only · 3 passes · no .bib/.bbl or BibTeX/Biber").font(RemileType.small).foregroundStyle(.secondary).padding(.top, 10) }
-            VStack(alignment: .leading, spacing: 6) {
-                RemileSegmentedControl(title: "Build output", selection: $state.tab, options: Tab.allCases, label: { $0 == .all ? "All" : $0.rawValue })
-                if state.tab != .terminal { Text(title(state.tab)).font(RemileType.small).foregroundStyle(.secondary) }
-            }.padding(10)
+            if project.pdf != nil && !project.outputCurrent && !project.compiling && !project.log.isEmpty {
+                Text("Previous build · recompile changes").font(RemileType.caption).foregroundStyle(RemileStyle.warning).padding(.top, 8)
+            }
+            if project.submissionCheck {
+                Text("LaTeX only · 3 passes · no .bib/.bbl or BibTeX/Biber").font(RemileType.small).foregroundStyle(.secondary).padding(.top, 10)
+            }
+            filters(total: all.count, grouped: grouped).padding(10)
             Divider()
-            if state.tab == .terminal {
-                ScrollView { Text(project.log.isEmpty ? "No compilation yet" : project.log).font(.system(size: 12, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(14) }
+            if tab == .terminal {
+                ScrollView {
+                    Text(project.log.isEmpty ? "No compilation yet" : project.log)
+                        .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(14)
+                }
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        if entries.isEmpty { Text(project.compiling ? "Compiling…" : project.log.isEmpty ? "No compilation yet" : "No \(state.tab == .errors ? "errors" : state.tab == .warnings ? "warnings" : "diagnostics")").foregroundStyle(.secondary).padding(16) }
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        if entries.isEmpty {
+                            Text(project.compiling ? "Compiling…" : project.log.isEmpty ? "No compilation yet" : tab.emptyMessage)
+                                .foregroundStyle(.secondary).padding(16)
+                        }
                         ForEach(entries) { entry in
                             TeXDiagnosticRow(project: project, entry: entry, checkFirst: entry.id == firstErrorID)
-
-
                         }
-
                     }.padding(10)
                 }
             }
         }.font(RemileType.control).background(RemileStyle.sidebar)
-            .onAppear { if project.compileFailed { state.tab = .errors } }
-            .onChange(of: project.compileFailed) { if project.compileFailed { state.tab = .errors } }
+            .onAppear { if project.compileFailed { tab = .errors } }
+            .onChange(of: project.compileFailed) { if project.compileFailed { tab = .errors } }
     }
-    private func title(_ tab: Tab) -> String {
-        let count = tab == .errors ? project.diagnostics.filter { $0.severity == .error }.count : tab == .warnings ? project.diagnostics.filter { $0.severity == .warning }.count : project.diagnostics.count
-        return tab == .terminal ? tab.rawValue : "\(tab.rawValue) \(count)"
+
+    private func filters(total: Int, grouped: [TeXDiagnostic.Severity: [TeXDiagnostic]]) -> some View {
+        let label: (Tab) -> String = { item in
+            guard item != .terminal else { return item.rawValue }
+            let count = item.severity.map { grouped[$0]?.count ?? 0 } ?? total
+            return "\(item.rawValue) \(count)"
+        }
+        return ViewThatFits(in: .horizontal) {
+            RemileSegmentedControl(title: "Build output", selection: $tab, options: Tab.allCases, label: label)
+                .frame(minWidth: 380)
+            Picker("Build output", selection: $tab) {
+                ForEach(Tab.allCases, id: \.self) { item in Text(label(item)).tag(item) }
+            }.labelsHidden()
+        }
     }
 }
 
 private struct TeXDiagnosticRow: View {
     @ObservedObject var project: TeXProject
     let entry: TeXDiagnostic
-    var checkFirst = false
+    let checkFirst: Bool
     @ObservedObject private var usage = AIUsage.shared
-    @ObservedObject private var connection = ChatGPTConnection.shared
     @AppStorage("assistant.provider") private var provider = "Apple Intelligence"
-    @StateObject private var presentation = Presentation()
-    private final class Presentation: ObservableObject { @Published var showing = false }
-    private var location: TeXSync.SourceLocation? { project.diagnosticLocation(entry) }
+    @State private var showingAdvice = false
+
+    private var symbol: String {
+        switch entry.severity {
+        case .error: "xmark.octagon"
+        case .warning: "exclamationmark.triangle"
+        case .info: "info.circle"
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if checkFirst { Text("Check first").font(RemileType.caption.weight(.semibold)).foregroundStyle(RemileStyle.accent) }
-            Button { project.reveal(entry) } label: {
-                HStack(alignment: .top, spacing: 10) {
-                    SymbolIcon(systemName: entry.severity == .error ? "xmark.octagon" : "exclamationmark.triangle").foregroundStyle(RemileStyle.warning)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(entry.displayMessage).font(RemileType.callout).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                        if let file = entry.file { Text(file + (entry.line.map { ":\($0)" } ?? "")).font(RemileType.small).foregroundStyle(.secondary).lineLimit(2) }
-                    }
-                    if location != nil { Spacer(minLength: 8); SymbolIcon(systemName: "scope").foregroundStyle(RemileStyle.accent).accessibilityHidden(true) }
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }.buttonStyle(.plain).remileHelp(location == nil ? "Build diagnostic" : "Go to source")
+        let location = project.diagnosticLocation(entry, allowFileOnly: true)
+        let jumpLabel = entry.line == nil ? "Open source file" : "Go to source"
+        HStack(spacing: RemileControl.spacing) {
+            summary(file: location?.file)
+                .accessibilityElement(children: .combine)
+            if location != nil {
+                Button { project.reveal(entry) } label: {
+                    SymbolIcon(systemName: "scope").foregroundStyle(RemileStyle.ink)
+                }.buttonStyle(RemileToolStyle()).accessibilityLabel(jumpLabel).remileHelp(jumpLabel)
+            }
             if entry.severity != .info && !entry.isBuildSummary {
-                HStack { Spacer(); Button { presentation.showing = true } label: { HStack(spacing: 5) { GPTMark(); Text("Suggest fix").font(RemileType.caption) } }
-                    .disabled(project.compiling || usage.active || usage.reason != nil || provider == "Off").opacity(usage.reason != nil ? 0.45 : 1).remileHelp(provider == "Off" ? "AI off" : usage.reason ?? "Suggest a fix")
-                    .popover(isPresented: $presentation.showing, arrowEdge: .leading) { TeXChatGPTReview(project: project, diagnostic: entry) }
+                Button { showingAdvice = true } label: {
+                    GPTMark().frame(width: RemileControl.iconSlot, height: RemileControl.iconSlot)
+                }.buttonStyle(RemileToolStyle()).accessibilityLabel("Suggest a fix with ChatGPT")
+                    .disabled(project.compiling || usage.active || usage.reason != nil || provider == "Off")
+                    .remileHelp(provider == "Off" ? "AI off" : usage.reason ?? "Suggest a fix with ChatGPT")
+                    .popover(isPresented: $showingAdvice, arrowEdge: .leading) { TeXChatGPTReview(project: project, diagnostic: entry) }
+            }
+        }.padding(.horizontal, 10).padding(.vertical, 8)
+            .background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: RemileRadius.control))
+    }
+
+    private func summary(file: String?) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            SymbolIcon(systemName: symbol).foregroundStyle(entry.severity == .info ? RemileStyle.secondaryInk : RemileStyle.warning)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                if checkFirst { Text("Check first").font(RemileType.caption.weight(.semibold)).foregroundStyle(RemileStyle.accent) }
+                Text(entry.displayMessage).font(RemileType.callout).fixedSize(horizontal: false, vertical: true)
+                if let file = file ?? entry.file.map({ ($0 as NSString).lastPathComponent }) {
+                    Text(file + (entry.line.map { ":\($0)" } ?? ""))
+                        .font(RemileType.small).foregroundStyle(RemileStyle.secondaryInk)
+                        .lineLimit(1).truncationMode(.middle)
                 }
             }
-        }.padding(12).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: RemileRadius.control))
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }

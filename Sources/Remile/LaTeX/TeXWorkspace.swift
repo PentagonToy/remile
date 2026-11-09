@@ -21,7 +21,7 @@ struct TeXWorkspace: View {
     @StateObject private var preview = TeXPDFController()
     @StateObject private var presentation = Presentation()
     private final class Presentation: ObservableObject {
-        @Published var paneReset = UUID(); @Published var evidence: ReferenceRecord?; @Published var references = false; @Published var review = false; @Published var compactTools = false; @Published var notice = false; @Published var renameProject = false; @Published var renameSource = false; @Published var files = false; @Published var pane = "Source" }
+        @Published var paneReset = UUID(); @Published var evidence: ReferenceRecord?; @Published var references = false; @Published var review = false; @Published var writingTool: EditorToolsPanel.Tool?; @Published var notice = false; @Published var renameProject = false; @Published var renameSource = false; @Published var files = false; @Published var pane = "Source" }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("latex.fontSize") private var fontSize = 17
     @AppStorage("editor.language") private var language = "Automatic"
@@ -96,11 +96,21 @@ struct TeXWorkspace: View {
             editor.syncToPreview = { [weak project = project, weak editor = editor] in project?.syncToPDF(line: $0, hint: editor?.sourceSyncHint) }; preview.reverse = { [weak project = project] in project?.syncToSource($0) }
             editor.proofreadRequested = { [weak writing = writing, weak editor = editor] range, view in guard let editor else { return }; writing?.proofread(range, in: view, editor: editor) }
             editor.dismissWriting = { [weak writing = writing] in writing?.dismissSuggestion() }
-            project.editSource = { [weak editor = editor, weak project = project, weak state = presentation, size = CGFloat(fontSize)] file, before, after, name in
-                guard let editor, let project, let view = editor.textView, !view.hasMarkedText() else { return false }
-                project.selected = file; state?.pane = "Source"
+            project.editSource = { [weak editor = editor, weak project = project, weak state = presentation, size = CGFloat(fontSize)] file, before, after, name, reveal in
+                guard let project else { return false }
+                let view = editor?.textView
+                if !reveal && (file != project.selected || view?.window == nil) {
+                    return project.editBackgroundBuffer(file: file, before: before, after: after, name: name, undo: view?.undoManager)
+                }
+                guard let editor, let view, !view.hasMarkedText() else { return false }
+                if reveal {
+                    project.selected = file
+                    state?.pane = "Source"
+                }
                 editor.update(before, size: size, serif: false, document: file)
-                editor.apply(.init(range: NSRange(location: 0, length: (before as NSString).length), text: after, selection: NSRange(location: 0, length: 0)), name: name)
+                let selection = reveal ? NSRange(location: 0, length: 0)
+                    : EditorProvenance.anchoredSelection(view.selectedRange(), before: before, after: after)
+                editor.apply(.init(range: NSRange(location: 0, length: (before as NSString).length), text: after, selection: selection), name: name, focus: reveal)
                 return true
             }
             if !TeXConfiguration.current.missingTools(buffers: project.buffers).isEmpty { project.message = "TeX tools are missing." }
@@ -118,6 +128,9 @@ struct TeXWorkspace: View {
         .onChange(of: project.compiling) { if !project.compiling { presentation.pane = "Preview" } }
         .onChange(of: project.compileFailed) { if project.compileFailed { presentation.pane = "Preview" } }
         .onChange(of: project.selected) { presentation.renameProject = false; presentation.renameSource = false; presentation.pane = "Source" }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            project.refreshSharedEditMarks(for: project.selected)
+        }
         .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.review)
         .animation(reduceMotion ? nil : RemileMotion.panel, value: project.showsLog)
         .animation(reduceMotion ? nil : RemileMotion.panel, value: project.showsHistory)
@@ -204,17 +217,19 @@ struct TeXWorkspace: View {
                 Button { project.goBack() } label: { SymbolIcon(systemName: "arrow.backward") }.disabled(project.backFiles.isEmpty).remileHelp("Return to the previous source location")
                 Button { project.goForward() } label: { SymbolIcon(systemName: "arrow.forward") }.disabled(project.forwardFiles.isEmpty).remileHelp("Go to the next source location")
                 if geometry.size.width >= 900 {
-                EditorToolsMenu(project: project, editor: editor)
+                Button { presentation.writingTool = .focus } label: {
+                    SymbolIcon(systemName: "wand.and.stars")
+                        .frame(width: RemileControl.toolHit, height: RemileControl.toolHit).contentShape(Rectangle())
+                }.accessibilityLabel("Writing tools").remileHelp("Writing tools")
                 Button { showExternalEdits.toggle() } label: { SymbolIcon(systemName: showExternalEdits ? "eye" : "eye.slash") }.remileHelp(RemileHints.edits(showExternalEdits)).accessibilityLabel("Show AI and CLI edits")
                 Button { project.captureHistory(file: project.selected); project.showsHistory.toggle(); project.showsLog = false; presentation.pane = "Preview" } label: { SymbolIcon(systemName: "clock.arrow.circlepath") }.remileHelp(RemileHints.history(project.showsHistory))
                 } else {
                     Menu {
-                        Button("Editor tools…") { presentation.compactTools = true }
+                        Button("Writing tools…") { presentation.writingTool = .focus }
                         Button(showExternalEdits ? "Hide AI and CLI edits" : "Show AI and CLI edits") { showExternalEdits.toggle() }
                         Button("History") { project.captureHistory(file: project.selected); project.showsHistory.toggle(); project.showsLog = false; presentation.pane = "Preview" }
                     } label: { SymbolIcon(systemName: "ellipsis").frame(width: RemileControl.toolHit, height: RemileControl.toolHit) }
                     .menuStyle(.borderlessButton).tint(RemileStyle.ink).buttonStyle(.plain).menuIndicator(.hidden).accessibilityLabel("Editor options")
-                    .popover(isPresented: $presentation.compactTools) { EditorToolsMenu(project: project, editor: editor).padding(12) }
                 }
                 let logSeverity = project.compiling ? nil : TeXDiagnostics.logSeverity(project.diagnostics, failed: project.compileFailed || project.setupNeeded || project.setupIssue != nil)
                 let logLabel = logSeverity == .error ? "Build logs · Errors" : logSeverity == .warning ? "Build logs · Warnings" : "Build logs"
@@ -231,7 +246,7 @@ struct TeXWorkspace: View {
                             }
                         }
                     }
-                }.remileHelp(showingPanel ? (project.pdf == nil ? "Return to PDF preview" : "Show the last successful PDF") : logLabel)
+                }.remileHelp(showingPanel ? "Show PDF preview" : logLabel)
                     .accessibilityLabel(showingPanel ? "Show PDF" : logLabel)
                 if geometry.size.width >= 1100 { projectName(width: min(280, max(100, geometry.size.width - 850))).frame(maxWidth: .infinity) }
                 else { Spacer(minLength: 0) }
@@ -260,13 +275,32 @@ struct TeXWorkspace: View {
                 }
                 if project.compiling { ProgressView().controlSize(.small).frame(width: RemileControl.toolHit, height: RemileControl.toolHit); Button { project.stop() } label: { SymbolIcon(systemName: "stop.fill") }.accessibilityLabel("Stop compilation").remileHelp("Stop compilation") }
                 else { Button { project.compile(); presentation.pane = "Preview" } label: { HStack(alignment: .center, spacing: 6) { SymbolIcon(systemName: "play.fill").frame(width: 18, height: 20);  }.frame(height: 32).foregroundStyle(RemileStyle.accent) }.accessibilityLabel("Compile PDF").keyboardShortcut(.return, modifiers: [.command]).remileHelp("Compile PDF · ⌘Return") }
-                Menu { Button("Recompile from scratch") { project.compile(scratch: true); presentation.pane = "Preview" }.keyboardShortcut(.return, modifiers: [.command, .shift]); Divider(); Button("Submission check") { project.compareSubmission() } } label: { SymbolIcon(systemName: "chevron.down") }.menuStyle(.borderlessButton).tint(RemileStyle.ink).menuIndicator(.hidden).frame(width: RemileControl.toolHit, height: RemileControl.toolHit).disabled(project.compiling).remileHelp("Compile options").accessibilityLabel("Compile options")
+                compileOptions
             }.frame(height: 32)
 
             }
             }.frame(height: 32)
         }.font(RemileType.control).buttonStyle(RemileToolStyle()).padding(.horizontal, 12).padding(.vertical, 5)
-            .popover(isPresented: $project.showsSubmission, arrowEdge: .top) { TeXSubmissionPopover(project: project, check: project.submission) }
+            .sheet(item: $presentation.writingTool) { EditorToolsPanel(project: project, tool: $0) }
+    }
+
+    private var compileOptions: some View {
+        ZStack {
+            Color.clear
+                .popover(isPresented: $project.showsSubmission, arrowEdge: .top) {
+                    TeXSubmissionPopover(project: project, check: project.submission)
+                }
+            Menu {
+                Button("Recompile from scratch") { project.compile(scratch: true); presentation.pane = "Preview" }
+                    .keyboardShortcut(.return, modifiers: [.command, .shift])
+                Divider()
+                Button("Submission check") { project.compareSubmission(compareEmbedded: false) }
+            } label: { SymbolIcon(systemName: "chevron.down") }
+                .menuStyle(.borderlessButton).tint(RemileStyle.ink).menuIndicator(.hidden)
+                .frame(width: RemileControl.toolHit, height: RemileControl.toolHit)
+                .disabled(project.compiling).remileHelp("Compile options").accessibilityLabel("Compile options")
+        }
+        .frame(width: RemileControl.toolHit, height: RemileControl.toolHit)
     }
     private func projectName(width: CGFloat) -> some View {
         HStack(spacing: 6) {
