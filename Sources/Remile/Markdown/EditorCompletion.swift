@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 
 /// Local, deterministic completion shared by Markdown mathematics and TeX projects.
 enum EditorCompletion {
@@ -125,6 +126,9 @@ enum EditorCompletion {
     private var failure: ((String) -> Void)?
     private var buttons: [NSButton] = []
     private var detail: NSTextField?
+    private var footer: NSView?
+    private var mathPreview: CompletionMathPreview?
+    private var previewedTemplate: String?
     var visible: Bool { panel?.isVisible == true }
     func show(in view: NSTextView, tex: Bool, custom: EditorCompletion.Context? = nil, prepare: ((EditorCompletion.Item) throws -> Void)? = nil, failure: ((String) -> Void)? = nil, explicit: Bool = false) {
         guard view.window?.firstResponder === view, !view.hasMarkedText(), let context = custom ?? EditorCompletion.context(view.string, selection: view.selectedRange(), tex: tex, explicit: explicit), let window = view.window else { dismiss(); return }
@@ -157,20 +161,30 @@ enum EditorCompletion {
             }
             button.toolTip = [item.label, suffix, item.detail].compactMap { $0 }.joined(separator: "\n"); button.setAccessibilityLabel("Complete " + item.label); button.setAccessibilityValue(suffix); stack.addArrangedSubview(button); return button
         }
+        let hasMathTemplates = context.items.contains { $0.mathPreviewTemplate != nil }
         let detailHeight: CGFloat = context.items.contains { $0.annotation != nil } ? 104 : 54
         detail = nil
-        if context.items.contains(where: { $0.detail != nil }) {
+        footer = nil
+        previewedTemplate = nil
+        if hasDetails || hasMathTemplates {
             let separator = NSBox(); separator.boxType = .separator; stack.addArrangedSubview(separator)
+            let container = NSView()
+            container.widthAnchor.constraint(equalToConstant: width - 18).isActive = true
+            container.heightAnchor.constraint(equalToConstant: detailHeight).isActive = true
+            stack.addArrangedSubview(container)
+            footer = container
+        }
+        if let footer, hasDetails {
             let field = NSTextField(wrappingLabelWithString: ""); field.font = .systemFont(ofSize: 12); field.textColor = .secondaryLabelColor
-            field.maximumNumberOfLines = detailHeight > 54 ? 6 : 3; field.widthAnchor.constraint(equalToConstant: width - 18).isActive = true
-            field.heightAnchor.constraint(equalToConstant: detailHeight).isActive = true
-            stack.addArrangedSubview(field); detail = field
+            field.maximumNumberOfLines = detailHeight > 54 ? 6 : 3
+            install(field, in: footer)
+            detail = field
         }
         let background = NSVisualEffectView(); background.material = .popover; background.state = .active; background.wantsLayer = true; background.layer?.cornerRadius = 7
         background.addSubview(stack); stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: background.leadingAnchor), stack.trailingAnchor.constraint(equalTo: background.trailingAnchor), stack.topAnchor.constraint(equalTo: background.topAnchor), stack.bottomAnchor.constraint(equalTo: background.bottomAnchor)])
         panel.contentView = background
-        let rect = view.firstRect(forCharacterRange: caret, actualRange: nil), height = CGFloat(context.items.count * 27 + 10) + (detail == nil ? 0 : detailHeight + 1)
+        let rect = view.firstRect(forCharacterRange: caret, actualRange: nil), height = CGFloat(context.items.count * 27 + 10) + (footer == nil ? 0 : detailHeight + 1)
         let screen = window.screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let below = rect.minY - height - 3
         let y = below >= screen.minY ? below : max(screen.minY, min(rect.maxY + 3, screen.maxY - height))
@@ -190,8 +204,64 @@ enum EditorCompletion {
     }
     private func refresh() {
         for (number, button) in buttons.enumerated() { button.contentTintColor = .labelColor; button.wantsLayer = true; button.layer?.backgroundColor = (number == index ? NSColor(RemileStyle.accent).withAlphaComponent(0.18) : .clear).cgColor; button.layer?.cornerRadius = 4 }
-        let text = context?.items.indices.contains(index) == true ? context?.items[index].detail ?? "" : ""
+        guard let context, context.items.indices.contains(index) else { return }
+        let item = context.items[index]
+        let text = item.detail ?? ""
         detail?.stringValue = text; detail?.toolTip = text
+        showMathPreview(item.mathPreviewTemplate)
+    }
+
+    private func showMathPreview(_ template: String?) {
+        guard let footer else { return }
+        if let template, template == previewedTemplate, mathPreview?.superview === footer {
+            mathPreview?.isHidden = false
+            detail?.isHidden = true
+            return
+        }
+        guard let template, let markup = try? MathMarkup.render(template, display: true) else {
+            mathPreview?.isHidden = true
+            detail?.isHidden = false
+            return
+        }
+        let web: CompletionMathPreview
+        if let mathPreview {
+            web = mathPreview
+        } else {
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = .nonPersistent()
+            configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+            web = CompletionMathPreview(frame: .zero, configuration: configuration)
+            web.navigationDelegate = web
+            web.setAccessibilityLabel("Equation template")
+            mathPreview = web
+        }
+        if web.superview !== footer { install(web, in: footer) }
+        let dark = panel?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let html = """
+        <!doctype html><meta charset="utf-8">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+        <style>
+        :root { color-scheme: \(dark ? "dark" : "light"); }
+        body { margin: 0; height: 100vh; display: grid; place-items: center; overflow: hidden;
+               background: Canvas; color: CanvasText; font-size: 22px; }
+        math { margin: 0; }
+        </style><body>\(markup)</body>
+        """
+        previewedTemplate = template
+        web.display(html)
+        web.isHidden = false
+        detail?.isHidden = true
+    }
+
+    private func install(_ view: NSView, in container: NSView) {
+        container.addSubview(view)
+        view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            view.topAnchor.constraint(equalTo: container.topAnchor),
+            view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
     }
     @objc private func choose(_ button: NSButton) { index = button.tag; accept() }
     private func accept() {
@@ -202,7 +272,43 @@ enum EditorCompletion {
         view.window?.makeFirstResponder(view); view.breakUndoCoalescing(); view.insertText(item.insertion, replacementRange: context.range)
         view.setSelectedRange(NSRange(location: context.range.location + (item.caret ?? (item.insertion as NSString).length), length: 0)); view.undoManager?.setActionName("Complete TeX"); view.breakUndoCoalescing()
     }
-    func dismiss() { panel?.orderOut(nil); if let panel { panel.parent?.removeChildWindow(panel) }; panel = nil; context = nil; prepare = nil; failure = nil; buttons = []; detail = nil }
+    func dismiss() {
+        panel?.orderOut(nil)
+        if let panel { panel.parent?.removeChildWindow(panel) }
+        panel = nil
+        context = nil
+        prepare = nil
+        failure = nil
+        buttons = []
+        detail = nil
+        footer = nil
+        mathPreview = nil
+        previewedTemplate = nil
+    }
+}
+
+private extension EditorCompletion.Item {
+    var mathPreviewTemplate: String? {
+        guard detail == nil, annotation == nil else { return nil }
+        return MathMarkup.completionTemplate(label)
+    }
+}
+
+private final class CompletionMathPreview: WKWebView, WKNavigationDelegate {
+    private var pendingNavigation: WKNavigation?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func display(_ html: String) {
+        alphaValue = 0
+        pendingNavigation = loadHTMLString(html, baseURL: nil)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let navigation, navigation === pendingNavigation else { return }
+        pendingNavigation = nil
+        alphaValue = 1
+    }
 }
 
 /// Labels keep the whole completion row clickable.

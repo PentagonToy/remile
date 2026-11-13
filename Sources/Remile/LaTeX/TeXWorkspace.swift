@@ -24,6 +24,7 @@ struct TeXWorkspace: View {
         @Published var paneReset = UUID(); @Published var evidence: ReferenceRecord?; @Published var references = false; @Published var review = false; @Published var writingTool: EditorToolsPanel.Tool?; @Published var notice = false; @Published var renameProject = false; @Published var renameSource = false; @Published var files = false; @Published var pane = "Source" }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("latex.fontSize") private var fontSize = 17
+    @AppStorage(TeXMathPreviewState.preference) private var equationPreview = true
     @AppStorage("editor.language") private var language = "Automatic"
     @AppStorage("editor.spellcheck") private var spellcheck = true
     @AppStorage("editor.showExternalEdits") private var showExternalEdits = false
@@ -54,12 +55,12 @@ struct TeXWorkspace: View {
                         Spacer()
                         RemileSegmentedControl(title: "Editor pane", selection: $presentation.pane, options: ["Source", "Preview"], label: { $0 }).frame(width: 190)
                     }.padding(8)
-                    if presentation.pane == "Source" { sourcePane } else { previewPane }
+                    if presentation.pane == "Source" { sourcePane(availableHeight: geometry.size.height) } else { previewPane }
                 }
             } else {
                 ReaderSplit(sizing: .files, minimum: 160, maximum: 300, minimumContent: 580, label: "project files", revealToken: navigationToken, pane: { projectSidebar }, content: {
                     GeometryReader { editorGeometry in
-                        ReaderSplit(sizing: .equal, minimum: 260, maximum: max(1400, geometry.size.width), minimumContent: 280, label: "LaTeX source", revealToken: navigationToken, pane: { sourcePane }, content: { previewPane })
+                        ReaderSplit(sizing: .equal, minimum: 260, maximum: max(1400, geometry.size.width), minimumContent: 280, label: "LaTeX source", revealToken: navigationToken, pane: { sourcePane(availableHeight: editorGeometry.size.height) }, content: { previewPane })
                     }
                 })
             }
@@ -144,7 +145,7 @@ struct TeXWorkspace: View {
             else { editor.reveal(line: jump.location.line); if jump.marksLine { editor.flash(line: jump.location.line, colour: colour) } }
         }
     }
-    @ViewBuilder private var sourcePane: some View {
+    @ViewBuilder private func sourcePane(availableHeight: CGFloat) -> some View {
         if project.buffers[project.selected] == nil { TeXAssetPreview(project: project) }
         else { VStack(spacing: 0) {
             HStack(spacing: 6) {
@@ -158,6 +159,10 @@ struct TeXWorkspace: View {
                 Button { project.syncToPDF(line: editor.selectedLine, hint: editor.sourceSyncHint); presentation.pane = "Preview" } label: { SymbolIcon(systemName: "arrow.right") }.disabled(!project.canSync).remileHelp("Show in PDF")
             }.buttonStyle(RemileToolStyle()).padding(.horizontal, 10).background(RemileStyle.editorBar)
             MarkdownEditor(source: project.source, controller: editor, size: CGFloat(fontSize), serif: false, texTheme: TeXEditorTheme(rawValue: theme) ?? .remile, documentID: project.selected, externalRanges: project.externalEdits[project.selected] ?? [], showExternalEdits: showExternalEdits)
+            if equationPreview {
+                TeXMathPreviewStrip(state: editor.mathPreview, document: project.selected,
+                                    paper: theme == TeXEditorTheme.paper.rawValue, availableHeight: availableHeight)
+            }
         } }
     }
     private var previewPane: some View {
@@ -356,6 +361,7 @@ struct TeXSettings: View {
     @AppStorage("latex.fontSize") private var fontSize = 17
     @AppStorage("latex.historyMinutes") private var historyMinutes = 3
     @AppStorage("latex.lineNumbers") private var lineNumbers = true
+    @AppStorage(TeXMathPreviewState.preference) private var equationPreview = true
     @AppStorage("editor.toolSounds") private var toolSounds = true
     @AppStorage("editor.sidebarArtwork") private var sidebarArtwork = true
     @AppStorage("latex.engine") private var engine = TeXConfiguration.Engine.automatic.rawValue
@@ -364,6 +370,7 @@ struct TeXSettings: View {
             Section("Editor") {
                 RemileSettingsStepper(title: "Source text", value: $fontSize, range: 10...32, formatted: "\(fontSize) pt")
                 Toggle("Line numbers", isOn: $lineNumbers)
+                Toggle("Live equation preview", isOn: $equationPreview)
                 EditorLanguageSettings()
                 RemileSettingsStepper(title: "History comparison", value: $historyMinutes, range: 1...30, formatted: "Every \(historyMinutes) min")
                 Toggle("Tool completion sounds", isOn: $toolSounds)

@@ -12,7 +12,7 @@ Source line numbers are on by default. Change **Settings → Markdown → Line n
 
 ## Add a little structure
 
-The Format tools insert headings, links, lists, maths, code and tables. In a narrow window, open **More** for Format, Find and Zoom. Pasting cells from a spreadsheet creates a table.
+The Format tools insert headings, links, lists, maths, code and tables. In a narrow window, open **More** for Format, Find and Zoom. Pasting cells from a spreadsheet creates a table. In a pipe table, Tab and Shift+Tab move between cells. Return moves down a row and adds a row when you reach the end.
 
 Keep local images beside the document or in a subfolder. Remote images use a local cache so revisiting a page can reuse downloaded images. The source's cache policy controls refreshes. Online access is required to load remote images. PDF export uses local images and supported formulae.
 
@@ -20,7 +20,9 @@ Keep local images beside the document or in a subfolder. Remote images use a loc
 
 Press `⌘F` to open Find below the source. Read mode switches to Edit so matches and replacements refer to the actual Markdown text. `⌥⌘F` opens Find and Replace. Use `⌘G` and `⇧⌘G` for the next and previous match. Match case, whole words and regular expressions are available beside the query or in Search options in a narrow pane. Escape closes the bar. Replace All is one undoable edit.
 
-Search and completion run locally. Find releases its result snapshot when closed, and it does not trigger AI suggestions. Inside maths, type a backslash and a letter to see supported TeX commands, or press `⌥Escape` after a backslash.
+Search and completion run locally. Find releases its result snapshot when closed, and it does not trigger AI suggestions. Inside maths, type a backslash and a letter to see supported TeX commands, or press `⌥Escape` after a backslash. Use the arrow keys to preview a maths template and press Tab or Return to insert it.
+
+Select a formula and choose **Equation Templates → Save Selection as Template** from the context menu. Markdown and LaTeX share the same templates. Choose a template by name to insert its saved source. Insert a formula saved without delimiters inside `$…$` or `$$…$$` to render it.
 
 Use Outline to move between headings. Opening or closing it keeps the editor and preview in place. The short transition honours Reduce Motion.
 

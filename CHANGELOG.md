@@ -2,16 +2,15 @@
 
 ## Unreleased
 
-- Preview changes in **Writing tools** before embedding or restoring classic BibTeX references.
-- Run **Submission check** on a clean copy of the project with its bibliography files.
-- Keep reading the PDF when LaTeX reports errors. If a build produces no PDF, keep the previous preview.
-- See diagnostic counts by severity. Use **Go to source** to open the relevant file or line, or open **Terminal** for the full build log.
-- Choose separate folders for storage and the Reference library in Settings. Open the same storage folder on another Mac to see saved Overleaf edit marks in remile.
-- Keep edit marks when reopening saved Markdown and LaTeX sources. Restore unchanged marked text after collaborator edits. CLI edits preserve the current view and open tabs.
-- Read full author lists from PDF XMP metadata. Use **Update metadata…** to review PDF corrections and online results for selected references, then apply the changes together.
-- Rename files, folders and collections in place in LaTeX and Overleaf. File renaming selects the name before the extension. Graphics use an image icon and PDFs use a document icon.
-- Open Writer with the whole page centred. Use **Fit** to centre the current page at the available height.
-- Fit PDFs on first load, keep the reading position when recompiling in LaTeX or Overleaf, and use **Fit width** to widen Markdown search previews.
+- See long LaTeX equations fit below the source, with the active `align` row highlighted. Turn the preview off in LaTeX settings.
+- Preview maths completions and reuse saved equations in Markdown and LaTeX. Use Tab to move through LaTeX maths arguments.
+- Edit Markdown tables with Tab, Shift+Tab and Return.
+- Preview BibTeX changes in **Writing tools** and run **Submission check** on a clean project copy.
+- Keep the PDF visible through LaTeX build errors. Jump from diagnostics to the source or open the full log.
+- Choose separate storage and Reference folders. Reopen saved edit marks in Markdown and LaTeX, and share Overleaf edit marks through the same storage folder.
+- Review and apply metadata updates for selected references, including full author lists from PDF metadata.
+- Rename LaTeX and Overleaf files, folders and collections in place.
+- Fit Writer pages and PDFs on opening. Keep the PDF reading position when recompiling.
 
 ## 0.2.5 — 5 November 2026
 

@@ -31,6 +31,8 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
     private var appliedTheme: String?
     private var hasStyled = false
     private var documentID: String?
+    let mathPreview = TeXMathPreviewState()
+    private var equationPreviewEnabled = true
     private var pairing = false
     private let assistance = EditorAssistance()
     private var flashTask: Task<Void, Never>?
@@ -72,6 +74,9 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         view.findAction = { [weak self] in self?.find($0) }
         view.explicitCompletion = { [weak self] in guard let self, self.texTheme != nil else { return false }; self.complete(); return true }
         view.resigned = { [weak self] in self?.completion.dismiss(); self?.assistance.cancel() }
+        view.focusChanged = { [weak self] focused in
+            if focused { self?.scheduleMathPreview() } else { self?.mathPreview.clear() }
+        }
         view.syncSelection = { [weak self] in guard let self else { return }; self.syncToPreview?(self.selectedLine) }
         scroll.documentView = view; ReaderScrolling.configure(scroll); self.scroll = scroll; textView = view
         findState.view = view
@@ -86,6 +91,11 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         return scroll
     }
     private func applyPreferences(_ view: NSTextView) {
+        let previewEnabled = UserDefaults.standard.object(forKey: TeXMathPreviewState.preference) as? Bool ?? true
+        if equationPreviewEnabled != previewEnabled {
+            equationPreviewEnabled = previewEnabled
+            if previewEnabled { scheduleMathPreview() } else { mathPreview.clear() }
+        }
         let focus = UserDefaults.standard.bool(forKey: "editor.focusMode")
         if focusMode != focus { focusMode = focus; scheduleStyle() }
         let key = texTheme == nil ? "markdown.lineNumbers" : "latex.lineNumbers"
@@ -123,6 +133,7 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         }
         let palette = texTheme?.palette
         (view as? MarkdownSourceTextView)?.markdownMode = texTheme == nil
+        (view as? MarkdownSourceTextView)?.equationTemplatesEnabled = texTheme == nil || mathDocument != nil
         view.setAccessibilityLabel(texTheme == nil ? "Markdown source" : "LaTeX source")
         let theme = texTheme?.rawValue ?? "Markdown"
         if appliedTheme != theme {
@@ -147,10 +158,12 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         applyPreferences(view)
         if needsStyle { hasStyled = true; scheduleStyle() }
         if let pending = pendingLocation { pendingLocation = nil; reveal(line: pending.0, text: pending.1) }
+        if !sameDocument || needsStyle { scheduleMathPreview() }
     }
     func textDidChange(_ notification: Notification) {
         findState.sourceChanged()
         guard let view = textView else { return }; fadeFlash(); changed(view.string); scroll?.verticalRulerView?.needsDisplay = true; scheduleStyle(); if !findState.visible { scheduleCompletion(); assistance.schedule(view) }
+        scheduleMathPreview()
     }
     func textView(_ view: NSTextView, didCheckTextIn range: NSRange, types checkingTypes: NSTextCheckingTypes, options: [NSSpellChecker.OptionKey: Any] = [:], results: [NSTextCheckingResult], orthography: NSOrthography, wordCount: Int) -> [NSTextCheckingResult] {
         if spellingSource != view.string { spellingSource = view.string; spellingExcluded = EditorSpellcheck.excluded(view.string) }
@@ -175,10 +188,21 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
     }
     func suspend() {
         completionTask?.cancel(); styling?.cancel(); flashTask?.cancel()
-        completion.dismiss(); assistance.cancel(); findState.close(); changed = { _ in }
+        completion.dismiss(); assistance.cancel(); findState.close(); mathPreview.clear(); changed = { _ in }
     }
     func pasteMarkdown() { (textView as? MarkdownSourceTextView)?.pasteMarkdown(nil) }
-    func textViewDidChangeSelection(_ notification: Notification) { completion.dismiss(); if focusMode { scheduleStyle() }; if !findState.visible, let view = textView { assistance.schedule(view) } }
+    func textViewDidChangeSelection(_ notification: Notification) {
+        completion.dismiss(); if focusMode { scheduleStyle() }; if !findState.visible, let view = textView { assistance.schedule(view) }
+        scheduleMathPreview()
+    }
+    private var mathDocument: String? {
+        guard texTheme != nil, let documentID, (documentID as NSString).pathExtension.lowercased() == "tex" else { return nil }
+        return documentID
+    }
+    private func scheduleMathPreview() {
+        guard equationPreviewEnabled, let document = mathDocument, let view = textView else { return }
+        mathPreview.schedule(in: view, document: document)
+    }
     private func scheduleCompletion(explicit: Bool = false) {
         completionTask?.cancel()
         completionTask = Task { @MainActor [weak self] in
@@ -318,13 +342,44 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
             pairing = true; defer { pairing = false }; apply(change, name: "Complete Environment"); return false
         }
         guard !pairing, !textView.hasMarkedText(), UserDefaults.standard.object(forKey: "markdown.autoPair") as? Bool ?? true,
-              let replacementString, let change = MarkdownEditing.pair(textView.string, range: affectedCharRange, replacement: replacementString) else { return true }
+              let replacementString else { return true }
+        let change: MarkdownEditing.Change?
+        if (replacementString == "_" || replacementString == "^"), mathDocument != nil {
+            guard (textView as? MarkdownSourceTextView)?.typingMathScript == true,
+                  textView.undoManager?.isUndoing != true, textView.undoManager?.isRedoing != true else { return true }
+            change = TeXMathEditing.scriptChange(textView.string, selection: affectedCharRange, marker: replacementString)
+        } else {
+            change = MarkdownEditing.pair(textView.string, range: affectedCharRange, replacement: replacementString)
+        }
+        guard let change else { return true }
         pairing = true; defer { pairing = false }
         apply(change, name: "Pair Delimiters"); return false
     }
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         guard !textView.hasMarkedText() else { return false }
+        if texTheme == nil {
+            let navigation: MarkdownTable.Navigation?
+            switch commandSelector {
+            case #selector(NSResponder.insertTab(_:)): navigation = .next
+            case #selector(NSResponder.insertBacktab(_:)): navigation = .previous
+            case #selector(NSResponder.insertNewline(_:)) where NSEvent.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty:
+                navigation = .nextRow
+            default: navigation = nil
+            }
+            if let navigation, let change = MarkdownTable.navigate(textView.string, selection: textView.selectedRange(), action: navigation) {
+                if !change.text.isEmpty { apply(change, name: "Add Table Row") }
+                else { textView.setSelectedRange(change.selection) }
+                textView.scrollRangeToVisible(change.selection)
+                return true
+            }
+        }
         if commandSelector == #selector(NSResponder.insertTab(_:)) {
+            if mathDocument != nil, let destination = TeXMathEditing.tabDestination(textView.string, selection: textView.selectedRange()) {
+                let range = NSRange(location: destination, length: 0)
+                textView.setSelectedRange(range)
+                textView.scrollRangeToVisible(range)
+                return true
+            }
             if assistance.accept(textView) { return true }
             if texTheme != nil, let change = EditorSourceEditing.indent(textView.string, selection: textView.selectedRange(), reverse: false) { apply(change, name: "Indent"); return true }
         }
@@ -411,7 +466,10 @@ final class MarkdownSourceTextView: NSTextView {
     var inspectCitation: ((String) -> Void)?
     var proofreadSelection: (NSRange) -> Void = { _ in }
     var markdownMode = true
+    var equationTemplatesEnabled = false
+    private(set) var typingMathScript = false
     var resigned: () -> Void = {}
+    var focusChanged: (Bool) -> Void = { _ in }
     var attached: () -> Void = {}
     var explicitCompletion: () -> Bool = { false }
     var findAction: ((NSTextFinder.Action) -> Void)?
@@ -419,7 +477,7 @@ final class MarkdownSourceTextView: NSTextView {
         if let item = sender as? NSMenuItem, let action = NSTextFinder.Action(rawValue: item.tag), let findAction { findAction(action) }
         else { super.performTextFinderAction(sender) }
     }
-    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); if window != nil { attached() } }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); if window != nil { attached() } else { focusChanged(false) } }
     override func complete(_ sender: Any?) { if !explicitCompletion() { super.complete(sender) } }
     override func paste(_ sender: Any?) {
         guard markdownMode else { super.paste(sender); return }
@@ -446,12 +504,28 @@ final class MarkdownSourceTextView: NSTextView {
         }
         breakUndoCoalescing(); insertText(output, replacementRange: selectedRange()); undoManager?.setActionName("Paste as Markdown"); breakUndoCoalescing()
     }
-    override func keyDown(with event: NSEvent) { sourceInteraction(); if !completionKey(event) { super.keyDown(with: event) } }
+    override func keyDown(with event: NSEvent) {
+        sourceInteraction()
+        guard !completionKey(event) else { return }
+        typingMathScript = !markdownMode && (event.characters == "_" || event.characters == "^")
+        defer { typingMathScript = false }
+        super.keyDown(with: event)
+    }
     override func mouseDown(with event: NSEvent) {
         sourceInteraction(); resigned(); super.mouseDown(with: event)
         if event.clickCount == 2 { syncSelection() }
     }
-    override func resignFirstResponder() -> Bool { resigned(); return super.resignFirstResponder() }
+    override func becomeFirstResponder() -> Bool {
+        let focused = super.becomeFirstResponder()
+        if focused { focusChanged(true) }
+        return focused
+    }
+    override func resignFirstResponder() -> Bool {
+        resigned()
+        let resigned = super.resignFirstResponder()
+        if resigned { focusChanged(false) }
+        return resigned
+    }
     override var rangeForUserCompletion: NSRange {
         guard !hasMarkedText(), let context = MathCompletion.context(string, selection: selectedRange()) else { return NSRange(location: NSNotFound, length: 0) }
         return context.range
@@ -482,16 +556,81 @@ final class MarkdownSourceTextView: NSTextView {
             proofread.target = self; proofread.toolTip = "Review a grammar suggestion before applying it."
             menu.insertItem(proofread, at: 0); menu.insertItem(.separator(), at: 1)
         }
+        if equationTemplatesEnabled { addEquationTemplateMenu(to: menu) }
         menu.addItem(.separator())
         let item = NSMenuItem(title: "Complete Math Command", action: #selector(completeMathCommand(_:)), keyEquivalent: "")
         item.target = self; item.toolTip = "Inside a formula, type a TeX command and press Option-Escape."
         menu.addItem(item)
         return menu
     }
+    private func addEquationTemplateMenu(to menu: NSMenu) {
+        let templates = TeXEquationTemplate.read()
+        let actions = NSMenu(title: "Equation Templates")
+        let save = actions.addItem(withTitle: "Save Selection as Template…", action: #selector(saveEquationTemplate(_:)), keyEquivalent: "")
+        save.target = self
+        if !templates.isEmpty {
+            actions.addItem(.separator())
+            let remove = NSMenu(title: "Remove Template")
+            for template in templates {
+                let insert = actions.addItem(withTitle: template.name, action: #selector(insertEquationTemplate(_:)), keyEquivalent: "")
+                insert.target = self
+                insert.representedObject = template.source
+                let delete = remove.addItem(withTitle: template.name, action: #selector(removeEquationTemplate(_:)), keyEquivalent: "")
+                delete.target = self
+                delete.representedObject = template.name
+            }
+            let removeItem = actions.addItem(withTitle: "Remove Template", action: nil, keyEquivalent: "")
+            removeItem.submenu = remove
+        }
+        let item = menu.addItem(withTitle: "Equation Templates", action: nil, keyEquivalent: "")
+        item.submenu = actions
+    }
+
+    @objc private func saveEquationTemplate(_ sender: NSMenuItem) {
+        guard !hasMarkedText(), let window, selectedRange().length > 0, selectedRange().length <= 4_096 else { return }
+        let source = (string as NSString).substring(with: selectedRange())
+        let alert = NSAlert()
+        alert.messageText = "Save equation template"
+        alert.informativeText = "Use the same name to replace an existing template."
+        let name = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        alert.accessoryView = name
+        alert.window.initialFirstResponder = name
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            if !TeXEquationTemplate.save(name: name.stringValue, source: source) {
+                let error = NSAlert()
+                error.messageText = "Could not save equation template"
+                error.informativeText = "Use a short name and a selection under 4 KB. You can save up to 40 templates."
+                error.beginSheetModal(for: window)
+            }
+        }
+    }
+
+    @objc private func insertEquationTemplate(_ sender: NSMenuItem) {
+        guard !hasMarkedText(), let source = sender.representedObject as? String else { return }
+        let range = selectedRange()
+        breakUndoCoalescing()
+        insertText(source, replacementRange: range)
+        let caret = MathCompletion.insertionSelection(source, location: range.location)
+        setSelectedRange(caret)
+        scrollRangeToVisible(caret)
+        undoManager?.setActionName("Insert Equation Template")
+        breakUndoCoalescing()
+    }
+
+    @objc private func removeEquationTemplate(_ sender: NSMenuItem) {
+        if let name = sender.representedObject as? String { TeXEquationTemplate.remove(name: name) }
+    }
+
     @objc private func inspectSelectedCitation(_ sender: NSMenuItem) { if let key = sender.representedObject as? String { inspectCitation?(key) } }
     @objc private func proofreadSelectedText(_ sender: Any?) { proofreadSelection(selectedRange()) }
     @objc private func completeMathCommand(_ sender: Any?) { complete(sender) }
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(saveEquationTemplate(_:)) {
+            return !hasMarkedText() && (1...4_096).contains(selectedRange().length)
+        }
         if menuItem.action == #selector(proofreadSelectedText(_:)) {
             return !hasMarkedText() && selectedRange().length > 0 && selectedRange().length <= 2000 && WritingProofreading.enabled
         }

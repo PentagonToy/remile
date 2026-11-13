@@ -11,12 +11,17 @@ enum MathMarkup {
         }
     }
 
+    static func completionTemplate(_ command: String) -> String? {
+        guard command.contains("{}"), MathCompletion.commands.contains(command) else { return nil }
+        return command.replacingOccurrences(of: "{}", with: "{□}")
+    }
+
     static func escape(_ text: String) -> String {
         text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
     }
-    static func render(_ source: String, display: Bool) throws -> String {
+    static func render(_ source: String, display: Bool, highlightOffset: Int? = nil) throws -> String {
         guard source.utf8.count <= 100_000, source.components(separatedBy: "\\begin").count <= 65 else { throw Failure.syntax }
-        var parser = Parser(source, display: display)
+        var parser = Parser(source, display: display, highlightOffset: highlightOffset)
         let body = try parser.expression()
         guard parser.position == parser.characters.count else { throw Failure.syntax }
         return "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"\(display ? "block" : "inline")\"><mrow>\(body)</mrow></math>"
@@ -34,9 +39,12 @@ enum MathMarkup {
     private struct Parser {
         let characters: [Character]
         let display: Bool
+        let highlightOffset: Int?
         var position = 0
         var depth = 0
-        init(_ text: String, display: Bool) { characters = Array(text); self.display = display }
+        init(_ text: String, display: Bool, highlightOffset: Int? = nil) {
+            characters = Array(text); self.display = display; self.highlightOffset = highlightOffset
+        }
         mutating func spaces() { while position < characters.count && characters[position].isWhitespace { position += 1 } }
         mutating func expression(until end: Character? = nil) throws -> String {
             guard depth < 128 else { throw Failure.syntax }
@@ -147,8 +155,13 @@ enum MathMarkup {
             let rows = split(source, separator: "\\\\")
             let aligned = ["align", "align*", "aligned"].contains(name)
             var table = aligned ? "<mtable columnalign=\"right left\" columnspacing=\"0em\" rowspacing=\"0.3em\">" : "<mtable>"
-            for row in rows where !row.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                table += "<mtr>"
+            var rowStart = start
+            for row in rows {
+                let rowEnd = rowStart + row.count
+                let active = aligned && highlightOffset.map { (rowStart...rowEnd).contains($0) } == true
+                rowStart = rowEnd + 2
+                guard !row.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                table += active ? "<mtr class=\"active-equation-row\">" : "<mtr>"
                 for (column, cell) in split(row, separator: "&").enumerated() {
                     var parser = Parser(cell, display: display)
                     let alignment = aligned ? " style=\"text-align:\(column.isMultiple(of: 2) ? "right" : "left")\"" : ""

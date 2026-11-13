@@ -38,6 +38,12 @@ Press `⌘F` to open Find below the source. `⌥⌘F` also opens the replacement
 
 Type a backslash and a letter for local command suggestions. `⌥Escape` opens completion after a bare backslash. Arrow keys choose an item, Return or Tab accepts it, and Escape dismisses the list. Common maths commands show a symbol or a short example beside the command.
 
+While the cursor is inside a supported equation, the preview below the source grows for multiple rows and scales to fit long equations. Use **Settings → LaTeX → Live equation preview** to turn it off. With automatic delimiter pairing enabled, type `_` or `^` to insert braces around a subscript or superscript. At the closing brace, press Tab to leave the argument. In a fraction, Tab moves from the numerator to the denominator, then out of the fraction. An incomplete edit dims the last valid preview of the same equation. Use the PDF build to check equations that use custom commands.
+
+In the completion list, use the arrow keys to see the shape of a fraction, root or other supported maths template. Press Tab or Return to insert the command with empty arguments.
+
+In an `align` environment, the preview highlights the equation row at the cursor. To reuse a formula, select its source and choose **Equation Templates → Save Selection as Template** from the context menu. Choose the template by name from the same menu to insert it.
+
 Completion uses your project files for paths, labels, and commands defined with `\newcommand` or `\DeclareMathOperator`, including definitions in project style and class files. It also recognises selected commands from declared packages, such as `\ce{}` from `mhchem`. Accepting a command adds any required braces when there is no argument group already in place. The cursor moves inside the first argument. Project-defined environments receive a matching end.
 
 Suggestions use a bounded, lazy project index off the UI thread. Very large files or projects may have definitions outside that index. The source remains editable and compilation still uses the complete project.
