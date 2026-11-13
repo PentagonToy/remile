@@ -1,10 +1,14 @@
 import Foundation
 
 // Keep account credentials, network services and real preferences outside these checks.
-struct OverleafConnection {
+enum LocalDocumentIDs {
+    enum Kind: String { case latex, markdown }
+}
+struct OverleafConnection: Codable {
     let id: UUID
     let projectID: String
     let name: String
+    var account = "Fixture"
     var webURL: URL { URL(string: "https://www.overleaf.com/project/" + projectID)! }
 }
 @MainActor final class OverleafLibrary {
@@ -14,7 +18,11 @@ struct OverleafConnection {
     var syncedAt: [UUID: Date] = [:]
     var statuses: [UUID: String] = [:]
     init(_ directory: URL) { self.directory = directory }
-    func root(_ project: OverleafConnection) -> URL { directory.appendingPathComponent(project.id.uuidString) }
+    nonisolated static var defaultDirectory: URL { FileManager.default.temporaryDirectory }
+    nonisolated static func projectRoot(_ project: OverleafConnection, directory: URL) -> URL {
+        directory.appendingPathComponent(project.id.uuidString)
+    }
+    func root(_ project: OverleafConnection) -> URL { Self.projectRoot(project, directory: directory) }
 }
 @MainActor final class TestLiveWorkspace {
     var automationStatus: [String: Any] = ["transport": "git", "mode": "online", "enabled": true, "connected": true, "confirmed": false, "pendingDocuments": 1]
@@ -89,6 +97,9 @@ Task { @MainActor in
         let disk = await call(request("read", file: "main.tex"))
         precondition(disk["source"] as? String == "saved source" && disk["origin"] as? String == "disk")
         precondition(disk["sha256"] as? String == SourceDigest.sha256("saved source"))
+        let diskSnapshot = await call(request("read-sources"))
+        precondition(diskSnapshot["ok"] as? Bool == true && diskSnapshot["target"] == nil && home.opens == 0)
+        precondition((diskSnapshot["sources"] as? [String: [String: String]])?["main.tex"]?["source"] == "saved source")
         let traversal = await call(request("read", file: "../main.tex"))
         precondition(traversal["ok"] as? Bool == false)
         let outside = parent.appendingPathComponent("outside.tex")
@@ -105,6 +116,9 @@ Task { @MainActor in
         let buffer = await call(request("read", file: "main.tex"))
         precondition(buffer["source"] as? String == "unsaved source" && buffer["origin"] as? String == "editor-buffer")
         precondition(buffer["dirty"] as? Bool == true && buffer["pdfCurrent"] as? Bool == false)
+        let bufferSnapshot = await call(request("read-sources", target: home.automationTarget))
+        precondition(bufferSnapshot["ok"] as? Bool == true && bufferSnapshot["dirty"] as? Bool == true)
+        precondition((bufferSnapshot["sources"] as? [String: [String: String]])?["main.tex"]?["source"] == "unsaved source")
         precondition((buffer["live"] as? [String: Any])?["pendingDocuments"] as? Int == 1)
         precondition((buffer["live"] as? [String: Any])?["confirmed"] as? Bool == false)
         let online = buffer["online"] as? [String: Any]
