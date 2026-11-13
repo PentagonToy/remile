@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.6 — 13 November 2026
+
+- Give an agent a copied document or project ID to read its source and file structure with one CLI command.
 
 - See long LaTeX equations fit below the source, with the active `align` row highlighted. Turn the preview off in LaTeX settings.
 - Preview maths completions and reuse saved equations in Markdown and LaTeX. Use Tab to move through LaTeX maths arguments.

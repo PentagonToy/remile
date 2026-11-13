@@ -86,6 +86,7 @@ enum LocalDocumentIDs {
     private static func load(_ directory: URL) throws -> [String: Entry] {
         let file = directory.appendingPathComponent("catalogue.json")
         do { return try JSONDecoder().decode([String: Entry].self, from: Data(contentsOf: file)) }
-        catch let error as CocoaError where error.code == .fileReadNoSuchFile { return [:] }
+        catch let error as NSError where error.domain == NSCocoaErrorDomain
+            && error.code == CocoaError.fileReadNoSuchFile.rawValue { return [:] }
     }
 }

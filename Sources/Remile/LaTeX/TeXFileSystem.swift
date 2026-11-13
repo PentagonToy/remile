@@ -27,7 +27,12 @@ enum TeXFileSystem {
         if includeFiles { keys.insert(.isRegularFileKey) }
         if includeFolders { keys.insert(.isDirectoryKey) }
         if visitFile != nil { keys.insert(.fileSizeKey) }
-        guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles]) else { throw CocoaError(.fileReadUnknown) }
+        var traversalError: Error?
+        guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys),
+                                                         options: [.skipsHiddenFiles], errorHandler: { _, error in
+            traversalError = error
+            return false
+        }) else { throw CocoaError(.fileReadUnknown) }
         var paths: [String] = [], folders: [String] = []
         for case let url as URL in items {
             let values = try url.resourceValues(forKeys: keys)
@@ -43,6 +48,7 @@ enum TeXFileSystem {
                 folders.append(String(url.resolvingSymlinksInPath().path.dropFirst(base.path.count + 1)))
             }
         }
+        if let traversalError { throw traversalError }
         return (paths.sorted(), folders.sorted())
     }
     static func reference(_ path: String) -> String { path.hasSuffix(".tex") ? String(path.dropLast(4)) : path }

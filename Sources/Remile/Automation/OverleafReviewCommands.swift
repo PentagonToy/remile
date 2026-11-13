@@ -37,9 +37,7 @@ import Foundation
         } catch { return ["ok": false, "error": error.localizedDescription] }
     }
     nonisolated static func readSources(_ root: URL) throws -> [String: String] {
-        let paths = try TeXFileSystem.paths(root).filter {
-            ["tex", "bib", "sty", "cls", "bst", "md", "txt"].contains(($0 as NSString).pathExtension.lowercased())
-        }
+        let paths = try TeXFileSystem.paths(root).filter(EditorSourceRead.isTextSource)
         guard paths.count <= 1000 else {
             throw OverleafGit.Failure("Read up to 1,000 text source files per review package.")
         }

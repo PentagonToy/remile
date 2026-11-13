@@ -33,6 +33,53 @@ A timeout does not prove that an operation failed. Read the current document or 
 
 Use IDs returned by the preceding command in place of `LIBRARY_UUID`, `RECORD_UUID` and `overleaf:PROJECT_ID`.
 
+### Read a document or project by ID
+
+Copy the document or project ID from **Recently opened** or the Overleaf library. Give the ID to an agent that can run the `remile` CLI on this Mac.
+
+```sh
+remile read --id local:UUID
+remile read --id overleaf:PROJECT_ID
+remile read --id overleaf:PROJECT_ID --file contents/methods.tex
+```
+
+`files` and `folders` list relative paths. For projects, `root` gives the local folder and `main` identifies the LaTeX entry point when known. Each entry in `sources` contains the full UTF-8 `source`, its `sha256` and its `origin` (`editor-buffer` or `disk`). Markdown returns one source. Projects list figures and other assets without returning their bytes.
+
+The command works with the app closed. An open editor supplies its current buffers, including unsaved changes. If the document is open in several windows, use `--target` from `documents`. If an Overleaf ID has several connections, use `--connection` from the response. Overleaf reads use the connected local copy and report `lastSyncedAt` and `remoteFreshness: not-checked`. The command does not open documents, compile or sync.
+
+Reads are limited to 4 MB per source, 32 MB total and 2,000 text files. Use `--file` to read one source while still listing the project structure.
+
+### Plan a five-page revision
+
+> Read this document (ID: local:UUID) and show me how to fit it into five pages.
+
+Start with `remile read --id ID`. Follow `main` and its included files in reading order. Return the highest-impact cuts with file and section names. Look for repeated explanations, figures that duplicate the prose and details that can move to supplementary material if the venue allows it. Preserve the methods needed to reproduce the work, the main results and their supporting citations.
+
+For a LaTeX or Overleaf project, check the page limit with the submission template, including the venue's rules for references and appendices. For an open project, use its returned `target` to export the current source and assets with `remile export --kind source --target TARGET_UUID --output /absolute/new-project.zip`. Extract the ZIP into a scratch directory. For a closed project, copy the returned `root` to a scratch directory. Try the cuts in the copy and leave the original manuscript untouched.
+
+```sh
+remile build /absolute/scratch-project --main main.tex --output /absolute/new-build
+remile pdf-read /absolute/new-build/Build/main.pdf --page 1
+```
+
+Use the entry file from `main` and the PDF path from the build response. A successful build requires local TeX tools. Check `pages` for the PDF total and apply the venue's counting rules. Source-only recommendations give an estimate. Markdown needs a chosen PDF layout to verify the page count.
+
+### Find missing citations
+
+> Read this document (ID: overleaf:PROJECT_ID) and flag missing or weak citations.
+
+Start with `remile read --id ID`. For LaTeX, compare citation keys in the included sources with the active bibliography and use build diagnostics to confirm unresolved keys. Then review claims that depend on prior work, such as comparisons, adopted methods and novelty statements. Report the file and line or section, quote the claim briefly, and say what evidence it needs.
+
+Use the local Reference library to look for supporting work. Choose a library from `remile reference libraries`, then inspect a candidate and read the relevant page of its attached PDF.
+
+```sh
+remile reference suggest --library LIBRARY_UUID --query "method or claim"
+remile reference show --id RECORD_UUID
+remile reference evidence --id RECORD_UUID --attachment ATTACHMENT_UUID --page 1
+```
+
+A search hit is a candidate. Recommend a citation once its source supports the claim and identify the supporting passage. Flag gaps that require a broader literature search when the local library lacks evidence.
+
 ### Find a passage and read its page
 
 ```sh
@@ -73,7 +120,7 @@ remile save --target TARGET_UUID
 
 Prepare the complete revised source from the `read` response and the citation response above. Use the exact returned SHA-256. An edit made since that read is rejected. The replacement keeps the open tabs and active file in place. Save or compile separately when needed. This recipe edits the source. It does not automatically choose or update a bibliography file. The in-app Reference picker performs that paired citation and bibliography action.
 
-`status`, `read` and `diagnostics` inspect the running app through the same document sessions as the UI. For a loaded PDF, `status` reports its page count and one-based `currentPage`. A value of zero means no loaded PDF page is available. `reference citation` returns text. It does not simulate a click in the editor. `overleaf show` reports the locally observed Git sync state, not an independently verified remote snapshot.
+`status`, `read --target` and `diagnostics` inspect the running app through the same document sessions as the UI. For a loaded PDF, `status` reports its page count and one-based `currentPage`. A value of zero means no loaded PDF page is available. `reference citation` returns text. It does not simulate a click in the editor. `overleaf show` reports the locally observed Git sync state, not an independently verified remote snapshot.
 
 ## Document tools
 

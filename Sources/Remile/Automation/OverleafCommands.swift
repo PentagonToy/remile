@@ -6,7 +6,14 @@ import Foundation
         do {
             var models = homes
             if let current, !models.contains(where: { $0 === current }) { models.append(current) }
-            guard let library = (current ?? models.first)?.overleaf else { throw Failure("Open remile before querying Overleaf projects.") }
+            guard let library = (current ?? models.first)?.overleaf else {
+                if request.action == "read-sources", request.target == nil, let id = request.source {
+                    return try await Task.detached(priority: .utility) {
+                        try readSaved(id: id, connectionID: request.name, file: request.file)
+                    }.value
+                }
+                throw Failure("Open remile before querying Overleaf projects.")
+            }
             if request.action == "list" {
                 let query = request.kind ?? ""
                 let projects = library.projects.filter { query.isEmpty || $0.name.localizedStandardContains(query) }
@@ -34,6 +41,18 @@ import Foundation
             }
             if request.action == "review" {
                 return await OverleafReviewCommands.handle(connection: connection, root: root, project: home?.texProject, format: request.kind, output: request.output, library: library)
+            }
+            if request.action == "read-sources" {
+                let project = home?.texProject
+                let buffers = project?.buffers ?? [:], main = project?.main
+                let syncDate = library.syncedAt[connection.id]
+                let dirty = project?.dirty ?? false
+                var result = try await Task.detached(priority: .utility) {
+                    try sourceResponse(connection, root: root, file: request.file, buffers: buffers, main: main, syncedAt: syncDate)
+                }.value
+                result["dirty"] = dirty
+                if let project { result["target"] = project.identity.uuidString }
+                return result
             }
             var result = metadata(connection, library: library)
             result["ok"] = true
@@ -73,6 +92,47 @@ import Foundation
         } catch { return ["ok": false, "error": error.localizedDescription] }
     }
 
+    nonisolated static func readSaved(
+        id: String, connectionID: String?, file: String?, directory: URL = OverleafLibrary.defaultDirectory
+    ) throws -> [String: Any] {
+        guard let projectID = OverleafProjectID.parse(id) else { throw Failure("Provide a valid Overleaf project ID.") }
+        let catalogue = directory.appendingPathComponent("projects.json")
+        let projects: [OverleafConnection]
+        do { projects = try JSONDecoder().decode([OverleafConnection].self, from: Data(contentsOf: catalogue)) }
+        catch let error as NSError where error.domain == NSCocoaErrorDomain
+            && error.code == CocoaError.fileReadNoSuchFile.rawValue { projects = [] }
+        let matches = projects.filter {
+            $0.projectID == projectID && (connectionID == nil || UUID(uuidString: connectionID ?? "") == $0.id)
+        }
+        guard !matches.isEmpty else {
+            throw Failure("This project is not connected on this Mac. Add it in the Overleaf library first.")
+        }
+        guard matches.count == 1, let connection = matches.first else {
+            return ["ok": false, "error": "This project has several connections. Choose --connection.",
+                    "connections": matches.map { ["connection": $0.id.uuidString, "name": $0.name, "account": $0.account] }]
+        }
+        let root = OverleafLibrary.projectRoot(connection, directory: directory)
+        let syncedAt = UserDefaults.standard.object(forKey: "overleaf.synced." + connection.id.uuidString) as? Date
+        return try sourceResponse(connection, root: root, file: file, syncedAt: syncedAt)
+    }
+
+    nonisolated private static func sourceResponse(
+        _ connection: OverleafConnection, root: URL, file: String?,
+        buffers: [String: String] = [:], main: String? = nil, syncedAt: Date?
+    ) throws -> [String: Any] {
+        var response = try EditorSourceRead.project(root: root, file: file, buffers: buffers, main: main)
+        response["ok"] = true
+        response["id"] = OverleafProjectID.reference(connection.projectID)
+        response["kind"] = "overleaf"
+        response["connection"] = connection.id.uuidString
+        response["name"] = connection.name
+        response["dirty"] = false
+        response["lastSyncedAt"] = syncedAt.map { $0.timeIntervalSince1970 } as Any? ?? NSNull()
+        response["remoteFreshness"] = "not-checked"
+        response["observedAt"] = Date().timeIntervalSince1970
+        return response
+    }
+
     private static func metadata(_ project: OverleafConnection, library: OverleafLibrary) -> [String: Any] {
         var result: [String: Any] = ["id": OverleafProjectID.reference(project.projectID), "connection": project.id.uuidString, "name": project.name, "root": library.root(project).path, "url": project.webURL.absoluteString]
         result["lastSyncedAt"] = library.syncedAt[project.id].map { $0.timeIntervalSince1970 } as Any? ?? NSNull()
@@ -81,13 +141,7 @@ import Foundation
     }
 
     nonisolated static func readSource(_ file: String, root: URL) throws -> String {
-        let url = try TeXFileSystem.url(file, root: root)
-        guard ["tex", "bib", "sty", "cls", "bst", "txt", "md"].contains(url.pathExtension.lowercased()) else { throw Failure("Choose a text source file.") }
-        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-        guard values.isRegularFile == true, let count = values.fileSize, count <= 4_000_000 else { throw Failure("Read source files up to 4 MB.") }
-        let data = try Data(contentsOf: url)
-        guard data.count <= 4_000_000, let source = String(data: data, encoding: .utf8) else { throw Failure("Choose UTF-8 source up to 4 MB.") }
-        return source
+        try EditorSourceRead.readProjectFile(file, root: root)
     }
 
     struct Failure: LocalizedError { let errorDescription: String?; init(_ message: String) { errorDescription = message } }

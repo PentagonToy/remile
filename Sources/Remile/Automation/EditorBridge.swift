@@ -63,13 +63,14 @@ enum EditorBridge {
                                 home = RemileWindows.shared.models.first { $0.automationTarget == target }
                                 if home == nil, currentHome()?.automationTarget == target { home = currentHome() }
                             } else { home = currentHome() }
-                            for _ in 0..<100 where home == nil && request.target == nil && request.operation != "documents" {
+                            for _ in 0..<100 where home == nil && request.target == nil && !["documents", "read-id"].contains(request.operation) {
                                 try await Task.sleep(for: .milliseconds(50)); home = currentHome()
                             }
                             guard manager.fileExists(atPath: file.path) else { continue }
                             let homes = RemileWindows.shared.models
                             let response: [String: Any]
                             if request.operation == "overleaf" { response = await OverleafCommands.handle(request, homes: homes, current: currentHome()) }
+                            else if request.operation == "read-id" { response = await readByID(request, homes: homes, current: currentHome()) }
                             else if request.operation == "documents" { response = ["ok": true, "documents": homes.compactMap { $0.automationDescription }] }
                             else if let home { response = await handle(request, home: home) }
                             else if request.target != nil { response = ["ok": false, "error": "The target document is no longer open. Run documents again."] }
@@ -97,6 +98,56 @@ enum EditorBridge {
             } catch { return }
         }
     }
+    @MainActor private static func readByID(_ request: Request, homes: [HomeModel], current: HomeModel?) async -> [String: Any] {
+        do {
+            guard let id = request.source else { throw EditorSourceRead.Failure("Provide a document ID.") }
+            if OverleafProjectID.parse(id) != nil {
+                var overleaf = request
+                overleaf.action = "read-sources"
+                return await OverleafCommands.handle(overleaf, homes: homes, current: current)
+            }
+            let document = try LocalDocumentIDs.resolve(id)
+            var models = homes
+            if let current, !models.contains(where: { $0 === current }) { models.append(current) }
+            let matches = models.filter { model in
+                guard model.page != .writer,
+                      request.target == nil || model.automationTarget == request.target else { return false }
+                switch document.kind {
+                case .latex:
+                    return model.texProject?.root.resolvingSymlinksInPath().standardizedFileURL.path == document.url.path
+                case .markdown:
+                    guard model.texProject == nil, case .markdown = model.reader.document.content else { return false }
+                    return model.reader.url?.resolvingSymlinksInPath().standardizedFileURL.path == document.url.path
+                }
+            }
+            guard request.target == nil || matches.count == 1 else {
+                throw EditorSourceRead.Failure("The target is not an open session of this document. Run documents again.")
+            }
+            guard matches.count <= 1 else {
+                throw EditorSourceRead.Failure("This document is open in several windows. Choose --target from documents.")
+            }
+            let home = matches.first
+            let project = document.kind == .latex ? home?.texProject : nil
+            let markdown: String?
+            if document.kind == .markdown, let home, case .markdown(let source) = home.reader.document.content {
+                markdown = source
+            } else {
+                markdown = nil
+            }
+            let buffers = project?.buffers ?? [:], main = project?.main
+            let dirty = project?.dirty ?? home?.reader.dirty ?? false
+            let target = home?.automationTarget
+            var result = try await Task.detached(priority: .utility) {
+                try EditorSourceRead.local(id: id, url: document.url, kind: document.kind, file: request.file,
+                                           markdown: markdown, buffers: buffers, main: main, dirty: dirty)
+            }.value
+            if let target { result["target"] = target.uuidString }
+            return result
+        } catch {
+            return ["ok": false, "error": error.localizedDescription]
+        }
+    }
+
     @MainActor private static func handle(_ request: Request, home: HomeModel) async -> [String: Any] {
         if let target = request.target, home.automationTarget != target { return ["ok": false, "error": "The target document changed. Run documents again."] }
         if request.operation == "reference-recognise" {

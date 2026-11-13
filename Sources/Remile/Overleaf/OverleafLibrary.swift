@@ -48,7 +48,7 @@ import Network
     private let connectionNoticeDefaults: UserDefaults
     init(directory: URL? = nil, connectionNoticeDefaults: UserDefaults = .standard) {
         self.connectionNoticeDefaults = connectionNoticeDefaults
-        self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("local.remile.app/Overleaf")
+        self.directory = directory ?? Self.defaultDirectory
         do { try OverleafAccountEdit.recover(under: self.directory) } catch { self.error = error.localizedDescription }
         if let data = try? Data(contentsOf: self.directory.appendingPathComponent("projects.json")), let saved = try? JSONDecoder().decode([OverleafConnection].self, from: data) { projects = saved }
         if let data = try? Data(contentsOf: self.directory.appendingPathComponent("accounts.json")), let saved = try? JSONDecoder().decode([Account].self, from: data) { accounts = saved }
@@ -90,7 +90,13 @@ import Network
             }
         } catch { if revision == syncRevision { statuses[project.id] = .offline } }
     }
-    func root(_ project: OverleafConnection) -> URL { directory.appendingPathComponent("Projects/" + project.id.uuidString) }
+    nonisolated static var defaultDirectory: URL {
+        EditorBridge.directory.deletingLastPathComponent().appendingPathComponent("Overleaf", isDirectory: true)
+    }
+    nonisolated static func projectRoot(_ project: OverleafConnection, directory: URL) -> URL {
+        directory.appendingPathComponent("Projects/" + project.id.uuidString, isDirectory: true)
+    }
+    func root(_ project: OverleafConnection) -> URL { Self.projectRoot(project, directory: directory) }
     func connection(for root: URL) -> OverleafConnection? { projects.first { self.root($0).standardizedFileURL.path == root.standardizedFileURL.path } }
     func savedAccount(_ label: String) -> OverleafConnection? { projects.first { $0.account == label.trimmingCharacters(in: .whitespacesAndNewlines) } }
     func account(_ label: String) -> Account? { accounts.first { $0.name == label.trimmingCharacters(in: .whitespacesAndNewlines) } }

@@ -12,7 +12,7 @@ enum EditorCLIArguments {
         "overleaf": Rule(values: ["--id", "--connection", "--file", "--query", "--target", "--format", "--output"], paths: 1...1),
         "help": Rule(), "--help": Rule(), "version": Rule(), "--version": Rule(),
         "documents": Rule(), "doctor": Rule(), "status": Rule(), "diagnostics": Rule(), "save": Rule(values: ["--output"]), "history": Rule(),
-        "read": Rule(values: ["--file"]), "select": Rule(values: ["--file"]),
+        "read": Rule(values: ["--id", "--connection", "--file"]), "select": Rule(values: ["--file"]),
         "writer-page": Rule(values: ["--header", "--footer", "--top-line", "--bottom-line", "--page-numbers", "--columns", "--expected-sha256", "--target"], flags: ["--clear-header", "--clear-footer"]),
         "writer-object": Rule(values: ["--id", "--wrap", "--lock", "--expected-sha256", "--target"]),
         "writer-view": Rule(values: ["--zoom", "--rulers", "--target"], flags: ["--fit"]),
@@ -66,6 +66,20 @@ enum EditorCLIArguments {
                   OverleafSourceFiles.validPath(source), OverleafSourceFiles.validPath(destination) else {
                 throw Failure("Provide project-relative paths with --file and --to.")
             }
+        }
+        if command == "read", let id = values["--id"] {
+            let overleaf = OverleafProjectID.parse(id) != nil
+            guard overleaf || LocalDocumentIDs.parse(id) != nil else {
+                throw Failure("Use a local: or overleaf: ID copied from remile.")
+            }
+            if let connection = values["--connection"], !overleaf || UUID(uuidString: connection) == nil {
+                throw Failure("Use a connection UUID with an Overleaf project ID.")
+            }
+            if let file = values["--file"], !OverleafSourceFiles.validPath(file) {
+                throw Failure("Use a project-relative source path with --file.")
+            }
+        } else if command == "read", values["--connection"] != nil {
+            throw Failure("Use --connection with an Overleaf project ID.")
         }
         if command == "resolve" || (command == "open" && values["--id"] != nil) {
             guard positionals.isEmpty, values["--id"].flatMap(LocalDocumentIDs.parse) != nil else {

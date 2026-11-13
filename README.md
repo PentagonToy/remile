@@ -42,7 +42,7 @@ Update with `brew upgrade --cask remile`. The cask installs the app and the `rem
 
 ### Download
 
-Download [remile. 0.2.5 for Apple Silicon](https://github.com/PentagonToy/remile/releases/download/v0.2.5/remile-0.2.5-arm64.dmg), open the DMG and drag **remile.app** into **Applications**. Checksums are included with the [release](https://github.com/PentagonToy/remile/releases/tag/v0.2.5).
+Download [remile. 0.2.6 for Apple Silicon](https://github.com/PentagonToy/remile/releases/download/v0.2.6/remile-0.2.6-arm64.dmg), open the DMG and drag **remile.app** into **Applications**. Checksums are included with the [release](https://github.com/PentagonToy/remile/releases/tag/v0.2.6).
 
 ### Requirements
 
