@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Save and switch between reMarkable devices. Open setup help from the connection dialog.
+
 - Convert pasted TeX maths delimiters to Markdown maths while preserving code examples.
 
 ## 0.2.6 — 13 November 2026

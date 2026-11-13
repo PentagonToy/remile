@@ -64,6 +64,11 @@ struct RemarkableReference: Codable, Equatable, Sendable {
     var generatedKey: String? = nil
     var sha256: String? = nil
     var created: Date? = nil
+    var sourceModified: Date? = nil
+    func isNewer(than item: RemarkableCloudItem) -> Bool {
+        guard let sourceModified, let incoming = item.modifiedDate else { return false }
+        return sourceModified > incoming
+    }
     var item: RemarkableCloudItem {
         RemarkableCloudItem(id: id, title: title, revision: revision, fileType: fileType)
     }

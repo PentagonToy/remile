@@ -73,6 +73,17 @@ class SSHChecks(unittest.TestCase):
         files[id + '.content'] = b'{"fileType":"notebook","pages":[]}'
         self.assertNotEqual(before, ssh.documents(files)[0]['revision'])
 
+    def test_device_alias_keeps_host_verification_and_uses_a_fresh_connection(self):
+        config = dict(self.config, host='rmp-move')
+        with patch.object(ssh.subprocess, 'Popen') as launch:
+            launch.return_value.poll.return_value = 0
+            launch.return_value.returncode = 0
+            ssh.run(config, 'true', 1024)
+        arguments = launch.call_args.args[0]
+        self.assertIn('root@rmp-move', arguments)
+        self.assertIn('StrictHostKeyChecking=yes', arguments)
+        self.assertEqual(arguments[arguments.index('-S') + 1], 'none')
+
     def test_selected_metadata_uses_only_validated_ids(self):
         id = str(uuid.uuid4())
         with patch.object(ssh, 'run', return_value=self.tar(list(self.item(id).items()))) as run:

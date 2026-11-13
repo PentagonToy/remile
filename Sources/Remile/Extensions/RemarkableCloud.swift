@@ -57,23 +57,56 @@ struct RemarkableCloudReply: Decodable, Sendable {
     var pages: [Page]?
     var background: String?
     var revision: String?
+    var modifiedTime: String?
+}
+
+struct RemarkableDevices {
+    static let legacy = ":legacy"
+    private static let addressesKey = "extensions.remarkable.ssh.devices"
+    private static let activeKey = "extensions.remarkable.ssh.active"
+    let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    var addresses: [String] { defaults.stringArray(forKey: Self.addressesKey) ?? [] }
+    var selected: String? { defaults.string(forKey: Self.activeKey) }
+
+    func active(hasLegacy: Bool) -> String? {
+        if let selected, addresses.contains(selected) || (hasLegacy && selected == Self.legacy) { return selected }
+        return hasLegacy ? Self.legacy : addresses.first
+    }
+
+    func save(_ address: String) {
+        if !addresses.contains(address) { defaults.set(addresses + [address], forKey: Self.addressesKey) }
+        select(address)
+    }
+
+    func select(_ address: String?) { defaults.set(address, forKey: Self.activeKey) }
+
+    func remove(_ address: String) {
+        defaults.set(addresses.filter { $0 != address }, forKey: Self.addressesKey)
+        if selected == address { select(nil) }
+    }
 }
 
 enum RemarkableCredentials {
-    private static var query: [String: Any] {
+    private static func query(device: String = RemarkableDevices.legacy) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "local.remile.extensions.remarkable", kSecAttrAccount as String: "ssh-device",
+            kSecAttrService as String: "local.remile.extensions.remarkable",
+            kSecAttrAccount as String: device == RemarkableDevices.legacy ? "ssh-device" : "ssh-device:" + device,
             kSecAttrSynchronizable as String: false,
         ]
     }
     static func exists(matching item: [String: Any]? = nil) -> Bool {
-        let request = (item ?? query).merging([
+        let request = (item ?? query()).merging([
             kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
         ]) { _, new in new }
         return KeychainAccess.read(matching: request, interactive: false).status == errSecSuccess
     }
-    static func read(interactive: Bool = false) -> String? { read(matching: query, interactive: interactive) }
+    static func read(device: String = RemarkableDevices.legacy, interactive: Bool = false) -> String? {
+        read(matching: query(device: device), interactive: interactive)
+    }
     static func read(matching item: [String: Any], interactive: Bool = false) -> String? {
         let request = item.merging([
             kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
@@ -81,10 +114,10 @@ enum RemarkableCredentials {
         return KeychainAccess.data(matching: request, interactive: interactive)
             .flatMap { String(data: $0, encoding: .utf8) }
     }
-    static func save(_ token: String) throws {
+    static func save(_ token: String, device: String) throws {
         guard !token.isEmpty, token.utf8.count <= 16000,
             KeychainAccess.store(
-                Data(token.utf8), matching: query,
+                Data(token.utf8), matching: query(device: device),
                 attributes: [kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly])
                 == errSecSuccess
         else {
@@ -92,8 +125,8 @@ enum RemarkableCredentials {
                 "The connection could not be saved in Keychain. Your account has not been connected.")
         }
     }
-    static func remove() throws {
-        let result = KeychainAccess.remove(matching: query)
+    static func remove(device: String) throws {
+        let result = KeychainAccess.remove(matching: query(device: device))
         guard result == errSecSuccess || result == errSecItemNotFound else {
             throw ReferenceFailure("Keychain could not remove the connection. Try again.")
         }

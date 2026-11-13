@@ -88,6 +88,9 @@ struct ReferenceRepository: Sendable {
                 let index = catalogue.records.firstIndex {
                     $0.library == library.id && $0.remarkable?.id == item.id && $0.trashed == nil
                 }
+                if let index, catalogue.records[index].remarkable?.isNewer(than: item) == true {
+                    return catalogue.records[index].id
+                }
                 var record = index.map { catalogue.records[$0] } ?? ReferenceKind.note.applying(to: ReferenceRecord())
                 record.libraryID = library.id
                 if index == nil {
@@ -144,7 +147,8 @@ struct ReferenceRepository: Sendable {
                 record.remarkable = RemarkableReference(
                     id: item.id, revision: item.revision, title: item.title, fileType: item.fileType ?? "unknown",
                     attachmentID: attachment.id, generatedKey: record.remarkable?.generatedKey ?? (index == nil ? record.key : nil), sha256: hash,
-                    created: record.remarkable?.created ?? item.createdDate)
+                    created: record.remarkable?.created ?? item.createdDate,
+                    sourceModified: item.modifiedDate ?? record.remarkable?.sourceModified)
                 if let index {
                     if record != catalogue.records[index] {
                         record.revision = UUID(); record.modified = Date(); catalogue.records[index] = record

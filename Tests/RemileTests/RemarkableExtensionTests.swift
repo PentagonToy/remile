@@ -64,6 +64,30 @@ final class RemarkableExtensionTests: XCTestCase {
             }
         }
     }
+    func testSavedDeviceSelectionPreservesLegacyAndOtherDevices() throws {
+        let suite = "remile.tests.remarkable.devices." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let devices = RemarkableDevices(defaults: defaults)
+        XCTAssertEqual(devices.active(hasLegacy: true), RemarkableDevices.legacy)
+        devices.save("rmp")
+        devices.save("rmp-move")
+        devices.save("rmp")
+        XCTAssertEqual(devices.addresses, ["rmp", "rmp-move"])
+        XCTAssertEqual(RemarkableDevices(defaults: defaults).active(hasLegacy: true), "rmp")
+        devices.remove("rmp")
+        XCTAssertEqual(devices.active(hasLegacy: false), "rmp-move")
+        XCTAssertEqual(devices.active(hasLegacy: true), RemarkableDevices.legacy)
+    }
+
+    func testOlderDeviceDocumentIsRecognisedFromSourceTime() {
+        let previous = RemarkableReference(id: "fixture", revision: "new", title: "Paper", fileType: "pdf",
+                                           sourceModified: Date(timeIntervalSince1970: 20))
+        XCTAssertTrue(previous.isNewer(than: .init(id: "fixture", title: "Paper", revision: "old", modifiedTime: "10000")))
+        XCTAssertFalse(previous.isNewer(than: .init(id: "fixture", title: "Paper", revision: "same", modifiedTime: "20000")))
+        XCTAssertFalse(previous.isNewer(than: .init(id: "fixture", title: "Paper", revision: "unknown")))
+    }
+
     func testSavedCredentialCanBeReadBack() throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

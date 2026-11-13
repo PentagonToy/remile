@@ -95,7 +95,7 @@ def run(config, command, limit):
     with tempfile.TemporaryDirectory(prefix='rm-ssh-') as tmp:
         folder = Path(tmp)
         with authentication(config, folder) as environment, (folder / 'out').open('w+b') as output, (folder / 'err').open('w+b') as errors:
-            args = ['/usr/bin/ssh', '-T', '-o', 'StrictHostKeyChecking=yes',
+            args = ['/usr/bin/ssh', '-T', '-S', 'none', '-o', 'StrictHostKeyChecking=yes',
                     '-o', 'ConnectTimeout=8', '-o', 'ConnectionAttempts=1',
                     '-o', 'NumberOfPasswordPrompts=1', '-o', 'PermitLocalCommand=no',
                     '-o', 'ClearAllForwardings=yes', '-o', 'ProxyCommand=none',
@@ -255,7 +255,8 @@ def handle(request):
     with zipfile.ZipFile(data, 'w') as archive:
         for name, content in files.items():
             archive.writestr(name, content)
-    return dict(ink.prepare(data.getvalue(), directory, item), ok=True, revision=current['revision'])
+    return dict(ink.prepare(data.getvalue(), directory, item), ok=True, revision=current['revision'],
+                modifiedTime=current['modifiedTime'])
 
 
 def main():

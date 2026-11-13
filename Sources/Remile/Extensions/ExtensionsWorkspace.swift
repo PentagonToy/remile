@@ -6,7 +6,9 @@ import SwiftUI
 final class RemarkableExtensionModel: ObservableObject {
     @Published var documents: [RemarkableCloudItem] = []
     @Published var connected = false
-    @Published private(set) var hasSavedConnection = RemarkableCredentials.exists()
+    @Published private(set) var savedDevices: [String] = []
+    @Published private(set) var activeDevice: String?
+    var hasSavedConnection: Bool { !savedDevices.isEmpty }
     @Published var busy = false
     @Published var error: String?
     private var received: URL?
@@ -17,12 +19,34 @@ final class RemarkableExtensionModel: ObservableObject {
     private let worker = RemarkableCloudWorker()
     private var task: Task<Void, Never>?
     private var leaving = false
-    private let credentials = RemarkableCredentialSession()
+    private let devices = RemarkableDevices()
+    private var credentials = RemarkableCredentialSession()
     private var folder: URL?
     init() {
-        if hasSavedConnection {
-            UserDefaults.standard.set(true, forKey: "extensions.remarkable.connected")
+        loadDevices()
+    }
+
+    func loadDevices() {
+        guard !busy else { return }
+        let hasLegacy = RemarkableCredentials.exists()
+        savedDevices = (hasLegacy ? [RemarkableDevices.legacy] : []) + devices.addresses
+        let selected = devices.active(hasLegacy: hasLegacy)
+        if selected != activeDevice {
+            activeDevice = selected
+            credentials = RemarkableCredentialSession { interactive in
+                selected.flatMap { RemarkableCredentials.read(device: $0, interactive: interactive) }
+            }
+            connected = false
+            documents = []
+            clearReceived()
         }
+    }
+
+    func chooseDevice(_ address: String, python: String) {
+        guard !busy, savedDevices.contains(address) else { return }
+        devices.select(address)
+        loadDevices()
+        reload(python: python, interactive: true)
     }
 
     func run(_ work: @escaping @MainActor () async throws -> Void) {
@@ -41,7 +65,8 @@ final class RemarkableExtensionModel: ObservableObject {
         }
     }
     func connectSSH(python: String, host: String, password: String) {
-        let configuration = ["transport": "ssh", "host": host, "password": password]
+        let address = host.lowercased()
+        let configuration = ["transport": "ssh", "host": address, "password": password]
         guard let data = try? JSONSerialization.data(withJSONObject: configuration),
               let code = String(data: data, encoding: .utf8) else { return }
         run { [self] in
@@ -50,10 +75,14 @@ final class RemarkableExtensionModel: ObservableObject {
             guard let token = result.token else {
                 throw ReferenceFailure("The device connection could not be saved.")
             }
-            try RemarkableCredentials.save(token)
+            try Task.checkCancellation()
+            try RemarkableCredentials.save(token, device: address)
+            devices.save(address)
+            if !savedDevices.contains(address) { savedDevices.append(address) }
+            activeDevice = address
+            credentials = RemarkableCredentialSession { RemarkableCredentials.read(device: address, interactive: $0) }
             credentials.remember(token)
-            hasSavedConnection = true
-            UserDefaults.standard.set(true, forKey: "extensions.remarkable.connected")
+            clearReceived()
             documents = (result.documents ?? []).sorted {
                 $0.title.localizedStandardCompare($1.title) == .orderedAscending
             }
@@ -68,7 +97,6 @@ final class RemarkableExtensionModel: ObservableObject {
     }
     private func refresh(python: String, interactive: Bool = false) async throws {
         guard let token = accessToken(interactive: interactive) else {
-            hasSavedConnection = RemarkableCredentials.exists()
             connected = false
             throw ReferenceFailure(
                 hasSavedConnection ? "Allow access to the saved connection, then try again." : "Enter the device address and SSH password.")
@@ -86,7 +114,10 @@ final class RemarkableExtensionModel: ObservableObject {
         begin()
         run { [self] in
             try await refresh(python: python, interactive: true)
-            let scopes = try RemarkableFolderSelection.scopes(selected, items: documents)
+            let visible = Set(documents.filter(\.isFolder).map(\.id)).union([RemarkableFolderScope.unfiledID])
+            let previous = references.libraries.first { $0.source == "remarkable" && $0.trashed == nil }
+            let unavailable = (previous?.remarkableFolders ?? []).filter { !visible.contains($0.id) }
+            let scopes = try RemarkableFolderSelection.scopes(selected.intersection(visible), items: documents) + unavailable
             phase = "Connecting folders…"
             let saved: Bool = await withCheckedContinuation { continuation in
                 references.connectRemarkableFolders(scopes) { continuation.resume(returning: $0) }
@@ -101,6 +132,7 @@ final class RemarkableExtensionModel: ObservableObject {
     }
     func updateLibrary(_ library: ReferenceLibrary, python: String, to references: ReferenceModel) {
         begin()
+        loadDevices()
         run { [self] in
             try await refresh(python: python, interactive: true)
             try await syncLibrary(library, python: python, to: references)
@@ -112,11 +144,15 @@ final class RemarkableExtensionModel: ObservableObject {
         let wanted = RemarkableFolderSelection.updateIDs(library, records: records, items: documents, hidden: hidden)
         let available = Set(documents.filter { !$0.isFolder }.map(\.id))
         let chosen = wanted.intersection(available)
-        let current = Dictionary(records.filter { $0.trashed == nil }.compactMap { record -> (String, String)? in
+        let current = Dictionary(records.filter { $0.trashed == nil }.compactMap { record -> (String, RemarkableReference)? in
             guard let source = record.remarkable else { return nil }
-            return (source.id, source.revision)
+            return (source.id, source)
         }, uniquingKeysWith: { first, _ in first })
-        let changed = Set(documents.filter { chosen.contains($0.id) && ($0.revision.isEmpty || current[$0.id] != $0.revision) }.map(\.id))
+        let changed = Set(documents.filter { item in
+            let previous = current[item.id]
+            return chosen.contains(item.id) && previous?.isNewer(than: item) != true
+                && (item.revision.isEmpty || previous?.revision != item.revision)
+        }.map(\.id))
         if !changed.isEmpty { try await importSelection(changed, python: python, to: references, updating: true) }
         let unrecognised = records.filter {
             guard let source = $0.remarkable else { return false }
@@ -160,7 +196,8 @@ final class RemarkableExtensionModel: ObservableObject {
             let success: Bool = await withCheckedContinuation { continuation in
                 let current = RemarkableCloudItem(
                     id: item.id, title: item.title, revision: receivedItem?.revision ?? item.revision,
-                    createdTime: item.createdTime, fileType: item.fileType, fields: item.fields)
+                    createdTime: item.createdTime, modifiedTime: receivedItem?.modifiedTime ?? item.modifiedTime,
+                    fileType: item.fileType, fields: item.fields)
                 references.importRemarkable(current, file: file, fields: receivedFields, recogniseAfterImport: !updating || isNew || unrecognisedPDF) {
                     continuation.resume(returning: $0)
                 }
@@ -204,27 +241,25 @@ final class RemarkableExtensionModel: ObservableObject {
             receivedFields = rendered.1
             receivedID = item.id
             receivedItem = RemarkableCloudItem(
-                id: item.id, title: item.title, revision: reply.revision ?? item.revision)
+                id: item.id, title: item.title, revision: reply.revision ?? item.revision, modifiedTime: reply.modifiedTime)
         } catch {
             try? FileManager.default.removeItem(at: directory)
             throw error
         }
     }
-    func disconnect() {
-        guard !busy else { return }
+    func forgetDevice() {
+        guard !busy, let activeDevice else { return }
         do {
-            try RemarkableCredentials.remove()
-            credentials.clear()
-            hasSavedConnection = false
-            UserDefaults.standard.set(false, forKey: "extensions.remarkable.connected")
-            connected = false
-            documents = []
-            clearReceived()
+            try RemarkableCredentials.remove(device: activeDevice)
+            devices.remove(activeDevice)
+            loadDevices()
+            error = nil
         } catch { self.error = error.localizedDescription }
     }
     func clearReceived() {
         received = nil
         receivedID = nil
+        receivedItem = nil
         receivedFields = [:]
         if let folder { try? FileManager.default.removeItem(at: folder) }
         folder = nil
@@ -284,8 +319,6 @@ struct ExtensionsWorkspace: View {
                     }.frame(maxWidth: 1008, alignment: .leading)
                 }.padding(RemileControl.rowSpacing * 3).frame(maxWidth: .infinity, alignment: .leading)
             }
-        }.contextMenu {
-            if cloud.hasSavedConnection { Button("Disconnect reMarkable") { cloud.disconnect() } }
         }.sheet(item: $sheet) { page in
             switch page {
             case .consent:
@@ -346,6 +379,7 @@ struct RemarkableConnection: View {
     @AppStorage("extensions.remarkable.ssh.host") private var host = ""
     @State private var password = ""
     @State private var pairing = false
+    @State private var confirmForget = false
     @State private var showSetup = false
     @State private var query = ""
     @State private var selection: Set<String> = []
@@ -359,7 +393,7 @@ struct RemarkableConnection: View {
                 Button("Done") { dismiss() }.buttonStyle(RemileActionStyle(emphasis: .quiet))
                     .keyboardShortcut(.cancelAction).disabled(working)
             }
-            if model.connected {
+            if model.connected && !pairing {
                 TextField("Find a folder", text: $query).textFieldStyle(.roundedBorder)
                 RemarkableFolderPicker(items: model.documents, query: query, busy: model.busy, selection: $selection)
             } else if model.hasSavedConnection && !pairing {
@@ -382,13 +416,24 @@ struct RemarkableConnection: View {
                 Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).fixedSize(
                     horizontal: false, vertical: true)
             }
+            if model.error != nil || pairing || !model.hasSavedConnection {
+                Link("Connection help", destination: URL(string: "https://pentagontoy.github.io/remile/extensions.html#remarkable")!)
+                    .font(RemileType.caption)
+            }
         }.padding(RemileControl.rowSpacing * 2)
             .frame(width: model.connected ? 820 : 420)
             .background(RemileStyle.background).tint(RemileStyle.accent)
             .interactiveDismissDisabled(model.busy || references.busy)
+            .confirmationDialog("Forget this device?", isPresented: $confirmForget) {
+                Button("Forget device", role: .destructive) {
+                    model.forgetDevice()
+                    if model.hasSavedConnection { model.reload(python: python, interactive: true) }
+                }
+            } message: { Text("Imported documents stay in Reference.") }
             .sheet(isPresented: $showSetup, onDismiss: { python = RemarkableRuntime.python }) { RemarkableSetup { showSetup = false } }
             .task {
                 model.begin()
+                model.loadDevices()
                 if python.isEmpty { python = RemarkableRuntime.python }
                 let repository = references.repository
                 do {
@@ -399,9 +444,21 @@ struct RemarkableConnection: View {
                 if model.hasSavedConnection && !python.isEmpty { model.reload(python: python, interactive: true) }
             }
             .onChange(of: model.documents) { _, documents in
+                guard !documents.isEmpty else { return }
                 let ids = Set(documents.filter(\.isFolder).map(\.id)).union([RemarkableFolderScope.unfiledID])
                 selection.formIntersection(ids)
                 selection = RemarkableFolderSelection.canonical(selection, items: documents)
+            }
+            .onChange(of: model.activeDevice) {
+                query = ""
+                selection = Set((references.libraries.first { $0.source == "remarkable" && $0.trashed == nil }?.remarkableFolders ?? []).map(\.id))
+                if model.connected {
+                    let ids = Set(model.documents.filter(\.isFolder).map(\.id)).union([RemarkableFolderScope.unfiledID])
+                    selection = RemarkableFolderSelection.canonical(selection.intersection(ids), items: model.documents)
+                }
+            }
+            .onChange(of: model.connected) { _, connected in
+                if connected { pairing = false }
             }
             .onChange(of: model.busy) { _, busy in
                 if !busy && model.connected {
@@ -417,12 +474,31 @@ struct RemarkableConnection: View {
     private var working: Bool { model.busy || references.busy }
     private var connectionMenu: some View {
         Menu {
-            if model.connected {
+            if model.connected && !pairing {
                 Button("Refresh") { model.reload(python: python, interactive: true) }.disabled(working)
                 Divider()
             }
             if model.hasSavedConnection {
-                Button("Change device…") { pairing = true; model.connected = false }.disabled(working)
+                ForEach(model.savedDevices, id: \.self) { address in
+                    Button {
+                        pairing = false
+                        model.chooseDevice(address, python: python)
+                    } label: {
+                        let name = address == RemarkableDevices.legacy ? "Previous connection" : address
+                        if model.activeDevice == address { SymbolLabel(name, systemImage: "checkmark") }
+                        else { Text(name) }
+                    }.disabled(working)
+                }
+                Divider()
+            }
+            Button("Add device…") {
+                pairing = true
+                model.connected = false
+                host = ""
+                password = ""
+            }.disabled(working)
+            if model.hasSavedConnection && !pairing {
+                Button("Forget selected device…", role: .destructive) { confirmForget = true }.disabled(working)
             }
             Button("Connection tools…") { showSetup = true }.disabled(working)
         } label: {
