@@ -33,9 +33,9 @@ struct OverleafReviewPanel: View {
                     HStack(spacing: RemileControl.spacing) {
                         Button("Enable review") { reviewEnabled = true }
                             .buttonStyle(RemileActionStyle(emphasis: .primary))
-                        Link(destination: URL(string: "https://www.overleaf.com/legal")!) {
-                            Text("Terms").font(RemileType.caption).foregroundStyle(RemileStyle.accent)
-                        }.accessibilityLabel("Overleaf terms")
+                        ExternalLink("Terms", destination: URL(string: "https://www.overleaf.com/legal")!)
+                            .font(RemileType.caption).foregroundStyle(RemileStyle.accent)
+                            .accessibilityLabel("Overleaf terms")
                     }
                 }.padding(RemileControl.rowSpacing)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

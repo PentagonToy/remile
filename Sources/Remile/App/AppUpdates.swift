@@ -41,10 +41,10 @@ struct RemileUpdateSettings: View {
                 Button(updates.checking ? "Checking…" : "Check for updates") { Task { await updates.check() } }.disabled(updates.checking)
             }
             if let release = updates.release {
-                HStack { Text("Version \(release.version.description) is available."); Spacer(); Link("Download update…", destination: release.download) }
+                HStack { Text("Version \(release.version.description) is available."); Spacer(); ExternalLink("Download update…", destination: release.download) }
             }
             if let message = updates.message { Text(message).foregroundStyle(.secondary) }
-            Link("Release notes…", destination: RemileRelease.page).buttonStyle(.plain).font(RemileType.small)
+            ExternalLink("Release notes…", destination: RemileRelease.page).buttonStyle(.plain).font(RemileType.small)
         }
     }
 }

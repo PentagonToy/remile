@@ -26,10 +26,10 @@ final class RemarkableExtensionModel: ObservableObject {
         loadDevices()
     }
 
-    func loadDevices() {
+    func loadDevices(migrateLegacy: Bool = false) {
         guard !busy else { return }
-        let hasLegacy = RemarkableCredentials.exists()
-        savedDevices = (hasLegacy ? [RemarkableDevices.legacy] : []) + devices.addresses
+        let hasLegacy = migrateLegacy ? devices.migrateLegacy() : RemarkableCredentials.exists()
+        savedDevices = devices.addresses + (hasLegacy ? [RemarkableDevices.legacy] : [])
         let selected = devices.active(hasLegacy: hasLegacy)
         if selected != activeDevice {
             activeDevice = selected
@@ -359,7 +359,7 @@ struct ExtensionsWorkspace: View {
                     SymbolIcon(systemName: "scribble.variable")
                     Text("reMarkable").font(RemileType.heading)
                 }.frame(maxWidth: .infinity, minHeight: RemileControl.toolHit, alignment: .leading).contentShape(Rectangle())
-            }.buttonStyle(.plain).disabled(!enabled).remileHelp("Choose reMarkable folders")
+            }.buttonStyle(.plain).disabled(!enabled).remileHelp("Choose a reMarkable device")
             Toggle("reMarkable", isOn: Binding(get: { active }, set: { value in
                 if !value { confirming = true }
                 else if consent != RemarkableExtensionAccess.consentVersion { sheet = .consent }
@@ -371,6 +371,13 @@ struct ExtensionsWorkspace: View {
 }
 
 struct RemarkableConnection: View {
+    private enum Layout {
+        static let sheetWidth: CGFloat = 820
+        static let setupWidth: CGFloat = 420
+        static let deviceListWidth: CGFloat = 200
+        static let browserHeight: CGFloat = 500
+    }
+
     @ObservedObject var model: RemarkableExtensionModel
     @ObservedObject var references: ReferenceModel
     let showReference: () -> Void
@@ -389,39 +396,21 @@ struct RemarkableConnection: View {
             HStack(spacing: RemileControl.spacing) {
                 Text("reMarkable").font(RemileType.heading)
                 Spacer()
-                connectionMenu
+                maintenanceMenu
                 Button("Done") { dismiss() }.buttonStyle(RemileActionStyle(emphasis: .quiet))
                     .keyboardShortcut(.cancelAction).disabled(working)
             }
-            if model.connected && !pairing {
-                TextField("Find a folder", text: $query).textFieldStyle(.roundedBorder)
-                RemarkableFolderPicker(items: model.documents, query: query, busy: model.busy, selection: $selection)
-            } else if model.hasSavedConnection && !pairing {
-                if !model.busy {
-                    Button("Retry connection") { model.reload(python: python, interactive: true) }
-                }
+            if model.hasSavedConnection {
+                HStack(alignment: .top, spacing: RemileControl.rowSpacing) {
+                    deviceList.frame(width: Layout.deviceListWidth)
+                    Divider()
+                    connectionDetail.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }.frame(height: Layout.browserHeight)
             } else {
-                TextField("Device address", text: $host).textFieldStyle(.roundedBorder)
-                HStack {
-                    SecureField("SSH password", text: $password).onSubmit(connect)
-                    Button("Connect", action: connect).disabled(host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || python.isEmpty || model.busy)
-                }
-                if model.hasSavedConnection {
-                    Button("Use saved connection") { model.reload(python: python, interactive: true) }.disabled(
-                        model.busy)
-                }
-            }
-            if model.connected || working { connectionFooter }
-            if let error = model.error ?? references.error {
-                Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).fixedSize(
-                    horizontal: false, vertical: true)
-            }
-            if model.error != nil || pairing || !model.hasSavedConnection {
-                Link("Connection help", destination: URL(string: "https://pentagontoy.github.io/remile/extensions.html#remarkable")!)
-                    .font(RemileType.caption)
+                connectionDetail
             }
         }.padding(RemileControl.rowSpacing * 2)
-            .frame(width: model.connected ? 820 : 420)
+            .frame(width: model.hasSavedConnection ? Layout.sheetWidth : Layout.setupWidth)
             .background(RemileStyle.background).tint(RemileStyle.accent)
             .interactiveDismissDisabled(model.busy || references.busy)
             .confirmationDialog("Forget this device?", isPresented: $confirmForget) {
@@ -433,7 +422,7 @@ struct RemarkableConnection: View {
             .sheet(isPresented: $showSetup, onDismiss: { python = RemarkableRuntime.python }) { RemarkableSetup { showSetup = false } }
             .task {
                 model.begin()
-                model.loadDevices()
+                model.loadDevices(migrateLegacy: true)
                 if python.isEmpty { python = RemarkableRuntime.python }
                 let repository = references.repository
                 do {
@@ -472,39 +461,108 @@ struct RemarkableConnection: View {
             .onDisappear { model.leave() }
     }
     private var working: Bool { model.busy || references.busy }
-    private var connectionMenu: some View {
-        Menu {
+
+    private var deviceList: some View {
+        VStack(alignment: .leading, spacing: RemileControl.spacing) {
+            HStack(spacing: RemileControl.spacing) {
+                Text("Devices").font(RemileType.heading)
+                Spacer(minLength: 0)
+                Button("Add device") {
+                    host = ""
+                    password = ""
+                    model.error = nil
+                    pairing = true
+                    model.connected = false
+                }.buttonStyle(RemileActionStyle()).disabled(working)
+            }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(model.savedDevices, id: \.self) { address in
+                        let name = address == RemarkableDevices.legacy ? "Saved device" : address
+                        let selected = !pairing && model.activeDevice == address
+                        Button {
+                            pairing = false
+                            password = ""
+                            if !selected || !model.connected { model.chooseDevice(address, python: python) }
+                        } label: {
+                            HStack(spacing: RemileControl.spacing) {
+                                SymbolIcon(systemName: "ipad").accessibilityHidden(true)
+                                Text(name).lineLimit(1).truncationMode(.middle)
+                                Spacer(minLength: 0)
+                                if selected { SymbolIcon(systemName: "checkmark").accessibilityHidden(true) }
+                            }
+                            .font(RemileType.control)
+                            .padding(.horizontal, RemileControl.spacing)
+                            .frame(minHeight: RemileControl.toolHit)
+                            .background(selected ? RemileStyle.accent.opacity(0.16) : .clear,
+                                        in: RoundedRectangle(cornerRadius: RemileRadius.control))
+                            .contentShape(Rectangle())
+                            .modifier(RemilePointerFeedback())
+                        }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+                            .remileHelp(name).disabled(working)
+                    }
+                }.scrollContentGutter()
+            }
+        }
+    }
+
+    private var connectionDetail: some View {
+        VStack(alignment: .leading, spacing: RemileControl.spacing) {
             if model.connected && !pairing {
-                Button("Refresh") { model.reload(python: python, interactive: true) }.disabled(working)
-                Divider()
-            }
-            if model.hasSavedConnection {
-                ForEach(model.savedDevices, id: \.self) { address in
-                    Button {
-                        pairing = false
-                        model.chooseDevice(address, python: python)
-                    } label: {
-                        let name = address == RemarkableDevices.legacy ? "Previous connection" : address
-                        if model.activeDevice == address { SymbolLabel(name, systemImage: "checkmark") }
-                        else { Text(name) }
-                    }.disabled(working)
+                HStack(spacing: RemileControl.spacing) {
+                    Text("Folders").font(RemileType.heading)
+                    Spacer()
+                    Button("Refresh") { model.reload(python: python, interactive: true) }
+                        .buttonStyle(RemileActionStyle()).disabled(working)
                 }
-                Divider()
+                TextField("Find a folder", text: $query).textFieldStyle(.roundedBorder)
+                RemarkableFolderPicker(items: model.documents, query: query, busy: working, selection: $selection)
+            } else if model.hasSavedConnection && !pairing {
+                if !working {
+                    Button("Retry connection") { model.reload(python: python, interactive: true) }
+                        .buttonStyle(RemileActionStyle())
+                }
+            } else {
+                if pairing {
+                    HStack(spacing: RemileControl.spacing) {
+                        Text("Add device").font(RemileType.heading)
+                        Spacer()
+                        Button("Cancel") {
+                            pairing = false
+                            password = ""
+                            model.reload(python: python, interactive: true)
+                        }.buttonStyle(RemileActionStyle(emphasis: .quiet)).disabled(working)
+                    }
+                }
+                TextField("Device address", text: $host).textFieldStyle(.roundedBorder).disabled(working)
+                HStack(spacing: RemileControl.spacing) {
+                    SecureField("SSH password", text: $password).onSubmit(connect).disabled(working)
+                    Button("Connect", action: connect).buttonStyle(RemileActionStyle(emphasis: .primary))
+                        .disabled(!canConnect)
+                }
             }
-            Button("Add device…") {
-                pairing = true
-                model.connected = false
-                host = ""
-                password = ""
-            }.disabled(working)
+            if model.connected || working { connectionFooter }
+            if let error = model.error ?? references.error {
+                Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if model.error != nil || pairing || !model.hasSavedConnection {
+                ExternalLink("Connection help", destination: URL(string: "https://pentagontoy.github.io/remile/extensions.html#remarkable")!)
+                    .font(RemileType.caption)
+            }
+        }
+    }
+
+    private var maintenanceMenu: some View {
+        Menu {
+            Button("Connection tools…") { showSetup = true }
             if model.hasSavedConnection && !pairing {
-                Button("Forget selected device…", role: .destructive) { confirmForget = true }.disabled(working)
+                Button("Forget selected device…", role: .destructive) { confirmForget = true }
             }
-            Button("Connection tools…") { showSetup = true }.disabled(working)
         } label: {
             SymbolIcon(systemName: "ellipsis").frame(width: RemileControl.toolHit, height: RemileControl.toolHit)
                 .contentShape(Rectangle())
-        }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().disabled(working)
             .accessibilityLabel("Connection options").remileHelp("Connection options")
     }
     private var connectionFooter: some View {
@@ -531,7 +589,11 @@ struct RemarkableConnection: View {
             }
         }.frame(minHeight: RemileControl.toolHit)
     }
+    private var canConnect: Bool {
+        !working && !python.isEmpty && !password.isEmpty && !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
     private func connect() {
+        guard canConnect else { return }
         let entered = password
         password = ""
         model.connectSSH(python: python, host: host.trimmingCharacters(in: .whitespacesAndNewlines), password: entered)

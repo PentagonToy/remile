@@ -22,12 +22,23 @@ import CryptoKit
     @Published var model = UserDefaults.standard.string(forKey: "chatgpt.model") ?? "" { didSet { UserDefaults.standard.set(model, forKey: "chatgpt.model") } }
     @Published var busy = false
     @Published private(set) var unlocking = false
+    @Published private(set) var loadingModels = false
     @Published private(set) var credentialUnavailable = false
+    @Published private(set) var needsSignIn = false
     @Published var error: String?
     private var account: Account?
     private var attemptedLoad = false
+    private var loadingAccount: Task<Data?, Never>?
     private var callback: ChatGPTCallback?
+    private var signInTask: Task<Void, Never>?
     private var refreshing: Task<Account, Error>?
+    private var modelLoad: Task<Void, Never>?
+    private var connectionGeneration = UUID()
+    private let catalogue: (() async throws -> [Model])?
+
+    init(catalogue: (() async throws -> [Model])? = nil) {
+        self.catalogue = catalogue
+    }
     private final class NoRedirect: NSObject, URLSessionTaskDelegate {
         func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
     }
@@ -35,10 +46,16 @@ import CryptoKit
         let config = URLSessionConfiguration.ephemeral; config.urlCache = nil; config.httpCookieStorage = nil; config.timeoutIntervalForRequest = 120
         return URLSession(configuration: config, delegate: NoRedirect(), delegateQueue: nil)
     }
-    func signIn() async {
-        guard !busy else { return }; busy = true; error = nil
-        defer { callback?.cancel(); callback = nil; busy = false }
+    func startSignIn() {
+        guard signInTask == nil, !unlocking else { return }
+        busy = true
+        error = nil
+        signInTask = Task { await signIn() }
+    }
+    private func signIn() async {
+        defer { callback?.cancel(); callback = nil; busy = false; signInTask = nil }
         do {
+            try Task.checkCancellation()
             try NetworkAccess.requireOnline()
             let lease = try NetworkAccess.gate.watch { [weak self] in Task { @MainActor in self?.cancelSignIn() } }
             defer { NetworkAccess.gate.release(lease) }
@@ -52,6 +69,7 @@ import CryptoKit
             if let saved = await load() { query["client_id"] = saved.client; query["id_token_hint"] = saved.identity; query.removeValue(forKey: "agent_name_hint") }
             else if let issued = UserDefaults.standard.string(forKey: "chatgpt.pendingClient") { query["client_id"] = issued; query.removeValue(forKey: "agent_name_hint") }
             var url = URLComponents(string: "https://auth.openai.com/api/accounts/authorize")!; url.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+            try Task.checkCancellation()
             try NetworkAccess.requireOnline()
             guard let link = url.url, NSWorkspace.shared.open(link) else { throw ChatGPTIdentity.Failure("Could not open ChatGPT sign-in.") }
             var result: [String: String]?
@@ -66,27 +84,54 @@ import CryptoKit
             let keys = try await Self.getKeys()
             let claims = try ChatGPTIdentity.verify(identity, client: client, nonce: nonce, keys: keys)
             if returning, let previous = await load(), claims["sub"] as? String != previous.subject { throw ChatGPTIdentity.Failure("Sign in with the saved account, or disconnect it before choosing another account.") }
+            try Task.checkCancellation()
             let saved = try Self.account(response, client: client, subject: claims["sub"] as! String, name: claims["email"] as? String ?? claims["name"] as? String ?? "ChatGPT", previous: nil)
-            try save(saved); await loadModels()
-        } catch is CancellationError { error = "Sign-in cancelled." }
-        catch { self.error = error.localizedDescription }
+            try save(saved)
+            cancelConnectionRequests()
+            AIUsage.shared.retryConnection()
+        } catch {
+            if !Task.isCancelled {
+                self.error = error is CancellationError ? "Sign-in timed out. Try again." : error.localizedDescription
+            }
+        }
     }
-    func cancelSignIn() { callback?.cancel() }
+    func cancelSignIn() {
+        signInTask?.cancel()
+        callback?.cancel()
+    }
     func disconnect() {
-        guard !busy else { return }
-        refreshing?.cancel(); refreshing = nil; ChatGPTVault.remove(); account = nil; attemptedLoad = true; connected = false; name = ""; models = []; model = ""; error = nil
+        guard !busy, !unlocking else { return }
+        loadingAccount?.cancel(); loadingAccount = nil
+        cancelConnectionRequests()
+        needsSignIn = false
+        ChatGPTVault.remove(); account = nil; attemptedLoad = true; connected = false; name = ""; models = []; model = ""; error = nil
         UserDefaults.standard.removeObject(forKey: "chatgpt.connected"); UserDefaults.standard.removeObject(forKey: "chatgpt.accountName")
         UserDefaults.standard.removeObject(forKey: "chatgpt.pendingClient")
     }
+    private func cancelConnectionRequests() {
+        connectionGeneration = UUID()
+        modelLoad?.cancel(); modelLoad = nil; loadingModels = false
+        refreshing?.cancel(); refreshing = nil
+    }
     private func load() async -> Account? {
         if let account { return account }
-        guard !attemptedLoad else { return nil }; attemptedLoad = true
-        let bytes = await Task.detached { ChatGPTVault.read() }.value
-        guard let bytes, let saved = try? JSONDecoder().decode(Account.self, from: bytes) else { credentialUnavailable = true; return nil }
+        guard !attemptedLoad else { return nil }
+        let loading = loadingAccount ?? Task.detached { ChatGPTVault.read() }
+        loadingAccount = loading
+        let bytes = await loading.value
+        guard !loading.isCancelled else { return nil }
+        if attemptedLoad { return account }
+        attemptedLoad = true
+        loadingAccount = nil
+        guard let bytes, let saved = try? JSONDecoder().decode(Account.self, from: bytes) else {
+            credentialUnavailable = connected
+            return nil
+        }
         account = saved; return saved
     }
     private func save(_ saved: Account) throws {
         try ChatGPTVault.write(JSONEncoder().encode(saved)); credentialUnavailable = false; account = saved; connected = true; name = saved.name
+        needsSignIn = false
         UserDefaults.standard.removeObject(forKey: "chatgpt.pendingClient")
         UserDefaults.standard.set(true, forKey: "chatgpt.connected"); UserDefaults.standard.set(saved.name, forKey: "chatgpt.accountName")
     }
@@ -96,6 +141,16 @@ import CryptoKit
               let scopes = response["scope"] as? String ?? previous?.scopes, scopes.split(separator: " ").contains("chatgpt.tokens.use.direct"), response["token_type"] as? String == "Bearer" else { throw ChatGPTIdentity.Failure("ChatGPT plan access was not granted. Reconnect and enable plan usage during sign-in.") }
         return Account(client: client, subject: subject, name: name, access: access, refresh: refresh, identity: identity, expiry: Date().addingTimeInterval(expiry), scopes: scopes)
     }
+    enum RenewalFailure: LocalizedError {
+        case signInRequired
+        var errorDescription: String? { "Sign in again to use ChatGPT." }
+
+        static func requiresSignIn(status: Int, body: Data) -> Bool {
+            guard status == 400 || status == 401, body.count < 128_000,
+                  let payload = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { return false }
+            return payload["error"] as? String == "invalid_grant"
+        }
+    }
     private static func token(_ fields: [String: String]) async throws -> [String: Any] {
         var request = URLRequest(url: URL(string: "https://auth.openai.com/api/accounts/oauth/token")!); request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -103,7 +158,15 @@ import CryptoKit
         request.httpBody = Data(fields.sorted { $0.key < $1.key }.map { $0.key + "=" + ($0.value.addingPercentEncoding(withAllowedCharacters: allowed) ?? "") }.joined(separator: "&").utf8)
         let session = session(); defer { session.invalidateAndCancel() }; let lease = try NetworkAccess.gate.watch(session); defer { NetworkAccess.gate.release(lease) }
         let (bytes, response) = try await session.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200, bytes.count < 128_000, let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { throw ChatGPTIdentity.Failure("ChatGPT could not renew this connection. Continue with ChatGPT to sign in again.") }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if fields["grant_type"] == "refresh_token", RenewalFailure.requiresSignIn(status: status, body: bytes) {
+            throw RenewalFailure.signInRequired
+        }
+        guard status == 200, bytes.count < 128_000, let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else {
+            throw ChatGPTIdentity.Failure(fields["grant_type"] == "refresh_token"
+                ? "Could not refresh the ChatGPT connection. Try again."
+                : "Could not complete ChatGPT sign-in. Try again.")
+        }
         return object
     }
     private static func getKeys() async throws -> Data {
@@ -112,50 +175,100 @@ import CryptoKit
         guard (response as? HTTPURLResponse)?.statusCode == 200, bytes.count < 128_000 else { throw ChatGPTIdentity.Failure("Could not verify ChatGPT’s signing keys.") }; return bytes
     }
     private func access() async throws -> String {
+        if needsSignIn { throw RenewalFailure.signInRequired }
         guard let saved = await load() else { throw ChatGPTIdentity.Failure(connected ? "Unlock the connection in Settings." : "Connect ChatGPT from Home → Settings.") }
+        try Task.checkCancellation()
         if saved.expiry.timeIntervalSinceNow > 60 { return saved.access }
         if let refreshing { return try await refreshing.value.access }
+        let generation = connectionGeneration
         let task = Task {
-            let response = try await Self.token(["grant_type": "refresh_token", "client_id": saved.client, "refresh_token": saved.refresh, "resource": "https://api.openai.com/v1"])
+            let response: [String: Any]
+            do {
+                response = try await Self.token(["grant_type": "refresh_token", "client_id": saved.client, "refresh_token": saved.refresh, "resource": "https://api.openai.com/v1"])
+            } catch RenewalFailure.signInRequired {
+                if !Task.isCancelled, connectionGeneration == generation { needsSignIn = true }
+                throw RenewalFailure.signInRequired
+            }
             if let identity = response["id_token"] as? String {
                 let keys = try await Self.getKeys(), claims = try ChatGPTIdentity.verify(identity, client: saved.client, nonce: nil, keys: keys)
                 guard claims["sub"] as? String == saved.subject else { throw ChatGPTIdentity.Failure("The refreshed ChatGPT identity did not match this account.") }
             }
             let next = try Self.account(response, client: saved.client, subject: saved.subject, name: saved.name, previous: saved)
+            try Task.checkCancellation()
             try save(next); return next
         }
-        refreshing = task; defer { refreshing = nil }
+        refreshing = task
+        defer { if connectionGeneration == generation { refreshing = nil } }
         return try await task.value.access
     }
     func unlock() async {
-        guard !busy, !unlocking else { return }; unlocking = true; error = nil
+        guard connected, !busy, !unlocking else { return }; unlocking = true; error = nil
+        loadingAccount?.cancel(); loadingAccount = nil; attemptedLoad = true
         defer { unlocking = false }
         let bytes = await Task.detached(priority: .userInitiated) { ChatGPTVault.read(interactive: true) }.value
-        attemptedLoad = true
         guard let bytes, let saved = try? JSONDecoder().decode(Account.self, from: bytes) else { credentialUnavailable = true; error = "Connection remains locked."; return }
         account = saved; credentialUnavailable = false; await loadModels()
     }
     func loadModels() async {
-        guard AIUsage.shared.online, !NetworkAccess.offline else { return }
-        do {
-            var request = URLRequest(url: URL(string: "https://api.openai.com/v1/models")!); request.setValue("Bearer " + (try await access()), forHTTPHeaderField: "Authorization")
-            let session = Self.session(); defer { session.invalidateAndCancel() }; let lease = try NetworkAccess.gate.watch(session); defer { NetworkAccess.gate.release(lease) }
-            let (bytes, response) = try await session.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200, bytes.count < 2_000_000, let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any], let rows = object["models"] as? [[String: Any]] else { throw ChatGPTIdentity.Failure("Could not load the models available to this ChatGPT account.") }
-            models = rows.filter { $0["visibility"] as? String == "list" }.compactMap { row in guard let id = row["slug"] as? String, let name = row["display_name"] as? String else { return nil }; return Model(id: id, name: name) }
-            if !UserDefaults.standard.bool(forKey: "chatgpt.lunaDefault") || !models.contains(where: { $0.id == model }) {
-                model = models.first(where: { $0.id.contains("luna") })?.id ?? models.first?.id ?? ""
-                UserDefaults.standard.set(true, forKey: "chatgpt.lunaDefault")
+        guard !Task.isCancelled, connected, !credentialUnavailable, !needsSignIn,
+              AIUsage.shared.online, !NetworkAccess.offline else { return }
+        if let modelLoad { await modelLoad.value; return }
+        let generation = connectionGeneration
+        loadingModels = true
+        error = nil
+        let task = Task { @MainActor in
+            defer {
+                if connectionGeneration == generation { modelLoad = nil; loadingModels = false }
             }
-        } catch { self.error = error.localizedDescription }
+            do {
+                let available: [Model]
+                if let catalogue { available = try await catalogue() }
+                else { available = try await fetchModels() }
+                try Task.checkCancellation()
+                guard connected, connectionGeneration == generation else { return }
+                models = available
+                if !UserDefaults.standard.bool(forKey: "chatgpt.lunaDefault") || !models.contains(where: { $0.id == model }) {
+                    model = models.first(where: { $0.id.contains("luna") })?.id ?? models.first?.id ?? ""
+                    UserDefaults.standard.set(true, forKey: "chatgpt.lunaDefault")
+                }
+            } catch RenewalFailure.signInRequired {
+                if !Task.isCancelled, connected, connectionGeneration == generation { needsSignIn = true }
+            } catch {
+                if !Task.isCancelled, connected, connectionGeneration == generation, !NetworkAccess.offline {
+                    self.error = error.localizedDescription
+                }
+            }
+        }
+        modelLoad = task
+        await task.value
+    }
+    private func fetchModels() async throws -> [Model] {
+        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/models")!)
+        request.setValue("Bearer " + (try await access()), forHTTPHeaderField: "Authorization")
+        try Task.checkCancellation()
+        let session = Self.session(); defer { session.invalidateAndCancel() }
+        let lease = try NetworkAccess.gate.watch(session); defer { NetworkAccess.gate.release(lease) }
+        let (bytes, response) = try await session.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200, bytes.count < 2_000_000,
+              let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              let rows = object["models"] as? [[String: Any]] else {
+            throw ChatGPTIdentity.Failure("Could not load the models available to this ChatGPT account.")
+        }
+        return rows.compactMap { row in
+            guard row["visibility"] as? String == "list", let id = row["slug"] as? String,
+                  let name = row["display_name"] as? String else { return nil }
+            return Model(id: id, name: name)
+        }
     }
     func respond(_ input: String, instructions: String) async throws -> String {
         try NetworkAccess.requireOnline()
+        if needsSignIn { throw RenewalFailure.signInRequired }
         guard await load() != nil else { throw ChatGPTIdentity.Failure("Unlock the connection in Settings.") }
         try AIUsage.shared.begin()
         var counted = false
         defer { if !counted { AIUsage.shared.finish() } }
         if models.isEmpty { await loadModels() }
+        if needsSignIn { throw RenewalFailure.signInRequired }
         guard !model.isEmpty else { throw ChatGPTIdentity.Failure(error ?? "Choose a ChatGPT model in Settings.") }
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!); request.httpMethod = "POST"
         request.setValue("Bearer " + (try await access()), forHTTPHeaderField: "Authorization"); request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -196,6 +309,10 @@ extension AssistantEngine {
                 return try await AppleIntelligence.respond(to: AssistantPrompts.deviceFallback(input), instructions: instructions, maximumTokens: min(tokens, 1400))
             }
             do { return try await ChatGPTConnection.shared.respond(input, instructions: AssistantPrompts.budget(instructions, tokens: tokens)) }
+            catch let error as ChatGPTConnection.RenewalFailure {
+                guard AIConfiguration.fallbackEnabled else { throw error }
+                return try await AppleIntelligence.respond(to: AssistantPrompts.deviceFallback(input), instructions: instructions, maximumTokens: min(tokens, 1400))
+            }
             catch let error as NetworkAccessGate.Offline { guard AIConfiguration.fallbackEnabled else { throw error }; return try await AppleIntelligence.respond(to: AssistantPrompts.deviceFallback(input), instructions: instructions, maximumTokens: min(tokens, 1400)) }
             catch let error as URLError where [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .timedOut].contains(error.code) || NetworkAccess.offline { guard AIConfiguration.fallbackEnabled else { throw error }; AIUsage.shared.connectionInterrupted(); return try await AppleIntelligence.respond(to: AssistantPrompts.deviceFallback(input), instructions: instructions, maximumTokens: min(tokens, 1400)) }
             catch let error as ChatGPTRequestFailure where error.code == "subscription_sharing_usage_limit_exceeded" { guard AIConfiguration.fallbackEnabled else { throw error }; return try await AppleIntelligence.respond(to: AssistantPrompts.deviceFallback(input), instructions: instructions, maximumTokens: min(tokens, 1400)) }

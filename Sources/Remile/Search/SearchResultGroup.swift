@@ -26,8 +26,12 @@ struct SearchResultGroup: Identifiable {
     var name: String { hits.first?.name ?? "" }
     func rank(for hit: LibraryHit) -> Int? { ranks[hit.id] }
     static func make(_ hits: [LibraryHit], filter: String = "") -> [SearchResultGroup] {
+        make(ranked: RankedSearchHit.make(hits, filter: filter))
+    }
+
+    static func make(ranked: [RankedSearchHit]) -> [SearchResultGroup] {
         var paths: [String] = [], groups: [String: [LibraryHit]] = [:], ranks: [String: Int] = [:]
-        for entry in RankedSearchHit.make(hits, filter: filter) {
+        for entry in ranked {
             let hit = entry.hit
             if groups[hit.path] == nil { paths.append(hit.path) }
             groups[hit.path, default: []].append(hit)

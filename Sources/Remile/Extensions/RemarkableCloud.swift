@@ -73,12 +73,43 @@ struct RemarkableDevices {
 
     func active(hasLegacy: Bool) -> String? {
         if let selected, addresses.contains(selected) || (hasLegacy && selected == Self.legacy) { return selected }
-        return hasLegacy ? Self.legacy : addresses.first
+        return addresses.first ?? (hasLegacy ? Self.legacy : nil)
     }
 
     func save(_ address: String) {
         if !addresses.contains(address) { defaults.set(addresses + [address], forKey: Self.addressesKey) }
         select(address)
+    }
+
+    func migrateLegacy() -> Bool {
+        guard let token = RemarkableCredentials.read(), let address = Self.legacyAddress(in: token) else {
+            return RemarkableCredentials.exists()
+        }
+        do {
+            if !addresses.contains(address) {
+                try RemarkableCredentials.save(token, device: address)
+                defaults.set(addresses + [address], forKey: Self.addressesKey)
+            }
+            if selected == Self.legacy { select(address) }
+            try RemarkableCredentials.remove(device: Self.legacy)
+        } catch {
+            return !addresses.contains(address)
+        }
+        return false
+    }
+
+    static func legacyAddress(in token: String) -> String? {
+        guard let connection = try? JSONDecoder().decode(LegacyConnection.self, from: Data(token.utf8)),
+              connection.transport == "ssh",
+              connection.host.range(of: #"^[a-zA-Z0-9][a-zA-Z0-9.-]{0,252}$"#, options: .regularExpression) != nil,
+              !connection.host.contains("..")
+        else { return nil }
+        return connection.host.lowercased()
+    }
+
+    private struct LegacyConnection: Decodable {
+        let transport: String
+        let host: String
     }
 
     func select(_ address: String?) { defaults.set(address, forKey: Self.activeKey) }

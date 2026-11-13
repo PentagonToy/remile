@@ -12,9 +12,8 @@ struct OverleafConnectionNotice: View {
             Text("remile. is independent of Overleaf. Projects sync through Overleaf’s Git integration.")
             Text("Git requires eligible project access. Git updates can move or remove Overleaf comments and tracked changes.")
             HStack {
-                Link(destination: URL(string: "https://www.overleaf.com/legal")!) {
-                    Text("Overleaf terms").foregroundStyle(RemileStyle.accent)
-                }.font(RemileType.caption)
+                ExternalLink("Overleaf terms", destination: URL(string: "https://www.overleaf.com/legal")!)
+                    .font(RemileType.caption).foregroundStyle(RemileStyle.accent)
                 Spacer()
                 Button("Disagree", action: disagree).keyboardShortcut(.cancelAction)
                 Button("Agree", action: agree).keyboardShortcut(.defaultAction)

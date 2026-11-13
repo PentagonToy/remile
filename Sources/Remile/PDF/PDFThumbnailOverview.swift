@@ -4,9 +4,10 @@ import UniformTypeIdentifiers
 
 struct PDFThumbnailOverview: View {
     @ObservedObject var session: PDFSession
+    let keepsThumbnails: Bool
     static let pageType = UTType(exportedAs: "local.remile.pdf-page", conformingTo: .data).identifier
     var body: some View {
-        PDFPageCollection(session: session)
+        PDFPageCollection(session: session, keepsThumbnails: keepsThumbnails)
             .frame(maxWidth: .infinity, maxHeight: .infinity).background(RemileStyle.background)
     }
 }
@@ -14,6 +15,7 @@ struct PDFThumbnailOverview: View {
 /// AppKit supplies range selection, a stacked drag image, edge scrolling and drop cancellation.
 struct PDFPageCollection: NSViewRepresentable {
     @ObservedObject var session: PDFSession
+    let keepsThumbnails: Bool
     func makeCoordinator() -> Coordinator { Coordinator(session) }
     func makeNSView(context: Context) -> NSScrollView {
         let layout = NSCollectionViewFlowLayout()
@@ -31,49 +33,82 @@ struct PDFPageCollection: NSViewRepresentable {
         let scroll = NSScrollView(); scroll.documentView = collection; scroll.hasVerticalScroller = true
         ReaderScrolling.configure(scroll)
         scroll.drawsBackground = false; scroll.autohidesScrollers = true
-        context.coordinator.connect(collection); context.coordinator.refresh()
+        context.coordinator.connect(collection); context.coordinator.refresh(keepsThumbnails: keepsThumbnails)
         return scroll
     }
-    func updateNSView(_ view: NSScrollView, context: Context) { context.coordinator.refresh() }
+    func updateNSView(_ view: NSScrollView, context: Context) { context.coordinator.refresh(keepsThumbnails: keepsThumbnails) }
 
     final class Coordinator: NSObject, NSCollectionViewDelegate {
         let session: PDFSession
         weak var collection: PageCollectionView?
         var source: NSCollectionViewDiffableDataSource<Int, ObjectIdentifier>!
         var pages: [PDFPage] = []
+        private var positions: [ObjectIdentifier: Int] = [:]
         var revision: UUID?
+        private var annotationRevision: UUID?
+        private var thumbnailRevision = ""
+        private var keepsThumbnails = false
+        private let configuredItems = NSHashTable<PageItem>.weakObjects()
         var updating = false
         init(_ session: PDFSession) { self.session = session }
         func connect(_ collection: PageCollectionView) {
             self.collection = collection
             source = NSCollectionViewDiffableDataSource(collectionView: collection) { [weak self] view, path, id in
-                guard let self, let page = self.pages.first(where: { ObjectIdentifier($0) == id }),
+                guard let self, let index = self.positions[id],
                       let item = view.makeItem(withIdentifier: PageItem.identifier, for: path) as? PageItem else { return nil }
-                item.configure(page, number: self.session.document.map { $0.index(for: page) + 1 } ?? path.item + 1)
+                self.configuredItems.add(item)
+                self.configure(item, at: index)
                 return item
             }
         }
-        func refresh() {
-            guard collection != nil, revision != session.pageRevision else { syncSelection(); return }
-            updating = true
-            let previous = pages.map(ObjectIdentifier.init)
-            pages = session.document.map(PDFPageAssembly.pages) ?? []
-            var snapshot = NSDiffableDataSourceSnapshot<Int, ObjectIdentifier>()
-            snapshot.appendSections([0]); snapshot.appendItems(pages.map(ObjectIdentifier.init))
-            revision = session.pageRevision
-            let animate = !previous.isEmpty && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            source.apply(snapshot, animatingDifferences: animate) { [weak self] in
-                guard let self, let collection = self.collection else { return }
-                self.updating = false; self.syncSelection()
-                for item in collection.visibleItems() {
-                    guard let item = item as? PageItem, let path = collection.indexPath(for: item), self.pages.indices.contains(path.item) else { continue }
-                    item.configure(self.pages[path.item], number: path.item + 1)
-                }
+        func refresh(keepsThumbnails: Bool) {
+            guard collection != nil else { return }
+            let visibilityChanged = self.keepsThumbnails != keepsThumbnails
+            self.keepsThumbnails = keepsThumbnails
+            if visibilityChanged, !keepsThumbnails {
+                // AppKit can keep cells in its reuse pool after they scroll out of view.
+                for item in configuredItems.allObjects { item.releaseThumbnail() }
             }
+            let annotationsChanged = annotationRevision != session.pendingAnnotationRevision
+            annotationRevision = session.pendingAnnotationRevision
+            let nextRevision = session.pageRevision
+            if revision != nextRevision || annotationsChanged {
+                thumbnailRevision = "\(nextRevision):\(session.pendingAnnotationRevision)"
+            }
+            guard revision != nextRevision else {
+                if keepsThumbnails, annotationsChanged || visibilityChanged, !updating { refreshVisibleItems() }
+                syncSelection()
+                return
+            }
+            updating = true
+            let hadPages = !pages.isEmpty
+            pages = session.document.map(PDFPageAssembly.pages) ?? []
+            let identifiers = pages.map(ObjectIdentifier.init)
+            positions = Dictionary(uniqueKeysWithValues: identifiers.enumerated().map { ($0.element, $0.offset) })
+            var snapshot = NSDiffableDataSourceSnapshot<Int, ObjectIdentifier>()
+            snapshot.appendSections([0]); snapshot.appendItems(identifiers)
+            revision = nextRevision
+            let animate = hadPages && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            source.apply(snapshot, animatingDifferences: animate) { [weak self] in
+                guard let self, self.revision == nextRevision else { return }
+                self.updating = false; self.syncSelection()
+                self.refreshVisibleItems()
+            }
+        }
+        private func refreshVisibleItems() {
+            guard let collection else { return }
+            for item in collection.visibleItems() {
+                guard let item = item as? PageItem, let path = collection.indexPath(for: item),
+                      pages.indices.contains(path.item) else { continue }
+                configure(item, at: path.item)
+            }
+        }
+        private func configure(_ item: PageItem, at index: Int) {
+            item.configure(pages[index], number: index + 1, revision: keepsThumbnails ? thumbnailRevision : nil)
         }
         func syncSelection() {
             guard !updating, let collection else { return }
-            var indexes = Set(pages.enumerated().compactMap { session.selectedOverviewPages.contains(ObjectIdentifier($0.element)) ? IndexPath(item: $0.offset, section: 0) : nil })
+            var indexes = Set(session.selectedOverviewPages.compactMap { positions[$0].map { IndexPath(item: $0, section: 0) } })
             if indexes.isEmpty, pages.indices.contains(session.currentPage - 1) { indexes = [IndexPath(item: session.currentPage - 1, section: 0)] }
             if collection.selectionIndexPaths != indexes { collection.selectionIndexPaths = indexes }
         }
@@ -164,6 +199,8 @@ private final class PageItem: NSCollectionViewItem {
     let number = NSTextField(labelWithString: "")
     private var rendered: ObjectIdentifier?
     private var rotation = -1
+    private var revision: String?
+    private static let thumbnailSize = CGSize(width: 166, height: 204)
     override func loadView() {
         let tile = PageTileView(); tile.changed = { [weak self] in self?.appearance() }
         view = tile; view.wantsLayer = true; view.layer?.cornerRadius = 4
@@ -185,15 +222,29 @@ private final class PageItem: NSCollectionViewItem {
         view.layer?.backgroundColor = isSelected ? NSColor(RemileStyle.accent).withAlphaComponent(0.08).cgColor : NSColor.clear.cgColor
         view.setAccessibilityValue(isSelected ? "Selected" : "")
     }
-    func configure(_ page: PDFPage, number: Int) {
+    func configure(_ page: PDFPage, number: Int, revision: String?) {
         self.number.stringValue = "\(number)"; view.setAccessibilityLabel("Page \(number)")
-        if rendered != ObjectIdentifier(page) || rotation != page.rotation {
-            rendered = ObjectIdentifier(page); rotation = page.rotation
-            image.image = page.thumbnail(of: CGSize(width: 332, height: 408), for: .cropBox)
-        }
         appearance()
+        guard let revision else { releaseThumbnail(); return }
+        if rendered != ObjectIdentifier(page) || rotation != page.rotation || self.revision != revision {
+            rendered = ObjectIdentifier(page); rotation = page.rotation
+            self.revision = revision
+            let size = Self.thumbnailSize
+            let cache = PDFThumbnailCache.shared
+            if let cached = cache.image(for: page, size: size, revision: revision) {
+                image.image = cached
+            } else {
+                let bitmap = page.thumbnail(of: CGSize(width: size.width * 2, height: size.height * 2), for: .cropBox)
+                cache.insert(bitmap, for: page, size: size, revision: revision)
+                image.image = bitmap
+            }
+        }
     }
-    override func prepareForReuse() { super.prepareForReuse(); image.image = nil; rendered = nil; rotation = -1 }
+    func releaseThumbnail() {
+        if image.image != nil { image.image = nil }
+        rendered = nil
+    }
+    override func prepareForReuse() { super.prepareForReuse(); releaseThumbnail() }
 }
 
 private final class PageTileView: NSView {

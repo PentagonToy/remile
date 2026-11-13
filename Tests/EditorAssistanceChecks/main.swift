@@ -85,6 +85,19 @@ Task { @MainActor in
  let longSource = String(repeating: "x", count: 1_000_000) + "\n" + #"\label{beyond:budget}"#
  let beyond = #"\ref{beyond:"#
  check(await local.context(beyond, selection: caret(beyond), file: "big.tex", paths: [], buffers: ["big.tex":longSource]) == nil, "Project suggestions respect the per-file parsing budget")
+ let bounded = TeXLocalCompletion()
+ var largeProject = Dictionary(uniqueKeysWithValues: (0..<8).map { index in
+  ("part-\(index).tex", String(repeating: "x", count: 245_000) + "\n" + (index == 7 ? #"\label{budget:tail}"# : ""))
+ })
+ let budgetQuery = #"\ref{budget:"#
+ largeProject["main.tex"] = String(repeating: "x", count: 245_000)
+ let withinBudget = await bounded.context(budgetQuery, selection: caret(budgetQuery), file: "part-7.tex", paths: [], buffers: largeProject, main: "main.tex")
+ check(withinBudget?.items.first?.label == "budget:tail", "The selected source gets the budget before other files")
+ let clipped = await bounded.context(budgetQuery, selection: caret(budgetQuery), file: "part-0.tex", paths: [], buffers: largeProject, main: "main.tex")
+ check(clipped == nil, "A cached file is clipped when its share of the budget shrinks")
+ largeProject["main.tex"] = ""
+ let restored = await bounded.context(budgetQuery, selection: caret(budgetQuery), file: "part-0.tex", paths: [], buffers: largeProject, main: "main.tex")
+ check(restored?.items.first?.label == "budget:tail", "A clipped file is re-indexed when its budget grows")
  print("\(checks) editor checks passed"); exit(0)
 }
 RunLoop.main.run()

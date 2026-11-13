@@ -6,8 +6,11 @@ import WebKit
 @MainActor enum OverleafWebClient {
     private static var webTransport = Set<UUID>()
     private static func webRequest(_ url: URL, profile: UUID, document: Bool = false) async throws -> Data {
+        try Task.checkCancellation()
         let bytes = try await OverleafJSONRequest(url: url, profile: profile, document: document).load()
+        try Task.checkCancellation()
         await OverleafWebIdentity.remember(profile)
+        try Task.checkCancellation()
         return bytes
     }
     struct Tag: Codable, Identifiable, Equatable, Sendable {
@@ -66,6 +69,7 @@ import WebKit
             throw OverleafGit.Failure("This web connection only reads the project list and review notes. Source sync uses Git.")
         }
         try NetworkAccess.requireOnline()
+        try Task.checkCancellation()
         do { try await OverleafWebIdentity.restore(profile) }
         catch Failure.sessionLocked {
             // WebKit may still hold a valid session even when the saved backup needs approval.
@@ -74,6 +78,7 @@ import WebKit
         }
         let store = OverleafWebIdentity.dataStore(profile).httpCookieStore
         let cookies = await store.allCookies()
+        try Task.checkCancellation()
         let url = URL(string: "https://www.overleaf.com" + path)!
         if webTransport.contains(profile) { return try await webRequest(url, profile: profile, document: document) }
         let allowed = cookies.filter { cookie in
@@ -93,8 +98,10 @@ import WebKit
         let bytes: Data, response: URLResponse
         do { (bytes, response) = try await session.data(for: request) }
         catch let error as URLError where error.code == .badServerResponse {
+            try Task.checkCancellation()
             webTransport.insert(profile); return try await webRequest(url, profile: profile, document: document)
         }
+        try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else { throw Failure.response }
         if http.statusCode == 403 || responseFailure(http) == .signIn { webTransport.insert(profile); return try await webRequest(url, profile: profile, document: document) }
         if document, http.statusCode == 200 {
@@ -103,8 +110,12 @@ import WebKit
         if let failure = responseFailure(http) { throw failure }
         guard bytes.count <= 8_000_000 else { throw Failure.response }
         let headers = http.allHeaderFields.reduce(into: [String: String]()) { result, field in if let key = field.key as? String, let value = field.value as? String { result[key] = value } }
-        for cookie in HTTPCookie.cookies(withResponseHeaderFields: headers, for: url) { await store.setCookie(cookie) }
+        for cookie in HTTPCookie.cookies(withResponseHeaderFields: headers, for: url) {
+            try Task.checkCancellation()
+            await store.setCookie(cookie)
+        }
         await OverleafWebIdentity.remember(profile)
+        try Task.checkCancellation()
         return bytes
     }
     nonisolated static func documentPayload(_ bytes: Data, response: HTTPURLResponse) throws -> Data {
@@ -112,38 +123,88 @@ import WebKit
               let text = String(data: bytes, encoding: .utf8) else { throw Failure.response }
         return try JSONSerialization.data(withJSONObject: ["text": text, "disposition": response.value(forHTTPHeaderField: "Content-Disposition") ?? ""])
     }
-    static func projects(_ profile: UUID, request: (String, UUID) async throws -> Data = {
+    static func projects(_ profile: UUID, onList: (([Project]) -> Void)? = nil, request: (String, UUID) async throws -> Data = {
         try await OverleafWebClient.request($0, profile: $1)
     }) async throws -> [Project] {
-        let projects = try parseProjects(await request("/user/projects", profile))
+        let projectData = try await request("/user/projects", profile)
         try Task.checkCancellation()
-        let tagData = try? await request("/tag", profile)
+        let projects = try await decodeCatalogue { try parseProjects(projectData) }
         try Task.checkCancellation()
-        guard let tagData, let tags = try? parseTags(tagData) else { return projects }
-        return projects.map { project in
-            var item = project
-            item.tags = tags[item.id] ?? []
-            item.tagsLoaded = true
-            return item
+        onList?(projects)
+        try Task.checkCancellation()
+        guard !projects.isEmpty else { return projects }
+        do {
+            let tagData = try await request("/tag", profile)
+            try Task.checkCancellation()
+            return try await decodeCatalogue {
+                let tags = try parseTags(tagData)
+                return projects.map { project in
+                    Project(id: project.id, name: project.name, tags: tags[project.id] ?? [])
+                }
+            }
+        } catch {
+            try Task.checkCancellation()
+            return projects
         }
+    }
+
+    static func validateProjectList(_ data: Data) async throws {
+        _ = try await decodeCatalogue { try parseProjects(data) }
+    }
+
+    private static func decodeCatalogue<Value: Sendable>(_ decode: @escaping @Sendable () throws -> Value) async throws -> Value {
+        let worker = Task.detached(priority: .userInitiated, operation: decode)
+        let result = try await withTaskCancellationHandler {
+            try await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
+        try Task.checkCancellation()
+        return result
     }
     nonisolated static func parseTags(_ data: Data) throws -> [String: [Tag]] {
         guard data.count <= 8_000_000, let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]], rows.count <= 10_000 else { throw Failure.response }
-        var result: [String: [Tag]] = [:]
+        var entries: [TagMembership] = []
+        entries.reserveCapacity(rows.count)
+        var occurrences: [String: Int] = [:]
         for row in rows {
+            try Task.checkCancellation()
             guard let id = row["_id"] as? String, let name = row["name"] as? String, !name.isEmpty, let projects = row["project_ids"] as? [String], projects.count <= 10_000 else { throw Failure.response }
             let tag = Tag(id: id, name: String(name.prefix(200)), color: row["color"] as? String)
-            for project in Set(projects) { if result[project, default: []].contains(where: { $0.id == id }) == false { result[project, default: []].append(tag) } }
+            entries.append(TagMembership(tag: tag, projects: projects))
+            occurrences[id, default: 0] += 1
         }
-        return result.mapValues { $0.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending } }
+        // Resolve repeated IDs in response order so the first row for each project still wins.
+        var repeated: [String: Set<String>] = [:]
+        for index in entries.indices where occurrences[entries[index].tag.id, default: 0] > 1 {
+            let id = entries[index].tag.id
+            entries[index].projects = entries[index].projects.filter { repeated[id, default: []].insert($0).inserted }
+        }
+        entries.sort { $0.tag.name.localizedStandardCompare($1.tag.name) == .orderedAscending }
+        var result: [String: [Tag]] = [:]
+        for entry in entries {
+            try Task.checkCancellation()
+            for project in Set(entry.projects) { result[project, default: []].append(entry.tag) }
+        }
+        return result
+    }
+    private struct TagMembership {
+        let tag: Tag
+        var projects: [String]
     }
     nonisolated static func parseProjects(_ data: Data) throws -> [Project] {
         guard data.count <= 8_000_000, let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], let rows = object["projects"] as? [[String: Any]], rows.count <= 10_000 else { throw Failure.response }
         var seen = Set<String>()
-        return try rows.map { row in
+        var projects: [Project] = []
+        projects.reserveCapacity(rows.count)
+        for row in rows {
+            try Task.checkCancellation()
             guard let id = row["_id"] as? String, OverleafConnection.projectID("https://www.overleaf.com/project/" + id) != nil, let name = row["name"] as? String else { throw Failure.response }
-            return Project(id: id.lowercased(), name: name, tagsLoaded: false)
-        }.filter { seen.insert($0.id).inserted }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            let key = id.lowercased()
+            if seen.insert(key).inserted { projects.append(Project(id: key, name: name, tagsLoaded: false)) }
+        }
+        projects.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        return projects
     }
     static func comments(_ project: OverleafConnection) async throws -> OverleafThreadArchive {
         let bytes = try await request("/project/" + project.projectID + "/threads", profile: project.profileID)

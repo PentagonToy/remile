@@ -81,7 +81,11 @@ let previewWindow = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1120, height
 previewWindow.isReleasedWhenClosed = false; previewWindow.appearance = NSAppearance(named: .darkAqua); previewWindow.contentView = preview
 preview.frame = CGRect(x: 0, y: 0, width: 1120, height: 850); preview.layoutSubtreeIfNeeded()
 RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-if let surface = previewModel.canvas, let scroll = surface.enclosingScrollView { try check(surface.frame.width <= max(scroll.contentSize.width, previewModel.pageSize.width + 64) + 1, "Canvas centres within available document area") }
+if let surface = previewModel.canvas, let scroll = surface.enclosingScrollView {
+    let paperWidth = previewModel.pageSize.width + 2 * WriterCanvas.pageInsets.width
+    try check(abs(surface.frame.width - max(scroll.contentView.bounds.width, paperWidth)) <= 1,
+              "Canvas fills the viewport in document coordinates")
+}
 if let bitmap = preview.bitmapImageRepForCachingDisplay(in: preview.bounds) {
     preview.cacheDisplay(in: preview.bounds, to: bitmap)
     try bitmap.representation(using: .png, properties: [:])?.write(to: output.appendingPathComponent("writer-preview.png"))

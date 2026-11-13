@@ -34,7 +34,7 @@ struct LibrarySearchView: View {
             .onChange(of: model.query) { assistant.cancel(); citationState.focus = nil; citationState.selectedPassages = []; citationState.compactPreview = false }
             .onChange(of: model.libraryRevision) { assistant.cancel(); citationState.focus = nil; citationState.selectedPassages = [] }
             .onChange(of: model.documentFilter) { assistant.cancel(); citationState.focus = nil }
-            .onChange(of: model.results.map(\.id)) { assistant.cancel(); citationState.focus = nil }
+            .onChange(of: model.resultIDs) { assistant.cancel(); citationState.focus = nil }
             .onChange(of: model.selectedHit?.path) { citationState.selectedPassages = [] }
             .onChange(of: model.selectedHit?.id) { _, id in selectedHitChanged(id) }
             .font(RemileType.control).background(RemileStyle.background).tint(RemileStyle.accent).frame(minWidth: 560, minHeight: 450)
@@ -76,7 +76,7 @@ struct LibrarySearchView: View {
         }
     }
     private var searchAssistant: some View {
-        AssistantPanel(assistant: assistant, passages: citationState.selectedPassages + assistantHits.map(\.assistantPassage).filter { passage in !citationState.selectedPassages.contains { $0.id == passage.id } }, topic: model.query, select: { source in
+        AssistantPanel(assistant: assistant, passages: [], topic: model.query, select: { source in
             if let hit = model.results.first(where: { $0.id == source.location.id }) { model.selectResult(hit) }
             else if let folder = model.summary.folders.first(where: { source.location.path.hasPrefix($0.path + "/") }) {
                 model.selectResult(LibraryHit(path: source.location.path, folderID: folder.id, page: source.location.unit, excerpt: source.text, score: 0, sectionTitle: source.location.label))

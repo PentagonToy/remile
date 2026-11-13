@@ -42,7 +42,8 @@ struct TeXFileTabs: View {
                     .onChange(of: project.openFiles) { _, _ in proxy.scrollTo(project.selected) }
             }
             Menu {
-                ForEach(Array(project.files.filter { !project.openFiles.contains($0) }.prefix(40)), id: \.self) { file in
+                let openFiles = Set(project.openFiles)
+                ForEach(Array(project.files.lazy.filter { !openFiles.contains($0) }.prefix(40)), id: \.self) { file in
                     Button(file) { project.selected = file }
                 }
                 Divider()

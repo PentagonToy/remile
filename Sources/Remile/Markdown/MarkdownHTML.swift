@@ -108,9 +108,14 @@ struct MarkdownHTML {
         return """
         <!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: remile-image:; style-src 'unsafe-inline'; font-src 'none'; script-src 'none'; connect-src 'none'; frame-src 'none'; base-uri 'none'"><style>
         @page { size:letter; margin:36pt; } *{box-sizing:border-box}html,body{margin:0;padding:0;background:white;color:#171c20}body{font:11pt -apple-system,BlinkMacSystemFont,sans-serif;line-height:1.5;overflow-wrap:anywhere}h1,h2,h3,h4,h5,h6{line-height:1.2;break-after:avoid;margin:1em 0 .5em}h1{font-size:24pt}h2{font-size:19pt}h3{font-size:15pt}p{margin:.65em 0}pre{background:#f2f3f4;padding:10pt;white-space:pre-wrap;overflow-wrap:anywhere}code{font:10pt ui-monospace,monospace}blockquote{border-left:3pt solid #c9c9c9;margin:10pt 0;padding-left:12pt}table{width:100%;border-collapse:collapse;margin:12pt 0;table-layout:fixed}thead{display:table-header-group}tr{break-inside:avoid}th,td{border:0.5pt solid #b8b8b8;padding:6pt;vertical-align:top}th{background:#eee}.remote-image,.unavailable-image{display:block;position:relative;min-height:120px;border:1px dashed #a7a7a7;border-radius:6px;margin:12px 0;text-align:center}.unavailable-image{padding:40px 16px}.remote-image img{display:block;margin:auto;max-width:100%}.remote-image:not([data-loaded]) img{opacity:0;min-height:120px}.image-placeholder{position:absolute;inset:0;display:grid;place-items:center;padding:16px;font:14px -apple-system,sans-serif}.remote-image[data-loaded]{border:0;min-height:0}.remote-image[data-loaded] .image-placeholder{display:none}img{display:inline-block;max-width:100%;max-height:650pt;object-fit:contain;vertical-align:middle;break-inside:avoid}.picture-dark{display:none}@media print{.picture-dark{display:none!important}.picture-light{display:inline!important}}math[display=block]{margin:12pt 0;break-inside:avoid;font-size:13pt}math{font-family:"STIX Two Math","STIXGeneral","Times New Roman",serif}hr{border:0;border-top:1pt solid #bbb}a{color:inherit;text-decoration:underline}
+        \(preview ? Self.browserLinkStyle : "")
         </style></head><body>\(html)</body></html>
         """
     }
+
+    static let browserLinkStyle = """
+    @media screen{a[data-browser-link]::after{content:"↗" / "";display:inline-block;margin-inline-start:.25em;font:0.85em -apple-system,sans-serif;text-decoration:none}}
+    """
 
     private static func tableRule(_ line: String) -> [String]? {
         let columns = cells(line)
@@ -148,6 +153,7 @@ struct MarkdownHTML {
         func styled(_ text: String) -> String {
             guard let parsed = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) else { return MathMarkup.escape(text) }
             var html = ""
+            var openLink: URL?
             for run in parsed.runs {
                 var piece = MathMarkup.escape(String(parsed[run.range].characters))
                 let intent = run.inlinePresentationIntent
@@ -155,11 +161,18 @@ struct MarkdownHTML {
                 if intent?.contains(.stronglyEmphasized) == true { piece = "<strong>\(piece)</strong>" }
                 if intent?.contains(.emphasized) == true { piece = "<em>\(piece)</em>" }
                 if intent?.contains(.strikethrough) == true { piece = "<del>\(piece)</del>" }
-                if let link = run.link, ["http", "https"].contains(link.scheme?.lowercased() ?? "") {
-                    piece = "<a href=\"\(MathMarkup.escape(link.absoluteString))\">\(piece)</a>"
+                let link = run.link.flatMap { ["http", "https"].contains($0.scheme?.lowercased() ?? "") ? $0 : nil }
+                if openLink != link {
+                    if openLink != nil { html += "</a>" }
+                    if let link {
+                        let browser = preview ? " data-browser-link aria-description=\"Opens in your browser\"" : ""
+                        html += "<a href=\"\(MathMarkup.escape(link.absoluteString))\"\(browser)>"
+                    }
+                    openLink = link
                 }
                 html += piece
             }
+            if openLink != nil { html += "</a>" }
             return html
         }
         while position < chars.count {
@@ -264,7 +277,8 @@ struct MarkdownHTML {
         catch {
             guard preview, error is MathMarkup.Failure else { throw error }
             literalFormulas += 1
-            let code = "<code class=\"math-source\">\(MathMarkup.escape(source))</code>"
+            let reason = MathMarkup.escape(error.localizedDescription)
+            let code = "<code class=\"math-source\" title=\"\(reason)\">\(MathMarkup.escape(source))</code>"
             return display ? "<pre>\(code)</pre>" : code
         }
     }

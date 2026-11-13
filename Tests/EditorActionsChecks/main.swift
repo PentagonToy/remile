@@ -11,14 +11,14 @@ let baseline = "\\documentclass{article}\n% TODO author note\n\\begin{document}H
 try baseline.write(to: folder.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
 let project = try TeXProject(folder)
 let historyCount = project.revisions.count
-project.buffers["main.tex"] = baseline + " "
+project.updateBuffer("main.tex", to: baseline + " ")
 project.captureHistory(file: "main.tex", automatic: true)
 precondition(project.revisions.count == historyCount)
 project.captureHistory(file: "main.tex")
 precondition(project.revisions.count == historyCount + 1)
 project.captureHistory(file: "main.tex")
 precondition(project.revisions.count == historyCount + 1)
-project.buffers["main.tex"] = baseline
+project.updateBuffer("main.tex", to: baseline)
 project.captureHistory(file: "main.tex")
 precondition(TeXHistory.intervalMinutes >= 1 && TeXHistory.intervalMinutes <= 30)
 let edit = try TeXTools.prepare("strip-notes", project: project, file: "main.tex")

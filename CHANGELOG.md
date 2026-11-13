@@ -2,9 +2,12 @@
 
 ## Unreleased
 
-- Save and switch between reMarkable devices. Open setup help from the connection dialog.
-
-- Convert pasted TeX maths delimiters to Markdown maths while preserving code examples.
+- Switch between saved reMarkable devices. The connection window remembers your last selection and links to setup help.
+- Paste TeX maths into Markdown. Preview more equations, including boxed expressions, continued fractions and annotated arrows.
+- See which links open in your browser. ChatGPT sign-in can finish after you close Settings.
+- Choose an Overleaf project while its tags load.
+- Cancel preview and search work when you move on. Reuse PDF thumbnails and avoid rebuilding unchanged Reference lists.
+- Keep editing smoothly while LaTeX updates its outline and Writer paginates.
 
 ## 0.2.6 — 13 November 2026
 

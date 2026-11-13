@@ -50,6 +50,7 @@ import SwiftUI
          "lastGitTransfers": lastGitTransfers.map(\.status)]
     }
     func connectVisible(project: TeXProject, library: OverleafLibrary, connection: OverleafConnection) {
+        library.watchReachability()
         self.project = project; self.library = library; self.connection = connection
         visible = true; enabled = true
         if project.dirty { localSaveDue = Date().addingTimeInterval(1) }

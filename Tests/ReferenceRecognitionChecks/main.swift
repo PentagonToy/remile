@@ -55,7 +55,7 @@ Task { @MainActor in
     check(untouched.confirmLeaving() && !FileManager.default.fileExists(atPath: untouchedRoot.path), "An untouched draft closes without a save question")
     let draftRoot = try TeXDraft.create(under: output.appendingPathComponent("Drafts"))
     let draft = try TeXProject(draftRoot, draft: true)
-    draft.buffers["main.tex"]! += "% Draft edit\n"
+    draft.updateBuffer("main.tex", to: draft.buffers["main.tex"]! + "% Draft edit\n")
     try await Task.sleep(for: .milliseconds(1200))
     let diskDraft = try String(contentsOf: draftRoot.appendingPathComponent("main.tex"), encoding: .utf8)
     check(draft.dirty && diskDraft.contains("Draft edit"), "Working-copy autosave does not make an edited draft appear saved")

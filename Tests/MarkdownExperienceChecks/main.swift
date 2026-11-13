@@ -94,7 +94,21 @@ Task { @MainActor in
 
     await preview.render("   ", url: fixture)
     verify(preview.html != nil && !preview.showsWebPreview, "Blank Markdown keeps the native preview background")
-    let source = "# A readable document\n\n한국어 and **emphasis**, $k-\\epsilon$.\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"
+    let source = #"""
+    # A readable document
+
+    한국어 and **emphasis**, $k-\epsilon$.
+
+    [Read the **paper**](https://example.invalid/paper).
+
+    $$
+    \begin{array}{lr} \oiint_S & \cancel{x} \\ \textbf{fuel} & \ddot{u} \end{array}
+    $$
+
+    | A | B |
+    | --- | --- |
+    | 1 | 2 |
+    """#
     await preview.render(source, url: fixture)
     verify(preview.showsWebPreview, "Nonempty Markdown displays the web preview")
     verify(preview.html?.contains("<math") == true && preview.html?.contains("<table>") == true, "Preview supports math and tables")
@@ -112,6 +126,27 @@ Task { @MainActor in
         if font == "18px" { break }
     }
     verify(font == "18px", "WebKit loads preview with readable 18px body")
+    let browserLink = try? await preview.web.evaluateJavaScript("""
+    (() => {
+      const links = document.querySelectorAll('a[data-browser-link]');
+      return links.length === 1 && links[0].textContent === 'Read the paper'
+        && getComputedStyle(links[0], '::after').content.includes('↗');
+    })()
+    """) as? Bool
+    verify(browserLink == true, "WebKit displays one browser arrow beside a formatted link")
+    let formulaLayout = try? await preview.web.evaluateJavaScript("""
+    (() => {
+      const math = document.querySelector('math[display="block"]');
+      const cells = math?.querySelectorAll('mtd');
+      const strike = math?.querySelector('menclose');
+      return math?.getBoundingClientRect().height > 0 && cells?.length === 4
+        && getComputedStyle(cells[0]).textAlign === 'left'
+        && getComputedStyle(cells[1]).textAlign === 'right'
+        && strike?.getBoundingClientRect().width > 0
+        && !document.querySelector('.math-source');
+    })()
+    """) as? Bool
+    verify(formulaLayout == true, "WebKit lays out a TeX array with aligned columns and a cancellation term")
     verify(!preview.web.isHidden, "Themed document reveals the initial preview")
     let background = try? await preview.web.evaluateJavaScript("getComputedStyle(document.body).backgroundColor") as? String
     verify(background == "rgb(32, 44, 53)", "First document paint uses the dark canvas")
@@ -131,11 +166,67 @@ Task { @MainActor in
     searchPreview.applyReadingWidth(preview.web)
     let readingWidth = try? await preview.web.evaluateJavaScript("document.body.style.maxWidth") as? String
     verify(readingWidth == "850px", "Search preview restores its reading width")
+    let searchWeb = WKWebView(frame: NSRect(x: 0, y: 0, width: 620, height: 360))
+    searchWeb.navigationDelegate = searchPreview
+    searchPreview.loaded = false
+    searchPreview.web = searchWeb
+    searchPreview.section = 1
+    searchPreview.query = "flamelet"
+    let searchHTML = """
+    <span id="section-1"></span><p>first flamelet</p>
+    <div style="height:600px"></div><span id="section-2"></span><p>second flamelet</p>
+    """
+    searchPreview.navigation = searchWeb.loadHTMLString(searchHTML, baseURL: nil)
+    var marked = 0
+    for _ in 0..<100 {
+        try? await Task.sleep(for: .milliseconds(30))
+        marked = (try? await searchWeb.evaluateJavaScript("document.querySelectorAll('mark').length") as? Int) ?? 0
+        if marked == 2 { break }
+    }
+    verify(marked == 2, "Search marks both occurrences across Markdown sections")
+    _ = try? await searchWeb.evaluateJavaScript("window.firstMark = document.querySelector('mark'); true")
+    searchPreview.section = 2
+    searchPreview.dark = true
+    searchPreview.applyAppearance(searchWeb)
+    searchPreview.reveal(searchWeb)
+    let reusedHighlights = try? await searchWeb.evaluateJavaScript("""
+    window.firstMark === document.querySelector('mark') && scrollY > 300
+        && getComputedStyle(document.body).backgroundColor === 'rgb(34, 44, 53)'
+    """) as? Bool
+    verify(reusedHighlights == true, "Changing appearance and revealing another section reuses the existing marks")
+    searchPreview.citation = AssistantCitation(location: .init(path: fixture.path, unit: 2, label: "Second"), text: "second flamelet")
+    searchPreview.refreshHighlights(searchWeb)
+    var quoted: String?
+    for _ in 0..<100 {
+        try? await Task.sleep(for: .milliseconds(30))
+        quoted = try? await searchWeb.evaluateJavaScript("document.querySelector('mark')?.textContent ?? ''") as? String
+        if quoted == "second flamelet" { break }
+    }
+    verify(quoted == "second flamelet", "A citation still highlights the excerpt within its section")
+    searchPreview.cancelHighlighting()
     let start = Date()
-    let large = "# Large fixture\n\n" + String(repeating: "A paragraph with **emphasis** and 한국어.\n\n", count: 2500)
+    let large = "# Large fixture\n\n" + String(repeating: "A paragraph with **emphasis** and 한국어.\n\n", count: 3000)
     await preview.render(large, url: fixture)
     verify(preview.message == nil && preview.html != nil, "Large fixture renders without blocking editor storage")
     let elapsed = Date().timeIntervalSince(start)
+    preview.display(dark: true, scale: 1, wide: true, serif: true)
+    await preview.render(large + "\n\n## 최신 👋\n\n**Updated preview**", url: fixture)
+    preview.display(dark: true, scale: 1, wide: true, serif: true)
+    preview.reveal(section: 2)
+    var newest: String?
+    for _ in 0..<100 {
+        newest = try? await preview.web.evaluateJavaScript("document.querySelector('h2')?.textContent") as? String
+        if newest == "최신 👋" { break }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    verify(newest == "최신 👋" && preview.message == nil, "Live body replacement renders the latest Unicode heading")
+    let sectionVisible = try? await preview.web.evaluateJavaScript("""
+        (() => {const heading = document.querySelector('h2').getBoundingClientRect();
+        return heading.top >= 0 && heading.bottom <= innerHeight})()
+        """) as? Bool
+    verify(sectionVisible == true, "Outline navigation reaches a heading in the new body")
+    verify(preview.wordCount == (large + "\n\n## 최신 👋\n\n**Updated preview**").split(whereSeparator: \.isWhitespace).count,
+           "Streaming word count agrees with the existing whitespace rules")
     var printRenderer = MarkdownHTML(baseURL: fixture)
     let printSource = source + "\n\n" + (1...120).map { "Paragraph \($0). A printable paragraph with **emphasis** and inline `code`." }.joined(separator: "\n\n") + "\n\nEND PRINT FIXTURE"
     let printOutput = output.appendingPathComponent("markdown-print.pdf")

@@ -37,7 +37,10 @@ import CryptoKit
     @Published var rendering = false
     @Published private(set) var loading = false
     @Published private(set) var pages = 1
-    private(set) var objects: [WriterObject] = []
+    private(set) var objectRevision = 0
+    private(set) var objects: [WriterObject] = [] {
+        didSet { objectRevision &+= 1 }
+    }
     private(set) var url: URL?
     var foreignDocument: WriterForeignDocument?
     private var sourceFingerprint: String?
@@ -62,10 +65,10 @@ import CryptoKit
         if opensGroup { undo.endUndoGrouping() }
     }
     func revisionChanged() { revision = UUID(); canvas?.paginate() }
-    func changed() { dirty = true; revision = UUID(); textChanged?() }
+    func changed() { if !dirty { dirty = true }; revision = UUID(); textChanged?() }
     func setPages(_ count: Int) { if pages != count { pages = count } }
     func choose(_ object: WriterObject?) {
-        selected = object?.id
+        if selected != object?.id { selected = object?.id }
         if let object { bold = object.bold == true; italic = object.italic == true; font = WriterFont.allCases.first { $0.family == object.font } ?? .times; size = object.fontSize; alignment = object.alignment; colour = object.hex; lineWidth = object.width; fill = object.filled; fillColour = object.fillHex ?? object.hex; fillOpacity = object.fillOpacity ?? 0.12; startArrow = object.startArrow; endArrow = object.endArrow }
     }
     func add(_ kind: WriterObject.Kind) {
@@ -133,11 +136,24 @@ import CryptoKit
         let attributes = view.typingAttributes
         if let value = attributes[.font] as? NSFont {
             let traits = NSFontManager.shared.traits(of: value)
-            bold = traits.contains(.boldFontMask); italic = traits.contains(.italicFontMask)
-            font = WriterFont.allCases.first { $0.family == value.familyName } ?? .times; size = value.pointSize
+            let nextBold = traits.contains(.boldFontMask), nextItalic = traits.contains(.italicFontMask)
+            let nextFont = WriterFont.allCases.first { $0.family == value.familyName } ?? .times
+            if bold != nextBold { bold = nextBold }
+            if italic != nextItalic { italic = nextItalic }
+            if font != nextFont { font = nextFont }
+            if size != value.pointSize { size = value.pointSize }
         }
-        if let value = attributes[.foregroundColor] as? NSColor { colour = WriterPalette.hex(value) }
-        if let value = attributes[.paragraphStyle] as? NSParagraphStyle { list = WriterList.allCases.first { $0.format == value.textLists.first?.markerFormat } ?? .none; alignment = value.alignment.rawValue; leading = value.lineHeightMultiple > 0 ? value.lineHeightMultiple : 1.0 }
+        if let value = attributes[.foregroundColor] as? NSColor {
+            let nextColour = WriterPalette.hex(value)
+            if colour != nextColour { colour = nextColour }
+        }
+        if let value = attributes[.paragraphStyle] as? NSParagraphStyle {
+            let nextList = WriterList.allCases.first { $0.format == value.textLists.first?.markerFormat } ?? .none
+            let nextLeading = value.lineHeightMultiple > 0 ? value.lineHeightMultiple : 1.0
+            if list != nextList { list = nextList }
+            if alignment != value.alignment.rawValue { alignment = value.alignment.rawValue }
+            if leading != nextLeading { leading = nextLeading }
+        }
     }
     func bullet() { applyList(list == .bullet ? .none : .bullet) }
     func applyList(_ choice: WriterList) {

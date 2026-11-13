@@ -6,7 +6,7 @@ enum EditorCompletion {
     struct Item: Equatable { let label: String; let insertion: String; var caret: Int? = nil; var referenceID: UUID? = nil; var detail: String? = nil; var annotation: String? = nil }
     struct Context { let range: NSRange; let items: [Item] }
     static let environments = ["align", "align*", "aligned", "equation", "equation*", "gather", "gather*", "itemize", "enumerate", "description", "figure", "table", "tabular", "cases", "matrix", "pmatrix", "bmatrix", "split", "document", "abstract"]
-    private static let texCommands = MathCompletion.commands + ["underbrace{}", "overbrace{}", "item ", "includegraphics{}", "includesvg{}", "section{}", "subsection{}", "subsubsection{}", "chapter{}", "part{}", "paragraph{}", "caption{}", "label{}", "ref{}", "eqref{}", "autoref{}", "cref{}", "pageref{}", "cite{}", "citep{}", "citet{}", "parencite{}", "textcite{}", "textbf{}", "textit{}", "texttt{}", "emph{}", "input{}", "include{}", "subfile{}", "usepackage{}", "documentclass{}", "bibliography{}", "bibliographystyle{}", "addbibresource{}", "printbibliography", "newcommand{}{}", "renewcommand{}{}", "newenvironment{}{}{}", "DeclareMathOperator{}{}", "title{}", "author{}", "date{}", "maketitle", "tableofcontents", "footnote{}", "url{}", "href{}{}", "centering", "hline", "toprule", "midrule", "bottomrule", "textwidth", "linewidth", "newpage", "clearpage", "vspace{}", "hspace{}"].map { "\\" + $0 }
+    private static let texCommands = MathCompletion.commands + ["item ", "includegraphics{}", "includesvg{}", "section{}", "subsection{}", "subsubsection{}", "chapter{}", "part{}", "paragraph{}", "caption{}", "label{}", "ref{}", "eqref{}", "autoref{}", "cref{}", "pageref{}", "cite{}", "citep{}", "citet{}", "parencite{}", "textcite{}", "texttt{}", "emph{}", "input{}", "include{}", "subfile{}", "usepackage{}", "documentclass{}", "bibliography{}", "bibliographystyle{}", "addbibresource{}", "printbibliography", "newcommand{}{}", "renewcommand{}{}", "newenvironment{}{}{}", "DeclareMathOperator{}{}", "title{}", "author{}", "date{}", "maketitle", "tableofcontents", "footnote{}", "url{}", "href{}{}", "centering", "hline", "toprule", "midrule", "bottomrule", "textwidth", "linewidth", "newpage", "clearpage", "vspace{}", "hspace{}"].map { "\\" + $0 }
     private static let commandPrefix = try! NSRegularExpression(pattern: #"(?<!\\)(?:\\\\)*(\\[A-Za-z@]*)$"#)
     private static let environmentPrefix = try! NSRegularExpression(pattern: #"(?<!\\)\\(begin|end)\{([A-Za-z*]*)$"#)
 
@@ -277,6 +277,9 @@ enum EditorCompletion {
         if let panel { panel.parent?.removeChildWindow(panel) }
         panel = nil
         context = nil
+        view = nil
+        source = ""
+        caret = NSRange()
         prepare = nil
         failure = nil
         buttons = []
@@ -290,7 +293,7 @@ enum EditorCompletion {
 private extension EditorCompletion.Item {
     var mathPreviewTemplate: String? {
         guard detail == nil, annotation == nil else { return nil }
-        return MathMarkup.completionTemplate(label)
+        return MathCompletion.previewTemplate(label)
     }
 }
 

@@ -6,7 +6,18 @@ enum MathCompletion {
     static let commands = [
         "alpha", "beta", "gamma", "eta", "kappa", "xi", "upsilon", "chi", "psi", "zeta", "delta", "epsilon", "varepsilon", "theta", "lambda", "mu", "nu", "pi", "rho", "sigma", "tau", "phi", "omega",
         "Gamma", "Delta", "Theta", "Lambda", "Sigma", "Phi", "Omega", "partial", "nabla", "infty", "cdot", "times", "div", "leq", "geq", "neq", "approx", "sum", "prod", "int", "lim",
-        "sin", "cos", "tan", "log", "ln", "exp", "min", "max", "sup", "inf", "det", "forall", "exists", "in", "notin", "subset", "subseteq", "cup", "cap", "rightarrow", "leftarrow", "uparrow", "downarrow", "Rightarrow", "leftrightarrow", "overline{}", "underline{}", "mathbb{}", "mathcal{}", "mathsf{}", "operatorname{}", "boldsymbol{}", "frac{}{}", "sqrt{}", "text{}", "mathrm{}", "mathbf{}", "hat{}", "bar{}", "vec{}"
+        "sin", "cos", "tan", "log", "ln", "exp", "min", "max", "sup", "inf", "det", "forall", "exists", "in", "notin", "subset", "subseteq", "cup", "cap", "rightarrow", "leftarrow", "uparrow", "downarrow", "Rightarrow", "leftrightarrow", "overline{}", "underline{}", "mathbb{}", "mathcal{}", "mathsf{}", "operatorname{}", "boldsymbol{}", "frac{}{}", "sqrt{}", "text{}", "mathrm{}", "mathbf{}", "hat{}", "bar{}", "vec{}",
+        "mapsto", "longmapsto", "longrightarrow", "dots", "boxed{}", "overset{}{}",
+        "underset{}{}", "xrightarrow{}", "xleftarrow{}", "substack{}", "overbrace{}", "underbrace{}",
+        "overrightarrow{}", "overleftarrow{}", "overleftrightarrow{}", "pmod{}", "bmod",
+        "displaystyle", "textstyle", "nexists", "nRightarrow",
+        "cancel{}", "bcancel{}", "xcancel{}", "mathring{}",
+        "iint", "iiint", "oint", "oiint", "oiiint", "textbf{}", "textit{}",
+        "cfrac{}{}", "nless", "ngtr", "nleq", "ngeq", "ncong", "nsim",
+        "xmapsto{}", "xleftrightarrow{}", "xRightarrow{}", "xrightleftharpoons{}", "rightleftharpoons",
+        "hphantom{}", "vphantom{}", "mathstrut", "llbracket", "rrbracket", "biguplus", "bigodot",
+        "smash{}", "leftharpoonup", "leftharpoondown", "rightharpoonup", "rightharpoondown",
+        "twoheadrightarrow", "twoheadleftarrow", "rightleftarrows", "multimap", "approxeq", "boxplus", "boxtimes",
     ].map { "\\" + $0 }.sorted()
 
     static func context(_ source: String, selection: NSRange) -> Context? {
@@ -29,6 +40,11 @@ enum MathCompletion {
 
     static func suggestions(_ context: Context) -> [String] {
         Array(commands.filter { $0.hasPrefix(context.prefix) && $0 != context.prefix }.prefix(12))
+    }
+
+    static func previewTemplate(_ command: String) -> String? {
+        guard command.contains("{}"), commands.contains(command) else { return nil }
+        return command.replacingOccurrences(of: "{}", with: "{□}")
     }
 
     static func insertionSelection(_ command: String, location: Int) -> NSRange {

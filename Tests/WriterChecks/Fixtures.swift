@@ -3,9 +3,6 @@ import Combine
 import SwiftUI
 import PDFKit
 
-// Unrelated entry points needed by the shared paper picker and equation renderer.
-@MainActor final class PDFSession: ObservableObject { func fitPages(to size: CGSize) {} }
-
 @MainActor final class SearchSplitProbe: ObservableObject {
     @Published var ask = false
     var created = 0

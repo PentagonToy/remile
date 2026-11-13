@@ -31,7 +31,7 @@ struct OverleafBar: View {
             Menu {
                 Button("Overleaf projects") { library.openLibrary() }
                 Button("Git token…") { accounts = true }
-                Button("Open in browser") { NSWorkspace.shared.open(connection.webURL) }
+                ExternalLink("Open in browser", destination: connection.webURL)
                 if let recovery = live.recoveryDirectory { Button("Recovery copies") { NSWorkspace.shared.open(recovery) } }
             } label: { SymbolIcon(systemName: "ellipsis") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: RemileControl.toolHit, height: RemileControl.toolHit).accessibilityLabel("Connection options")

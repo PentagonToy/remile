@@ -483,7 +483,7 @@ final class OverleafGitSyncTests: XCTestCase {
             var incoming = current; incoming["main.tex"] = Data("Remote writing\n".utf8)
             let plan = try TeXProject.prepareLiveInstall(root: local, buffers: project.buffers, editRevision: project.editRevision,
                 fileRevision: project.fileRevision, base: current, result: incoming, head: try git(["rev-parse", "HEAD"], local))
-            project.buffers["main.tex"] = "Typing after validation\n"
+            project.updateBuffer("main.tex", to: "Typing after validation\n")
             XCTAssertThrowsError(try project.installLiveFiles(plan))
             XCTAssertEqual(project.buffers["main.tex"], "Typing after validation\n")
             XCTAssertEqual(try String(contentsOf: local.appendingPathComponent("main.tex"), encoding: .utf8), "Alpha one\nBeta two\n")
@@ -503,12 +503,18 @@ final class OverleafGitSyncTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         try Data("Original".utf8).write(to: root.appendingPathComponent("main.tex"))
         let project = try TeXProject(root, historyEnabled: false)
-        project.buffers["main.tex"] = "Unsaved edits"
+        project.updateBuffer("main.tex", to: "Unsaved edits")
         try Data("Asset".utf8).write(to: root.appendingPathComponent("figure.pdf"))
+        let chapter = root.appendingPathComponent("chapter.tex")
+        try Data(#"\section{Imported}"#.utf8).write(to: chapter)
         try await project.refreshFileTree()
         XCTAssertTrue(project.treeFiles.contains("figure.pdf"))
+        XCTAssertEqual(project.buffers["chapter.tex"], #"\section{Imported}"#)
         XCTAssertTrue(project.move("figure.pdf", to: "Figures/figure.pdf"))
-        XCTAssertEqual(project.treeFiles, ["Figures/figure.pdf", "main.tex"])
+        XCTAssertEqual(project.treeFiles, ["Figures/figure.pdf", "chapter.tex", "main.tex"])
+        try FileManager.default.removeItem(at: chapter)
+        try await project.refreshFileTree()
+        XCTAssertNil(project.buffers["chapter.tex"])
         let revision = project.fileRevision
         try await project.refreshFileTree()
         XCTAssertEqual(project.fileRevision, revision)
@@ -557,7 +563,7 @@ final class OverleafGitSyncTests: XCTestCase {
         var savedWhileTyping = false
         // No Git workspace or network response is required for durable local work.
         for index in 0..<10 {
-            project.buffers["main.tex"] = "Typed revision \(index)\n"
+            project.updateBuffer("main.tex", to: "Typed revision \(index)\n")
             try await Task.sleep(for: .milliseconds(200))
             let saved = try String(contentsOf: file, encoding: .utf8)
             if saved.hasPrefix("Typed revision ") { savedWhileTyping = true }
@@ -657,7 +663,7 @@ final class OverleafGitSyncTests: XCTestCase {
         XCTAssertTrue(workspace.connected, workspace.issue ?? "Not connected")
         library.offlineMode = true; await workspace.networkChanged()
         let checks = workspace.automationStatus["gitChecks"] as? Int
-        project.buffers["note.tex"] = note.replacingOccurrences(of: "Alpha one", with: "Alpha offline")
+        project.updateBuffer("note.tex", to: note.replacingOccurrences(of: "Alpha one", with: "Alpha offline"))
         workspace.edited()
         // Save explicitly here. The normal scheduler-save contract has its own check.
         XCTAssertTrue(project.save())
@@ -680,7 +686,7 @@ final class OverleafGitSyncTests: XCTestCase {
         _ = try git(["rm", "remote.tex"], other)
         _ = try git(["commit", "-m", "Delete unchanged source"], other); _ = try git(["push"], other)
         project.newFile(); XCTAssertTrue(project.finishNewItem("local.tex"))
-        project.buffers["local.tex"] = "Local new source\n"; workspace.edited()
+        project.updateBuffer("local.tex", to: "Local new source\n"); workspace.edited()
         await workspace.retry()
         XCTAssertTrue(workspace.connected, workspace.issue ?? "Not connected after deletion")
         XCTAssertNil(project.buffers["remote.tex"])
@@ -728,7 +734,7 @@ final class OverleafGitSyncTests: XCTestCase {
         let idleCheck = try XCTUnwrap(workspace.automationStatus["nextCheckAt"] as? TimeInterval)
         XCTAssertGreaterThan(idleCheck - Date().timeIntervalSince1970, 25, "Opening an unchanged project must not start rapid polling")
         XCTAssertLessThanOrEqual(idleCheck - Date().timeIntervalSince1970, 30)
-        project.buffers["main.tex"] = source.replacingOccurrences(of: "First", with: "Local")
+        project.updateBuffer("main.tex", to: source.replacingOccurrences(of: "First", with: "Local"))
         try (source + "% Remote collaborator\n").write(to: other.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
         _ = try git(["add", "."], other); _ = try git(["commit", "-m", "Independent simultaneous edit"], other); _ = try git(["push"], other)
         workspace.edited()
@@ -762,7 +768,7 @@ final class OverleafGitSyncTests: XCTestCase {
         XCTAssertEqual(project.identity, identity)
         XCTAssertEqual(workspace.pendingDocumentCount, 0)
         _ = try git(["pull", "--ff-only"], other)
-        project.buffers["main.tex"] = updated.replacingOccurrences(of: "Remote", with: "Local conflict")
+        project.updateBuffer("main.tex", to: updated.replacingOccurrences(of: "Remote", with: "Local conflict"))
         updated = updated.replacingOccurrences(of: "Remote", with: "Remote conflict")
         try updated.write(to: other.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
         _ = try git(["add", "."], other); _ = try git(["commit", "-m", "Overlapping writing"], other); _ = try git(["push"], other)
@@ -774,7 +780,7 @@ final class OverleafGitSyncTests: XCTestCase {
         project.newFile(); XCTAssertTrue(project.finishNewItem("additional.tex"))
         workspace.edited()
         XCTAssertFalse(workspace.requiresGitReview, "A new file operation can retry a recoverable conflict too")
-        project.buffers["main.tex"] = updated
+        project.updateBuffer("main.tex", to: updated)
         workspace.edited()
         XCTAssertFalse(workspace.requiresGitReview, "New writing retries a source conflict without a comparison click")
         await workspace.flush()
@@ -785,7 +791,7 @@ final class OverleafGitSyncTests: XCTestCase {
         library.offlineMode = true
         await workspace.networkChanged()
         let checksBeforeLocalSave = workspace.automationStatus["gitChecks"] as? Int
-        project.buffers["main.tex"] = updated + "% Saved without network\n"
+        project.updateBuffer("main.tex", to: updated + "% Saved without network\n")
         workspace.edited()
         try await Task.sleep(for: .milliseconds(1300))
         XCTAssertFalse(project.dirty)
@@ -810,7 +816,7 @@ final class OverleafGitSyncTests: XCTestCase {
         let recoveryCheck = try XCTUnwrap(workspace.automationStatus["nextCheckAt"] as? TimeInterval)
         XCTAssertLessThanOrEqual(recoveryCheck - Date().timeIntervalSince1970, 15, "Restored connectivity should release a transport backoff")
         await workspace.stop()
-        project.buffers["main.tex"] = updated + "% Offline draft\n"
+        project.updateBuffer("main.tex", to: updated + "% Offline draft\n")
         await workspace.flush()
         XCTAssertEqual(try git(["show", "main:main.tex"], remote), updated.trimmingCharacters(in: .whitespacesAndNewlines))
     }

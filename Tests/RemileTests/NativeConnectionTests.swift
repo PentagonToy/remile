@@ -5,6 +5,65 @@ import XCTest
 @testable import Remile
 
 @MainActor final class NativeConnectionTests: XCTestCase {
+    func testCancellingSignInBeforeBrowserLaunchClearsProgress() async {
+        let connection = ChatGPTConnection()
+        connection.startSignIn()
+        XCTAssertTrue(connection.busy)
+        connection.cancelSignIn()
+        for _ in 0..<100 where connection.busy { await Task.yield() }
+        XCTAssertFalse(connection.busy)
+        XCTAssertNil(connection.error)
+    }
+
+    func testModelRefreshSurvivesViewCancellationAndSharesTheRequest() async throws {
+        try XCTSkipIf(NetworkAccess.offline || !AIUsage.shared.online, "Model refresh requires online mode.")
+        var requests = 0
+        var response: CheckedContinuation<[ChatGPTConnection.Model], Error>?
+        let connection = ChatGPTConnection(catalogue: {
+            requests += 1
+            return try await withCheckedThrowingContinuation { response = $0 }
+        })
+        connection.connected = true
+        let settings = Task { await connection.loadModels() }
+        for _ in 0..<100 where response == nil { await Task.yield() }
+        let pending = try XCTUnwrap(response)
+        XCTAssertTrue(connection.loadingModels)
+        settings.cancel()
+        var secondViewStarted = false
+        let secondView = Task {
+            secondViewStarted = true
+            await connection.loadModels()
+        }
+        while !secondViewStarted { await Task.yield() }
+        XCTAssertEqual(requests, 1)
+        pending.resume(throwing: ChatGPTIdentity.Failure("Fixture catalogue unavailable."))
+        await settings.value
+        await secondView.value
+        XCTAssertFalse(connection.loadingModels)
+        XCTAssertEqual(connection.error, "Fixture catalogue unavailable.")
+    }
+
+    func testRejectedRenewalRequiresSignInWithoutRetryingModels() async throws {
+        let body = Data(#"{"error":"invalid_grant"}"#.utf8)
+        XCTAssertTrue(ChatGPTConnection.RenewalFailure.requiresSignIn(status: 400, body: body))
+        XCTAssertFalse(ChatGPTConnection.RenewalFailure.requiresSignIn(status: 503, body: body))
+        XCTAssertFalse(ChatGPTConnection.RenewalFailure.requiresSignIn(status: 401, body: Data()))
+        try XCTSkipIf(NetworkAccess.offline || !AIUsage.shared.online, "Model refresh requires online mode.")
+        var requests = 0
+        let connection = ChatGPTConnection(catalogue: {
+            requests += 1
+            throw ChatGPTConnection.RenewalFailure.signInRequired
+        })
+        connection.connected = true
+        await connection.loadModels()
+        XCTAssertTrue(connection.needsSignIn)
+        XCTAssertFalse(connection.credentialUnavailable)
+        XCTAssertFalse(connection.loadingModels)
+        XCTAssertNil(connection.error)
+        await connection.loadModels()
+        XCTAssertEqual(requests, 1)
+    }
+
     private func check(
         _ condition: @autoclosure () throws -> Bool, _ message: String, file: StaticString = #filePath,
         line: UInt = #line

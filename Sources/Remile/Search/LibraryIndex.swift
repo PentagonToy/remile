@@ -2,7 +2,7 @@ import Foundation
 import PDFKit
 import SQLite3
 
-struct LibraryFolder: Identifiable, Sendable {
+struct LibraryFolder: Identifiable, Sendable, Equatable {
     let id: String
     let path: String
     let bookmark: Data
@@ -34,7 +34,7 @@ struct LibraryFolder: Identifiable, Sendable {
 
 }
 
-struct LibrarySummary: Sendable {
+struct LibrarySummary: Sendable, Equatable {
     var folders: [LibraryFolder] = []
     var documents = 0
     var pages = 0
@@ -124,8 +124,10 @@ struct SearchPageStructure {
 
 /// Serial ownership of one SQLite connection; PDF objects never leave this actor.
 actor LibraryIndex {
+    static let shared = LibraryIndex()
+
     enum Failure: LocalizedError {
-        case database(String), folderOverlap, inaccessible, invalidPDF, emptyQuery, invalidQuery
+        case database(String), folderOverlap, inaccessible, invalidPDF, emptyQuery, invalidQuery, refreshing
         var errorDescription: String? {
             switch self {
             case .database(let message): return "The search index could not be updated: \(message)"
@@ -134,6 +136,7 @@ actor LibraryIndex {
             case .invalidPDF: return "This PDF is locked, damaged or does not allow text extraction."
             case .emptyQuery: return "Enter words or a phrase in quotation marks."
             case .invalidQuery: return "Use balanced quotation marks and no more than 24 terms or 512 characters."
+            case .refreshing: return "The search index is already being updated in another window."
             }
         }
     }
@@ -145,6 +148,7 @@ actor LibraryIndex {
     private let managedLocation: Bool
     private let location: URL
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    private var refreshing = false
 
     init(location: URL? = nil) {
         self.location = location ?? StorageLocation.search()
@@ -211,9 +215,8 @@ actor LibraryIndex {
         }
         return result
     }
-    func summary() throws -> LibrarySummary {
-        try connect()
-        var result = LibrarySummary()
+    private func folders() throws -> [LibraryFolder] {
+        var result: [LibraryFolder] = []
         let folders = try statement("SELECT id,path,bookmark FROM folders ORDER BY path")
         defer { sqlite3_finalize(folders) }
         while sqlite3_step(folders) == SQLITE_ROW {
@@ -231,8 +234,14 @@ actor LibraryIndex {
                     if saved { folder = LibraryFolder(id: folder.id, path: folder.path, bookmark: renewed) }
                 }
             }
-            result.folders.append(folder)
+            result.append(folder)
         }
+        return result
+    }
+
+    func summary() throws -> LibrarySummary {
+        try connect()
+        var result = LibrarySummary(folders: try folders())
         let totals = try statement("SELECT COUNT(*),COALESCE(SUM(pages),0),COALESCE(SUM(empty_pages),0),COALESCE(SUM(error IS NOT NULL),0),COALESCE(SUM(error IS NOT NULL OR empty_pages>0),0) FROM documents")
         defer { sqlite3_finalize(totals) }
         if sqlite3_step(totals) == SQLITE_ROW {
@@ -245,7 +254,7 @@ actor LibraryIndex {
     func add(_ url: URL) throws {
         try connect()
         let canonical = url.resolvingSymlinksInPath().standardizedFileURL
-        for folder in try summary().folders {
+        for folder in try folders() {
             let path = folder.path
             if canonical.path == path || canonical.path.hasPrefix(path + "/") || path.hasPrefix(canonical.path + "/") { throw Failure.folderOverlap }
         }
@@ -262,6 +271,7 @@ actor LibraryIndex {
         for suffix in ["body-rank", "all-rank"] { try? FileManager.default.removeItem(at: location.deletingPathExtension().appendingPathExtension(suffix)) }
     }
     func remove(_ folder: LibraryFolder) throws {
+        guard !refreshing else { throw Failure.refreshing }
         try connect(); invalidateRanker(); try execute("BEGIN IMMEDIATE")
         do {
             try execute("UPDATE search_metadata SET value=value+1 WHERE key='generation'")
@@ -273,8 +283,11 @@ actor LibraryIndex {
     }
 
     func refresh(folderID: String? = nil, force: Bool = false, progress: @Sendable (LibraryProgress) async -> Void) async throws {
+        guard !refreshing else { throw Failure.refreshing }
+        refreshing = true
+        defer { refreshing = false }
         try connect(); try ensureSearchText()
-        for folder in try summary().folders where folderID == nil || folder.id == folderID {
+        for folder in try folders() where folderID == nil || folder.id == folderID {
             try Task.checkCancellation()
             let url = try folder.url()
             let scope = url.startAccessingSecurityScopedResource(); defer { if scope { url.stopAccessingSecurityScopedResource() } }
@@ -292,12 +305,19 @@ actor LibraryIndex {
             }
             if let traversalError { throw traversalError }
             var seen = Set<String>()
+            let clock = ContinuousClock()
+            var nextProgress = clock.now
             for (offset, file) in files.sorted(by: { $0.path < $1.path }).enumerated() {
                 try Task.checkCancellation()
                 seen.insert(file.path)
-                await progress(LibraryProgress(completed: offset, total: files.count, name: file.lastPathComponent))
+                if clock.now >= nextProgress {
+                    await progress(LibraryProgress(completed: offset, total: files.count, name: file.lastPathComponent))
+                    nextProgress = clock.now.advanced(by: .milliseconds(100))
+                }
                 try index(file, folder: folder.id, force: force)
-                await progress(LibraryProgress(completed: offset + 1, total: files.count, name: file.lastPathComponent))
+                if offset + 1 == files.count {
+                    await progress(LibraryProgress(completed: files.count, total: files.count, name: file.lastPathComponent))
+                }
             }
             try Task.checkCancellation()
             let existing = try statement("SELECT path FROM documents WHERE folder=?", [folder.id])
@@ -474,6 +494,11 @@ actor LibraryIndex {
     private func metadata(_ key: String) throws -> Int64 {
         let row = try statement("SELECT value FROM search_metadata WHERE key=?", [key]); defer { sqlite3_finalize(row) }
         return sqlite3_step(row) == SQLITE_ROW ? sqlite3_column_int64(row, 0) : 0
+    }
+    func snapshot() throws -> (summary: LibrarySummary, generation: Int64) {
+        try connect()
+        let generation = try metadata("generation")
+        return (try summary(), generation)
     }
     private func ensureSearchText() throws {
         guard try metadata("format") != 1 else { return }

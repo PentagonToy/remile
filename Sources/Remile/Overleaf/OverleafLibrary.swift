@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import WebKit
 import Network
@@ -24,8 +25,6 @@ import Network
     private var proceedAfterNotice = false
     @Published var presented = false
     @Published var browsing = false
-    @Published private(set) var tagSignInProfile: UUID?
-    @Published private(set) var tagError: String?
     @Published var busy = false
     @Published var error: String?
     @Published var review: OverleafGit.Review?
@@ -38,7 +37,8 @@ import Network
     @Published var statuses: [UUID: Status] = [:]
     @Published var adding = false
     @Published private(set) var hasNetwork = true
-    private let network = NWPathMonitor()
+    private var reachability: AnyCancellable?
+    private var tagsNeedSave = false
     private var policyObserver: NSObjectProtocol?
     var warmProject: TeXProject?
     var warmExpiry: Task<Void, Never>?
@@ -56,12 +56,32 @@ import Network
         for project in projects { if let date = UserDefaults.standard.object(forKey: "overleaf.synced." + project.id.uuidString) as? Date { syncedAt[project.id] = date } }
         for project in projects where !accounts.contains(where: { $0.id == project.profileID }) { accounts.append(Account(id: project.profileID, name: project.account)) }
         policyObserver = NotificationCenter.default.addObserver(forName: NetworkAccessGate.changed, object: NetworkAccess.gate, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.objectWillChange.send() } }
-        // Review copies contain no unique edits. The active local project owns every draft.
-        try? FileManager.default.removeItem(at: self.directory.appendingPathComponent("Reviews"))
-        network.pathUpdateHandler = { [weak self] path in Task { @MainActor in self?.hasNetwork = path.status == .satisfied } }
-        network.start(queue: DispatchQueue(label: "local.remile.overleaf.reachability"))
     }
-    deinit { network.cancel(); if let policyObserver { NotificationCenter.default.removeObserver(policyObserver) } }
+    deinit { if let policyObserver { NotificationCenter.default.removeObserver(policyObserver) } }
+
+    func watchReachability() {
+        guard reachability == nil else { return }
+        reachability = Self.networkStatus.removeDuplicates().sink { [weak self] available in
+            MainActor.assumeIsolated {
+                if let self, self.hasNetwork != available { self.hasNetwork = available }
+            }
+        }
+    }
+
+    private static let networkStatus: CurrentValueSubject<Bool, Never> = {
+        let status = CurrentValueSubject<Bool, Never>(true)
+        network.pathUpdateHandler = { path in
+            let available = path.status == .satisfied
+            DispatchQueue.main.async { status.send(available) }
+        }
+        network.start(queue: DispatchQueue(label: "local.remile.overleaf.reachability"))
+        return status
+    }()
+    private static let network = NWPathMonitor()
+
+    nonisolated static func clearAbandonedManualReviews() {
+        try? FileManager.default.removeItem(at: defaultDirectory.appendingPathComponent("Reviews"))
+    }
     static func syncAge(_ date: Date, now: Date) -> String {
         let minutes = max(0, Int(now.timeIntervalSince(date) / 60))
         return minutes == 0 ? "Synced just now" : "Synced \(minutes) min ago"
@@ -75,6 +95,7 @@ import Network
         connection(for: root) == nil ? "LaTeX" : "Overleaf"
     }
     func probe(_ project: OverleafConnection) async {
+        watchReachability()
         guard allowsGit(project), !busy, !probing, !offlineMode, !NetworkAccess.offline, hasNetwork else { return }; probing = true; defer { probing = false }
         let root = root(project), revision = syncRevision
         do {
@@ -135,10 +156,6 @@ import Network
         let index = target.flatMap { target in updated.firstIndex { $0.id == target } } ?? updated.count
         updated.insert(project, at: index)
         do { try persist(updated); return true } catch { self.error = error.localizedDescription; return false }
-    }
-    func refreshProjectTags() async {
-        // Preserve saved labels without contacting unsupported catalog/tag endpoints.
-        tagError = nil; tagSignInProfile = nil
     }
     func isFreeLimited(_ project: OverleafConnection) -> Bool {
         accounts.first { $0.id == project.profileID }.map { $0.plan == .free && !$0.allowsGit } ?? false
@@ -246,13 +263,29 @@ import Network
         busy = false
     }
     func rememberTags(_ catalog: [OverleafWebClient.Project], profile: UUID) {
+        let byID = Dictionary(catalog.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var updatedTags = tags
+        var updatedUnavailable = unavailableTags
         for project in projects where project.profileID == profile {
-            if let item = catalog.first(where: { $0.id == project.projectID }) {
-                if item.tagsLoaded { tags[project.id] = item.tags; unavailableTags.remove(project.id) }
-                else { unavailableTags.insert(project.id) }
+            if let item = byID[project.projectID] {
+                if item.tagsLoaded {
+                    updatedTags[project.id] = item.tags
+                    updatedUnavailable.remove(project.id)
+                } else {
+                    updatedUnavailable.insert(project.id)
+                }
             }
         }
-        if let data = try? JSONEncoder().encode(tags) { try? data.write(to: directory.appendingPathComponent("project-tags.json"), options: .atomic) }
+        if updatedUnavailable != unavailableTags { unavailableTags = updatedUnavailable }
+        if updatedTags != tags { tags = updatedTags; tagsNeedSave = true }
+        guard tagsNeedSave else { return }
+        do {
+            let data = try JSONEncoder().encode(updatedTags)
+            try data.write(to: directory.appendingPathComponent("project-tags.json"), options: .atomic)
+            tagsNeedSave = false
+        } catch {
+            // Keep the labels usable and retry persistence on the next catalogue load.
+        }
     }
     func remove(_ project: OverleafConnection) {
         if warmProject?.root.path == root(project).path {
@@ -271,6 +304,7 @@ import Network
         } catch { self.error = error.localizedDescription }
     }
     func check(_ project: OverleafConnection, save: () -> Bool = { true }) async {
+        watchReachability()
         guard allowsGit(project) else { error = Self.premiumHint; return }
         guard !busy, !liveOwned.contains(project.id), !offlineMode, !NetworkAccess.offline, hasNetwork else { return }
         busy = true; syncRevision += 1; error = nil

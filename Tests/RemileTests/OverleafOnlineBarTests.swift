@@ -15,7 +15,7 @@ final class OverleafOnlineBarTests: XCTestCase {
         let connection = OverleafConnection(id: UUID(), projectID: String(repeating: "a", count: 24), name: "Fixture", account: "Fixture", branch: "main")
         OverleafSyncPreference.choose(false, for: connection.id)
         defer { UserDefaults.standard.removeObject(forKey: "overleaf.prefersLive." + connection.id.uuidString) }
-        project.buffers["main.tex"] = "Unsaved body"
+        project.updateBuffer("main.tex", to: "Unsaved body")
         XCTAssertTrue(project.dirty)
         for dark in [false, true] {
             let host = NSHostingView(rootView: OverleafBar(library: library, project: project, connection: connection).environment(\.colorScheme, dark ? .dark : .light))

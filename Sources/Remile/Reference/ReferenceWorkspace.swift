@@ -54,7 +54,8 @@ struct ReferenceWorkspace: View {
     private struct MetadataSelection: Identifiable { let id = UUID(); let records: [ReferenceRecord] }
     private struct DuplicateGroup: Identifiable { let id = UUID(); let records: [ReferenceRecord] }
     private var toolbar: some View {
-        HStack(spacing: RemileControl.spacing) {
+        let hasRecords = model.hasActiveLibraryRecords
+        return HStack(spacing: RemileControl.spacing) {
             Button(action: goHome) { SymbolIcon(systemName: "chevron.left") }.buttonStyle(RemileToolStyle()).accessibilityLabel("Back to Home").remileHelp("Back to Home")
             Text("Reference").font(RemileType.heading)
             Spacer()
@@ -69,8 +70,8 @@ struct ReferenceWorkspace: View {
             } label: { SymbolLabel("Add", systemImage: "plus") }.fixedSize()
             Button { model.undo() } label: { SymbolIcon(systemName: "arrow.uturn.backward") }.disabled(!model.canUndo).accessibilityLabel("Undo").remileHelp("Undo the last Reference change")
             Button { model.undo(redo: true) } label: { SymbolIcon(systemName: "arrow.uturn.forward") }.disabled(!model.canRedo).accessibilityLabel("Redo").remileHelp("Redo the last Reference change")
-            Button { model.error = nil; state.cleanup = true } label: { SymbolLabel("Clean up", systemImage: "wand.and.stars") }.disabled(model.libraryRecords.filter { $0.trashed == nil }.isEmpty || model.showingTrash || model.busy)
-            Button { state.regenerate = true } label: { SymbolLabel("Keys", systemImage: "key") }.disabled(model.libraryRecords.allSatisfy { $0.trashed != nil }).remileHelp("Regenerate library citation keys")
+            Button { model.error = nil; state.cleanup = true } label: { SymbolLabel("Clean up", systemImage: "wand.and.stars") }.disabled(!hasRecords || model.showingTrash || model.busy)
+            Button { state.regenerate = true } label: { SymbolLabel("Keys", systemImage: "key") }.disabled(!hasRecords).remileHelp("Regenerate library citation keys")
         }.font(RemileType.control).buttonStyle(RemileToolStyle()).padding(.horizontal, 16).padding(.vertical, 6).disabled(model.busy)
     }
     var body: some View {
@@ -318,18 +319,17 @@ struct ReferenceWorkspace: View {
         }.buttonStyle(.plain).accessibilityAction(named: "Rename") { renameLibrary(library) }
         }
         }.contextMenu {
-            let records = model.contents(library.id).filter { $0.trashed == nil }
             Button("Add library…", systemImage: "folder.badge.plus") { addLibrary() }
             if library.parentID == nil { Button("Add collection…", systemImage: "folder.badge.plus") { addLibrary(parent: library.id) } }
             Button("Rename…", systemImage: "square.and.pencil") { renameLibrary(library) }
             Divider()
             if library.source == "remarkable" {
-                Button("Update library") { remarkable.updateLibrary(library, python: RemarkableRuntime.python, to: model) }.disabled((records.isEmpty && library.remarkableFolders?.isEmpty != false) || library.remarkableFolders?.isEmpty == true || remarkable.busy || zotero.busy || !remarkableEnabled)
+                Button("Update library") { remarkable.updateLibrary(library, python: RemarkableRuntime.python, to: model) }.disabled((count == 0 && library.remarkableFolders?.isEmpty != false) || library.remarkableFolders?.isEmpty == true || remarkable.busy || zotero.busy || !remarkableEnabled)
                 Button("Choose folders…") { showRemarkable = true }.disabled(!remarkableEnabled || remarkable.busy)
                 if library.remarkableFolders?.isEmpty == false {
                     Button("Disconnect folders") { model.connectRemarkableFolders([]) }
                 }
-                Button("Connect to Libraries…") { state.connectingLibrary = library }.disabled(records.isEmpty)
+                Button("Connect to Libraries…") { state.connectingLibrary = library }.disabled(count == 0)
             } else if library.importedZoteroScope != nil {
                 Button("Update library") { zotero.updateLibrary(library, to: model) }.disabled(zotero.busy || remarkable.busy)
             }
@@ -337,8 +337,12 @@ struct ReferenceWorkspace: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(library.id.uuidString, forType: .string)
             }
-            Button("Copy library as BibTeX", systemImage: "doc.on.clipboard") { model.copy(records) }.disabled(records.isEmpty)
-            Button("Export library as BibTeX…", systemImage: "square.and.arrow.up") { model.export(records) }.disabled(records.isEmpty)
+            Button("Copy library as BibTeX", systemImage: "doc.on.clipboard") {
+                model.copy(model.contents(library.id).filter { $0.trashed == nil })
+            }.disabled(count == 0)
+            Button("Export library as BibTeX…", systemImage: "square.and.arrow.up") {
+                model.export(model.contents(library.id).filter { $0.trashed == nil })
+            }.disabled(count == 0)
             Divider()
             Button(library.parentID == nil ? "Delete library…" : "Delete collection…", systemImage: "trash", role: .destructive) { state.deletingLibrary = library }
         }.disabled(model.busy)

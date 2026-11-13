@@ -86,8 +86,23 @@ func runChecks() async throws {
     try check(thumbnail.flatMap(NSImage.init(data:)) != nil, "PDF cover is decoded from its real first page")
     let absentCover = try await SearchCoverStore.shared.image(path: missing.path, revision: UUID())
     try check(absentCover == nil, "Unavailable thumbnails retain a safe placeholder")
-    let overlay = HighlightOverlay(pdfView: PDFView(), page: page, query: "alpha")
+    let overlayView = PDFView()
+    let highlights = SearchPDFHighlights()
+    highlights.update(query: "alpha")
+    var firstMatch: PDFSelection?
+    let overlay = highlights.pdfView(overlayView, overlayViewFor: page) as! HighlightOverlay
+    highlights.duringReveal(on: page) {
+        firstMatch = highlights.selections(on: page).first
+        precondition(highlights.selections(on: page).first === firstMatch)
+    }
+    try check(firstMatch != nil && highlights.selections(on: page).first !== firstMatch, "Search reuses native selections only during a single reveal")
+    try check(overlay.rectangles.count == 2, "Overlay draws both matches")
     try check(overlay.hitTest(.zero) == nil, "Highlight overlays never intercept document interaction")
+    highlights.pdfView(overlayView, willEndDisplayingOverlayView: overlay, for: page)
+    highlights.update(query: "gamma")
+    try check(overlay.rectangles.count == 2, "A retired overlay is excluded from query updates")
+    highlights.pdfView(overlayView, willDisplayOverlayView: overlay, for: page)
+    try check(overlay.rectangles.isEmpty, "Returning to a page draws the current query")
     try check(SearchPDFCanvas.selections(on: page, query: "alph").isEmpty, "PDF highlights do not mark partial words")
     try check(SearchMarkdown.searchText("# Heading\n\n**Alpha** beta.").contains("Heading\nAlpha beta."), "Markdown blocks retain word boundaries in the search index")
     let annotationURL = output.appendingPathComponent("annotation-fixture.pdf")

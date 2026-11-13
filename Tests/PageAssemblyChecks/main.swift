@@ -38,6 +38,63 @@ func texts(_ document: PDFDocument) -> [String] { PDFPageAssembly.pages(document
 func relations(_ document: PDFDocument) -> Int { PDFCommentGraph(document: document).parents.count }
 func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
 
+@MainActor func pageCollection(in view: NSView) -> PageCollectionView? {
+    if let collection = view as? PageCollectionView { return collection }
+    return view.subviews.lazy.compactMap { pageCollection(in: $0) }.first
+}
+
+@MainActor func checkBackgroundOverview() async throws {
+    let bytes = try fixture("THUMBNAILS", pages: 24)
+    let session = PDFSession()
+    session.load(bytes)
+    session.showsOverview = true
+    func overview(visible: Bool) -> some View {
+        PDFWorkspace(data: bytes, session: session, pdfTabVisible: visible, updateDocument: { _ in })
+    }
+    let host = NSHostingView(rootView: overview(visible: true))
+    host.sizingOptions = []
+    let frame = CGRect(x: 0, y: 0, width: 760, height: 550)
+    let window = NSWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: false)
+    window.contentView = host
+    host.frame = frame
+    window.orderFront(nil)
+    defer { window.orderOut(nil); window.contentView = nil; session.stop() }
+
+    func settle() async throws {
+        try await Task.sleep(for: .milliseconds(250))
+        host.layoutSubtreeIfNeeded()
+    }
+    try await settle()
+    guard let collection = pageCollection(in: host), let scroll = collection.enclosingScrollView else {
+        preconditionFailure("Page overview mounts the native collection")
+    }
+    func visibleImages() -> Int {
+        collection.visibleItems().flatMap { $0.view.subviews }.compactMap { ($0 as? NSImageView)?.image }.count
+    }
+    let selection: Set<IndexPath> = [IndexPath(item: 11, section: 0)]
+    collection.selectionIndexPaths = selection
+    collection.actions?.selectionChanged()
+    collection.scrollToItems(at: selection, scrollPosition: .centeredVertically)
+    try await settle()
+    let offset = scroll.contentView.bounds.origin
+    let foregroundImages = visibleImages()
+    expect(offset.y > 0 && foregroundImages > 0, "Overview renders thumbnails after scrolling")
+
+    host.rootView = overview(visible: false)
+    try await settle()
+    expect(visibleImages() == 0, "Background overview releases visible thumbnail images")
+    expect(pageCollection(in: host) === collection && collection.selectionIndexPaths == selection,
+           "Backgrounding preserves the native collection and selection")
+    expect(scroll.contentView.bounds.origin == offset, "Backgrounding preserves scroll position")
+
+    host.rootView = overview(visible: true)
+    try await settle()
+    expect(visibleImages() == foregroundImages, "Returning to the overview restores visible thumbnails")
+    expect(pageCollection(in: host) === collection && collection.selectionIndexPaths == selection
+           && scroll.contentView.bounds.origin == offset, "Returning preserves selection and scroll position")
+    print("Overview thumbnail images on screen: \(foregroundImages) → 0 → \(visibleImages())")
+}
+
 Task { @MainActor in
     do {
         _ = NSApplication.shared
@@ -46,6 +103,24 @@ Task { @MainActor in
         let sourceURL = output.appendingPathComponent("arrangement.pdf"), insertURL = output.appendingPathComponent("insert.pdf")
         try original.write(to: sourceURL); try extra.write(to: insertURL)
         let session = PDFSession(); session.load(original); session.showsOverview = true
+        session.loadComments()
+        for _ in 0..<100 where session.loadingComments { try await Task.sleep(for: .milliseconds(10)) }
+        let thread = session.threads.first
+        expect(session.threads.count == 1 && thread?.root.text == "ORIGINAL ROOT"
+               && thread?.replies.map(\.text) == ["ORIGINAL REPLY", "ORIGINAL NESTED"],
+               "Reading notes preserves imported reply relationships")
+        let nested = thread!.replies[1]
+        expect(session.parentComment(of: nested)?.text == "ORIGINAL REPLY",
+               "Nested reply cards resolve their immediate parent")
+        let replacement = PDFSession(); replacement.load(original); replacement.loadComments()
+        for _ in 0..<100 where replacement.loadingComments { try await Task.sleep(for: .milliseconds(10)) }
+        let previousNote = replacement.threads[0].replies[1]
+        replacement.load(extra)
+        expect(replacement.threads.isEmpty && replacement.parentComment(of: previousNote) == nil,
+               "Switching documents invalidates thread and parent lookups")
+        replacement.loadComments()
+        for _ in 0..<100 where replacement.loadingComments { try await Task.sleep(for: .milliseconds(10)) }
+        expect(replacement.threads.first?.root.text == "INSERTED ROOT", "The new document builds its own note threads")
         let document = session.document!, pages = PDFPageAssembly.pages(document), undo = UndoManager()
         undo.groupsByEvent = false; session.undoManager = undo
         let token = session.pageDragToken(pages[0])
@@ -117,12 +192,17 @@ Task { @MainActor in
             let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1100, height: 750), styleMask: [.titled], backing: .buffered, defer: false)
             window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua); window.contentView = host; host.frame = CGRect(x: 0, y: 0, width: 1100, height: 750)
             window.orderFront(nil); try await Task.sleep(for: .milliseconds(800)); host.layoutSubtreeIfNeeded()
+            let firstPage = gridSession.document!.page(at: 0)!
+            let revision = "\(gridSession.pageRevision):\(gridSession.pendingAnnotationRevision)"
+            let thumbnail = PDFThumbnailCache.shared.image(for: firstPage, size: CGSize(width: 166, height: 204), revision: revision)
+            expect(thumbnail != nil, "Overview uses the bounded thumbnail cache")
             let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
             host.cacheDisplay(in: host.bounds, to: bitmap)
             try bitmap.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent(dark ? "overview-dark.png" : "overview-light.png"))
             expect(host.bounds.width == 1100 && host.bounds.height == 750, "Overview respects the requested window bounds")
             window.orderOut(nil); window.contentView = nil; gridSession.stop()
         }
+        try await checkBackgroundOverview()
         session.stop(); print("\(checks) page assembly checks passed, including nested replies, internal links, undo, canonical Save and overview renders.")
         exit(0)
     } catch { print("Page assembly checks failed: \(error)"); exit(1) }

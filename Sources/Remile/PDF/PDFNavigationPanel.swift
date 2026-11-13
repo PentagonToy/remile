@@ -7,6 +7,7 @@ struct PDFPagesPanel: View {
     let select: (Int) -> Void
     var revision = ""
     var rendersThumbnails = true
+    var keepsThumbnails = true
     var body: some View {
         GeometryReader { geometry in
             let width = (min(160, max(64, geometry.size.width - 52)) / PDFThumbnailCache.widthStep).rounded(.down) * PDFThumbnailCache.widthStep
@@ -17,7 +18,7 @@ struct PDFPagesPanel: View {
                             Button { select(index + 1) } label: {
                                 VStack(spacing: 8) {
                                     if let page = document.page(at: index) {
-                                        PDFPageThumbnail(page: page, size: CGSize(width: width, height: width * 1.34), revision: revision, enabled: rendersThumbnails)
+                                        PDFPageThumbnail(page: page, size: CGSize(width: width, height: width * 1.34), revision: revision, enabled: rendersThumbnails && keepsThumbnails, retained: keepsThumbnails)
                                             .padding(4)
                                             .background(currentPage == index + 1 ? RemileStyle.accent.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
                                             .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(currentPage == index + 1 ? RemileStyle.accent : Color.clear, lineWidth: 1))
@@ -42,11 +43,12 @@ struct PDFPageThumbnail: View {
     var size = CGSize(width: 66, height: 86)
     var revision = ""
     var enabled = true
+    var retained = true
     @StateObject private var state = ThumbnailState()
     private final class ThumbnailState: ObservableObject { @Published var image: NSImage? }
     var body: some View {
         Group {
-            if let image = state.image { Image(nsImage: image).resizable().scaledToFit() }
+            if retained, let image = state.image { Image(nsImage: image).resizable().scaledToFit() }
             else { Rectangle().fill(.quaternary) }
         }.frame(width: size.width, height: size.height)
             .task(id: "\(ObjectIdentifier(page)):\(page.rotation):\(size.width):\(size.height):\(revision):\(enabled)") {
@@ -60,6 +62,9 @@ struct PDFPageThumbnail: View {
                 state.image = image
             }
             .onDisappear { state.image = nil }
+            .onChange(of: retained) { _, retained in
+                if !retained { state.image = nil }
+            }
     }
 }
 

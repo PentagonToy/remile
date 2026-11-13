@@ -4,6 +4,8 @@ import Foundation
 actor TeXLocalCompletion {
     private struct Entry {
         let source: String
+        let length: Int
+        let complete: Bool
         let labels: [String]
         let commands: [String]
         let packages: [String]
@@ -151,11 +153,23 @@ actor TeXLocalCompletion {
         }
         let paths = priority.filter(isSource) + buffers.keys.filter { !priority.contains($0) && isSource($0) }.sorted()
         for path in paths.prefix(128) {
-            guard !Task.isCancelled, budget > 0 else { break }
+            guard !Task.isCancelled else { return }
+            guard budget > 0 else { break }
             guard let source = buffers[path] else { continue }
-            let text = source as NSString, length = min(text.length, Self.fileBudget, budget)
-            let bounded = text.substring(with: NSRange(location: 0, length: length)); budget -= length; retained.insert(path)
-            guard entries[path]?.source != bounded else { continue }
+            retained.insert(path)
+            let limit = min(Self.fileBudget, budget)
+            if let entry = entries[path], entry.complete, entry.length <= limit, entry.source == source,
+               source.utf16.count == entry.length {
+                budget -= entry.length
+                continue
+            }
+            let text = source as NSString
+            let sourceLength = text.length
+            let length = min(sourceLength, limit)
+            let complete = length == sourceLength
+            let bounded = complete ? source : text.substring(with: NSRange(location: 0, length: length))
+            budget -= length
+            if let entry = entries[path], entry.complete == complete, entry.length == length, entry.source == bounded { continue }
             let clean = Self.comments.stringByReplacingMatches(in: bounded, range: NSRange(location: 0, length: length), withTemplate: "$1") as NSString
             func values(_ regex: NSRegularExpression, _ limit: Int, transform: (NSTextCheckingResult) -> String) -> [String] {
                 var names: [String] = []
@@ -179,8 +193,12 @@ actor TeXLocalCompletion {
                 .filter { Self.packageCommands[$0] != nil }
             let environments = values(Self.environmentPattern, 128) { clean.substring(with: $0.range(at: 1)) }
             guard !Task.isCancelled else { return }
-            entries[path] = .init(source: bounded, labels: labels, commands: definitions + operators, packages: packages, environments: environments); preparations += 1
+            entries[path] = .init(source: bounded, length: length, complete: complete,
+                                  labels: labels, commands: definitions + operators, packages: packages, environments: environments)
+            preparations += 1
         }
-        entries = entries.filter { retained.contains($0.key) }
+        if entries.keys.contains(where: { !retained.contains($0) }) {
+            entries = entries.filter { retained.contains($0.key) }
+        }
     }
 }

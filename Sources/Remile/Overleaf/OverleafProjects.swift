@@ -10,6 +10,7 @@ struct OverleafProjects: View {
     @State private var name = ""
     @State private var accounts = false
     @State private var signIn = false
+    @State private var refreshAfterSignIn = false
     @State private var catalogue: [OverleafWebClient.Project] = []
     @State private var catalogueProfile: UUID?
     @State private var query = ""
@@ -20,17 +21,25 @@ struct OverleafProjects: View {
     @State private var revision = 0
     @State private var byLink = false
     @State private var expandedGroups = Set<Group.ID>()
+    @State private var presentation = CataloguePresentation()
+    @ObservedObject private var network = NetworkAccessState.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var account: OverleafLibrary.Account? { library.accounts.first { $0.id == accountID } ?? library.accounts.first }
-    private var loadKey: String { (account?.id.uuidString ?? "") + ":" + String(revision) }
-    private var searchText: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var available: [OverleafWebClient.Project] {
-        let connected = Set(library.projects.filter { $0.profileID == account?.id }.map(\.projectID))
-        return catalogue.filter { !connected.contains($0.id) && Self.matches($0, query: searchText) }
+    private var online: Bool { !network.offline && library.hasNetwork }
+    private var loadKey: CatalogueLoad { .init(profile: account?.id, revision: revision, online: online) }
+    @State private var completedLoad: CatalogueLoad?
+    private var visibleCatalogue: [OverleafWebClient.Project] {
+        catalogueProfile == account?.id ? catalogue : []
     }
-    private var selectedProject: OverleafWebClient.Project? { available.first { $0.id == selected } }
+    private var searchText: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var results: CataloguePresentation.Results {
+        presentation.results(for: visibleCatalogue, profile: account?.id, connected: library.projects, query: searchText)
+    }
     var body: some View {
-        VStack(alignment: .leading, spacing: RemileControl.spacing * 2) {
+        let results = self.results
+        let projects = results.projects
+        let selection = projects.first { $0.id == selected }
+        return VStack(alignment: .leading, spacing: RemileControl.spacing * 2) {
             HStack {
                 Text("Add Overleaf project").font(RemileType.heading)
                 Spacer()
@@ -43,23 +52,25 @@ struct OverleafProjects: View {
                 Button(library.accounts.isEmpty ? "Add account…" : "Git token…") { accounts = true }
                 Spacer()
                 Button { revision += 1 } label: {
-                    if loading && !catalogue.isEmpty { ProgressView().controlSize(.small) }
+                    if loading && !visibleCatalogue.isEmpty { ProgressView().controlSize(.small) }
                     else { SymbolIcon(systemName: "arrow.clockwise") }
                 }
                     .buttonStyle(.plain).frame(width: RemileControl.toolHit, height: RemileControl.toolHit)
                     .accessibilityLabel("Refresh projects").remileHelp("Refresh projects")
-                    .disabled(loading || account == nil)
+                    .disabled(!online || loading || account == nil)
             }.disabled(library.busy)
             TextField("Find a project or tag", text: $query).textFieldStyle(.roundedBorder).disabled(library.busy)
-                .onSubmit { if !searchText.isEmpty, let first = available.first { selected = first.id; byLink = false } }
-            projectList
-            if needsConnection && !catalogue.isEmpty {
+                .onSubmit { if !searchText.isEmpty, let first = projects.first { selected = first.id; byLink = false } }
+            projectList(results)
+            if !online && !visibleCatalogue.isEmpty {
+                Text("Offline · showing previously loaded projects.").font(RemileType.caption).foregroundStyle(RemileStyle.secondaryInk)
+            } else if online && needsConnection && !visibleCatalogue.isEmpty {
                 HStack {
                     Text("Sign in to refresh projects.").font(RemileType.caption).foregroundStyle(RemileStyle.secondaryInk)
                     Spacer()
                     Button("Sign in…") { signIn = true }.disabled(library.busy)
                 }
-            } else if let issue, !needsConnection {
+            } else if online, let issue, !needsConnection {
                 Text(issue).font(RemileType.caption).foregroundStyle(RemileStyle.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -68,7 +79,7 @@ struct OverleafProjects: View {
                     TextField("Overleaf project or Git link", text: $url).textFieldStyle(.roundedBorder)
                     TextField("Project name", text: $name).textFieldStyle(.roundedBorder)
                     HStack {
-                        Link("Open Overleaf", destination: URL(string: "https://www.overleaf.com/project")!)
+                        ExternalLink("Open Overleaf", destination: URL(string: "https://www.overleaf.com/project")!)
                         Spacer()
                     }
                 }.padding(.top, RemileControl.spacing)
@@ -77,7 +88,7 @@ struct OverleafProjects: View {
                 Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).textSelection(.enabled)
             }
             HStack {
-                if !byLink, let project = selectedProject {
+                if !byLink, let project = selection {
                     Text(project.name).font(RemileType.caption).foregroundStyle(RemileStyle.secondaryInk)
                         .lineLimit(1).truncationMode(.middle).remileHelp(project.name)
                         .accessibilityLabel("Selected project: " + project.name)
@@ -86,24 +97,36 @@ struct OverleafProjects: View {
                 if library.busy { ProgressView().controlSize(.small) }
                 Button("Add project", action: add)
                     .buttonStyle(RemileActionStyle(emphasis: .primary))
-                    .disabled(library.busy || account == nil || (byLink ? OverleafConnection.projectID(url) == nil : loading || selectedProject == nil))
+                    .disabled(!online || library.busy || account == nil || (byLink ? OverleafConnection.projectID(url) == nil : selection == nil))
             }
         }.padding(RemileControl.spacing * 3).frame(width: 540).font(RemileType.control).buttonStyle(RemileActionStyle())
             .background(RemileStyle.background).interactiveDismissDisabled(library.busy)
-            .task(id: loadKey) { await load() }
+            .task(id: loadKey) { [key = loadKey] in
+                if key.profile != nil && !network.offline { library.watchReachability() }
+                await load(key)
+            }
             .onChange(of: selected) { _ in library.error = nil }
             .sheet(isPresented: $accounts) {
                 OverleafAccountManager(library: library, selected: account?.id, requestGitToken: true, prepareRemoval: prepareRemoval) { accounts = false }
             }
-            .sheet(isPresented: $signIn, onDismiss: { revision += 1 }) {
-                if let account { OverleafSignIn(profile: account.id, catalogue: true) { signIn = false } }
+            .sheet(isPresented: $signIn, onDismiss: {
+                if refreshAfterSignIn {
+                    refreshAfterSignIn = false
+                    revision += 1
+                }
+            }) {
+                if let account {
+                    OverleafSignIn(profile: account.id, catalogue: true, onConnected: { refreshAfterSignIn = true }) {
+                        signIn = false
+                    }
+                }
             }
     }
-    private var projectList: some View {
+    private func projectList(_ results: CataloguePresentation.Results) -> some View {
         ScrollView {
             LazyVStack(spacing: RemileControl.spacing / 2) {
-                if searchText.isEmpty {
-                    ForEach(Self.grouped(available)) { group in
+                if !results.groups.isEmpty {
+                    ForEach(results.groups) { group in
                         DisclosureGroup(isExpanded: Binding(
                             get: { expandedGroups.contains(group.id) },
                             set: { expanded in
@@ -128,19 +151,21 @@ struct OverleafProjects: View {
                         }.disabled(library.busy)
                     }
                 } else {
-                    ForEach(available) { item in projectRow(item) }
+                    ForEach(results.projects) { item in projectRow(item) }
                 }
             }.padding(.trailing, 18)
         }.frame(height: 240)
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: expandedGroups)
             .overlay {
-                if loading && catalogue.isEmpty { ProgressView("Loading projects…") }
-                else if needsConnection && catalogue.isEmpty {
+                if !online && account != nil && visibleCatalogue.isEmpty {
+                    Text("Projects are unavailable offline.").font(RemileType.caption).foregroundStyle(RemileStyle.secondaryInk)
+                } else if loading && visibleCatalogue.isEmpty { ProgressView("Loading projects…") }
+                else if needsConnection && visibleCatalogue.isEmpty {
                     VStack(spacing: RemileControl.spacing) {
                         Text("Sign in to see your projects.").font(RemileType.caption).foregroundStyle(RemileStyle.secondaryInk)
                         Button("Sign in…") { signIn = true }.disabled(library.busy)
                     }
-                } else if available.isEmpty {
+                } else if results.projects.isEmpty {
                     Text(account == nil ? "Add an account to choose a project." :
                             !searchText.isEmpty ? "No matching projects" : "No projects to add")
                         .font(RemileType.caption).foregroundStyle(RemileStyle.secondaryInk)
@@ -162,36 +187,52 @@ struct OverleafProjects: View {
             .background(selected == item.id ? RemileStyle.accent.opacity(0.12) : .clear,
                         in: RoundedRectangle(cornerRadius: RemileRadius.control))
     }
-    private func load() async {
-        issue = nil; needsConnection = false
-        guard let account else { catalogue = []; selected = nil; catalogueProfile = nil; loading = false; return }
-        if catalogueProfile != account.id {
-            catalogue = []; selected = nil; expandedGroups = []; catalogueProfile = account.id
+    private func load(_ key: CatalogueLoad) async {
+        guard key == loadKey, !Task.isCancelled else { return }
+        if catalogueProfile != key.profile {
+            catalogue = []; selected = nil; expandedGroups = []; catalogueProfile = key.profile
+            completedLoad = nil
         }
+        guard key.shouldFetch(after: completedLoad), let profile = key.profile else { loading = false; return }
+        issue = nil; needsConnection = false
         loading = true
-        defer { if !Task.isCancelled { loading = false } }
+        defer { if key == loadKey, !Task.isCancelled { loading = false } }
         do {
-            let projects = try await OverleafWebClient.projects(account.id)
+            let projects = try await OverleafWebClient.projects(profile, onList: { listed in
+                guard key == loadKey, !Task.isCancelled else { return }
+                catalogue = Self.retainingTags(listed, previous: catalogue)
+                if !catalogue.contains(where: { $0.id == selected }) { selected = nil }
+            })
             try Task.checkCancellation()
-            catalogue = Self.retainingTags(projects, previous: catalogue)
-            if !available.contains(where: { $0.id == selected }) { selected = nil }
-            library.rememberTags(projects, profile: account.id)
+            guard key == loadKey else { return }
+            if projects.first?.tagsLoaded == true {
+                if let project = projects.first(where: { $0.id == selected }) {
+                    let groups: [Group.ID] = project.tags.isEmpty ? [.untagged] : project.tags.map { .tag($0.id) }
+                    if let first = groups.first, !groups.contains(where: expandedGroups.contains) {
+                        expandedGroups.insert(first)
+                    }
+                }
+                catalogue = projects
+            }
+            completedLoad = key
+            library.rememberTags(projects, profile: profile)
         } catch {
-            guard !Task.isCancelled else { return }
+            guard key == loadKey, !Task.isCancelled else { return }
             needsConnection = (error as? OverleafWebClient.Failure)?.needsConnection == true
             issue = needsConnection ? "Connect your Overleaf account to choose a project." : error.localizedDescription
         }
     }
     private func add() {
-        guard let account, !library.busy, !loading || byLink else { return }
+        guard online, let account, !library.busy else { return }
         guard OverleafCredential.availability(account.id) != .missing else { accounts = true; return }
-        let item = selectedProject
+        let item = results.projects.first { $0.id == selected }
+        guard byLink || item != nil else { return }
         let projectURL = byLink ? url : item.map { "https://www.overleaf.com/project/" + $0.id } ?? ""
         let projectName = byLink ? name : item?.name ?? ""
         Task {
             await library.connect(url: projectURL, name: projectName, account: account.name, token: "")
             if library.error == nil {
-                library.rememberTags(catalogue, profile: account.id)
+                if !loading { library.rememberTags(catalogue, profile: account.id) }
                 library.presented = false
                 library.browsing = true
             }
@@ -201,6 +242,44 @@ struct OverleafProjects: View {
 
 // Groups hold lightweight catalogue values, not project files or downloaded contents.
 extension OverleafProjects {
+    @MainActor final class CataloguePresentation {
+        struct Results {
+            let projects: [OverleafWebClient.Project]
+            let groups: [Group]
+        }
+
+        private struct Input: Equatable {
+            let catalogue: [OverleafWebClient.Project]
+            let profile: UUID?
+            let connected: [OverleafConnection]
+            let query: String
+        }
+
+        private var cached: (Input, Results)?
+
+        func results(for catalogue: [OverleafWebClient.Project], profile: UUID?,
+                     connected: [OverleafConnection], query: String) -> Results {
+            let input = Input(catalogue: catalogue, profile: profile, connected: connected, query: query)
+            if let cached, cached.0 == input { return cached.1 }
+            let existing = Set(connected.lazy.filter { $0.profileID == profile }.map(\.projectID))
+            let projects = catalogue.filter { !existing.contains($0.id) && OverleafProjects.matches($0, query: query) }
+            let groups = query.isEmpty && projects.contains { !$0.tags.isEmpty } ? OverleafProjects.grouped(projects) : []
+            let results = Results(projects: projects, groups: groups)
+            cached = (input, results)
+            return results
+        }
+    }
+
+    struct CatalogueLoad: Equatable {
+        let profile: UUID?
+        let revision: Int
+        let online: Bool
+
+        func shouldFetch(after completed: Self?) -> Bool {
+            online && profile != nil && completed != self
+        }
+    }
+
     struct Group: Identifiable {
         enum ID: Hashable { case tag(String), untagged }
         let tag: OverleafWebClient.Tag?

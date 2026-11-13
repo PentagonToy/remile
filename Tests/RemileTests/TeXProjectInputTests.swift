@@ -2,6 +2,61 @@ import XCTest
 @testable import Remile
 
 final class TeXProjectInputTests: XCTestCase {
+    @MainActor func testHiddenWorkspaceReleasesCompletionIndexAndRebuildsItOnDemand() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try #"\documentclass{article}\label{eq:initial}"#
+            .write(to: root.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+        let project = try TeXProject(root, historyEnabled: false)
+        weak var previous: TeXLocalCompletion?
+        let source = #"\ref{eq:"#
+        let selection = NSRange(location: source.utf16.count, length: 0)
+        do {
+            let index = project.localCompletion
+            previous = index
+            let result = await index.context(source, selection: selection, file: project.selected,
+                                             paths: project.treeFiles, buffers: project.buffers)
+            XCTAssertEqual(result?.items.first?.label, "eq:initial")
+        }
+        XCTAssertNotNil(previous)
+        project.releaseEditorAssistance()
+        XCTAssertNil(previous)
+
+        let updated = #"\documentclass{article}\label{eq:updated}"#
+        project.updateBuffer("main.tex", to: updated)
+        let result = await project.localCompletion.context(source, selection: selection, file: project.selected,
+                                                           paths: project.treeFiles, buffers: project.buffers)
+        XCTAssertEqual(result?.items.first?.label, "eq:updated")
+        XCTAssertEqual(project.buffers["main.tex"], updated)
+    }
+
+    @MainActor func testEditorBindingInvalidatesOnlyTheEditedSource() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = #"\documentclass{article}"#
+        try original.write(to: root.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
+        try "Another source".write(to: root.appendingPathComponent("part.tex"), atomically: true, encoding: .utf8)
+        let project = try TeXProject(root, historyEnabled: false)
+        let hashes = project.sourceHashes
+        let binding = project.source
+        let revision = project.editRevision
+        binding.wrappedValue = original
+        XCTAssertEqual(project.editRevision, revision)
+        XCTAssertEqual(project.cachedSourceHashCount, 2)
+
+        let edited = original + "\n% An edit"
+        binding.wrappedValue = edited
+        XCTAssertEqual(project.editRevision, revision + 1)
+        XCTAssertEqual(project.cachedSourceHashCount, 1)
+        XCTAssertEqual(project.sourceHashes["part.tex"], hashes["part.tex"])
+        XCTAssertEqual(project.sourceHashes["main.tex"], SourceDigest.sha256(edited))
+        XCTAssertTrue(project.save())
+        XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("main.tex"), encoding: .utf8), edited)
+        XCTAssertFalse(project.dirty)
+    }
+
     @MainActor func testBuildLogSeparatesMessagesAndRevealsNestedSource() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let manager = FileManager.default
@@ -97,7 +152,7 @@ final class TeXProjectInputTests: XCTestCase {
         try "\\documentclass{article}".write(to: root.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
         try "Imported source".write(to: incoming.appendingPathComponent("nested/part.tex"), atomically: true, encoding: .utf8)
         let project = try TeXProject(root, historyEnabled: false)
-        project.buffers["main.tex"] = "Unsaved editing"
+        project.updateBuffer("main.tex", to: "Unsaved editing")
 
         await project.drop([incoming], into: "contents")
         let path = "contents/Sections/nested/part.tex"

@@ -303,7 +303,9 @@ struct ReferencePublisherAccess: View {
                     if let web = session.web { web.reload() }
                     else { session.start(remember: source.savedSession != nil) }
                 }
-                Button("Open in browser") { openURL(source.article); close() }
+                Button { openURL(source.article); close() } label: {
+                    ExternalLinkLabel("Open in browser")
+                }.accessibilityHint("Opens in your browser").disabled(network.offline)
                 Divider()
                 if source.savedSession != nil {
                     Button("Forget sign-in", action: forget)

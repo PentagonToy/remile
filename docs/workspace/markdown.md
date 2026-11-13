@@ -16,6 +16,10 @@ The Format tools insert headings, links, lists, maths, code and tables. In a nar
 
 Paste maths from ChatGPT or another editor to convert `\(…\)` to `$…$` and `\[…\]` to `$$…$$`. Code examples and existing dollar delimiters stay as written. Undo removes the paste in one step.
 
+The preview supports aligned and multiline equations, matrices, `array` with plain `l`, `c` and `r` columns, and commands such as `\boxed`, `\cfrac`, `\xmapsto` and `\xrightleftharpoons`. When a formula shows its source, hover over it to see the reason.
+
+The arrow beside a web link in Markdown or Search means it opens in your browser.
+
 Keep local images beside the document or in a subfolder. Remote images use a local cache so revisiting a page can reuse downloaded images. The source's cache policy controls refreshes. Online access is required to load remote images. PDF export uses local images and supported formulae.
 
 ## Find and replace

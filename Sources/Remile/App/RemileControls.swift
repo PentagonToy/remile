@@ -178,6 +178,36 @@ struct SymbolLabelStyle: LabelStyle {
     }
 }
 
+struct ExternalLink: View {
+    let title: String
+    let destination: URL
+    @ObservedObject private var network = NetworkAccessState.shared
+
+    init(_ title: String, destination: URL) {
+        self.title = title
+        self.destination = destination
+    }
+
+    var body: some View {
+        Link(destination: destination) { ExternalLinkLabel(title) }
+            .accessibilityHint("Opens in your browser")
+            .disabled(network.offline)
+    }
+}
+
+struct ExternalLinkLabel: View {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        HStack(spacing: RemileControl.spacing / 2) {
+            Text(title)
+            SymbolIcon(systemName: "arrow.up.forward").accessibilityHidden(true)
+        }
+    }
+}
+
 struct WorkspaceBackButton: View {
     let title: String
     let action: () -> Void

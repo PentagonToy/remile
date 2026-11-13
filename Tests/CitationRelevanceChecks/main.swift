@@ -94,7 +94,7 @@ Task { @MainActor in
         check(project.identity == identity && project.selected == "introduction.tex", "Review refresh retains the active source and project identity")
         check(editor.textView?.selectedRange() == NSRange(location: 50, length: 4) && scroll.contentView.bounds.origin == origin, "The retained editor keeps selection and scroll position")
         check(project.pdf === originalPDF && !project.dirty, "The last PDF remains visible while accepted sources refresh")
-        project.buffers["introduction.tex"] = "Unsaved local edit"
+        project.updateBuffer("introduction.tex", to: "Unsaved local edit")
         do { try project.reloadReviewedFiles(); check(false, "Unsaved buffer was discarded") }
         catch { check(project.buffers["introduction.tex"] == "Unsaved local edit", "Review refresh preserves new unsaved edits") }
         let modeStore = UserDefaults(suiteName: "remile.overleaf-mode-test." + UUID().uuidString)!, connectionID = UUID()

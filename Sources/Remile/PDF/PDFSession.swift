@@ -8,6 +8,7 @@ final class PDFSession: NSObject, ObservableObject {
         let page: Int
         let text: String
     }
+    static let searchMatchLimit = 500
     struct Comment: Identifiable {
         let id: ObjectIdentifier
         let annotation: PDFAnnotation
@@ -28,19 +29,35 @@ final class PDFSession: NSObject, ObservableObject {
         var replies: [Comment]
         var id: ObjectIdentifier { root.id }
     }
+    private var commentPresentation: (threads: [Thread], indices: [ObjectIdentifier: Int])?
+
     var threads: [Thread] {
-        let byID = Dictionary(comments.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        if let commentPresentation { return commentPresentation.threads }
+        let indices = Dictionary(comments.enumerated().map { ($0.element.id, $0.offset) },
+                                 uniquingKeysWith: { first, _ in first })
         var groups: [ObjectIdentifier: [Comment]] = [:]
         for comment in comments {
             var root = comment
-            var visited: Set<ObjectIdentifier> = [root.id]
-            while let parent = root.parent, let ancestor = byID[parent], visited.insert(parent).inserted { root = ancestor }
+            if root.parent != nil {
+                var visited: Set<ObjectIdentifier> = [root.id]
+                while let parent = root.parent, let index = indices[parent], visited.insert(parent).inserted {
+                    root = comments[index]
+                }
+            }
             groups[root.id, default: []].append(comment)
         }
-        return comments.compactMap { root in
+        let threads = comments.compactMap { root -> Thread? in
             guard let members = groups[root.id] else { return nil }
             return Thread(root: root, replies: members.filter { $0.id != root.id })
         }
+        commentPresentation = (threads, indices)
+        return threads
+    }
+
+    func parentComment(of comment: Comment) -> Comment? {
+        guard let parent = comment.parent else { return nil }
+        _ = threads
+        return commentPresentation?.indices[parent].map { comments[$0] }
     }
 
     @Published var query = ""
@@ -61,7 +78,7 @@ final class PDFSession: NSObject, ObservableObject {
     @Published private(set) var searching = false
     @Published private(set) var resultLimitReached = false
     @Published private(set) var currentPage = 0
-    @Published private(set) var comments: [Comment] = []
+    @Published private(set) var comments: [Comment] = [] { didSet { commentPresentation = nil } }
     @Published private(set) var highlights: [Comment] = []
     @Published private(set) var loadingComments = false
     @Published var selectedComment: ObjectIdentifier?
@@ -137,6 +154,9 @@ final class PDFSession: NSObject, ObservableObject {
     }
     private var observers: [NSObjectProtocol] = []
     private var searchWork: DispatchWorkItem?
+    private var searchExcerpts: [String: AttributedString] = [:]
+    private var excerptQuery = ""
+    private var excerptCaseSensitive = false
     private var commentTask: Task<Void, Never>?
     private var generation = UUID()
     private var commentGeneration = UUID()
@@ -253,15 +273,27 @@ final class PDFSession: NSObject, ObservableObject {
         matches = []
         resultLimitReached = false
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let caseSensitive = caseSensitive
+        searchExcerpts.removeAll()
+        excerptQuery = text
+        excerptCaseSensitive = caseSensitive
         searching = !text.isEmpty && document != nil && document?.isLocked == false
         guard searching else { return }
         let token = generation
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.generation == token, let document = self.document else { return }
             let delegate = SearchDelegate()
-            delegate.match = { [weak self, weak document] selection in
+            var pending: [Match] = []
+            func publish(_ session: PDFSession) {
+                guard !pending.isEmpty else { return }
+                session.matches.append(contentsOf: pending)
+                pending.removeAll(keepingCapacity: true)
+            }
+            delegate.match = { [weak self, weak document, weak delegate] selection in
                 guard let self, let document, self.generation == token, let page = selection.pages.first else { return }
-                guard self.matches.count < 500 else {
+                guard self.matches.count + pending.count < Self.searchMatchLimit else {
+                    delegate?.match = nil; delegate?.finished = nil
+                    publish(self)
                     self.resultLimitReached = true
                     document.cancelFindString()
                     self.searching = false
@@ -269,18 +301,31 @@ final class PDFSession: NSObject, ObservableObject {
                 }
                 let context = selection.copy() as? PDFSelection
                 context?.extendForLineBoundaries()
-                self.matches.append(Match(selection: selection, page: document.index(for: page) + 1, text: context?.string ?? selection.string ?? text))
+                pending.append(Match(selection: selection, page: document.index(for: page) + 1,
+                                     text: context?.string ?? selection.string ?? text))
+                if self.matches.isEmpty || pending.count == 16 { publish(self) }
             }
-            delegate.finished = { [weak self] in
-                guard self?.generation == token else { return }
-                self?.searching = false
+            delegate.finished = { [weak self, weak delegate] in
+                guard let self, self.generation == token else { return }
+                delegate?.match = nil; delegate?.finished = nil
+                publish(self)
+                self.searching = false
             }
             self.searchDelegate = delegate
             document.delegate = delegate
-            document.beginFindString(text, withOptions: self.caseSensitive ? [] : .caseInsensitive)
+            document.beginFindString(text, withOptions: caseSensitive ? [] : .caseInsensitive)
         }
         searchWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    func excerpt(for match: Match) -> AttributedString {
+        if let excerpt = searchExcerpts[match.text] { return excerpt }
+        let excerpt = SearchExcerpt.highlight(match.text, query: excerptQuery, caseSensitive: excerptCaseSensitive)
+        if searchExcerpts.count < 32, match.text.utf8.count <= 4096 {
+            searchExcerpts[match.text] = excerpt
+        }
+        return excerpt
     }
 
     func reveal(_ match: Match) {
@@ -303,33 +348,56 @@ final class PDFSession: NSObject, ObservableObject {
         comments = []; highlights = []
         commentTask = Task { @MainActor [weak self, weak document] in
             guard let self, let document else { return }
-            if self.commentGraph == nil { self.commentGraph = PDFCommentGraph(document: document, sourceData: self.inputData, allowSignatureChanges: true) }
             defer {
                 if self.commentGeneration == token {
                     self.loadingComments = false
                     self.commentTask = nil
                 }
             }
+            var notes: [Comment] = []
+            var marks: [Comment] = []
+            let batchPageCount = 16
             for index in 0..<document.pageCount {
                 guard !Task.isCancelled, self.commentGeneration == token else { return }
                 if let page = document.page(at: index) {
                     for annotation in page.annotations {
                         if ["Highlight", "Underline", "Squiggly", "StrikeOut"].contains(annotation.type ?? "") {
                             let excerpt = annotation.contents?.isEmpty == false ? annotation.contents! : page.selection(for: annotation.bounds)?.string ?? "Highlighted text"
-                            self.highlights.append(Comment(id: ObjectIdentifier(annotation), annotation: annotation, page: page, pageNumber: index + 1, author: annotation.userName ?? "", text: excerpt, parent: nil))
+                            marks.append(Comment(id: ObjectIdentifier(annotation), annotation: annotation, page: page, pageNumber: index + 1, author: annotation.userName ?? "", text: excerpt, parent: nil))
                         }
                         guard Self.isReviewComment(annotation) else { continue }
                         guard let text = annotation.contents, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                        self.comments.append(Comment(id: ObjectIdentifier(annotation), annotation: annotation, page: page,
-                                                     pageNumber: index + 1, author: annotation.userName ?? "Unknown author", text: text,
-                                                     parent: self.commentGraph?.parent(of: annotation)))
+                        // Build reply identities only if the reader has a note to display.
+                        if self.commentGraph == nil {
+                            self.commentGraph = PDFCommentGraph(document: document, sourceData: self.inputData, allowSignatureChanges: true)
+                        }
+                        notes.append(Comment(id: ObjectIdentifier(annotation), annotation: annotation, page: page,
+                                             pageNumber: index + 1, author: annotation.userName ?? "Unknown author", text: text,
+                                             parent: self.commentGraph?.parent(of: annotation)))
                     }
+                }
+                if index == 0 || (index + 1).isMultiple(of: batchPageCount) || index + 1 == document.pageCount {
+                    if !notes.isEmpty { self.comments.append(contentsOf: notes); notes.removeAll(keepingCapacity: true) }
+                    if !marks.isEmpty { self.highlights.append(contentsOf: marks); marks.removeAll(keepingCapacity: true) }
                 }
                 await Task.yield()
             }
             guard !Task.isCancelled, self.commentGeneration == token else { return }
             self.commentsLoaded = true
         }
+    }
+
+    func suspendCommentScan() {
+        guard commentTask != nil else { return }
+        cancelCommentScan()
+        comments = []; highlights = []
+    }
+
+    private func cancelCommentScan() {
+        commentGeneration = UUID()
+        commentTask?.cancel()
+        commentTask = nil
+        if loadingComments { loadingComments = false }
     }
 
     func beginComment() {
@@ -442,11 +510,6 @@ final class PDFSession: NSObject, ObservableObject {
                 target.applyNote(note, page: page, adding: !adding, parent: parent)
             }
             undoManager?.setActionName(parent == nil ? "Add Comment" : "Reply to Comment")
-            commentGeneration = UUID()
-            commentTask?.cancel()
-            commentTask = nil
-            commentsLoaded = false
-            loadComments()
             view?.needsDisplay = true
             return true
         } catch {
@@ -717,7 +780,7 @@ final class PDFSession: NSObject, ObservableObject {
     /// No full PDF byte buffers or temporary files are produced for individual reader strokes.
     private func acceptPendingAnnotation() {
         hasPendingAnnotations = true; pendingAnnotationRevision = UUID(); editingError = nil
-        commentGeneration = UUID(); commentTask?.cancel(); commentTask = nil
+        cancelCommentScan()
         commentsLoaded = false
         if showsSidebar && (sidebar == .comments || sidebar == .highlights) { loadComments() }
     }
@@ -738,7 +801,7 @@ final class PDFSession: NSObject, ObservableObject {
     private func acceptEdit(_ bytes: Data) {
         hasPendingAnnotations = false
         inputData = bytes; committedData = bytes; editingError = nil
-        commentGeneration = UUID(); commentTask?.cancel(); commentTask = nil
+        cancelCommentScan()
         commentsLoaded = false
         if showsSidebar && (sidebar == .comments || sidebar == .highlights) { loadComments() }
     }
@@ -797,12 +860,10 @@ final class PDFSession: NSObject, ObservableObject {
     func stop() {
         generation = UUID()
         searchWork?.cancel()
+        searchExcerpts.removeAll()
         document?.delegate = nil
         document?.cancelFindString()
-        commentGeneration = UUID()
-        commentTask?.cancel()
-        commentTask = nil
-        loadingComments = false
+        suspendCommentScan()
         searching = false
     }
     deinit {

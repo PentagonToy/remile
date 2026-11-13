@@ -28,28 +28,33 @@ final class SearchPDFModel: ObservableObject {
     private var task: Task<Void, Never>?
     private var generation = UUID()
     private struct Loaded: @unchecked Sendable { let document: PDFDocument; let digest: Data }
+    deinit {
+        task?.cancel()
+        if let selectionObserver { NotificationCenter.default.removeObserver(selectionObserver) }
+    }
     func show(_ hit: LibraryHit?, revision: UUID? = nil) {
         if hasPendingEdits, (path != hit?.path || self.revision != revision), !confirmLeaving() { return }
+        guard let hit else { close(); error = nil; return }
+        if path == hit.path, self.revision == revision, loading || document != nil { return }
         task?.cancel(); generation = UUID(); error = nil; citationMessage = nil
-        guard let hit else { undoData = nil; canUndoHighlight = false; digest = nil; editMessage = nil; document = nil; path = nil; self.revision = nil; loading = false; return }
-        if path == hit.path, self.revision == revision, document != nil { return }
         protection.finish(); stagedGraph = nil; stagedHighlights = []; hasPendingEdits = false
-        document = nil; path = nil; loading = true; restoredPage = nil; digest = nil; undoData = nil; canUndoHighlight = false; editMessage = nil; selectionAvailable = false
+        document = nil; path = hit.path; self.revision = revision; loading = true
+        restoredPage = nil; digest = nil; undoData = nil; canUndoHighlight = false; editMessage = nil; selectionAvailable = false
         let token = generation
-        task = Task {
+        task = Task { [weak self] in
+            defer { if self?.generation == token { self?.task = nil } }
             let worker = Task.detached(priority: .userInitiated) { () throws -> Loaded in
                 try Task.checkCancellation()
                 let data = try Data(contentsOf: URL(fileURLWithPath: hit.path), options: .mappedIfSafe)
                 guard let document = PDFDocument(data: data), !document.isLocked else { throw CocoaError(.fileReadCorruptFile) }
-                try Task.checkCancellation()
-                return Loaded(document: document, digest: PDFHighlightStore.digest(data))
+                return Loaded(document: document, digest: Data(try SourceDigest.cancellableSHA256(data)))
             }
             do {
                 let result = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
-                guard !Task.isCancelled, generation == token else { return }
-                document = result.document; protection.configure(result.document); digest = result.digest; path = hit.path; self.revision = revision; loading = false
+                guard !Task.isCancelled, let self, generation == token else { return }
+                document = result.document; protection.configure(result.document); digest = result.digest; loading = false
             } catch {
-                guard generation == token else { return }
+                guard let self, generation == token else { return }
                 loading = false; self.error = "Document unavailable. Update the Library index."
             }
         }
@@ -171,13 +176,17 @@ final class SearchPDFModel: ObservableObject {
     func close() {
         guard !hasPendingEdits else { return }
         protection.finish(); stagedGraph = nil; stagedHighlights = []
-        task?.cancel(); generation = UUID(); document = nil; path = nil; revision = nil; loading = false; restoredPage = nil; selectionAvailable = false; undoData = nil; digest = nil; canUndoHighlight = false; editMessage = nil
+        task?.cancel(); task = nil; generation = UUID(); document = nil; path = nil; revision = nil; loading = false; restoredPage = nil; selectionAvailable = false; undoData = nil; digest = nil; canUndoHighlight = false; editMessage = nil
         citationMessage = nil
         if let selectionObserver { NotificationCenter.default.removeObserver(selectionObserver) }; selectionObserver = nil; view = nil
     }
 }
 
 struct SearchPDFPreview: View {
+    private struct DocumentRequest: Equatable {
+        let hitID: String?
+        let revision: UUID
+    }
     let hit: LibraryHit?
     let query: String
     let revision: UUID
@@ -204,7 +213,10 @@ struct SearchPDFPreview: View {
                             Text("Page \(hit.page)").font(RemileType.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                         ReferenceSaveButton(source: URL(fileURLWithPath: hit.path)).id(hit.path + revision.uuidString)
-                        Button { ReaderNavigation.shared.reveal(hit, query: query); open(URL(fileURLWithPath: hit.path)) } label: { SymbolLabel("Open", systemImage: "arrow.up.right.square") }.fixedSize()
+                        Button("Open PDF") {
+                            ReaderNavigation.shared.reveal(hit, query: query)
+                            open(URL(fileURLWithPath: hit.path))
+                        }.fixedSize()
                     }
                     HStack(spacing: 12) {
                         ReaderZoomControls(zoom: zoom)
@@ -235,7 +247,8 @@ struct SearchPDFPreview: View {
                 }
             } else { ContentUnavailableView(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Search your library" : "Select a result", systemImage: "doc.text.magnifyingglass").frame(maxWidth: .infinity, maxHeight: .infinity) }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .task(id: (hit?.id ?? "") + revision.uuidString) { model.show(hit, revision: revision) }.onDisappear { model.close() }
+            .task(id: DocumentRequest(hitID: hit?.id, revision: revision)) { model.show(hit, revision: revision) }
+            .onDisappear { model.close() }
             .modifier(SelectionTranslationModifier(request: $presentation.translation))
     }
     private func selectionActions(_ hit: LibraryHit) -> PDFSelectionActions {
@@ -277,31 +290,36 @@ struct SearchPDFCanvas: NSViewRepresentable {
     }
     func update(_ view: PDFView, coordinator: Coordinator) {
         (view as? PDFSelectionView)?.selectionActions = selectionActions
-        coordinator.highlights.update(query: query, citation: citation)
         let changed = view.document !== document
-        if changed { view.document = document }
         guard changed || coordinator.page != page || coordinator.query != query || coordinator.citationID != citation?.id || coordinator.revealID != revealID else { return }
         coordinator.page = page; coordinator.query = query; coordinator.citationID = citation?.id; coordinator.revealID = revealID
-        view.highlightedSelections = []
         let destination = changed ? editing?.takeRestoredPage() ?? page : page
-        guard let target = document.page(at: destination - 1) else { return }
-        let selections = citation.map { PDFCitation.selections(on: target, excerpt: $0.text) } ?? Self.selections(on: target, query: query)
-        view.go(to: target)
-        zoom?.completePendingFit(in: view)
-        if let first = selections.first { view.go(to: first) }
-        view.highlightedSelections = []
+        let target = document.page(at: destination - 1)
+        var missingCitation = false
+        coordinator.highlights.duringReveal(on: target) {
+            coordinator.highlights.update(query: query, citation: citation)
+            if changed { view.document = document }
+            view.highlightedSelections = []
+            guard let target else { return }
+            let firstMatch = coordinator.highlights.selections(on: target).first
+            missingCitation = citation != nil && firstMatch == nil
+            view.go(to: target)
+            zoom?.completePendingFit(in: view)
+            if let firstMatch { view.go(to: firstMatch) }
+        }
+        guard target != nil else { return }
         // PDFKit finalises page layout after the representable update.
-        DispatchQueue.main.async { [weak view] in
-            guard let view, view.document === document, coordinator.page == page, coordinator.query == query, coordinator.citationID == citation?.id, coordinator.revealID == revealID else { return }
-            editing?.citationMessage = citation != nil && selections.isEmpty ? "Passage not found on this page." : nil
+        DispatchQueue.main.async { [weak view, weak document, weak coordinator, weak editing, page, query, citationID = citation?.id, revealID, missingCitation] in
+            guard let view, let document, let coordinator, view.document === document, coordinator.page == page,
+                  coordinator.query == query, coordinator.citationID == citationID, coordinator.revealID == revealID else { return }
+            editing?.citationMessage = missingCitation ? "Passage not found on this page." : nil
             view.highlightedSelections = []
             view.setCurrentSelection(nil, animate: false)
             view.needsDisplay = true
         }
     }
     static func selections(on page: PDFPage, query: String) -> [PDFSelection] {
-        guard let string = page.string, let terms = try? LibraryIndex.queryTerms(query) else { return [] }
-        _ = terms
+        guard !query.isEmpty, let string = page.string else { return [] }
         var seen = Set<String>()
         return SearchText.matches(string, query: query).compactMap { match in
             guard seen.insert(NSStringFromRange(match.range)).inserted, let selection = page.selection(for: match.range) else { return nil }

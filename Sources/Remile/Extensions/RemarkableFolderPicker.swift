@@ -105,7 +105,7 @@ struct RemarkableFolderPicker: View {
                         .remileHelp(row.path + " / " + row.item.title)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading).scrollContentGutter()
-        }.frame(height: 420)
+        }
     }
     private func checkbox(_ id: String, title: String, state: NSControl.StateValue, inherited: Bool) -> some View {
         SourceFolderCheckbox(state: state, label: title, enabled: !busy && !inherited) { chosen in

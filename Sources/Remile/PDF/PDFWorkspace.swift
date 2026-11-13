@@ -5,6 +5,7 @@ struct PDFWorkspace: View {
     let data: Data
     var fileURL: URL? = nil
     var readingSession: ReadingSession? = nil
+    let pdfTabVisible: Bool
     @ObservedObject private var navigation = ReaderNavigation.shared
     let updateDocument: (Data) -> Void
     @StateObject private var session = PDFSession()
@@ -14,8 +15,8 @@ struct PDFWorkspace: View {
     @StateObject private var presentation = Presentation()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("assistant.provider") private var assistantProvider = "Apple Intelligence"
-    private let assistantContext = PDFAssistantContext()
     private final class Presentation: ObservableObject {
+        let assistantContext = PDFAssistantContext(index: .shared)
         @Published var ask = false
         @Published var selectedPassages: [AssistantPassage] = []
         @Published var translation: SelectionTranslation?
@@ -27,8 +28,15 @@ struct PDFWorkspace: View {
     @StateObject private var zoom = ReaderZoom()
     @StateObject private var slides = PDFSlidePresentation()
 
-    init(data: Data, fileURL: URL? = nil, session: PDFSession? = nil, showAsk: Bool = false, readingSession: ReadingSession? = nil, updateDocument: @escaping (Data) -> Void) {
+    private var showsAnnotationPanel: Bool {
+        pdfTabVisible && session.showsSidebar && (session.sidebar == .comments || session.sidebar == .highlights)
+            && session.document?.isLocked == false
+    }
+
+    init(data: Data, fileURL: URL? = nil, session: PDFSession? = nil, showAsk: Bool = false, readingSession: ReadingSession? = nil,
+         pdfTabVisible: Bool = true, updateDocument: @escaping (Data) -> Void) {
         self.data = data; self.fileURL = fileURL; self.readingSession = readingSession; self.updateDocument = updateDocument
+        self.pdfTabVisible = pdfTabVisible
         _session = StateObject(wrappedValue: session ?? PDFSession())
         let state = Presentation(); state.ask = showAsk
         _presentation = StateObject(wrappedValue: state)
@@ -48,9 +56,36 @@ struct PDFWorkspace: View {
             PDFDocumentTabs(reader: readingSession)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .focusedSceneValue(\.pdfSlideAction, session.document.map { !$0.isLocked && $0.pageCount > 0 } == true ? presentSlides : nil)
-        .onAppear { readingSession?.pdfSession = session; readingSession?.pdfInspection = { [weak session = session] page, find, render in guard let session, let document = session.document else { throw CocoaError(.fileReadUnknown) }; return try PDFInspection.read(document, page: page ?? max(1, session.currentPage), find: find, render: render) }; readingSession?.commentsExport = { [weak session = session] in guard let session else { throw CocoaError(.fileReadUnknown) }; return try session.exportComments(name: fileURL?.lastPathComponent ?? "Untitled.pdf") }; assistant.useHistory(fileURL.map { "pdf:" + $0.path }); session.undoManager = undoManager; session.readingURL = fileURL; session.load(data); session.loadComments(); revealLibraryPage(); if !session.query.isEmpty { session.search() } }
-        .onChange(of: session.showsSidebar, initial: true) { _, shown in sidebarPresentation.setShown(shown, animated: !reduceMotion && animations) }
-        .onChange(of: data) { _, data in slides.finish(); assistant.cancel(); presentation.selectedPassages = []; session.load(data) }
+        .onAppear {
+            readingSession?.pdfSession = session
+            readingSession?.pdfInspection = { [weak session = session] page, find, render in
+                guard let session, let document = session.document else { throw CocoaError(.fileReadUnknown) }
+                return try PDFInspection.read(document, page: page ?? max(1, session.currentPage), find: find, render: render)
+            }
+            readingSession?.commentsExport = { [weak session = session] in
+                guard let session else { throw CocoaError(.fileReadUnknown) }
+                return try session.exportComments(name: fileURL?.lastPathComponent ?? "Untitled.pdf")
+            }
+            assistant.useHistory(fileURL.map { "pdf:" + $0.path })
+            session.undoManager = undoManager
+            session.readingURL = fileURL
+            session.load(data)
+            if showsAnnotationPanel { session.loadComments() }
+            revealLibraryPage()
+            if !session.query.isEmpty { session.search() }
+        }
+        .onChange(of: session.showsSidebar, initial: true) { _, shown in
+            sidebarPresentation.setShown(shown, animated: !reduceMotion && animations)
+        }
+        .onChange(of: showsAnnotationPanel) { _, shown in
+            if shown { session.loadComments() }
+            else { session.suspendCommentScan() }
+        }
+        .onChange(of: data) { _, data in
+            slides.finish(); assistant.cancel(); presentation.selectedPassages = []
+            session.load(data)
+            if showsAnnotationPanel { session.loadComments() }
+        }
         .onChange(of: fileURL) { assistant.useHistory(fileURL.map { "pdf:" + $0.path }) }
         .onChange(of: navigation.request?.id) { revealLibraryPage() }
         .onDisappear { slides.finish(); sidebarPresentation.cancel(); session.persistReadingPosition(); assistant.cancel(); session.stop(); session.protection.finish(); readingSession?.commentsExport = nil; readingSession?.pdfInspection = nil; readingSession?.pdfSession = nil }
@@ -86,7 +121,7 @@ struct PDFWorkspace: View {
         Group {
             if let document = session.document, !document.isLocked {
                 if session.showsOverview {
-                    PDFThumbnailOverview(session: session)
+                    PDFThumbnailOverview(session: session, keepsThumbnails: pdfTabVisible)
                 } else {
                     PDFReader(session: session, zoom: zoom, selectionActions: selectionActions, openPDFs: { urls in
                         guard let readingSession else { return false }
@@ -114,7 +149,7 @@ struct PDFWorkspace: View {
             session.revealLibraryPage(location.unit, terms: [], excerpt: source.text)
         }, close: { toggleAssistant() }, retrieve: { question in
             guard session.document?.allowsCopying == true, session.document?.isLocked == false else { throw PDFAssistantContext.Failure.restricted }
-            let retrieved = try await assistantContext.passages(data: session.committedData ?? data, password: session.assistantPassword, path: assistantPath, question: question,
+            let retrieved = try await presentation.assistantContext.passages(data: session.committedData ?? data, password: session.assistantPassword, path: assistantPath, question: question,
                 currentPage: session.currentPage, selection: presentation.selectedPassages.first.map { (page: $0.location.unit, text: $0.text) } ?? session.assistantSelection, expanded: assistantProvider == "ChatGPT" && AIUsage.shared.reason == nil) { fraction in
                     await assistant.reportProgress(fraction)
                 }
@@ -306,7 +341,7 @@ struct PDFWorkspace: View {
             }.frame(height: 32).padding(.horizontal, 16).padding(.bottom, 8)
             Divider()
             switch session.sidebar {
-            case .pages: if let document = session.document { PDFPagesPanel(document: document, currentPage: session.currentPage, select: session.goToPage, revision: "\(session.pageRevision):\(session.pendingAnnotationRevision)", rendersThumbnails: session.showsSidebar) }
+            case .pages: if let document = session.document { PDFPagesPanel(document: document, currentPage: session.currentPage, select: session.goToPage, revision: "\(session.pageRevision):\(session.pendingAnnotationRevision)", rendersThumbnails: session.showsSidebar, keepsThumbnails: pdfTabVisible) }
             case .outline: if let document = session.document { PDFOutlinePanel(document: document, select: session.goToOutline) }
             case .search: searchPanel
             case .comments: commentsPanel
@@ -325,21 +360,23 @@ struct PDFWorkspace: View {
     }
 
     private var searchPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let matchesByPage = Dictionary(grouping: session.matches, by: \.page)
+        return VStack(alignment: .leading, spacing: 10) {
             TextField("Find in this PDF", text: $session.query).textFieldStyle(.roundedBorder)
                 .focused($searchFocused).onAppear { searchFocused = true }
             Toggle("Match case", isOn: $session.caseSensitive).toggleStyle(.checkbox)
             if session.searching { ProgressView("Searching…").controlSize(.small) }
-            Text(session.resultLimitReached ? "First 500 matches · refine your search" : "\(session.matches.count) matches").font(RemileType.caption).foregroundStyle(.secondary)
+            Text(session.resultLimitReached ? "First \(PDFSession.searchMatchLimit) matches · refine your search" : "\(session.matches.count) matches").font(RemileType.caption).foregroundStyle(.secondary)
             if !session.query.isEmpty && !session.searching && session.matches.isEmpty {
                 Text("No matching text. Scanned pages may need OCR.").font(RemileType.callout).foregroundStyle(.secondary)
             }
             List {
-                ForEach(Array(Set(session.matches.map(\.page))).sorted(), id: \.self) { page in
-                    Section("Page \(page) · \(session.matches.filter { $0.page == page }.count)") {
-                        ForEach(session.matches.filter { $0.page == page }) { match in
+                ForEach(matchesByPage.keys.sorted(), id: \.self) { page in
+                    let matches = matchesByPage[page, default: []]
+                    Section("Page \(page) · \(matches.count)") {
+                        ForEach(matches) { match in
                             Button { session.reveal(match) } label: {
-                                Text(SearchExcerpt.highlight(match.text, query: session.query, caseSensitive: session.caseSensitive)).lineLimit(4).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5)
+                                Text(session.excerpt(for: match)).lineLimit(4).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5)
                             }.buttonStyle(.plain)
                         }
                     }
@@ -350,7 +387,9 @@ struct PDFWorkspace: View {
 
     private var highlightsPanel: some View {
         Group {
-            if session.highlights.isEmpty { ContentUnavailableView("No highlights", systemImage: "highlighter").frame(maxWidth: .infinity, maxHeight: .infinity) }
+            if session.loadingComments && session.highlights.isEmpty {
+                ProgressView("Loading highlights…").frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if session.highlights.isEmpty { ContentUnavailableView("No highlights", systemImage: "highlighter").frame(maxWidth: .infinity, maxHeight: .infinity) }
             else {
                 List(session.highlights) { mark in
                     Button { session.reveal(mark) } label: {
@@ -365,7 +404,7 @@ struct PDFWorkspace: View {
                         .contextMenu { Button("Delete Highlight", role: .destructive) { session.deleteAnnotation(mark) } }
                 }.listStyle(.plain).scrollContentBackground(.hidden)
             }
-        }.onAppear { session.loadComments() }
+        }
     }
 
     private var commentsPanel: some View {
@@ -402,9 +441,11 @@ struct PDFWorkspace: View {
                         LazyVStack(alignment: .leading, spacing: 12) {
                             ForEach(session.threads) { thread in
                                 VStack(alignment: .leading, spacing: 0) {
-                                    commentCard(thread.root)
+                                    commentCard(thread.root, parent: session.parentComment(of: thread.root),
+                                                hasReplies: !thread.replies.isEmpty)
                                     ForEach(Array(thread.replies.enumerated()), id: \.element.id) { index, reply in
-                                        commentCard(reply).padding(.leading, 24).padding(.bottom, 10)
+                                        commentCard(reply, parent: session.parentComment(of: reply))
+                                            .padding(.leading, 24).padding(.bottom, 10)
                                             .background(alignment: .leading) {
                                                 NoteReplyBranch(last: index == thread.replies.count - 1)
                                                     .stroke(RemileStyle.accent.opacity(0.35), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
@@ -418,9 +459,9 @@ struct PDFWorkspace: View {
                     .onChange(of: session.selectedComment) { _, id in if let id { proxy.scrollTo(id, anchor: .center) } }
                 }
             }
-        }.onAppear { session.loadComments() }
+        }
     }
-    private func commentCard(_ comment: PDFSession.Comment) -> some View {
+    private func commentCard(_ comment: PDFSession.Comment, parent: PDFSession.Comment?, hasReplies: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(comment.author).font(RemileType.caption.bold())
@@ -429,7 +470,7 @@ struct PDFWorkspace: View {
                     .buttonStyle(.plain).font(RemileType.caption).foregroundStyle(.secondary)
                     .remileHelp("Show comment on the page")
             }
-            if let parent = comment.parent, let original = session.comments.first(where: { $0.id == parent }) {
+            if let original = parent {
                 SymbolLabel("Reply to \(original.author)", systemImage: "arrow.turn.up.left").font(RemileType.small).foregroundStyle(RemileStyle.accent)
                 Text(original.text).font(RemileType.small).foregroundStyle(.secondary).lineLimit(1).help(original.text)
             }
@@ -447,7 +488,7 @@ struct PDFWorkspace: View {
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
         .background(session.selectedComment == comment.id ? RemileStyle.accent.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
-        .contextMenu { Button(comment.parent == nil && session.threads.contains(where: { $0.root.id == comment.id && !$0.replies.isEmpty }) ? "Delete Thread" : "Delete Note", role: .destructive) { session.deleteAnnotation(comment) } }
+        .contextMenu { Button(comment.parent == nil && hasReplies ? "Delete Thread" : "Delete Note", role: .destructive) { session.deleteAnnotation(comment) } }
         .id(comment.id)
     }
 

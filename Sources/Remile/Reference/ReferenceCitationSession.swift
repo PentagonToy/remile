@@ -19,12 +19,13 @@ import Foundation
     func invalidate() { generation = UUID(); libraryTask?.cancel(); libraryTask = nil; selectedLibraries = []; libraryVersion = nil; offered = [:] }
     func release() { invalidate(); projectTask?.cancel(); projectTask = nil; bibliographySources = [:] }
     func completion(source: String, selection: NSRange, buffers: [String: String]) async -> EditorCompletion.Context? {
-        guard let prefix = ReferenceCitationCompletion.prefix(source, selection: selection) else { return nil }
+        guard !Task.isCancelled, let prefix = ReferenceCitationCompletion.prefix(source, selection: selection) else { return nil }
+        let requestGeneration = generation
         let choice = ReferenceCitationPreferences.read(context)
         let repository = repository
         let libraries = choice.selectedLibraries
         let version = libraries.isEmpty ? nil : await Task.detached(priority: .userInitiated) { repository.version() }.value
-        guard !Task.isCancelled else { return nil }
+        guard !Task.isCancelled, requestGeneration == generation else { return nil }
         let external = ZoteroCitationSources.signature
         if selectedLibraries != libraries || libraryVersion != version || externalVersion != external {
             invalidate(); selectedLibraries = libraries; libraryVersion = version; externalVersion = external

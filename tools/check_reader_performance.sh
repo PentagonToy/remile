@@ -8,6 +8,8 @@ mkdir -p "$output/module-cache"
 cat "$root/Sources/Remile/App/AnimationPolicy.swift" \
     "$root/Sources/Remile/App/RemileStyle.swift" \
     "$root/Sources/Remile/App/RemileControls.swift" \
+    "$root/Sources/Remile/App/NetworkAccess.swift" \
+    "$root/Sources/Remile/App/NetworkAccessControls.swift" \
     "$root/Sources/Remile/App/RemileHelp.swift" \
     "$root/Sources/Remile/App/WorkspaceLayout.swift" \
     "$root/Sources/Remile/App/ReaderSplit.swift" \

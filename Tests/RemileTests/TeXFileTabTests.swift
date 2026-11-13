@@ -235,7 +235,7 @@ import SwiftUI
         XCTAssertEqual(project.selected, "two.tex")
         project.cycleFileTab(forward: true)
         XCTAssertEqual(project.selected, "main.tex")
-        project.buffers["one.tex"] = "Unsaved writing"
+        project.updateBuffer("one.tex", to: "Unsaved writing")
         project.moveFileTab("two.tex", to: "main.tex", after: false)
         XCTAssertEqual(project.openFiles, ["two.tex", "main.tex", "one.tex"])
         XCTAssertEqual(project.selected, "two.tex")

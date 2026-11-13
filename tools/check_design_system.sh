@@ -7,6 +7,8 @@ mkdir -p "$check_directory/module-cache"
 cat "$project_directory/Sources/Remile/App/AnimationPolicy.swift" \
     "$project_directory/Sources/Remile/App/RemileStyle.swift" \
     "$project_directory/Sources/Remile/App/RemileControls.swift" \
+    "$project_directory/Sources/Remile/App/NetworkAccess.swift" \
+    "$project_directory/Sources/Remile/App/NetworkAccessControls.swift" \
     "$project_directory/Sources/Remile/App/RemileHelp.swift" \
     "$project_directory/Tests/DesignSystemChecks/main.swift" > "$check_directory/design-checks.swift"
 swift -module-cache-path "$check_directory/module-cache" "$check_directory/design-checks.swift" "$check_directory"

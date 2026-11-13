@@ -27,7 +27,13 @@ import UniformTypeIdentifiers
     @Published private(set) var treeFiles: [String]
     @Published var treeFolders: [String] = []
     @Published private(set) var fileRevision = 0
-    let localCompletion = TeXLocalCompletion()
+    private var completionIndex: TeXLocalCompletion?
+    var localCompletion: TeXLocalCompletion {
+        if let completionIndex { return completionIndex }
+        let index = TeXLocalCompletion()
+        completionIndex = index
+        return index
+    }
     @Published private(set) var editRevision = 0
     @Published var collections: [TeXCollections.Group] = []
     enum NewItemKind { case file(String), folder(String), collection(UUID?), rename(String), renameCollection(UUID, String) }
@@ -79,33 +85,50 @@ import UniformTypeIdentifiers
             choices[root.path] = main; UserDefaults.standard.set(choices, forKey: "latex.mainDocuments")
         }
     }
-    @Published var buffers: [String: String] {
-        didSet {
-            let changed = Set(buffers.keys).union(oldValue.keys).filter { buffers[$0] != oldValue[$0] }
-            guard !changed.isEmpty else { return }
-            editRevision += 1
-            outputCurrent = false
-            if !compiling && (!log.isEmpty || pdf != nil) { message = "Edited · recompile" }
-            if submissionCheck, message != "Source changed · recheck" { message = "Source changed · recheck" }
-            for file in changed {
-                bufferHashes.removeValue(forKey: file)
-                pendingHistory.insert(file)
-                if let before = oldValue[file], let after = buffers[file] {
-                    if var tracker = provenance[file] {
-                        tracker.transition(before: before, after: after, preserveUnchanged: importingSource)
-                        provenance[file] = tracker
-                    }
-                    if var tracker = sharedEditRanges[file] {
-                        tracker.transition(before: before, after: after, preserveUnchanged: importingSource)
-                        sharedEditRanges[file] = tracker
-                    }
-                    updateEditRanges(for: file)
-                } else if buffers[file] == nil {
-                    provenance[file] = nil; sharedEditRanges[file] = nil; externalEdits[file] = nil; inspectedEditMarks.remove(file)
+    @Published private(set) var buffers: [String: String]
+
+    func updateBuffer(_ file: String, to source: String?) {
+        let before = buffers[file]
+        guard before != source else { return }
+        buffers[file] = source
+        buffersChanged([file]) { _ in before }
+    }
+
+    private func replaceBuffers(with next: [String: String]) {
+        let previous = buffers
+        let changed = next.keys.filter { next[$0] != previous[$0] } + previous.keys.filter { next[$0] == nil }
+        guard !changed.isEmpty else { return }
+        buffers = next
+        buffersChanged(changed) { previous[$0] }
+    }
+
+    private func buffersChanged(_ files: [String], previous: (String) -> String?) {
+        editRevision += 1
+        if outputCurrent { outputCurrent = false }
+        if !compiling, (!log.isEmpty || pdf != nil), message != "Edited · recompile" { message = "Edited · recompile" }
+        if submissionCheck, message != "Source changed · recheck" { message = "Source changed · recheck" }
+        for file in files {
+            bufferHashes.removeValue(forKey: file)
+            pendingHistory.insert(file)
+            if let after = buffers[file], let before = previous(file) {
+                if var tracker = provenance[file] {
+                    tracker.transition(before: before, after: after, preserveUnchanged: importingSource)
+                    provenance[file] = tracker
                 }
+                if var tracker = sharedEditRanges[file] {
+                    tracker.transition(before: before, after: after, preserveUnchanged: importingSource)
+                    sharedEditRanges[file] = tracker
+                }
+                updateEditRanges(for: file)
+            } else if buffers[file] == nil {
+                provenance[file] = nil
+                sharedEditRanges[file] = nil
+                externalEdits[file] = nil
+                inspectedEditMarks.remove(file)
             }
-            scheduleHistory(); scheduleOutline()
         }
+        scheduleHistory()
+        scheduleOutline()
     }
     @Published private(set) var externalEdits: [String: [NSRange]] = [:]
     private var provenance: [String: EditorProvenance.Tracker] = [:]
@@ -201,7 +224,7 @@ import UniformTypeIdentifiers
         if disk != text { try text.write(to: url, atomically: true, encoding: .utf8) }
         if expected != text {
             importingSource = true
-            buffers[file] = text
+            updateBuffer(file, to: text)
             importingSource = false
         }
         original[file] = text
@@ -285,10 +308,10 @@ import UniformTypeIdentifiers
         importingSource = true
         for path in paths {
             if OverleafSourceFiles.source(path), let bytes = result[path], let text = String(data: bytes, encoding: .utf8) {
-                buffers[path] = text; original[path] = text
+                updateBuffer(path, to: text); original[path] = text
                 saveEditMarks(for: path, text: text)
             } else {
-                buffers[path] = nil; original[path] = nil; pendingHistory.remove(path)
+                updateBuffer(path, to: nil); original[path] = nil; pendingHistory.remove(path)
                 if OverleafSourceFiles.source(path), moved[path] == nil {
                     editMarkStore.remove(for: root.appendingPathComponent(path))
                     sharedEditMarks?.remove(path)
@@ -297,9 +320,13 @@ import UniformTypeIdentifiers
         }
         importingSource = false
         (treeFiles, treeFolders) = try TeXFileSystem.snapshot(root)
-        for path in buffers.keys where !treeFiles.contains(path) { buffers[path] = nil; original[path] = nil }
+        let visiblePaths = Set(treeFiles)
+        for path in buffers.keys where !visiblePaths.contains(path) {
+            updateBuffer(path, to: nil)
+            original[path] = nil
+        }
         for path in treeFiles where buffers[path] == nil && OverleafSourceFiles.source(path) {
-            if let bytes = result[path], let text = String(data: bytes, encoding: .utf8), bytes.count <= OverleafSource.textLimit { buffers[path] = text; original[path] = text }
+            if let bytes = result[path], let text = String(data: bytes, encoding: .utf8), bytes.count <= OverleafSource.textLimit { updateBuffer(path, to: text); original[path] = text }
         }
         files = buffers.keys.sorted()
         openFiles = openFiles.map { moved[$0] ?? $0 }
@@ -314,22 +341,33 @@ import UniformTypeIdentifiers
         openFiles.removeAll { !treeFiles.contains($0) }
         build = nil; outputCurrent = false; fileRevision += 1
     }
-    var source: Binding<String> { Binding(get: { self.buffers[self.selected] ?? "" }, set: { if self.buffers[self.selected] != nil { self.buffers[self.selected] = $0 } }) }
+    var source: Binding<String> {
+        Binding(get: { self.buffers[self.selected] ?? "" }, set: { source in
+            let file = self.selected
+            if self.buffers[file] != nil { self.updateBuffer(file, to: source) }
+        })
+    }
     /// Reconcile files placed on disk outside the editor while retaining open buffers.
     func refreshFileTree() async throws {
         let root = root, revision = fileRevision, known = Set(buffers.keys)
-        let snapshot = try await Task.detached(priority: .utility) {
-            let (paths, folders) = try TeXFileSystem.snapshot(root)
+        let worker = Task.detached(priority: .utility) {
+            var candidates = Set<String>()
             var added: [String: String] = [:]
-            for path in paths where !known.contains(path) && OverleafSourceFiles.source(path) {
+            let (paths, folders) = try TeXFileSystem.snapshot(root) { _, path, size in
+                guard !known.contains(path), OverleafSourceFiles.source(path), known.count < 2000,
+                      (size ?? Int.max) <= 4_000_000 else { return }
+                candidates.insert(path)
+            }
+            for path in paths where candidates.contains(path) {
+                try Task.checkCancellation()
+                guard known.count + added.count < 2000 else { break }
                 let url = try TeXFileSystem.url(path, root: root)
-                guard known.count + added.count < 2000,
-                      (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 4_000_000 else { continue }
                 if let bytes = try? Data(contentsOf: url), bytes.count <= 4_000_000,
                    let text = String(data: bytes, encoding: .utf8) { added[path] = text }
             }
             return (paths, folders, added)
-        }.value
+        }
+        let snapshot = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
         try Task.checkCancellation()
         guard self.root == root, fileRevision == revision else { return }
         let (paths, folders, added) = snapshot
@@ -341,8 +379,13 @@ import UniformTypeIdentifiers
         for (path, text) in added where next[path] == nil { next[path] = text; original[path] = text }
         let visible = onDisk.union(next.keys).sorted()
         guard visible != treeFiles || folders != treeFolders || next != buffers else { return }
-        treeFiles = visible; treeFolders = folders; files = next.keys.sorted()
-        if next != buffers { buffers = next }
+        if visible != treeFiles { treeFiles = visible }
+        if folders != treeFolders { treeFolders = folders }
+        if next != buffers {
+            let sources = next.keys.sorted()
+            if files != sources { files = sources }
+            replaceBuffers(with: next)
+        }
         let available = Set(visible).union(folders)
         if !available.contains(selected) { selected = main }
         openFiles.removeAll { !available.contains($0) }
@@ -357,7 +400,7 @@ import UniformTypeIdentifiers
         let trackedChanges = provenance.keys.filter { buffers[$0] != snapshot.buffers[$0] }
         treeFiles = snapshot.treeFiles; treeFolders = snapshot.treeFolders; files = snapshot.files
         importingSource = true
-        buffers = snapshot.buffers; original = snapshot.buffers
+        replaceBuffers(with: snapshot.buffers); original = snapshot.buffers
         importingSource = false
         for file in trackedChanges {
             if let text = buffers[file] { saveEditMarks(for: file, text: text) }
@@ -482,12 +525,17 @@ import UniformTypeIdentifiers
     }
     /// Closing a workspace must release previews even if a presentation temporarily retains its model.
     func releaseWorkspaceResources() {
-        sourceEditor.suspend()
+        releaseEditorAssistance()
         compileID = UUID(); task?.cancel(); job?.stop(); submission.stop()
         outlineTask?.cancel(); historyTask?.cancel(); historyTask = nil; syncTask?.cancel()
-        citations.release(); pdf = nil; build = nil; diagnosticSource = nil
+        pdf = nil; build = nil; diagnosticSource = nil
         TeXCache.discard(cachedBuild); cachedBuild = nil
         editSource = nil; compiling = false; syncing = false
+    }
+    func releaseEditorAssistance() {
+        sourceEditor.suspend()
+        completionIndex = nil
+        citations.release()
     }
     func stop() { job?.stop(); submission.stop() }
     func visit(file: String, line: Int = 0) {
@@ -504,10 +552,12 @@ import UniformTypeIdentifiers
         outlineTask?.cancel()
         outlineTask = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-            guard let self else { return }; let main = self.main, sources = self.buffers
+            guard let self else { return }
+            let main = self.main, sources = self.buffers, revision = self.editRevision
             let worker = Task.detached { TeXOutlineItem.project(sources, main: main) }
             let outline = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
-            guard !Task.isCancelled, self.main == main, self.buffers == sources else { return }; self.outline = outline
+            guard !Task.isCancelled, self.main == main, self.editRevision == revision else { return }
+            if self.outline != outline { self.outline = outline }
         }
     }
     private func scheduleHistory() {
@@ -582,7 +632,7 @@ import UniformTypeIdentifiers
     }
     func restore(_ revision: TeXHistory.Revision) {
         guard buffers[revision.file] != nil else { message = "The file no longer exists in this project."; return }
-        captureHistory(file: revision.file); selected = revision.file; buffers[revision.file] = revision.source
+        captureHistory(file: revision.file); selected = revision.file; updateBuffer(revision.file, to: revision.source)
         sourceJump = SourceJump(location: .init(file: revision.file, line: 0)); showsHistory = false
     }
     @discardableResult func rename(_ path: String, to name: String) -> Bool {
@@ -605,7 +655,7 @@ import UniformTypeIdentifiers
             inspectedEditMarks = Set(inspectedEditMarks.map(mapped))
             sharedEditRanges = Dictionary(uniqueKeysWithValues: sharedEditRanges.map { (mapped($0.key), $0.value) })
             externalEdits = Dictionary(uniqueKeysWithValues: externalEdits.map { (mapped($0.key), $0.value) }); provenance = Dictionary(uniqueKeysWithValues: provenance.map { (mapped($0.key), $0.value) }); pendingHistory = Set(pendingHistory.map(mapped))
-            buffers = Dictionary(uniqueKeysWithValues: buffers.map { (mapped($0.key), $0.value) })
+            replaceBuffers(with: Dictionary(uniqueKeysWithValues: buffers.map { (mapped($0.key), $0.value) }))
             original = Dictionary(uniqueKeysWithValues: original.map { (mapped($0.key), $0.value) })
             files = files.map(mapped).sorted(); treeFiles = treeFiles.map(mapped).sorted(); treeFolders = treeFolders.map(mapped).sorted(); main = mapped(main); openFiles = openFiles.map(mapped); selected = mapped(selected)
             updateCollections(collections.map { var group = $0; group.paths = group.paths.map(mapped); return group })
@@ -632,7 +682,7 @@ import UniformTypeIdentifiers
                 for file in removed { captureHistory(file: file) }
                 try FileManager.default.trashItem(at: TeXFileSystem.url(path, root: root), resultingItemURL: nil)
                 for file in removed {
-                    buffers.removeValue(forKey: file); original.removeValue(forKey: file); pendingHistory.remove(file)
+                    updateBuffer(file, to: nil); original.removeValue(forKey: file); pendingHistory.remove(file)
                     editMarkStore.remove(for: root.appendingPathComponent(file))
                     sharedEditMarks?.remove(file)
                 }
@@ -671,7 +721,7 @@ import UniformTypeIdentifiers
                 let url = try TeXFileSystem.url(path, root: root)
                 guard !FileManager.default.fileExists(atPath: url.path) else { throw TeXFileSystem.Failure(errorDescription: "That name already exists.") }
                 try Data().write(to: url, options: .withoutOverwriting)
-                original[path] = ""; buffers[path] = ""; files.append(path); files.sort(); treeFiles.append(path); treeFiles.sort()
+                original[path] = ""; updateBuffer(path, to: ""); files.append(path); files.sort(); treeFiles.append(path); treeFiles.sort()
                 fileRevision += 1; visit(file: path)
             case .folder(let parent):
                 guard !name.contains("/"), !name.hasPrefix(".") else { throw TeXFileSystem.Failure(errorDescription: "Choose a folder name without slashes or a leading dot.") }
@@ -696,7 +746,7 @@ import UniformTypeIdentifiers
                 repeat { target = source.deletingLastPathComponent().appendingPathComponent(base + " copy" + (number == 1 ? "" : " \(number)") + (ext.isEmpty ? "" : "." + ext)); number += 1 } while FileManager.default.fileExists(atPath: target.path)
                 try FileManager.default.copyItem(at: source, to: target)
                 let added = String(target.path.dropFirst(root.path.count + 1)); treeFiles.append(added); treeFiles.sort()
-                if let text = buffers[path] { buffers[added] = text; original[added] = text; files.append(added); files.sort() }
+                if let text = buffers[path] { updateBuffer(added, to: text); original[added] = text; files.append(added); files.sort() }
                 outputCurrent = false; fileRevision += 1
             } catch { message = error.localizedDescription }
         }
@@ -729,7 +779,7 @@ import UniformTypeIdentifiers
                     let path = try TeXFileSystem.importFile(url, root: root, folder: folder)
                     (treeFiles, treeFolders) = try TeXFileSystem.snapshot(root)
                     if ["tex", "bib", "sty", "cls"].contains(url.pathExtension.lowercased()), let source = try? String(contentsOf: root.appendingPathComponent(path), encoding: .utf8), source.utf8.count <= 4_000_000 {
-                        buffers[path] = source; original[path] = source; files.append(path); files.sort()
+                        updateBuffer(path, to: source); original[path] = source; files.append(path); files.sort()
                     }
                     build = nil; outputCurrent = false; fileRevision += 1
                 } catch { message = error.localizedDescription }
@@ -756,7 +806,7 @@ import UniformTypeIdentifiers
         treeFolders = (treeFolders + [path] + staged.folders.map { prefix + $0 }).sorted()
         for (relative, text) in staged.sources {
             let name = prefix + relative
-            buffers[name] = text; original[name] = text; files.append(name)
+            updateBuffer(name, to: text); original[name] = text; files.append(name)
         }
         files.sort(); build = nil; outputCurrent = false; fileRevision += 1
     }
@@ -795,7 +845,7 @@ import UniformTypeIdentifiers
         captureHistory(file: file, marker: "Before · " + name)
         if let editSource {
             guard editSource(file, before, after, name, reveal) else { message = "Finish composing text before applying this action."; return false }
-        } else { buffers[file] = after }
+        } else { updateBuffer(file, to: after) }
         captureHistory(file: file, marker: "After · " + name)
         if feedback, UserDefaults.standard.object(forKey: "editor.toolSounds") as? Bool ?? true, let sound = NSSound(named: "Tink") { sound.volume = 0.16; sound.play() }
         return true
@@ -803,7 +853,7 @@ import UniformTypeIdentifiers
     @discardableResult func editBackgroundBuffer(file: String, before: String, after: String, name: String, undo: UndoManager?) -> Bool {
         guard !compiling, buffers[file] == before else { return false }
         guard before != after else { return true }
-        buffers[file] = after
+        updateBuffer(file, to: after)
         if let undo {
             let opensGroup = undo.groupingLevel == 0
             if opensGroup { undo.beginUndoGrouping() }
@@ -823,14 +873,14 @@ import UniformTypeIdentifiers
             let after = try ReferenceCitation.appending(record, to: before)
             guard after != before else { return }
             captureHistory(file: path, marker: "Before · Add reference")
-            buffers[path] = after
+            updateBuffer(path, to: after)
             captureHistory(file: path, marker: "After · Add reference")
         } else {
             guard files.count < 2000, treeFiles.count < 10000 else { throw ReferenceFailure("The project has too many files.") }
             let url = try TeXFileSystem.url(path, root: root)
             let source = try ReferenceCitation.appending(record, to: "")
             try Data(source.utf8).write(to: url, options: .withoutOverwriting)
-            original[path] = source; buffers[path] = source
+            original[path] = source; updateBuffer(path, to: source)
             files.append(path); files.sort(); treeFiles.append(path); treeFiles.sort(); fileRevision += 1
         }
         message = "Reference added to " + path

@@ -10,14 +10,23 @@ public func hostVersionAtLeast(_ a: Int32, _ b: Int32, _ c: Int32) -> Int32 {
 
 // Small document doubles exercise the production window registry without opening user files.
 @MainActor final class TabPDFSession { func persistReadingPosition() {} }
+actor LibraryIndex { static let shared = LibraryIndex() }
 @MainActor final class ReadingSession {
     struct Document { enum Content { case pdf, markdown }; var content: Content = .pdf }
     var document = Document()
     var url: URL?
     var pdfSession: TabPDFSession?
+    private(set) var pdfTabVisible = true
+    func setPDFTabVisible(_ visible: Bool) { pdfTabVisible = visible }
 }
 @MainActor final class HomeModel {
     let reader = ReadingSession()
+    var error: String?
+    init(index: LibraryIndex) {}
+    func openPreparedDocument(_ url: URL, data: Data, recordRecent: Bool) throws {
+        guard PDFDocument(data: data) != nil else { throw CocoaError(.fileReadCorruptFile) }
+        reader.url = url
+    }
     func open(_ url: URL, inNewPDFTab: Bool = true) {
         if inNewPDFTab, RemileWindows.shared.openPDFTab(url, from: self) { return }
         reader.url = url
@@ -26,26 +35,37 @@ public func hostVersionAtLeast(_ a: Int32, _ b: Int32, _ c: Int32) -> Int32 {
 func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
     precondition(condition(), message); print("PASS: \(message)")
 }
-MainActor.assumeIsolated {
+Task { @MainActor in
 _ = NSApplication.shared
 let registry = RemileWindows.shared
+let outputDirectory = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
 var retained: [NSWindow] = []
 @MainActor func make(_ name: String) -> (NSWindow, HomeModel) {
     let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 800, height: 600), styleMask: [.titled, .closable], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false; retained.append(window)
-    let home = HomeModel(); home.reader.url = URL(fileURLWithPath: "/tmp/\(name).pdf")
+    let home = registry.makeHome(recordRecent: false)
+    if home.reader.url == nil { home.reader.url = outputDirectory.appendingPathComponent(name + ".pdf") }
     registry.register(home, window: window)
     return (window, home)
 }
 let (a, ah) = make("a")
 var created = 0
 registry.createWindow = { created += 1 }
-registry.openExternalDocument(URL(fileURLWithPath: "/tmp/b.pdf"))
+let target = outputDirectory.appendingPathComponent("b.pdf")
+let fixture = PDFDocument()
+let fixtureImage = NSImage(size: NSSize(width: 100, height: 100), flipped: false) { rect in
+    NSColor.white.setFill(); rect.fill(); return true
+}
+fixture.insert(PDFPage(image: fixtureImage)!, at: 0)
+try! fixture.dataRepresentation()!.write(to: target)
+registry.openExternalDocument(target)
+for _ in 0..<100 where created == 0 { try? await Task.sleep(for: .milliseconds(10)) }
 expect(created == 1, "Finder PDF requests a tab window")
 let (b, bh) = make("placeholder")
 expect(bh.reader.url?.lastPathComponent == "b.pdf", "Queued Finder URL reaches the new session")
 expect(registry.documentTabs(for: bh.reader).count == 2 && !a.isVisible && b.isVisible, "Finder open joins the existing PDF group")
-registry.openExternalDocument(URL(fileURLWithPath: "/tmp/b.pdf"))
+expect(!ah.reader.pdfTabVisible && bh.reader.pdfTabVisible, "Only the selected tab retains its visible resources")
+registry.openExternalDocument(target)
 expect(created == 1, "Duplicate Finder open selects the existing session")
 let aid = ObjectIdentifier(a), bid = ObjectIdentifier(b)
 registry.moveDocumentTab(bid, to: aid, after: false)
@@ -100,7 +120,7 @@ if CommandLine.arguments.count > 1 {
                 host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
                 host.frame = NSRect(x: 0, y: 0, width: width, height: 40)
                 host.layoutSubtreeIfNeeded()
-                func surfaces(_ view: NSView) -> [PDFTabDragView] {
+                @MainActor func surfaces(_ view: NSView) -> [PDFTabDragView] {
                     (view as? PDFTabDragView).map { [$0] } ?? view.subviews.flatMap { surfaces($0) }
                 }
                 let hitAreas = surfaces(host)
@@ -161,5 +181,6 @@ zoom.change(1.25)
 expect(abs(view.scaleFactor - 1.25) < 0.001, "Manual zoom remains available after initial fit")
 for window in retained { window.orderOut(nil) }
 print("PDF tab and initial fit checks passed")
-
+exit(0)
 }
+RunLoop.main.run()

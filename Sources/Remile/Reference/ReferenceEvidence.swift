@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 import PDFKit
 
 /// Resolve identity before exposing an attachment. A matching key alone is not proof of identity.
@@ -51,9 +50,9 @@ enum ReferenceEvidence {
         guard values.isRegularFile == true, values.isSymbolicLink != true, (values.fileSize ?? Int.max) <= 200_000_000 else { throw ReferenceFailure("This PDF is unavailable or too large.") }
         try Task.checkCancellation()
         let data = try Data(contentsOf: url)
-        try Task.checkCancellation()
-        guard data.count <= 200_000_000, SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == attachment.sha256 else { throw ReferenceFailure("The PDF changed. Attach a verified copy in Reference.") }
-        try Task.checkCancellation()
+        guard data.count <= 200_000_000, try SourceDigest.hex(SourceDigest.cancellableSHA256(data)) == attachment.sha256 else {
+            throw ReferenceFailure("The PDF changed. Attach a verified copy in Reference.")
+        }
         return (record, attachment, url, data)
     }
 }

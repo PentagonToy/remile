@@ -79,7 +79,9 @@ struct MarkdownWorkspace: View {
         .font(RemileType.control).tint(DocumentTone.accent(pdf: false))
         .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.outline)
         .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.ask)
-        .task(id: source + String(spellcheck) + language) { await writing.check(source, enabled: spellcheck, language: language, editor: editor) }
+        .task(id: EditorWritingReview.Request(source: source, enabled: spellcheck, language: language)) {
+            await writing.check(source, enabled: spellcheck, language: language, editor: editor)
+        }
         .task(id: PreviewRequest(source: source, url: previewURL, visible: presentation.mode != .edit, live: livePreview)) {
             let includeHTML = presentation.mode != .edit && (livePreview || preview.html == nil)
             await preview.render(source, url: previewURL, includeHTML: includeHTML)

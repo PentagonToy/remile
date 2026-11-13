@@ -53,7 +53,7 @@ Task { @MainActor in
         expect(project.source.wrappedValue == before, "History restores into the buffer")
         let saved = try String(contentsOf: root.appendingPathComponent(project.selected), encoding: .utf8)
         expect(saved == before, "History does not write changes automatically")
-        project.buffers["main.tex"] = main + "% unsaved"
+        project.updateBuffer("main.tex", to: main + "% unsaved")
         try (main + "% external").write(to: root.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)
         expect(!project.save(), "External save conflict is preserved")
         expect(EditorBridge.digest("a") != EditorBridge.digest("b"), "CLI uses source fingerprints")

@@ -1,18 +1,32 @@
 import SwiftUI
 import WebKit
 
+enum MarkdownPreviewNavigation {
+    @MainActor static func policy(for type: WKNavigationType, url: URL?, offline: Bool,
+                                  open: (URL) -> Void = { NSWorkspace.shared.open($0) }) -> WKNavigationActionPolicy {
+        if type == .other, url?.scheme == "about" { return .allow }
+        if type == .linkActivated, !offline, let url,
+           ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            open(url)
+        }
+        return .cancel
+    }
+}
+
 @MainActor
 final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelegate {
     var sourceSelection: ((Int, String) -> Void)?
-    @Published var html: String?
-    private static let emptyHTML = "<!doctype html><html><head><meta charset=\"utf-8\"></head><body></body></html>"
+    @Published private(set) var html: String?
+    private static let emptyHTML = "<!doctype html><html><head><meta charset=\"utf-8\"><style>\(MarkdownHTML.browserLinkStyle)</style></head><body></body></html>"
     var showsWebPreview: Bool { loaded || (html != nil && html != Self.emptyHTML) }
     @Published var message: String?
-    @Published var sections: [SearchMarkdown.Section] = []
+    @Published var sections: [SearchMarkdown.Heading] = []
     @Published var wordCount = 0
-    private var loadedHTML = ""
+    private var htmlRevision = 0
+    private var displayedRevision: Int?
+    private var navigation: WKNavigation?
+    private var replacement: UUID?
     private var loaded = false
-    private var fraction = 0.0
     private var requestedLine: Int?
     private var requestedSection: Int?
     private var dark = false
@@ -21,7 +35,6 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
     private var serif = false
     private var appliedCSS: String?
     private var appliedOffline: Bool?
-    private var generation = UUID()
     private var renderGeneration = UUID()
     private var analysedSource: String?
     private var renderedSource: String?
@@ -57,8 +70,9 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
         let emptyHTML = Self.emptyHTML
         let cachedSections = sections
         let worker = Task.detached(priority: .userInitiated) {
-            let sections = analyse ? SearchMarkdown.sections(source) : cachedSections
-            let wordCount = analyse ? source.split(whereSeparator: \.isWhitespace).count : nil
+            let sections = analyse ? SearchMarkdown.headings(source) : cachedSections
+            try Task.checkCancellation()
+            let wordCount = analyse ? try Self.countWords(source) : nil
             let html: Result<String, Error>? = renderHTML ? Result {
                 guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return emptyHTML }
                 var renderer = MarkdownHTML(baseURL: url, preview: true)
@@ -73,11 +87,12 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
             try Task.checkCancellation(); guard renderGeneration == token else { return }
             if let count = result.wordCount {
                 analysedSource = source
-                sections = result.sections
+                if sections != result.sections { sections = result.sections }
                 if wordCount != count { wordCount = count }
             }
             if let output = try result.html?.get() {
                 renderedSource = source; renderedURL = url
+                htmlRevision += 1
                 html = output; message = nil
             }
         } catch is CancellationError { }
@@ -88,6 +103,16 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
             else { message = "Preview: \(error.localizedDescription) Your source is unchanged." }
         }
     }
+    private nonisolated static func countWords(_ source: String) throws -> Int {
+        var count = 0, inWord = false
+        for (index, character) in source.enumerated() {
+            if index.isMultiple(of: 4096) { try Task.checkCancellation() }
+            let word = !character.isWhitespace
+            if word && !inWord { count += 1 }
+            inWord = word
+        }
+        return count
+    }
     func display(dark: Bool, scale: CGFloat, wide: Bool, serif: Bool) {
         self.dark = dark; self.scale = scale; self.wide = wide; self.serif = serif
         let appearance: NSAppearance.Name = dark ? .darkAqua : .aqua
@@ -96,21 +121,48 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
         if web.underPageBackgroundColor != background { web.underPageBackgroundColor = background }
         guard let html else { return }
         if web.pageZoom != scale { web.pageZoom = scale }
-        if loadedHTML != html {
-            if loaded {
-                loadedHTML = html
-                let encoded = Self.json(html)
-                web.evaluateJavaScript("(()=>{const y=scrollY/Math.max(1,document.documentElement.scrollHeight-innerHeight);const next=new DOMParser().parseFromString(\(encoded),'text/html');document.body.replaceChildren(...next.body.childNodes);window.remileSetOffline?.(window.remileOffline);scrollTo(0,y*Math.max(0,document.documentElement.scrollHeight-innerHeight))})()") { [weak self] _, error in
-                    if error != nil { self?.loadedHTML = ""; self?.message = "Preview update failed. Render again." }
-                }
-                style()
-            } else if !web.isLoading {
-                loadedHTML = html
-                let themed = html.replacingOccurrences(of: "</head>", with: "<style id=\"reader-style\">\(themeCSS)</style></head>")
-                web.loadHTMLString(themed, baseURL: nil)
-            }
-        } else { style() }
+        if loaded {
+            style()
+            replaceBodyIfNeeded()
+        } else if navigation == nil {
+            displayedRevision = htmlRevision
+            let themed = html.replacingOccurrences(of: "</head>", with: "<style id=\"reader-style\">\(themeCSS)</style></head>")
+            navigation = web.loadHTMLString(themed, baseURL: nil)
+        }
     }
+    private func replaceBodyIfNeeded() {
+        guard loaded, replacement == nil, displayedRevision != htmlRevision, let html else { return }
+        let token = UUID()
+        let revision = htmlRevision
+        replacement = token
+        web.callAsyncJavaScript(Self.replaceBody, arguments: ["html": html], in: nil, in: .page) { [weak self] result in
+            guard let self, self.replacement == token else { return }
+            self.replacement = nil
+            self.displayedRevision = revision
+            if self.htmlRevision != revision {
+                self.replaceBodyIfNeeded()
+            } else {
+                if case .failure = result, self.message == nil {
+                    self.message = "Preview update failed. Render again."
+                }
+                self.revealPendingLocation()
+            }
+        }
+    }
+    private static let replaceBody = """
+        const fraction = scrollY / Math.max(1, document.documentElement.scrollHeight - innerHeight);
+        const next = new DOMParser().parseFromString(html, 'text/html');
+        if (next.body.childNodes.length <= 8192) {
+            document.body.replaceChildren(...next.body.childNodes);
+        } else {
+            // Bound the JavaScript argument count for documents with many top-level blocks.
+            const contents = next.createRange();
+            contents.selectNodeContents(next.body);
+            document.body.replaceChildren(contents.extractContents());
+        }
+        window.remileSetOffline?.(window.remileOffline);
+        scrollTo(0, fraction * Math.max(0, document.documentElement.scrollHeight - innerHeight));
+        """
     private static func json(_ value: String) -> String { String(data: try! JSONEncoder().encode(value), encoding: .utf8)! }
     private var themeCSS: String {
         """
@@ -135,7 +187,11 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
         }
     }
     func reveal(line: Int) {
-        guard loaded else { requestedLine = line; return }
+        requestedLine = line
+        requestedSection = nil
+        revealPendingLocation()
+    }
+    private func scrollToLine(_ line: Int) {
         web.evaluateJavaScript("(()=>{const a=[...document.querySelectorAll('[data-source-line]')].filter(a=>Number(a.dataset.sourceLine)<=\(max(0,line))).pop();a?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth'})})()", completionHandler: nil)
     }
     private func updateRemotePolicy() {
@@ -162,27 +218,48 @@ final class MarkdownPreviewModel: NSObject, ObservableObject, WKNavigationDelega
         web.evaluateJavaScript("(()=>{let s=document.getElementById('reader-style');if(!s){s=document.createElement('style');s.id='reader-style';document.head.append(s)}s.textContent=\(encoded)})()", completionHandler: nil)
     }
     func reveal(section: Int) {
-        requestedSection = section; scrollToSection()
+        requestedSection = section
+        requestedLine = nil
+        revealPendingLocation()
     }
-    private func scrollToSection() {
-        guard loaded, let section = requestedSection else { return }
-        web.evaluateJavaScript("document.getElementById('section-\(section)')?.scrollIntoView({block:'start'})", completionHandler: nil)
-        requestedSection = nil
+    private func revealPendingLocation() {
+        guard loaded, replacement == nil, displayedRevision == htmlRevision else { return }
+        if let line = requestedLine {
+            requestedLine = nil
+            scrollToLine(line)
+        } else if let section = requestedSection {
+            requestedSection = nil
+            web.evaluateJavaScript("document.getElementById('section-\(section)')?.scrollIntoView({block:'start'})", completionHandler: nil)
+        }
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard navigation === self.navigation else { return }
+        self.navigation = nil
         loaded = true; style(); ReaderScrolling.configure(webView)
         webView.isHidden = false
-        if loadedHTML != html { display(dark: dark, scale: scale, wide: wide, serif: serif) }
-        if let line = requestedLine { requestedLine = nil; reveal(line: line) }
-        else if requestedSection != nil { scrollToSection() }
-        else { web.evaluateJavaScript("window.scrollTo(0,\(min(1,max(0,fraction)))*Math.max(0,document.documentElement.scrollHeight-innerHeight))", completionHandler: nil) }
+        replaceBodyIfNeeded()
+        revealPendingLocation()
     }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if action.navigationType == .other, action.request.url?.scheme == "about" { decisionHandler(.allow); return }
-        if action.navigationType == .linkActivated, let url = action.request.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") { if !NetworkAccess.offline { NSWorkspace.shared.open(url) } }
-        decisionHandler(.cancel)
+        decisionHandler(MarkdownPreviewNavigation.policy(for: action.navigationType, url: action.request.url, offline: NetworkAccess.offline))
     }
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { webView.isHidden = true; loadedHTML = ""; loaded = false; appliedCSS = nil; appliedOffline = nil; message = "Preview paused. Switch view to reload it." }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        initialLoadFailed(navigation)
+    }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        initialLoadFailed(navigation)
+    }
+    private func initialLoadFailed(_ navigation: WKNavigation?) {
+        guard navigation != nil, navigation === self.navigation else { return }
+        self.navigation = nil
+        message = "Preview update failed. Render again."
+    }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        webView.isHidden = true
+        navigation = nil; replacement = nil; displayedRevision = nil; loaded = false
+        appliedCSS = nil; appliedOffline = nil
+        message = "Preview paused. Switch view to reload it."
+    }
 }
 
 struct MarkdownPreview: View {

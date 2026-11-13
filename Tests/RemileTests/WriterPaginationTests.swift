@@ -1,8 +1,60 @@
 import XCTest
 import AppKit
+import Combine
 @testable import Remile
 
 @MainActor final class WriterPaginationTests: XCTestCase {
+    func testCaretInSameStyleDoesNotPublishToolbarChanges() throws {
+        let (model, desk, window) = makeDesk(size: CGSize(width: 900, height: 800))
+        defer { desk.suspend(); window.contentView = nil }
+        let canvas = try XCTUnwrap(model.canvas)
+        let paper = try XCTUnwrap(canvas.sheets.first)
+        model.reflectStyle(paper.text)
+        var notifications = 0
+        let observation = model.objectWillChange.sink { notifications += 1 }
+        defer { observation.cancel() }
+        for _ in 0..<25 {
+            model.choose(nil)
+            model.reflectStyle(paper.text)
+        }
+        XCTAssertEqual(notifications, 0)
+
+        var attributes = paper.text.typingAttributes
+        attributes[.font] = WriterFont.styled(model.font.family, size: 18, bold: false, italic: false)
+        paper.text.typingAttributes = attributes
+        model.reflectStyle(paper.text)
+        XCTAssertEqual(model.size, 18)
+        XCTAssertGreaterThan(notifications, 0)
+    }
+
+    func testNonWrappingObjectsUpdateTrailingPagesDuringSynchronisation() {
+        _ = NSApplication.shared
+        let model = WriterModel()
+        let canvas = WriterCanvas(model: model)
+        defer { canvas.suspend() }
+        canvas.rebuild()
+        var shape = WriterObject(kind: .rectangle)
+        shape.page = 2
+        model.insertObject(shape)
+        canvas.synchronise()
+        XCTAssertEqual(canvas.sheets.count, 3)
+        model.deleteShape()
+        canvas.synchronise()
+        XCTAssertEqual(canvas.sheets.count, 1)
+    }
+
+    func testQueuedPaginationDoesNotReopenSuspendedCanvas() async {
+        _ = NSApplication.shared
+        let model = WriterModel()
+        let canvas = WriterCanvas(model: model)
+        canvas.rebuild()
+        canvas.textDidChange(Notification(name: NSText.didChangeNotification))
+        canvas.suspend()
+        await Task.yield()
+        XCTAssertTrue(canvas.sheets.isEmpty)
+        XCTAssertNil(model.canvas)
+    }
+
     func testWriterStartsWithWholePageCentredInTheViewport() async throws {
         for size in [CGSize(width: 1500, height: 1180), CGSize(width: 500, height: 850)] {
             let (model, desk, window) = makeDesk(size: size)

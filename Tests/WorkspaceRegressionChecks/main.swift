@@ -83,11 +83,11 @@ Task { @MainActor in
  print("Passed missing package retains contextual setup details without opening a popover")
  dependencyProject.setupNeeded = false
  guard dependencyProject.compileFailed else { print("FAILED dismissed guidance lost failure state"); exit(1) }
- dependencyProject.buffers["main.tex"] = "\\documentclass{article}\n\\begin{document}\\remileUndefinedCommand\\end{document}"
+ dependencyProject.updateBuffer("main.tex", to: "\\documentclass{article}\n\\begin{document}\\remileUndefinedCommand\\end{document}")
  dependencyProject.compile(output:URL(fileURLWithPath:CommandLine.arguments[1]).appendingPathComponent("syntax-error-build"))
  guard await settle({!dependencyProject.compiling}), dependencyProject.compileFailed, !dependencyProject.setupNeeded, dependencyProject.showsLog, dependencyProject.setupIssue == nil, TeXDiagnostics.primaryError(dependencyProject.diagnostics)?.message.contains("Undefined control sequence") == true else { print("FAILED source error does not retain diagnostic guidance",dependencyProject.log);exit(1) }
  await render(TeXCompileGuidance(project:dependencyProject,showDiagnostics:{}),name:"source-error-guidance",size:NSSize(width:490,height:240),dark:true)
- dependencyProject.buffers["main.tex"] = "\\documentclass{article}\n\\begin{document}Test\\end{document}"
+ dependencyProject.updateBuffer("main.tex", to: "\\documentclass{article}\n\\begin{document}Test\\end{document}")
  dependencyProject.compile(output:URL(fileURLWithPath:CommandLine.arguments[1]).appendingPathComponent("recovery-build"))
  guard await settle({!dependencyProject.compiling}), !dependencyProject.compileFailed, !dependencyProject.setupNeeded, dependencyProject.outputCurrent, dependencyProject.pdf != nil else { print("FAILED successful compile retains error guidance",dependencyProject.log);exit(1) }
  print("Passed source error guidance, dismissal retention and successful compilation recovery")
@@ -158,7 +158,7 @@ Task { @MainActor in
  try! FileManager.default.setAttributes([.modificationDate:Date(timeIntervalSince1970:100)],ofItemAtPath:saveURL.path)
  guard reader.dirty && reader.save() && !reader.dirty && (try! String(contentsOf:saveURL,encoding:.utf8)) == "Edited" else { print("FAILED same-file save");exit(1) }
  let beforeTeX=sidebarProject.buffers["main.tex"]!
- sidebarProject.buffers["main.tex"] = beforeTeX + "\n% Local edit"
+ sidebarProject.updateBuffer("main.tex", to: beforeTeX + "\n% Local edit")
  guard sidebarProject.dirty && sidebarProject.save() && !sidebarProject.dirty else { print("FAILED TeX same-file save");exit(1) }
  print("Passed same-path Markdown/LaTeX save, including timestamp-only external change")
  exit(0)

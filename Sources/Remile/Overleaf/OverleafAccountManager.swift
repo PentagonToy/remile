@@ -79,7 +79,7 @@ struct OverleafAccountManager: View {
                                         VStack(alignment: .leading, spacing: 12) {
                                             SecureField("New Git token", text: $draft.token).labelsHidden().textFieldStyle(.roundedBorder).onSubmit(saveToken)
                                             HStack {
-                                                Link("Get a token", destination: URL(string: "https://www.overleaf.com/user/settings")!)
+                                                ExternalLink("Get a token", destination: URL(string: "https://www.overleaf.com/user/settings")!)
                                                 Spacer()
                                                 if draft.tokenSaved { SymbolLabel("Saved", systemImage: "checkmark").foregroundStyle(RemileStyle.success) }
                                                 Button("Save token", action: saveToken).disabled(draft.token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

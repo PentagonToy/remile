@@ -33,9 +33,9 @@ import CryptoKit
         return ["overleaf.com", "www.overleaf.com"].contains(domain.lowercased()) && (cookie.expiresDate.map { $0 > now } ?? true)
     }
     @discardableResult static func remember(_ id: UUID) async -> Bool {
-        guard !revoked.contains(id) else { return false }
+        guard !Task.isCancelled, !revoked.contains(id) else { return false }
         let cookies = await OverleafWebIdentity.dataStore(id).httpCookieStore.allCookies().filter { isUsable($0) }.sorted { ($0.domain, $0.path, $0.name) < ($1.domain, $1.path, $1.name) }
-        guard !revoked.contains(id) else { return false }
+        guard !Task.isCancelled, !revoked.contains(id) else { return false }
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         guard !cookies.isEmpty, let bytes = try? encoder.encode(cookies.map(Cookie.init)) else { return false }
         let digest = SHA256.hash(data: bytes)

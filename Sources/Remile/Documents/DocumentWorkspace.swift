@@ -4,11 +4,14 @@ struct DocumentWorkspace: View {
     @Binding var document: ReadingDocument
     var fileURL: URL? = nil
     var session: ReadingSession? = nil
+    var pdfTabVisible = true
 
     var body: some View {
         switch document.content {
         case .pdf(let data):
-            PDFWorkspace(data: data, fileURL: fileURL, readingSession: session) { data in document.content = .pdf(data) }
+            PDFWorkspace(data: data, fileURL: fileURL, readingSession: session, pdfTabVisible: pdfTabVisible) { data in
+                document.content = .pdf(data)
+            }
         case .markdown:
             MarkdownWorkspace(source: markdownSource, mode: fileURL?.path.hasPrefix("/remile-untitled-") == true ? .split : .read, fileURL: fileURL, session: session)
         }

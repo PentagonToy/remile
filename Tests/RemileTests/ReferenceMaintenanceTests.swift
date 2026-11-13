@@ -18,6 +18,32 @@ final class ReferenceMaintenanceTests: XCTestCase {
         context.beginPDFPage(nil); context.endPDFPage(); context.closePDF()
         return try repository.addFetched(ReferenceRecord(fields: ["title": "A paper", "doi": "10.1000/paper"]), pdf: Data(contentsOf: url), libraryID: ReferenceLibrary.primaryID)
     }
+    func testThumbnailReloadsWhenAttachmentContentChangesAtSameURL() async throws {
+        let record = try pdfRecord()
+        let attachment = try XCTUnwrap(record.attachments.first)
+        let url = repository.attachmentURL(attachment)
+        let renderer = ReferenceThumbnailRenderer()
+        let first = try await renderer.render(url: url, digest: attachment.sha256, page: 20)
+        XCTAssertEqual(first.index, 0)
+        XCTAssertEqual(first.count, 1)
+        XCTAssertGreaterThan(first.image.width, 0)
+
+        let replacement = folder.appendingPathComponent("replacement.pdf")
+        var box = CGRect(x: 0, y: 0, width: 200, height: 300)
+        let context = try XCTUnwrap(CGContext(replacement as CFURL, mediaBox: &box, nil))
+        for _ in 0..<2 {
+            context.beginPDFPage(nil)
+            context.endPDFPage()
+        }
+        context.closePDF()
+        try Data(contentsOf: replacement).write(to: url, options: .atomic)
+        let updated = try await renderer.render(url: url, digest: "replacement", page: 20)
+        XCTAssertEqual(updated.index, 1)
+        XCTAssertEqual(updated.count, 2)
+        let previous = try await renderer.render(url: url, digest: "replacement", page: 0)
+        XCTAssertEqual(previous.index, 0)
+        XCTAssertEqual(previous.count, 2)
+    }
     func testReferenceSearchPreservesFormattedNamesAndPhraseMatching() {
         let record = ReferenceRecord(key: "fixedkey", fields: [
             "title": "{Flame} mixing",
@@ -31,6 +57,79 @@ final class ReferenceMaintenanceTests: XCTestCase {
         XCTAssertTrue(record.matchesSearch("fixedkey Flame"))
         XCTAssertFalse(record.matchesSearch("fixedkeyFlame"))
         XCTAssertFalse(record.matchesSearch("methane"))
+    }
+
+    @MainActor func testReloadWhileBusyStillVerifiesTheReaderAttachment() async throws {
+        let record = try pdfRecord()
+        let attachment = try XCTUnwrap(record.attachments.first)
+        let url = repository.attachmentURL(attachment)
+        let model = ReferenceModel(repository: repository)
+        model.load()
+        let deadline = ContinuousClock.now + .seconds(3)
+        while model.busy, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(model.busy)
+        let loaded = try XCTUnwrap(model.selection)
+        let pdf = try XCTUnwrap(PDFDocument(url: url))
+        let page = try XCTUnwrap(pdf.page(at: 0))
+        page.rotation = 90
+        try XCTUnwrap(pdf.dataRepresentation()).write(to: url, options: .atomic)
+
+        model.load()
+        model.readingAttachment = attachment.id
+        model.load()
+        let editDeadline = ContinuousClock.now + .seconds(3)
+        while model.selection?.revision == loaded.revision, ContinuousClock.now < editDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNil(model.error)
+        XCTAssertNil(model.readingAttachment)
+        XCTAssertNotEqual(model.selection?.attachments.first?.sha256, attachment.sha256)
+        XCTAssertEqual(model.selection?.id, loaded.id)
+    }
+
+    @MainActor func testReferenceSidebarTracksTrashedRecordsAndCollections() async throws {
+        let library = try repository.addLibrary("Other library")
+        let collection = try repository.addLibrary("Reading", parentID: library.id)
+        let primary = try XCTUnwrap(repository.add([ReferenceRecord(fields: ["title": "Primary paper"])]).first)
+        let papers = try repository.add([
+            ReferenceRecord(fields: ["title": "Visible paper"]),
+            ReferenceRecord(fields: ["title": "Trashed paper"]),
+        ], libraryID: library.id)
+        try repository.move(papers[0].id, to: collection.id)
+        try repository.trash(papers[1].id)
+
+        let model = ReferenceModel(repository: repository)
+        func reload() async throws {
+            model.load()
+            let deadline = ContinuousClock.now + .seconds(3)
+            while model.busy, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertFalse(model.busy)
+            XCTAssertNil(model.error)
+        }
+        try await reload()
+        XCTAssertEqual(model.allRecords.map(\.id), [primary.id, papers[0].id])
+        XCTAssertEqual(model.trashRecords.map(\.id), [papers[1].id])
+        XCTAssertEqual(model.libraryCounts[library.id], 1)
+        model.selectLibrary(collection.id)
+        XCTAssertTrue(model.hasActiveLibraryRecords)
+        XCTAssertEqual(model.items.map(\.id), [papers[0].id])
+        model.query = "unmatched"
+        XCTAssertTrue(model.items.isEmpty)
+        XCTAssertTrue(model.hasActiveLibraryRecords)
+        model.query = ""
+
+        try repository.deleteLibrary(collection.id)
+        try await reload()
+        XCTAssertEqual(model.allRecords.map(\.id), [primary.id])
+        XCTAssertEqual(Set(model.trashRecords.map(\.id)), Set(papers.map(\.id)))
+        XCTAssertNil(model.libraryCounts[library.id])
+        XCTAssertTrue(model.contents(library.id).allSatisfy { $0.trashed != nil })
+
+        try repository.restoreLibrary(collection.id)
+        try await reload()
+        XCTAssertEqual(model.allRecords.map(\.id), [primary.id, papers[0].id])
+        XCTAssertEqual(model.trashRecords.map(\.id), [papers[1].id])
+        XCTAssertEqual(model.libraryCounts[collection.id], 1)
     }
 
     func testCLIExportIncludesAllLibrariesAndHonoursExplicitScope() throws {

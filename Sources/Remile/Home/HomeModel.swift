@@ -8,7 +8,7 @@ final class HomeModel: ObservableObject {
     let reader = ReadingSession()
     let overleaf: OverleafLibrary
     @Published var texProject: TeXProject?
-    let assistant = DocumentAssistant(historyKey: "search")
+    private(set) lazy var assistant = DocumentAssistant(historyKey: "search")
     enum Page { case home, search, reference, extensions, writer }
     @Published var writer: WriterModel?
     let references = ReferenceModel()
@@ -18,22 +18,44 @@ final class HomeModel: ObservableObject {
     @Published var resultOrder = SearchResultOrder.relevance
     @Published var summary = LibrarySummary()
     @Published var query = ""
-    @Published var results: [LibraryHit] = [] { didSet { groupedResults = nil; rankedResults = nil } }
+    @Published var results: [LibraryHit] = [] {
+        didSet { cachedResultIDs = nil; invalidateResultPresentation() }
+    }
     @Published var selectedHit: LibraryHit?
     @Published private(set) var resultRevealID = UUID()
-    @Published var documentFilter = "" { didSet { groupedResults = nil; rankedResults = nil } }
+    @Published var documentFilter = "" { didSet { invalidateResultPresentation() } }
     @Published var expandedDocuments = Set<String>()
     private var groupedResults: [SearchResultGroup]?
     private var rankedResults: [RankedSearchHit]?
+    private var visibleResults: (order: SearchResultOrder, hits: [LibraryHit])?
+    private var cachedResultIDs: [String]?
+    private func invalidateResultPresentation() {
+        groupedResults = nil
+        rankedResults = nil
+        visibleResults = nil
+    }
+    var resultIDs: [String] {
+        if let cachedResultIDs { return cachedResultIDs }
+        let ids = results.map(\.id)
+        cachedResultIDs = ids
+        return ids
+    }
     var resultGroups: [SearchResultGroup] {
         if let groupedResults { return groupedResults }
-        let value = SearchResultGroup.make(results, filter: documentFilter); groupedResults = value; return value
+        let value = SearchResultGroup.make(ranked: rankedHits)
+        groupedResults = value
+        return value
     }
     var rankedHits: [RankedSearchHit] {
         if let rankedResults { return rankedResults }
         let value = RankedSearchHit.make(results, filter: documentFilter); rankedResults = value; return value
     }
-    var visibleHits: [LibraryHit] { resultOrder == .rank ? rankedHits.map(\.hit) : resultGroups.flatMap(\.hits) }
+    var visibleHits: [LibraryHit] {
+        if let visibleResults, visibleResults.order == resultOrder { return visibleResults.hits }
+        let hits = resultOrder == .rank ? rankedHits.map(\.hit) : resultGroups.flatMap(\.hits)
+        visibleResults = (resultOrder, hits)
+        return hits
+    }
     @Published var libraryPresented = false
     @Published var guidePresented = false
     @Published var askPresented = false
@@ -99,21 +121,43 @@ final class HomeModel: ObservableObject {
     func resumeSearch() {
         if previousSearch != currentSearch { invalidateSearch() }
     }
-    private var access: [URL] = []
+    private var access: [String: (folder: LibraryFolder, url: URL)] = [:]
+    private var indexGeneration: Int64?
 
     init(index: LibraryIndex = LibraryIndex(), overleaf: OverleafLibrary? = nil) { self.index = index; self.overleaf = overleaf ?? OverleafLibrary() }
 
     func load() async {
         refreshRecent()
         do {
-            summary = try await index.summary()
-            // Keep selected folder grants alive while this shared home model exists.
-            for url in access { url.stopAccessingSecurityScopedResource() }
-            access = summary.folders.compactMap { folder in
-                guard let url = try? folder.url(), url.startAccessingSecurityScopedResource() else { return nil }
-                return url
+            let (updated, generation) = try await index.snapshot()
+            try Task.checkCancellation()
+            var grants: [String: (folder: LibraryFolder, url: URL)] = [:]
+            for folder in updated.folders {
+                if let grant = access.removeValue(forKey: folder.id) {
+                    if grant.folder == folder {
+                        grants[folder.id] = grant
+                        continue
+                    }
+                    grant.url.stopAccessingSecurityScopedResource()
+                }
+                if let url = try? folder.url(), url.startAccessingSecurityScopedResource() {
+                    grants[folder.id] = (folder, url)
+                }
             }
-        } catch { self.error = error.localizedDescription }
+            for grant in access.values { grant.url.stopAccessingSecurityScopedResource() }
+            access = grants
+            if summary != updated { summary = updated }
+            if let indexGeneration, indexGeneration != generation {
+                libraryRevision = UUID()
+                invalidateSearch()
+            }
+            indexGeneration = generation
+        } catch is CancellationError { }
+        catch { self.error = error.localizedDescription }
+    }
+
+    deinit {
+        for grant in access.values { grant.url.stopAccessingSecurityScopedResource() }
     }
 
     func addFolder() {
@@ -133,7 +177,12 @@ final class HomeModel: ObservableObject {
     func removeFolder(_ folder: LibraryFolder) {
         guard !indexing else { return }
         Task {
-            do { let root = try folder.url(); try ManuscriptReviewStore.removeLibraryFolder(root); try await index.remove(folder); await load(); invalidateSearch() }
+            do {
+                let root = try folder.url()
+                try await index.remove(folder)
+                await load()
+                try ManuscriptReviewStore.removeLibraryFolder(root)
+            }
             catch { self.error = error.localizedDescription }
         }
     }
@@ -149,8 +198,8 @@ final class HomeModel: ObservableObject {
                 message = "Index up to date."
             } catch is CancellationError { message = "Indexing stopped." }
             catch { self.error = error.localizedDescription }
-            indexing = false; progress = nil; indexTask = nil; libraryRevision = UUID()
-            await load(); invalidateSearch()
+            await load()
+            indexing = false; progress = nil; indexTask = nil
         }
     }
     private func showProgress(_ value: LibraryProgress) { progress = value }
@@ -273,14 +322,17 @@ final class HomeModel: ObservableObject {
         if let hit { expandedDocuments.insert(hit.path) }
     }
     func filterDocuments() {
-        if !visibleHits.contains(where: { $0.id == selectedHit?.id }) { selectResult(visibleHits.first) }
+        if resultPosition == nil { selectResult(visibleHits.first) }
     }
     func moveResult(_ delta: Int) {
         let hits = visibleHits
-        guard let index = hits.firstIndex(where: { $0.id == selectedHit?.id }), hits.indices.contains(index + delta) else { return }
+        guard let index = resultPosition, hits.indices.contains(index + delta) else { return }
         selectResult(hits[index + delta])
     }
-    var resultPosition: Int? { visibleHits.firstIndex { $0.id == selectedHit?.id } }
+    var resultPosition: Int? {
+        guard let selectedHit else { return nil }
+        return visibleHits.firstIndex { $0.page == selectedHit.page && $0.path == selectedHit.path }
+    }
 
     private var queuedPDFs: [URL] = []
     func open(_ url: URL) { open(url, inNewPDFTab: true) }
@@ -333,7 +385,8 @@ final class HomeModel: ObservableObject {
     func refreshRecent() {
         let saved = (UserDefaults.standard.stringArray(forKey: Self.recentPreference) ?? []).map { URL(fileURLWithPath: $0) }
         let hidden = Set(UserDefaults.standard.stringArray(forKey: Self.hiddenRecentPreference) ?? [])
-        recent = Self.unique(saved + NSDocumentController.shared.recentDocumentURLs).filter { !hidden.contains($0.standardizedFileURL.path) }
+        let updated = Self.unique(saved + NSDocumentController.shared.recentDocumentURLs).filter { !hidden.contains($0.standardizedFileURL.path) }
+        if recent != updated { recent = updated }
     }
     func lastOpened(_ url: URL) -> Date? {
         (UserDefaults.standard.dictionary(forKey: "reader.lastOpened")?[url.standardizedFileURL.path] as? Double).map(Date.init(timeIntervalSince1970:))

@@ -2,6 +2,12 @@ import SwiftUI
 import AppKit
 
 @MainActor final class EditorWritingReview: ObservableObject {
+    struct Request: Equatable {
+        var file: String? = nil
+        let source: String
+        let enabled: Bool
+        let language: String
+    }
     struct Issue: Identifiable { let range: NSRange; let message: String; var replacement: String?; var alternatives: [String] = []; var id: Int { range.location } }
     @Published var issues: [Issue] = []
     @Published var checking = false

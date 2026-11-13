@@ -16,12 +16,16 @@ import Network
     private let defaults: UserDefaults
     private var day = ""
     var limit: Int { max(1, defaults.object(forKey: "chatgpt.dailyLimit") as? Int ?? 100) }
-    var needsConnection: Bool { !ChatGPTConnection.shared.connected || ChatGPTConnection.shared.credentialUnavailable }
+    var needsConnection: Bool {
+        let connection = ChatGPTConnection.shared
+        return !connection.connected || connection.credentialUnavailable || connection.needsSignIn
+    }
     var showsGPTMark: Bool { needsConnection || reason == nil }
     var reason: String? {
         if NetworkAccess.offline { return "Offline mode" }
         if !online { return "Offline" }
         if !ChatGPTConnection.shared.connected { return "Connect ChatGPT" }
+        if ChatGPTConnection.shared.needsSignIn { return "Sign in to ChatGPT again" }
         if ChatGPTConnection.shared.credentialUnavailable { return "Unlock connection in Settings" }
         if paused { return "ChatGPT limit reached" }
         if Calendar.current.isDate(Date(timeIntervalSince1970: defaults.double(forKey: "chatgpt.counterDate")), inSameDayAs: Date()) && requests >= limit { return "Daily app limit reached" }

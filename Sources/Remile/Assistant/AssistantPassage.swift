@@ -39,6 +39,7 @@ struct AssistantCitation: Identifiable, Sendable {
             guard leading + trailing == 0 || phrase.count >= 4 else { continue }
             var result: [NSRange] = []
             for start in 0...(source.count - phrase.count) {
+                if start.isMultiple(of: 1024), Task.isCancelled { return [] }
                 if phrase.indices.allSatisfy({ offset in
                     let word = source[start + offset].word, expected = phrase[offset].word
                     return word == expected || (offset == phrase.count - 1 && expected.count >= 4 && word.hasPrefix(expected))

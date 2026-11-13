@@ -5,7 +5,7 @@ struct SearchText {
     struct Match { let range: NSRange; let group: Int }
     private static func tokens(_ text: String) -> [SearchNormalisation.Token] { SearchNormalisation.tokens(text) }
     static func matches(_ text: String, query: String, limit: Int = 500) -> [Match] {
-        guard let groups = try? LibraryIndex.queryTerms(query) else { return [] }
+        guard let groups = try? LibraryIndex.queryTerms(query), !groups.isEmpty, !Task.isCancelled else { return [] }
         let words = tokens(text)
         var found: [Match] = []
         for (group, term) in groups.enumerated() {
@@ -13,6 +13,7 @@ struct SearchText {
             guard !phrase.isEmpty, phrase.count <= words.count else { continue }
             var groupCount = 0
             for start in 0...(words.count - phrase.count) {
+                if start.isMultiple(of: 1024), Task.isCancelled { return [] }
                 if phrase.indices.allSatisfy({ words[start + $0].word == phrase[$0] }) {
                     let end = words[start + phrase.count - 1].range
                     found.append(Match(range: NSRange(location: words[start].range.location, length: NSMaxRange(end) - words[start].range.location), group: group))

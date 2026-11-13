@@ -77,7 +77,11 @@ final class RemarkableExtensionTests: XCTestCase {
         XCTAssertEqual(RemarkableDevices(defaults: defaults).active(hasLegacy: true), "rmp")
         devices.remove("rmp")
         XCTAssertEqual(devices.active(hasLegacy: false), "rmp-move")
+        XCTAssertEqual(devices.active(hasLegacy: true), "rmp-move")
+        devices.select(RemarkableDevices.legacy)
         XCTAssertEqual(devices.active(hasLegacy: true), RemarkableDevices.legacy)
+        XCTAssertEqual(RemarkableDevices.legacyAddress(in: #"{"transport":"ssh","host":"RMP"}"#), "rmp")
+        XCTAssertNil(RemarkableDevices.legacyAddress(in: #"{"transport":"ssh","host":":legacy"}"#))
     }
 
     func testOlderDeviceDocumentIsRecognisedFromSourceTime() {

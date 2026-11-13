@@ -50,7 +50,7 @@ struct TeXSetupGuide: View {
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if !lookup.running { ForEach(commands, id: \.self) { TeXGuidanceCommand(command: $0) } }
-            Link("TeX installation help", destination: URL(string: "https://www.tug.org/mactex/morepackages.html")!).font(.callout)
+            ExternalLink("TeX installation help", destination: URL(string: "https://www.tug.org/mactex/morepackages.html")!).font(.callout)
         }.padding(20).frame(width: 490).background(RemileStyle.background)
             .task(id: (issue?.files.joined(separator: "|") ?? "") + directory + String(lookup.attempt)) {
                 guard resolution == nil, let files = issue?.files, !files.isEmpty else { return }

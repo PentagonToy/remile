@@ -55,7 +55,7 @@ import WebKit
                 if allowSavedSession { try await unlockSession(profile); try Task.checkCancellation() }
                 // A project-page redirect alone is not proof of authentication.
                 let bytes = try await fetchProjects(profile)
-                if catalogue { _ = try OverleafWebClient.parseProjects(bytes) }
+                if catalogue { try await OverleafWebClient.validateProjectList(bytes) }
                 else if (try JSONSerialization.jsonObject(with: bytes)) is [String: [String: Any]] == false { throw OverleafWebClient.Failure.response }
                 try Task.checkCancellation()
                 let saved = await saveSession(profile)
@@ -181,10 +181,13 @@ struct OverleafSignIn: View {
     @StateObject private var session: OverleafSignInSession
     @StateObject private var draft = OverleafLoginDraft()
     let done: () -> Void
+    let onConnected: () -> Void
     let catalogue: Bool
-    init(profile: UUID, projectID: String? = nil, catalogue: Bool = false, done: @escaping () -> Void) {
+    init(profile: UUID, projectID: String? = nil, catalogue: Bool = false,
+         onConnected: @escaping () -> Void = {}, done: @escaping () -> Void) {
         _session = StateObject(wrappedValue: OverleafSignInSession(profile: profile, projectID: projectID, catalogue: catalogue))
         self.catalogue = catalogue
+        self.onConnected = onConnected
         self.done = done
     }
     private func openPasswords() {
@@ -261,7 +264,13 @@ struct OverleafSignIn: View {
             }
         }.frame(width: session.showingBrowser ? 740 : 460, height: session.showingBrowser ? 640 : 340)
             .background(RemileStyle.background).foregroundStyle(RemileStyle.ink).tint(RemileStyle.accent).font(RemileType.caption)
-            .onChange(of: session.signedIn) { if session.signedIn { draft.password = ""; done() } }
+            .onChange(of: session.signedIn) {
+                if session.signedIn {
+                    draft.password = ""
+                    onConnected()
+                    done()
+                }
+            }
             .onChange(of: session.issue) { if $0 != nil { draft.password = "" } }
             .onChange(of: session.showingBrowser) { if $0 { draft.password = "" } }
             .onDisappear { draft.password = ""; session.stop() }

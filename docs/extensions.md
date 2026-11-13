@@ -10,8 +10,8 @@ Enable an extension with its card’s switch, then click the card to choose sour
 
 1. Enable developer mode and SSH access on the device. Developer mode can erase the device when enabled. For Wi-Fi, enable SSH over WLAN and use the device’s Wi-Fi address.
 2. Connect in Terminal first. Verify the SSH host key against the device’s fingerprint before saving it. For USB with one device, use `ssh root@10.11.99.1`.
-3. In remile, open **Extensions → reMarkable**. Choose **… → Add device…**, enter the same address or SSH alias and the device’s SSH password, then choose **Connect**. Each device’s connection is saved in this Mac’s Keychain. Pick a saved device from the same menu.
-4. Select folders and choose **Add to Reference**. Parent folders include descendants. **Unfiled** includes documents outside folders.
+3. In remile, open **Extensions → reMarkable**. Enter the same address or SSH alias and the device’s SSH password, then choose **Connect**. To register another device, choose **Add device**. Each device’s connection is saved in this Mac’s Keychain.
+4. Choose a saved device from **Devices**. Select folders and choose **Add to Reference**. Parent folders include descendants. **Unfiled** includes documents outside folders.
 
 ### Use multiple devices over USB
 
@@ -29,9 +29,9 @@ Host rmp-move
     HostKeyAlias rmp-move
 ```
 
-Plug in one device at a time. Verify each device in Terminal with its own alias, for example `ssh rmp`. Add `rmp` and `rmp-move` separately in remile. An existing saved connection appears as **Previous connection**.
+Plug in one device at a time. Verify each device in Terminal with its own alias, for example `ssh rmp`. Add `rmp` and `rmp-move` separately in remile. remile selects the last device you used when you reopen the connection window.
 
-If a connection times out, wake the selected device and check the USB cable or Wi-Fi address. If the host key differs, confirm that the plugged-in device matches the alias and verify its fingerprint in Terminal. If the password changes, choose **Add device…** and enter the same alias with the new password.
+If a connection times out, wake the selected device and check the USB cable or Wi-Fi address. If the host key differs, confirm that the plugged-in device matches the alias and verify its fingerprint in Terminal. If the password changes, choose **Add device** and enter the same alias with the new password.
 
 When your devices share documents through reMarkable sync, remile uses their document IDs to update the same Reference entries. Missing items stay in Reference. If both copies report a modification time, an older device copy cannot replace a newer imported copy.
 

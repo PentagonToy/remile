@@ -4,6 +4,7 @@ final class UserGuidePresentation: ObservableObject { @Published var more = fals
 
 struct UserGuide: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var network = NetworkAccessState.shared
     @StateObject private var state: UserGuidePresentation
     init(presentation: UserGuidePresentation? = nil) { _state = StateObject(wrappedValue: presentation ?? UserGuidePresentation()) }
     var body: some View {
@@ -39,7 +40,7 @@ struct UserGuide: View {
                             detail("History", "Compare earlier local versions. Connected projects use Overleaf history.")
                         }.padding(.leading, 16).padding(.top, 12)
                     }
-                    Link("All controls and shortcuts", destination: URL(string: "https://pentagontoy.github.io/remile/workspace-layout.html")!)
+                    ExternalLink("All controls and shortcuts", destination: URL(string: "https://pentagontoy.github.io/remile/workspace-layout.html")!)
                 }.padding(.trailing, 28)
             }.smoothScrolling()
         }.padding(24).font(RemileType.control).buttonStyle(RemileActionStyle()).frame(width: 700, height: 620).background(RemileStyle.background)
@@ -56,6 +57,8 @@ struct UserGuide: View {
                 SymbolIcon(systemName: "arrow.up.forward").foregroundStyle(RemileStyle.secondaryInk).accessibilityHidden(true)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 11).contentShape(Rectangle())
         }.buttonStyle(.plain).remileHelp("Open the \(title) guide on the web")
+            .accessibilityHint("Opens in your browser")
+            .disabled(network.offline)
     }
     private func detail(_ title: String, _ text: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {

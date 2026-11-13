@@ -6,7 +6,6 @@ struct ReferencePaperSearch: View {
     @ObservedObject private var network = NetworkAccessState.shared
     var target: ReferenceRecord? = nil
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
     @StateObject private var state = Presentation()
     @FocusState private var queryFocused: Bool
     private final class Presentation: ObservableObject {
@@ -128,7 +127,7 @@ struct ReferencePaperSearch: View {
                             Button("Choose PDF…", action: chooseLocalPDF)
                         }
                         if canChoosePDF, let link = browserSource {
-                            Button("Open in browser") { openURL(link) }.disabled(network.offline)
+                            ExternalLink("Open in browser", destination: link)
                         }
                         if canAddCitationOnly, !state.pdfs.isEmpty {
                             Button("Add without PDF") { add(includePDF: false) }

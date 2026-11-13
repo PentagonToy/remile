@@ -38,7 +38,7 @@ Task { @MainActor in
         controller.texTheme = .remile
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 650, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = scroll
-        controller.changed = { project.buffers["main.tex"] = $0 }
+        controller.changed = { project.updateBuffer("main.tex", to: $0) }
         controller.update(project.buffers["main.tex"]!, size: 17, serif: false, document: "main.tex")
         let view = controller.textView!, caret = (view.string as NSString).range(of: "\\cite{k").location + 7
         view.setSelectedRange(NSRange(location: caret, length: 0)); window.makeFirstResponder(view)
@@ -111,10 +111,15 @@ Task { @MainActor in
         reader.source = otherAttachment; reader.view?.clearSelection(); reader.reveal(unrelated)
         precondition(reader.view?.currentSelection == nil, "Evidence never highlights a different attachment")
         reader.source = attachment
-        weak var releasedPDF = reader.view?.document
+        let detachedPreview = reader.view!
+        reader.reveal(passage)
+        detachedPreview.highlightedSelections = [detachedPreview.currentSelection!]
         window.contentView = NSView(); hosting = nil
-        for _ in 0..<20 where releasedPDF != nil { try await Task.sleep(for: .milliseconds(25)) }
-        precondition(releasedPDF == nil, "Closing the source preview releases its PDF document")
+        for _ in 0..<20 where detachedPreview.document != nil { try await Task.sleep(for: .milliseconds(25)) }
+        // PDFKit can retain the detached document internally after the native view has released it.
+        precondition(detachedPreview.window == nil && detachedPreview.document == nil, "Closing the source preview clears its PDF")
+        precondition(detachedPreview.currentSelection == nil && (detachedPreview.highlightedSelections ?? []).isEmpty,
+                     "Closing the source preview clears its selections")
         let searchState = SearchPreviewFixtureState()
         let searchHit = LibraryHit(path: pdfURL.path, folderID: UUID().uuidString, page: 1, excerpt: "Synthetic source evidence.", score: 1)
         var searchHost: NSHostingView<SearchPreviewFixture>? = NSHostingView(rootView: SearchPreviewFixture(state: searchState, hit: searchHit))
@@ -132,7 +137,7 @@ Task { @MainActor in
         for _ in 0..<20 where searchState.editing.document != nil { try await Task.sleep(for: .milliseconds(25)) }
         precondition(searchState.editing.document == nil, "Leaving Search still releases its PDF")
         window.close()
-        project.buffers["main.tex"] = "\\documentclass{article}\n\\begin{document}Synthetic closing check.\\end{document}\n"
+        project.updateBuffer("main.tex", to: "\\documentclass{article}\n\\begin{document}Synthetic closing check.\\end{document}\n")
         precondition(project.save(), "Synthetic project saves before closing")
         let activeBefore = TeXCache.activeCount
         project.compile()

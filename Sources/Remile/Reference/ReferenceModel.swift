@@ -3,8 +3,13 @@ import Combine
 import UniformTypeIdentifiers
 
 @MainActor final class ReferenceModel: ObservableObject {
-    @Published private(set) var records: [ReferenceRecord] = [] { didSet { cachedItems = nil } }
-    @Published private(set) var libraries: [ReferenceLibrary] = [.primary] { didSet { cachedItems = nil } }
+    @Published private(set) var records: [ReferenceRecord] = [] { didSet { invalidateCataloguePresentation() } }
+    @Published private(set) var libraries: [ReferenceLibrary] = [.primary] {
+        didSet {
+            hiddenLibraries = Set(libraries.lazy.filter { $0.trashed != nil }.map(\.id))
+            invalidateCataloguePresentation()
+        }
+    }
     @Published var selectedLibrary = ReferenceLibrary.allID { didSet { cachedItems = nil } }
     @Published var selected: UUID?
     @Published var selectedIDs = Set<UUID>()
@@ -30,6 +35,8 @@ import UniformTypeIdentifiers
     let repository: ReferenceRepository
     @Published private(set) var sorting = ReferenceSort()
     private var cachedItems: [ReferenceRecord]?
+    private var cataloguePresentation: (active: [ReferenceRecord], trash: [ReferenceRecord])?
+    private var hiddenLibraries: Set<UUID> = []
     private var loadedVersion: ReferenceRepository.Version?
     func sort(by column: ReferenceColumn) { cachedItems = nil; sorting.select(column) }
     private let history = ReferenceRepository.History()
@@ -48,13 +55,33 @@ import UniformTypeIdentifiers
     func undo(redo: Bool = false) { perform { try $0.undo(redo: redo); return nil } }
     var activeLibraries: [ReferenceLibrary] { libraries.filter { $0.trashed == nil } }
     var deletedLibraries: [ReferenceLibrary] { libraries.filter { child in child.trashed != nil && (child.parentID == nil || libraries.first(where: { $0.id == child.parentID })?.trashed == nil) } }
-    var trashRecords: [ReferenceRecord] { let ids = Set(libraries.filter { $0.trashed != nil }.map(\.id)); return records.filter { $0.trashed != nil || ids.contains($0.library) || $0.collectionID.map(ids.contains) == true } }
-    func contents(_ library: UUID) -> [ReferenceRecord] { let hidden = Set(libraries.filter { $0.trashed != nil }.map(\.id)); return records.filter { ($0.library == library || $0.collectionID == library) && !hidden.contains($0.library) && $0.collectionID.map(hidden.contains) != true } }
-    var allRecords: [ReferenceRecord] {
-        let hidden = Set(libraries.filter { $0.trashed != nil }.map(\.id))
-        return records.filter { $0.trashed == nil && !hidden.contains($0.library) && $0.collectionID.map(hidden.contains) != true }
+    private func invalidateCataloguePresentation() {
+        cachedItems = nil
+        cataloguePresentation = nil
+    }
+    private var catalogueRecords: (active: [ReferenceRecord], trash: [ReferenceRecord]) {
+        if let cataloguePresentation { return cataloguePresentation }
+        var active: [ReferenceRecord] = [], trash: [ReferenceRecord] = []
+        for record in records {
+            if record.trashed != nil || isInDeletedLibrary(record) { trash.append(record) }
+            else { active.append(record) }
+        }
+        cataloguePresentation = (active, trash)
+        return (active, trash)
+    }
+    private func isInDeletedLibrary(_ record: ReferenceRecord) -> Bool {
+        hiddenLibraries.contains(record.library) || record.collectionID.map(hiddenLibraries.contains) == true
+    }
+    var trashRecords: [ReferenceRecord] { catalogueRecords.trash }
+    var allRecords: [ReferenceRecord] { catalogueRecords.active }
+    func contents(_ library: UUID) -> [ReferenceRecord] {
+        records.filter { ($0.library == library || $0.collectionID == library) && !isInDeletedLibrary($0) }
     }
     var libraryRecords: [ReferenceRecord] { selectedLibrary == ReferenceLibrary.allID ? allRecords : contents(selectedLibrary) }
+    var hasActiveLibraryRecords: Bool {
+        if selectedLibrary == ReferenceLibrary.allID { return !allRecords.isEmpty }
+        return libraryCounts[selectedLibrary, default: 0] > 0
+    }
     var destinationLibrary: UUID { selectedLibrary == ReferenceLibrary.allID ? ReferenceLibrary.primaryID : selectedLibrary }
     func linkedRemarkable(_ record: ReferenceRecord) -> [ReferenceRecord] {
         allRecords.filter { $0.remarkable != nil && $0.linkedReferences?.contains(record.id) == true }
@@ -65,7 +92,10 @@ import UniformTypeIdentifiers
     var items: [ReferenceRecord] {
         if let cachedItems { return cachedItems }
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered = (showingTrash ? trashRecords : libraryRecords.filter { $0.trashed == nil }).filter { $0.matchesSearch(text) }
+        let scoped = showingTrash ? trashRecords : selectedLibrary == ReferenceLibrary.allID ? allRecords : allRecords.filter {
+            $0.library == selectedLibrary || $0.collectionID == selectedLibrary
+        }
+        let filtered = text.isEmpty ? scoped : scoped.filter { $0.matchesSearch(text) }
         let result = sorting.sorted(filtered)
         cachedItems = result
         return result
@@ -108,9 +138,10 @@ import UniformTypeIdentifiers
         return chosen
     }
     func load() {
+        guard !busy else { reloadRequested = true; return }
         let attachment = readingAttachment; readingAttachment = nil
         let initialiseSharing = loadedVersion == nil
-        perform(preserveNotice: true) {
+        perform(preserveNotice: true, reuseUnchangedCatalogue: true) {
             if let attachment { try $0.refreshAttachment(attachment) }
             if initialiseSharing { try? $0.sharePaperPDFs() }
             return nil
@@ -192,7 +223,7 @@ import UniformTypeIdentifiers
             self.previewPages[saved.id] = page
             self.previewAttachments[record.id] = saved.id
             openPDF(self.repository.attachmentURL(saved), page)
-        }, selectResult: false) { repository in
+        }, selectResult: false, reuseUnchangedCatalogue: true) { repository in
             _ = try repository.prepareAttachment(attachment, for: record)
             return nil
         }
@@ -285,9 +316,19 @@ import UniformTypeIdentifiers
             if panel.runModal() == .OK, let url = panel.url { try Data(source.utf8).write(to: url, options: .atomic) }
         } catch { self.error = error.localizedDescription }
     }
-    private func perform(completion: @escaping () -> Void = {}, failure: @escaping () -> Void = {}, queueIfBusy: Bool = false, selectResult: Bool = true, preserveNotice: Bool = false, _ operation: @escaping @Sendable (ReferenceRepository) async throws -> UUID?) {
+    private typealias CatalogueUpdate = (
+        snapshot: (records: [ReferenceRecord], libraries: [ReferenceLibrary], hasPendingTrashCleanup: Bool),
+        selection: UUID?, duplicates: [UUID: [UUID]], counts: [UUID: Int], version: ReferenceRepository.Version?
+    )
+
+    private func perform(completion: @escaping () -> Void = {}, failure: @escaping () -> Void = {}, queueIfBusy: Bool = false, selectResult: Bool = true, preserveNotice: Bool = false, reuseUnchangedCatalogue: Bool = false, _ operation: @escaping @Sendable (ReferenceRepository) async throws -> UUID?) {
         guard !busy else {
-            if queueIfBusy { pendingEdits.append { self.perform(completion: completion, failure: failure, queueIfBusy: true, selectResult: selectResult, operation) } }
+            if queueIfBusy {
+                pendingEdits.append {
+                    self.perform(completion: completion, failure: failure, queueIfBusy: true, selectResult: selectResult,
+                                 preserveNotice: preserveNotice, reuseUnchangedCatalogue: reuseUnchangedCatalogue, operation)
+                }
+            }
             return
         }
         busy = true; error = nil
@@ -297,9 +338,13 @@ import UniformTypeIdentifiers
         Task {
             defer { busy = false; if !pendingEdits.isEmpty { pendingEdits.removeFirst()() } else if reloadRequested { reloadRequested = false; Task { await self.reloadIfChanged() } } }
             do {
-                let result = try await Task.detached(priority: .userInitiated) {
+                let update = try await Task.detached(priority: .userInitiated) { () throws -> CatalogueUpdate? in
                     let selection = try await operation(repository)
                     let before = repository.version()
+                    if reuseUnchangedCatalogue, selection == nil, previousVersion == before {
+                        try repository.requireStorage()
+                        return nil
+                    }
                     let snapshot = try repository.snapshot()
                     let records = snapshot.records, libraries = snapshot.libraries
                     if before != previousVersion {
@@ -319,6 +364,7 @@ import UniformTypeIdentifiers
                     return (snapshot: snapshot, selection: selection, duplicates: ReferenceDuplicates.withinLibraries(active),
                             counts: counts, version: before == after ? after : nil)
                 }.value
+                guard let result = update else { completion(); return }
                 let snapshot = result.snapshot
                 if records != snapshot.records { records = snapshot.records }
                 if libraries != snapshot.libraries { libraries = snapshot.libraries }

@@ -105,7 +105,14 @@ struct ReferenceEvidenceView: View {
                     state.data = loaded.data; state.url = loaded.url
                 } catch { if !Task.isCancelled { state.error = error.localizedDescription } }
                 if !Task.isCancelled { state.loading = false }
-            }.onDisappear { assistant.cancel(); state.saveTask?.cancel(); state.reader.view?.document = nil; state.data = nil; state.url = nil }
+            }.onDisappear {
+                assistant.cancel()
+                state.saveTask?.cancel()
+                if let view = state.reader.view { ReferencePDFPreview.releaseDocument(from: view) }
+                state.reader.pending = nil
+                state.data = nil
+                state.url = nil
+            }
     }
     private func savePassage() {
         do {
@@ -157,5 +164,12 @@ struct ReferencePDFPreview: NSViewRepresentable {
     }
     // Attachment changes remove and recreate this view. Streaming Ask updates must not compare PDF bytes.
     func updateNSView(_ view: PDFView, context: Context) {}
-    static func dismantleNSView(_ view: PDFView, coordinator: ()) { view.document = nil }
+    static func dismantleNSView(_ view: PDFView, coordinator: ()) { releaseDocument(from: view) }
+
+    static func releaseDocument(from view: PDFView) {
+        guard view.document != nil else { return }
+        view.clearSelection()
+        view.highlightedSelections = []
+        view.document = nil
+    }
 }

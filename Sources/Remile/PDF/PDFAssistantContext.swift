@@ -18,6 +18,7 @@ actor PDFAssistantContext {
     }
     func passages(data: Data, password: String, path: String, question: String, currentPage: Int,
                   selection: (page: Int, text: String)?, expanded: Bool = false, progress: @escaping @Sendable (Double) async -> Void) async throws -> [AssistantPassage] {
+        try Task.checkCancellation()
         guard data.count <= 256 * 1024 * 1024 else { throw Failure.tooLarge }
         guard let document = PDFDocument(data: data) else { throw Failure.unreadable }
         if document.isLocked { document.unlock(withPassword: password) }
@@ -28,6 +29,8 @@ actor PDFAssistantContext {
         var wholeBytes = 0
         var visible: (page: Int, score: Double, text: String)?
         var candidates: [(page: Int, score: Double, text: String)] = []
+        let limit = expanded ? 12 : 6
+        let excerptBytes = expanded ? 8000 : 650
         var pages = Array(0..<document.pageCount)
         if document.pageCount > 96,
            let hits = try? await index.assistantPages(path: path, terms: terms),
@@ -51,12 +54,21 @@ actor PDFAssistantContext {
                 // Large documents retain only the highest-scoring excerpts.
                 let text = String(raw.prefix(100_000))
                 if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    let score = Self.score(text, terms: terms) + (index + 1 == currentPage ? 0.25 : 0)
-                    let candidate = (page: index + 1, score: score, text: Self.excerpt(text, terms: terms, bytes: expanded ? 8000 : 650))
-                    if index + 1 == currentPage, terms.isEmpty || Self.score(text, terms: terms) > 0 { visible = candidate }
-                    candidates.append(candidate)
-                    candidates.sort { $0.score == $1.score ? $0.page < $1.page : $0.score > $1.score }
-                    if candidates.count > (expanded ? 12 : 6) { candidates.removeLast() }
+                    let pageNumber = index + 1
+                    let current = pageNumber == currentPage
+                    let relevance = Self.score(text, terms: terms)
+                    let score = relevance + (current ? 0.25 : 0)
+                    let rank = candidates.firstIndex { score > $0.score || (score == $0.score && pageNumber < $0.page) }
+                        ?? candidates.count
+                    let includeVisible = current && (terms.isEmpty || relevance > 0)
+                    if rank < limit || includeVisible {
+                        let candidate = (page: pageNumber, score: score, text: Self.excerpt(text, terms: terms, bytes: excerptBytes))
+                        if includeVisible { visible = candidate }
+                        if rank < limit {
+                            candidates.insert(candidate, at: rank)
+                            if candidates.count > limit { candidates.removeLast() }
+                        }
+                    }
                 }
             }
             if offset.isMultiple(of: 8) || offset + 1 == pages.count {
@@ -68,7 +80,7 @@ actor PDFAssistantContext {
         if let whole, !whole.isEmpty { return whole }
         var result: [AssistantPassage] = []
         if let selection, selection.page > 0, selection.page <= document.pageCount, !selection.text.isEmpty {
-            result.append(AssistantPassage(location: AssistantLocation(path: path, unit: selection.page, label: "Page \(selection.page)"), text: Self.excerpt(selection.text, terms: terms, bytes: expanded ? 8000 : 650)))
+            result.append(AssistantPassage(location: AssistantLocation(path: path, unit: selection.page, label: "Page \(selection.page)"), text: Self.excerpt(selection.text, terms: terms, bytes: excerptBytes)))
         }
         if let visible, !result.contains(where: { $0.location.unit == visible.page }) {
             result.append(AssistantPassage(location: AssistantLocation(path: path, unit: visible.page, label: "Page \(visible.page)"), text: visible.text))
@@ -77,7 +89,7 @@ actor PDFAssistantContext {
             result.append(AssistantPassage(location: AssistantLocation(path: path, unit: candidate.page, label: "Page \(candidate.page)"), text: candidate.text))
         }
         guard !result.isEmpty else { throw Failure.unreadable }
-        return Array(result.prefix(expanded ? 12 : 6))
+        return Array(result.prefix(limit))
     }
     static func terms(_ question: String) -> [String] {
         let stop: Set<String> = ["a", "an", "the", "is", "are", "was", "were", "be", "to", "of", "in", "on", "at", "and", "or", "for", "from", "with", "this", "that", "these", "those", "it", "its", "they", "their", "them", "what", "why", "how", "when", "where", "which", "who", "can", "could", "would", "should", "does", "do", "did", "not", "about", "please", "explain", "summarize", "summary", "document", "pdf", "page", "more", "detail", "tell", "me"]

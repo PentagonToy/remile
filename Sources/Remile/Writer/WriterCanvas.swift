@@ -16,8 +16,14 @@ struct WriterSurface: NSViewRepresentable {
     let model: WriterModel
     private(set) var sheets: [WriterPaper] = []
     private var shapeViews: [UUID: WriterShapeView] = [:]
-    private var scheduled = false
+    private var pendingPagination: Task<Void, Never>?
     private var exclusions: [[CGRect]] = []
+    private var wrappingObjects: [Int: [WriterObject]] = [:]
+    private var wrappingRevision: Int?
+    private var requiredSheets = 1
+    private var shapeRevision: Int?
+    private var visibleSelection: UUID?
+    private var displayedPageStyle: WriterPageStyle?
     private var configuredSize = CGSize.zero
     private var configuredColumns = 0
     var exporting = false
@@ -41,16 +47,25 @@ struct WriterSurface: NSViewRepresentable {
         }
     }
     func suspend() {
+        pendingPagination?.cancel()
+        pendingPagination = nil
         model.activeText = nil
         for sheet in sheets { sheet.texts.forEach { $0.delegate = nil }; sheet.removeFromSuperview() }
         while !model.layout.textContainers.isEmpty { model.layout.removeTextContainer(at: model.layout.textContainers.count - 1) }; sheets.removeAll(); shapeViews.removeAll(); exclusions = []
+        wrappingObjects = [:]; wrappingRevision = nil; shapeRevision = nil; visibleSelection = nil
         if model.canvas === self { model.canvas = nil }
     }
     func synchronise(reflow: Bool = true) {
         if model.pageSize != configuredSize || configuredColumns != model.pageStyle.columnCount || sheets.isEmpty { paginate() }
-        else if reflow, syncExclusions(wrappingObjectsByPage()) { paginate() }
-        syncShapes(); needsDisplay = true
-        sheets.forEach { $0.needsDisplay = true }
+        else if reflow {
+            let previousRequired = requiredSheets
+            if updateWrappingObjects(), syncExclusions() || requiredSheets != previousRequired { paginate() }
+        }
+        syncShapes()
+        if displayedPageStyle != model.pageStyle {
+            displayedPageStyle = model.pageStyle
+            sheets.forEach { $0.needsDisplay = true }
+        }
     }
     private func columnFrames() -> [CGRect] {
         let size = model.pageSize, count = model.pageStyle.columnCount
@@ -77,21 +92,27 @@ struct WriterSurface: NSViewRepresentable {
         return paper
     }
     func paginate() {
+        pendingPagination?.cancel()
+        pendingPagination = nil
         if configuredColumns != 0, configuredColumns != model.pageStyle.columnCount { rebuild(); return }
         configuredColumns = model.pageStyle.columnCount
         model.canvas = self
         let size = model.pageSize
-        if configuredSize != size {
+        let resized = configuredSize != size
+        if resized {
             configuredSize = size
             for sheet in sheets {
                 sheet.frame.size = size
                 for (text, frame) in zip(sheet.texts, columnFrames()) { text.frame = frame; text.textContainer?.containerSize = frame.size }
             }
         }
-        let wrappingObjects = wrappingObjectsByPage()
+        let objectsChanged = updateWrappingObjects()
         if sheets.isEmpty { addSheet() }
-        syncExclusions(wrappingObjects)
-        let required = max(1, (model.objects.map(\.page).max() ?? 0) + 1)
+        if resized || objectsChanged || exclusions.count != sheets.count * configuredColumns {
+            syncExclusions()
+        }
+        let required = requiredSheets
+        let oldCount = sheets.count
         while let container = sheets.last?.texts.last?.textContainer, sheets.count < 40 {
             model.layout.ensureLayout(for: container)
             if NSMaxRange(model.layout.glyphRange(for: container)) >= model.layout.numberOfGlyphs && sheets.count >= required { break }
@@ -110,18 +131,28 @@ struct WriterSurface: NSViewRepresentable {
         }
         let columns = sheets.count * configuredColumns
         if exclusions.count > columns { exclusions.removeLast(exclusions.count - columns) }
+        if oldCount != sheets.count { shapeRevision = nil }
         fitViewport()
         syncShapes()
         let count = sheets.count
-        if model.pages != count { DispatchQueue.main.async { [weak model] in model?.setPages(count) } }
+        if model.pages != count {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.model.canvas === self, self.sheets.count == count else { return }
+                self.model.setPages(count)
+            }
+        }
         if let last = sheets.last?.texts.last?.textContainer, NSMaxRange(model.layout.glyphRange(for: last)) < model.layout.numberOfGlyphs { model.error = "Writer supports up to 40 pages. Shorten this document before exporting." }
     }
-    private func wrappingObjectsByPage() -> [Int: [WriterObject]] {
-        Dictionary(grouping: model.objects.filter { $0.wrapsText == true }, by: \.page)
+    @discardableResult private func updateWrappingObjects() -> Bool {
+        guard wrappingRevision != model.objectRevision else { return false }
+        wrappingRevision = model.objectRevision
+        wrappingObjects = Dictionary(grouping: model.objects.filter { $0.wrapsText == true }, by: \.page)
+        requiredSheets = max(1, (model.objects.lazy.map(\.page).max() ?? 0) + 1)
+        return true
     }
-    @discardableResult private func syncExclusions(_ objectsByPage: [Int: [WriterObject]]) -> Bool {
+    @discardableResult private func syncExclusions() -> Bool {
         let next: [[CGRect]] = sheets.indices.flatMap { page in
-            exclusionRects(for: sheets[page], objects: objectsByPage[page] ?? [])
+            exclusionRects(for: sheets[page], objects: wrappingObjects[page] ?? [])
         }
         guard next != exclusions else { return false }
         for (index, text) in sheets.flatMap(\.texts).enumerated() where !exclusions.indices.contains(index) || exclusions[index] != next[index] {
@@ -176,6 +207,14 @@ struct WriterSurface: NSViewRepresentable {
     }
     func fitViewport() { setFrameSize(frame.size) }
     private func syncShapes() {
+        let selection = model.selected
+        if visibleSelection != selection {
+            if let visibleSelection { shapeViews[visibleSelection]?.needsDisplay = true }
+            if let selection { shapeViews[selection]?.needsDisplay = true }
+            visibleSelection = selection
+        }
+        guard shapeRevision != model.objectRevision else { return }
+        shapeRevision = model.objectRevision
         let ids = Set(model.objects.map(\.id))
         for id in shapeViews.keys.filter({ !ids.contains($0) }) { shapeViews.removeValue(forKey: id)?.removeFromSuperview() }
         for object in model.objects where object.page < sheets.count {
@@ -188,8 +227,12 @@ struct WriterSurface: NSViewRepresentable {
     func textViewDidChangeSelection(_ notification: Notification) { if let view = notification.object as? NSTextView { model.activeText = view; model.reflectStyle(view) } }
     func textDidChange(_ notification: Notification) {
         model.choose(nil); model.changed()
-        guard !scheduled else { return }; scheduled = true
-        DispatchQueue.main.async { [weak self] in self?.scheduled = false; self?.paginate() }
+        guard pendingPagination == nil else { return }
+        pendingPagination = Task { @MainActor [weak self] in
+            guard !Task.isCancelled else { return }
+            self?.pendingPagination = nil
+            self?.paginate()
+        }
     }
     func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
         let count = model.storage.length - affectedCharRange.length + ((replacementString as NSString?)?.length ?? 0)

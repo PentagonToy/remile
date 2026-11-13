@@ -10,19 +10,27 @@ struct OverleafLibraryWorkspace: View {
         @Published var query = ""
         @Published var selectedTag = "all"
         @Published var accountID: UUID?
-        @Published var refreshing = false
         @Published var managingAccounts = false
-        @Published var signIn = false
         @Published var removing: OverleafConnection?
     }
     @AppStorage("overleaf.library.sort") private var sort = "Manual"
 
     private var accountProjects: [OverleafConnection] { library.projects.filter { state.accountID == nil || $0.profileID == state.accountID } }
     private func untagged(_ project: OverleafConnection) -> Bool { library.tags[project.id]?.isEmpty == true && !library.unavailableTags.contains(project.id) }
-    private var tags: [OverleafWebClient.Tag] {
-        var unique: [String: OverleafWebClient.Tag] = [:]
-        for project in accountProjects { for tag in library.tags[project.id] ?? [] { unique[tag.id] = tag } }
-        return unique.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    private var tags: [(tag: OverleafWebClient.Tag, count: Int)] {
+        var entries: [String: (tag: OverleafWebClient.Tag, count: Int)] = [:]
+        for project in accountProjects {
+            var seen = Set<String>()
+            for tag in library.tags[project.id] ?? [] {
+                if seen.insert(tag.id).inserted {
+                    entries[tag.id] = (tag, (entries[tag.id]?.count ?? 0) + 1)
+                }
+            }
+        }
+        return entries.values.sorted {
+            let order = $0.tag.name.localizedStandardCompare($1.tag.name)
+            return order == .orderedSame ? $0.tag.id < $1.tag.id : order == .orderedAscending
+        }
     }
     private var projects: [OverleafConnection] {
         let result = accountProjects.filter { project in
@@ -35,23 +43,21 @@ struct OverleafLibraryWorkspace: View {
         return result
     }
     var body: some View {
-        VStack(spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                header(compact: false)
-                header(compact: true)
-            }.padding(.horizontal, 16).padding(.vertical, 6)
+        let tags = tags
+        return VStack(spacing: 0) {
+            header.padding(.horizontal, 16).padding(.vertical, 6)
             Divider()
-            ReaderSplit(sizing: .sidebar, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: 320, label: "Overleaf tags", pane: { tagList }, content: { projectList })
+            ReaderSplit(sizing: .sidebar, minimum: ReaderSidebar.minimum, maximum: ReaderSidebar.maximum, minimumContent: 320, label: "Overleaf tags", pane: { tagList(tags) }, content: { projectList })
         }.frame(maxWidth: .infinity, maxHeight: .infinity).font(RemileType.control).background(RemileStyle.background)
             .navigationTitle("Overleaf library")
             .sheet(isPresented: $state.managingAccounts) { OverleafAccountManager(library: library, selected: state.accountID, prepareRemoval: prepareRemoval) { state.managingAccounts = false } }
             .onChange(of: library.accounts.map(\.id)) { if !library.accounts.contains(where: { $0.id == state.accountID }) { state.accountID = nil } }
-            .sheet(isPresented: $state.signIn, onDismiss: { Task { await refresh() } }) {
-                if let profile = library.tagSignInProfile { OverleafSignIn(profile: profile) { state.signIn = false } }
-            }
-            .task { if !library.offlineMode && !NetworkAccess.offline && library.hasNetwork { await refresh() } }
             .onChange(of: state.accountID) { state.selectedTag = "all" }
-            .onChange(of: tags.map(\.id)) { if state.selectedTag != "all" && state.selectedTag != "untagged" && state.selectedTag != "unknown" && !tags.contains(where: { $0.id == state.selectedTag }) { state.selectedTag = "all" } }
+            .onChange(of: tags.map { $0.tag.id }) { _, ids in
+                if !["all", "untagged", "unknown"].contains(state.selectedTag), !ids.contains(state.selectedTag) {
+                    state.selectedTag = "all"
+                }
+            }
             .confirmationDialog("Trash the local copy?", isPresented: Binding(get: { state.removing != nil }, set: { if !$0 { state.removing = nil } }), titleVisibility: .visible) {
                 Button("Move local copy to Trash", role: .destructive) {
                     if let project = state.removing, prepareRemoval(library.root(project)) { library.remove(project) }
@@ -59,21 +65,17 @@ struct OverleafLibraryWorkspace: View {
                 }
             } message: { Text("This includes unpublished edits. Your Overleaf project stays online.") }
     }
-    private func header(compact: Bool) -> some View {
+    private var header: some View {
         HStack(spacing: RemileControl.spacing) {
             Button { library.browsing = false } label: { SymbolIcon(systemName: "chevron.left") }.accessibilityLabel("Back").remileHelp("Return to workspace")
             Text("Overleaf library").font(RemileType.heading).fixedSize()
             Spacer(minLength: 8)
-            Button { Task { await refresh() } } label: {
-                if state.refreshing { ProgressView().controlSize(.small) }
-                else { SymbolIcon(systemName: "arrow.clockwise") }
-            }.disabled(state.refreshing || library.offlineMode || NetworkAccess.offline).accessibilityLabel("Refresh local library").remileHelp("Refresh local library")
             Button { library.openLibrary(add: true) } label: {
                 SymbolIcon(systemName: "plus")
             }.disabled(library.busy).accessibilityLabel("Add Overleaf projects")
         }.buttonStyle(RemileToolStyle())
     }
-    private var tagList: some View {
+    private func tagList(_ tags: [(tag: OverleafWebClient.Tag, count: Int)]) -> some View {
         VStack(spacing: 0) {
             ScrollView {
               VStack(alignment: .leading, spacing: 6) {
@@ -87,8 +89,8 @@ struct OverleafLibraryWorkspace: View {
                     .padding(.horizontal, 10).padding(.bottom, 10).accessibilityLabel("Account filter and management")
                 tagButton("All projects", id: "all", count: accountProjects.count)
                 Text("Tags").font(RemileType.caption.weight(.semibold)).foregroundStyle(RemileStyle.secondaryInk).padding(.top, 18).padding(.horizontal, 10)
-                ForEach(tags) { tag in
-                    tagButton(tag.name, id: tag.id, count: accountProjects.filter { library.tags[$0.id]?.contains(where: { $0.id == tag.id }) == true }.count, color: OverleafTagMark.tint(tag.color))
+                ForEach(tags, id: \.tag.id) { item in
+                    tagButton(item.tag.name, id: item.tag.id, count: item.count, color: OverleafTagMark.tint(item.tag.color))
                 }
                 tagButton("Untagged", id: "untagged", count: accountProjects.filter(untagged).count)
                 let unknown = accountProjects.filter { library.tags[$0.id] == nil || library.unavailableTags.contains($0.id) }.count
@@ -119,12 +121,8 @@ struct OverleafLibraryWorkspace: View {
                     Text("Sort").fixedSize()
                     Picker("Sort", selection: $sort) { Text("Manual").tag("Manual"); Text("Name").tag("Name"); Text("Account").tag("Account") }.labelsHidden().frame(width: 108).padding(.trailing, -8)
                 }
-                if let error = library.error ?? library.tagError {
-                    HStack {
-                        Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).textSelection(.enabled)
-                        Spacer(minLength: 8)
-                        if library.tagSignInProfile != nil { Button("Connect Overleaf") { state.signIn = true } }
-                    }
+                if let error = library.error {
+                    Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).textSelection(.enabled)
                 }
                 if visible.isEmpty {
                     ContentUnavailableView(library.projects.isEmpty ? "No saved projects" : "No matching projects", systemImage: "books.vertical")
@@ -169,9 +167,4 @@ struct OverleafLibraryWorkspace: View {
         }.padding(16).frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: RemileRadius.card))
     }
     private func openProject(_ project: OverleafConnection) { library.browsing = false; open(library.root(project)) }
-    private func refresh() async {
-        guard !state.refreshing else { return }; state.refreshing = true
-        await library.refreshProjectTags()
-        state.refreshing = false
-    }
 }

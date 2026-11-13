@@ -37,11 +37,14 @@ import XCTest
         let parent = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
         windows.register(first, window: parent)
         var created: HomeModel?
+        var count = 0
         var child: NSWindow?
         windows.createWindow = {
+            count += 1
             let model = windows.makeHome(recordRecent: false)
             XCTAssertEqual(model.reader.url, secondURL, "No empty Home state may be shown in the new tab")
             XCTAssertFalse(model.opening)
+            XCTAssertTrue(windows.openPDFTab(secondURL, from: first), "A prepared tab is already in flight")
             let window = NSWindow(contentRect: parent.frame, styleMask: [.titled], backing: .buffered, defer: false)
             created = model; child = window; windows.register(model, window: window)
         }
@@ -51,11 +54,19 @@ import XCTest
             windows.remove(parent); parent.orderOut(nil)
         }
         XCTAssertTrue(windows.openPDFTab(secondURL, from: first))
+        XCTAssertTrue(windows.openPDFTab(secondURL, from: first))
         XCTAssertEqual(first.reader.url, firstURL)
         for _ in 0..<100 where created == nil { try await Task.sleep(for: .milliseconds(20)) }
         let second = try XCTUnwrap(created)
         XCTAssertEqual(second.reader.url, secondURL)
         XCTAssertEqual(windows.documentTabs(for: second.reader).count, 2)
         XCTAssertTrue(windows.active === second)
+        XCTAssertFalse(first.reader.pdfTabVisible)
+        XCTAssertTrue(second.reader.pdfTabVisible)
+        windows.selectDocumentTab(ObjectIdentifier(parent))
+        XCTAssertTrue(first.reader.pdfTabVisible)
+        XCTAssertFalse(second.reader.pdfTabVisible)
+        XCTAssertEqual(count, 1)
+        XCTAssertTrue(second.index === windows.makeHome(recordRecent: false).index)
     }
 }

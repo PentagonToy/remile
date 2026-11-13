@@ -117,7 +117,14 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
     func update(_ source: String, size: CGFloat, serif: Bool, document: String? = nil) {
         guard let view = textView else { return }
         let sameDocument = documentID == document
-        if !sameDocument { assistance.cancel(); documentID = document; view.undoManager?.removeAllActions(); clearFlash(); completion.dismiss() }
+        if !sameDocument {
+            completionTask?.cancel()
+            assistance.cancel()
+            documentID = document
+            view.undoManager?.removeAllActions()
+            clearFlash()
+            completion.dismiss()
+        }
         var needsStyle = !hasStyled
         if view.string != source, !view.hasMarkedText() {
             needsStyle = true
@@ -187,8 +194,18 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         apply(.init(range: range, text: replacement, selection: NSRange(location: range.location + (replacement as NSString).length, length: 0)), name: "Writing suggestion")
     }
     func suspend() {
-        completionTask?.cancel(); styling?.cancel(); flashTask?.cancel()
-        completion.dismiss(); assistance.cancel(); findState.close(); mathPreview.clear(); changed = { _ in }
+        completionTask?.cancel()
+        completionTask = nil
+        styling?.cancel()
+        styling = nil
+        clearFlash()
+        completion.dismiss()
+        assistance.cancel()
+        findState.close()
+        mathPreview.clear()
+        spellingSource = ""
+        spellingExcluded = []
+        changed = { _ in }
     }
     func pasteMarkdown() { (textView as? MarkdownSourceTextView)?.pasteMarkdown(nil) }
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -207,7 +224,8 @@ final class MarkdownEditorController: NSObject, ObservableObject, NSTextViewDele
         completionTask?.cancel()
         completionTask = Task { @MainActor [weak self] in
             if !explicit { do { try await Task.sleep(for: .milliseconds(160)) } catch { return } }
-            guard let self, let view = self.textView, !view.hasMarkedText() else { return }
+            guard !Task.isCancelled, let self, let view = self.textView,
+                  view.window?.firstResponder === view, !view.hasMarkedText() else { return }
             let source = view.string, selection = view.selectedRange()
             let custom = self.texTheme == nil ? nil : await self.citationCompletion?(source, selection)
             guard !Task.isCancelled, view.string == source, view.selectedRange() == selection else { return }

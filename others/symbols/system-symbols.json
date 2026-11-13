@@ -24,7 +24,6 @@
       "name": "arrow.clockwise",
       "sources": [
         "Sources/Remile/Markdown/MarkdownWorkspace.swift",
-        "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafProjects.swift",
         "Sources/Remile/Overleaf/OverleafReviewPanel.swift",
         "Sources/Remile/Search/LibraryManager.swift",
@@ -86,6 +85,7 @@
     {
       "name": "arrow.up.forward",
       "sources": [
+        "Sources/Remile/App/RemileControls.swift",
         "Sources/Remile/Home/UserGuide.swift"
       ]
     },
@@ -99,13 +99,6 @@
       "name": "arrow.up.left.and.arrow.down.right",
       "sources": [
         "Sources/Remile/PDF/PaperSize.swift"
-      ]
-    },
-    {
-      "name": "arrow.up.right.square",
-      "sources": [
-        "Sources/Remile/Search/SearchMarkdownPreview.swift",
-        "Sources/Remile/Search/SearchPDFPreview.swift"
       ]
     },
     {
@@ -145,6 +138,7 @@
     {
       "name": "checkmark",
       "sources": [
+        "Sources/Remile/Extensions/ExtensionsWorkspace.swift",
         "Sources/Remile/LaTeX/TeXAskPanel.swift",
         "Sources/Remile/Overleaf/OverleafAccountManager.swift",
         "Sources/Remile/Overleaf/OverleafProjects.swift",
@@ -450,6 +444,12 @@
       "sources": [
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
         "Sources/Remile/Search/LibrarySearchView.swift"
+      ]
+    },
+    {
+      "name": "ipad",
+      "sources": [
+        "Sources/Remile/Extensions/ExtensionsWorkspace.swift"
       ]
     },
     {

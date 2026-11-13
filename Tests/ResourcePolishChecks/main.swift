@@ -121,16 +121,16 @@ Task { @MainActor in
         let first = project.sourceHashes
         check(project.cachedSourceHashCount == 2, "The first reader caches one digest per source")
         check((0..<30).allSatisfy { _ in project.sourceHashes == first }, "Repeated readers preserve the same source identity")
-        project.buffers["main.tex"]! += "% changed\n"
+        project.updateBuffer("main.tex", to: project.buffers["main.tex"]! + "% changed\n")
         check(project.cachedSourceHashCount == 1, "An edit invalidates only its own digest")
         let second = project.sourceHashes
         check(second["main.tex"] != first["main.tex"] && second["part.tex"] == first["part.tex"], "Review and CLI see the edited version and the unchanged neighbour")
-        project.buffers.removeValue(forKey: "part.tex")
+        project.updateBuffer("part.tex", to: nil)
         check(project.sourceHashes["part.tex"] == nil, "Deleted files do not retain cached fingerprints")
         check(!project.save(), "A missing source buffer fails safely before saving any file")
         check(try String(contentsOf: root.appendingPathComponent("main.tex"), encoding: .utf8) == source, "A missing buffer cannot cause a partial save")
         // Restore the partial fixture mutation before the autosave task runs.
-        project.buffers["part.tex"] = try String(contentsOf: root.appendingPathComponent("part.tex"), encoding: .utf8)
+        project.updateBuffer("part.tex", to: try String(contentsOf: root.appendingPathComponent("part.tex"), encoding: .utf8))
         let home = HomeModel(index: LibraryIndex(location: output.appendingPathComponent("library.sqlite")), overleaf: OverleafLibrary(directory: output.appendingPathComponent("Overleaf")))
         home.texProject = project
         let transport = output.appendingPathComponent("transport")

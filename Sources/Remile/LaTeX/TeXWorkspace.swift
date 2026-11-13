@@ -68,7 +68,10 @@ struct TeXWorkspace: View {
     }
     private var lifecycleContent: some View {
         workspaceContent
-        .task(id: project.selected + project.source.wrappedValue + language + String(spellcheck)) { await writing.check(project.source.wrappedValue, enabled: spellcheck, language: language, editor: editor) }
+        .task(id: EditorWritingReview.Request(file: project.selected, source: project.source.wrappedValue,
+                                             enabled: spellcheck, language: language)) {
+            await writing.check(project.source.wrappedValue, enabled: spellcheck, language: language, editor: editor)
+        }
         .onAppear {
             if TeXEditorTheme(rawValue: theme) == nil { theme = TeXEditorTheme.remile.rawValue }
             assistant.useHistory(project.root.path)
@@ -85,8 +88,9 @@ struct TeXWorkspace: View {
                 }
             }
             editor.citationCompletion = { [weak project = project] source, range in
-                guard let project else { return nil }
+                guard let project, !Task.isCancelled else { return nil }
                 if let local = await project.localCompletion.context(source, selection: range, file: project.selected, paths: project.treeFiles, buffers: project.buffers, main: project.main) { return local }
+                guard !Task.isCancelled else { return nil }
                 return await project.citations.completion(source: source, selection: range, buffers: project.buffers)
             }
             editor.prepareCitation = { [weak project = project] item in
@@ -135,7 +139,21 @@ struct TeXWorkspace: View {
         .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.review)
         .animation(reduceMotion ? nil : RemileMotion.panel, value: project.showsLog)
         .animation(reduceMotion ? nil : RemileMotion.panel, value: project.showsHistory)
-        .onDisappear { project.lastPreviewLocation = preview.currentLocation(); assistant.cancel(); editor.suspend(); project.citations.release(); editor.inspectCitation = nil; editor.citationCompletion = nil; editor.prepareCitation = nil; editor.citationFailure = nil; project.editSource = nil; editor.syncToPreview = nil; preview.reverse = { _ in }; editor.proofreadRequested = nil; editor.dismissWriting = nil; writing.dismissSuggestion() }
+        .onDisappear {
+            project.lastPreviewLocation = preview.currentLocation()
+            assistant.cancel()
+            project.releaseEditorAssistance()
+            editor.inspectCitation = nil
+            editor.citationCompletion = nil
+            editor.prepareCitation = nil
+            editor.citationFailure = nil
+            project.editSource = nil
+            editor.syncToPreview = nil
+            preview.reverse = { _ in }
+            editor.proofreadRequested = nil
+            editor.dismissWriting = nil
+            writing.dismissSuggestion()
+        }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.toggleComment"))) { event in if event.object as? TeXProject === project { editor.toggleComment() } }
         .onReceive(project.$sourceJump) { jump in
             guard let jump else { return }; presentation.pane = "Source"

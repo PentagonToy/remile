@@ -35,6 +35,7 @@ enum TeXFileSystem {
         }) else { throw CocoaError(.fileReadUnknown) }
         var paths: [String] = [], folders: [String] = []
         for case let url as URL in items {
+            try Task.checkCancellation()
             let values = try url.resourceValues(forKeys: keys)
             // The enumerator does not descend into symlinks. Skipping descendants here can skip the next folder.
             if values.isSymbolicLink == true { continue }

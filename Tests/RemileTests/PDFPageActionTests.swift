@@ -1,4 +1,5 @@
 import XCTest
+import CoreText
 import PDFKit
 import SwiftUI
 @testable import Remile
@@ -134,7 +135,7 @@ import SwiftUI
     }
     func testThumbnailMenuTargetsRightClickedPage() async throws {
         let session = PDFSession(); session.load(document().dataRepresentation()!)
-        let host = NSHostingView(rootView: PDFThumbnailOverview(session: session))
+        let host = NSHostingView(rootView: PDFThumbnailOverview(session: session, keepsThumbnails: true))
         host.frame = NSRect(x: 0, y: 0, width: 900, height: 600); host.layoutSubtreeIfNeeded()
         func collection(in view: NSView) -> PageCollectionView? {
             if let found = view as? PageCollectionView { return found }
@@ -151,6 +152,104 @@ import SwiftUI
         XCTAssertEqual(session.selectedOverviewPages, [ObjectIdentifier(page)])
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
         XCTAssertEqual(session.document!.pageCount, 2)
+    }
+
+    func testNotesAndHighlightsPublishInPageBatches() async throws {
+        let source = document()
+        for index in 0..<source.pageCount {
+            let page = try XCTUnwrap(source.page(at: index))
+            for mark in 0..<12 {
+                let bounds = CGRect(x: 40, y: 40 + mark * 24, width: 20, height: 16)
+                page.addAnnotation(PDFNotes.make(text: "Note \(index)-\(mark)", author: "Fixture", bounds: bounds))
+                let highlight = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
+                highlight.contents = "Highlight \(index)-\(mark)"
+                page.addAnnotation(highlight)
+            }
+        }
+        let session = PDFSession()
+        session.load(try XCTUnwrap(source.dataRepresentation()))
+        var noteCounts: [Int] = []
+        var highlightCounts: [Int] = []
+        let notes = session.$comments.sink { noteCounts.append($0.count) }
+        let highlights = session.$highlights.sink { highlightCounts.append($0.count) }
+        defer { notes.cancel(); highlights.cancel(); session.stop() }
+        session.loadComments()
+        for _ in 0..<100 where session.loadingComments { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(session.loadingComments)
+        XCTAssertEqual(noteCounts.filter { $0 > 0 }, [12, 36])
+        XCTAssertEqual(highlightCounts.filter { $0 > 0 }, [12, 36])
+        let pageNumbers = [1, 2, 3].flatMap { Array(repeating: $0, count: 12) }
+        XCTAssertEqual(session.comments.map(\.pageNumber), pageNumbers)
+        XCTAssertEqual(session.highlights.map(\.pageNumber), pageNumbers)
+        session.suspendCommentScan()
+        XCTAssertEqual(session.comments.map(\.pageNumber), pageNumbers, "A finished scan remains available on reopen")
+
+        let reopened = PDFSession()
+        reopened.load(try XCTUnwrap(source.dataRepresentation()))
+        reopened.loadComments()
+        XCTAssertTrue(reopened.loadingComments)
+        reopened.suspendCommentScan()
+        await Task.yield()
+        XCTAssertFalse(reopened.loadingComments)
+        XCTAssertTrue(reopened.comments.isEmpty && reopened.highlights.isEmpty)
+        reopened.loadComments()
+        for _ in 0..<100 where reopened.loadingComments { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(reopened.loadingComments)
+        XCTAssertEqual(reopened.comments.map(\.pageNumber), pageNumbers)
+        XCTAssertEqual(reopened.highlights.map(\.pageNumber), pageNumbers)
+    }
+
+    func testSearchPublishesFirstMatchAndBatchesThroughLimit() async throws {
+        let data = NSMutableData()
+        var bounds = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let consumer = try XCTUnwrap(CGDataConsumer(data: data))
+        let writer = try XCTUnwrap(CGContext(consumer: consumer, mediaBox: &bounds, nil))
+        for page in 0..<30 {
+            writer.beginPDFPage(nil)
+            for line in 0..<20 {
+                let word = page < 25 ? "needle Exact" : "needle"
+                let text = NSAttributedString(string: word, attributes: [.font: NSFont.systemFont(ofSize: 14)])
+                writer.textPosition = CGPoint(x: 42, y: 730 - line * 24)
+                CTLineDraw(CTLineCreateWithAttributedString(text), writer)
+            }
+            writer.endPDFPage()
+        }
+        writer.closePDF()
+        let session = PDFSession()
+        session.load(data as Data)
+        var updates: [Int] = []
+        let observation = session.$matches.sink { updates.append($0.count) }
+        defer { observation.cancel(); session.stop() }
+
+        session.query = "  NEEDLE  "
+        session.search()
+        for _ in 0..<250 where session.searching { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(session.searching)
+        XCTAssertTrue(session.resultLimitReached)
+        XCTAssertEqual(session.matches.count, 500)
+        XCTAssertEqual(session.matches.map(\.page), (1...25).flatMap { Array(repeating: $0, count: 20) })
+        XCTAssertEqual(updates.filter { $0 > 0 }.first, 1)
+        XCTAssertEqual(updates.filter { $0 > 0 }.count, 33)
+        let first = try XCTUnwrap(session.matches.first)
+        let excerpt = session.excerpt(for: first)
+        XCTAssertEqual(String(excerpt.characters).trimmingCharacters(in: .whitespacesAndNewlines), "needle Exact")
+        let marked = excerpt.runs.filter { $0.swiftUI.backgroundColor != nil }
+        XCTAssertEqual(marked.map { String(excerpt[$0.range].characters) }, ["needle"])
+        let second = try XCTUnwrap(session.matches.dropFirst().first)
+        XCTAssertEqual(excerpt, session.excerpt(for: second))
+        let firstPage = try XCTUnwrap(first.selection.pages.first)
+        XCTAssertNotEqual(first.selection.bounds(for: firstPage), second.selection.bounds(for: firstPage))
+
+        session.caseSensitive = true
+        session.query = "Exact"
+        session.search()
+        for _ in 0..<250 where session.searching { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(session.searching)
+        XCTAssertFalse(session.resultLimitReached)
+        XCTAssertEqual(session.matches.count, 500)
+        XCTAssertTrue(session.matches.allSatisfy { $0.selection.string == "Exact" })
+        let updated = session.excerpt(for: try XCTUnwrap(session.matches.first))
+        XCTAssertEqual(updated.runs.filter { $0.swiftUI.backgroundColor != nil }.map { String(updated[$0.range].characters) }, ["Exact"])
     }
     func testCannotDeleteEveryPage() {
         let session = PDFSession(); session.load(document().dataRepresentation()!)

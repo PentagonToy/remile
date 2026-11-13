@@ -6,6 +6,8 @@ Sometimes a second look helps. You choose when to ask for one.
 
 Open **Settings → AI**. Use Apple Intelligence on a supported Mac, connect ChatGPT, or keep Manual mode.
 
+**Continue with ChatGPT** opens your browser. You can close Settings while signing in. Reopen it and choose **Cancel** to stop the sign-in.
+
 Reading, writing and standard local search remain available without an AI account. Your ChatGPT plan and credit settings apply.
 
 ## Ask about the page

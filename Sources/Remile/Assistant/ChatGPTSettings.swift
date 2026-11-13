@@ -54,8 +54,14 @@ struct ChatGPTSettings: View {
             Divider()
             AssistantHistorySettings()
         }.frame(maxWidth: .infinity, alignment: .leading)
-            .task(id: provider + String(network.offline)) { if refreshModelsOnAppear, provider == "ChatGPT", connection.connected, connection.models.isEmpty, canConnect { await connection.loadModels() } }
-            .onDisappear { if connection.busy { connection.cancelSignIn() } }
+            .task(id: shouldLoadModels) {
+                if shouldLoadModels, connection.models.isEmpty {
+                    await connection.loadModels()
+                }
+            }
+    }
+    private var shouldLoadModels: Bool {
+        refreshModelsOnAppear && provider == "ChatGPT" && connection.connected && !connection.needsSignIn && canConnect
     }
     private var description: String {
         if provider == "Off" { return "AI is off. You can still read and edit." }
@@ -65,16 +71,26 @@ struct ChatGPTSettings: View {
     }
     private var connectionControls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if connection.connected {
+            if connection.busy {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Finish sign-in in your browser")
+                    Spacer()
+                    Button("Cancel") { connection.cancelSignIn() }
+                }
+            } else if !connection.connected || connection.needsSignIn {
+                Button(action: connection.startSignIn) {
+                    ExternalLinkLabel(connection.needsSignIn ? "Sign in to ChatGPT again" : "Continue with ChatGPT")
+                }.accessibilityHint("Opens sign-in in your browser").disabled(!canConnect)
+            } else {
                 if connection.credentialUnavailable {
                     Button(connection.unlocking ? "Unlocking…" : "Unlock ChatGPT") { Task { await connection.unlock() } }.disabled(connection.unlocking || !canConnect)
                 } else if !connection.models.isEmpty {
                     Picker("Model", selection: $connection.model) { ForEach(connection.models) { Text($0.name).tag($0.id) } }
+                } else if connection.loadingModels {
+                    ProgressView("Loading ChatGPT models…").controlSize(.small)
                 } else { SymbolLabel("ChatGPT connected", systemImage: "checkmark.circle").font(RemileType.caption).foregroundStyle(.secondary) }
-            } else if !connection.busy {
-                Button("Continue with ChatGPT") { Task { await connection.signIn() } }.disabled(!canConnect)
             }
-            if connection.busy { HStack { ProgressView().controlSize(.small); Text("Signing in…"); Spacer(); Button("Cancel") { connection.cancelSignIn() } } }
             if let error = connection.error { Text(error).font(RemileType.caption).foregroundStyle(RemileStyle.warning).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
         }
     }
@@ -83,7 +99,8 @@ struct ChatGPTSettings: View {
             if connection.connected {
                 Text(connection.name).font(RemileType.caption).foregroundStyle(.secondary)
                 HStack {
-                    Button("Refresh models") { Task { await connection.loadModels() } }.disabled(!canConnect || connection.credentialUnavailable)
+                    Button("Refresh models") { Task { await connection.loadModels() } }
+                        .disabled(!canConnect || connection.credentialUnavailable || connection.needsSignIn || connection.loadingModels)
                     Spacer()
                     Button("Disconnect") { connection.disconnect() }.disabled(connection.busy || connection.unlocking)
                 }
@@ -93,7 +110,7 @@ struct ChatGPTSettings: View {
             Stepper("Daily limit: \(dailyLimit)", value: $dailyLimit, in: 5...200, step: 5)
             SettingsHint("\(usage.inputTokens + usage.outputTokens) tokens today · remile. limit only.")
             HStack {
-                Link("ChatGPT usage & limits", destination: URL(string: "https://chatgpt.com/settings/usage")!).disabled(network.offline)
+                ExternalLink("ChatGPT usage & limits", destination: URL(string: "https://chatgpt.com/settings/usage")!)
                 Spacer()
                 if usage.paused { Button("Resume requests") { usage.resume() } }
             }.font(RemileType.caption)

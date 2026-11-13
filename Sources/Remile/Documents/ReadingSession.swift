@@ -13,11 +13,15 @@ final class ReadingSession: ObservableObject {
         }
     }
     @Published private(set) var externalEdits: [NSRange] = []
+    @Published private(set) var pdfTabVisible = true
     private var provenance = EditorProvenance.Tracker()
     private let editMarkStore: EditorEditMarks.Store
     private var hasSavedEditMarks = false
     init(editMarkStore: EditorEditMarks.Store = .local) { self.editMarkStore = editMarkStore }
     weak var pdfSession: PDFSession?
+    func setPDFTabVisible(_ visible: Bool) {
+        if pdfTabVisible != visible { pdfTabVisible = visible }
+    }
     var pdfInspection: ((Int?, String?, String?) throws -> [String: Any])?
     var commentsExport: (() throws -> PDFCommentExport.Archive)?
     var editSource: ((String, String) -> Bool)?
@@ -199,7 +203,7 @@ struct ReadingShell: View {
                     }).id(project.identity)
                 }.modifier(RemileNavigationContent()).transition(.opacity.combined(with: .offset(x: 12)))
             } else if let url = reader.url {
-                DocumentWorkspace(document: $reader.document, fileURL: url, session: reader)
+                DocumentWorkspace(document: $reader.document, fileURL: url, session: reader, pdfTabVisible: reader.pdfTabVisible)
                     .id(url).transition(.opacity.combined(with: .offset(x: 12)))
                     .navigationTitle((home.references.title(for: url) ?? url.deletingPathExtension().lastPathComponent) + (reader.dirty ? " •" : ""))
                     .toolbar {
@@ -318,20 +322,30 @@ final class RemileWindows: ObservableObject {
     private var pending: [(HomeModel) -> Void] = []
     private var opening = false
     private var externalActivation = false
-    private var pdfTabs: [(URL, NSWindow)] = []
-    private var preparingPDFTab = false
-    private var preparedPDFTab: (url: URL, data: Data, parent: NSWindow)?
-    private var pdfTabParents: [ObjectIdentifier: NSWindow] = [:]
+    private struct PDFTabRequest {
+        let url: URL
+        let path: String
+        let parent: ObjectIdentifier
+    }
+    private var pdfTabs: [PDFTabRequest] = []
+    private var preparingPDFTab: PDFTabRequest?
+    private var preparedPDFTab: (request: PDFTabRequest, data: Data)?
+    private var pdfTabParents: [ObjectIdentifier: PDFTabRequest] = [:]
     private var pdfGroups: [[ObjectIdentifier]] = []
+    private let index: LibraryIndex
+    init(index: LibraryIndex = .shared) { self.index = index }
     var models: [HomeModel] { entries.values.map { $0.1 } }
     func makeHome(recordRecent: Bool = true) -> HomeModel {
-        let model = HomeModel()
+        let model = HomeModel(index: index)
         if let prepared = preparedPDFTab {
             preparedPDFTab = nil
             do {
-                try model.openPreparedDocument(prepared.url, data: prepared.data, recordRecent: recordRecent)
-                pdfTabParents[ObjectIdentifier(model)] = prepared.parent
-            } catch { model.error = error.localizedDescription }
+                try model.openPreparedDocument(prepared.request.url, data: prepared.data, recordRecent: recordRecent)
+                pdfTabParents[ObjectIdentifier(model)] = prepared.request
+            } catch {
+                model.error = error.localizedDescription
+                prepareNextPDFTab()
+            }
         }
         if externalActivation {
             let actions = pending; pending = []
@@ -340,17 +354,20 @@ final class RemileWindows: ObservableObject {
         return model
     }
     private func prepareNextPDFTab() {
-        guard !preparingPDFTab, preparedPDFTab == nil, !pdfTabs.isEmpty, createWindow != nil else { return }
-        preparingPDFTab = true
-        let (url, parent) = pdfTabs.removeFirst()
+        guard preparingPDFTab == nil, preparedPDFTab == nil, pdfTabParents.isEmpty,
+              !pdfTabs.isEmpty, createWindow != nil else { return }
+        let request = pdfTabs.removeFirst()
+        preparingPDFTab = request
         Task { @MainActor in
-            defer { preparingPDFTab = false; if preparedPDFTab == nil { prepareNextPDFTab() } }
+            defer { preparingPDFTab = nil; prepareNextPDFTab() }
             do {
-                let data = try await Task.detached(priority: .userInitiated) { try Data(contentsOf: url, options: .mappedIfSafe) }.value
-                guard entries[ObjectIdentifier(parent)] != nil else { return }
-                preparedPDFTab = (url, data, parent)
-                createWindow?()
-            } catch { entries[ObjectIdentifier(parent)]?.1.error = error.localizedDescription }
+                let data = try await Task.detached(priority: .userInitiated) {
+                    try Data(contentsOf: request.url, options: .mappedIfSafe)
+                }.value
+                guard entries[request.parent] != nil, let createWindow else { return }
+                preparedPDFTab = (request, data)
+                createWindow()
+            } catch { entries[request.parent]?.1.error = error.localizedDescription }
         }
     }
     func register(_ model: HomeModel, window: NSWindow) {
@@ -366,18 +383,17 @@ final class RemileWindows: ObservableObject {
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
         }
-        if isNew, let parent = pdfTabParents.removeValue(forKey: ObjectIdentifier(model)) {
-            let parentID = ObjectIdentifier(parent)
+        if isNew, let request = pdfTabParents.removeValue(forKey: ObjectIdentifier(model)) {
+            defer { prepareNextPDFTab() }
+            let parentID = request.parent
+            guard let parent = entries[parentID]?.0 else { return }
             let windowID = ObjectIdentifier(window)
             if let group = pdfGroups.firstIndex(where: { $0.contains(parentID) }) { pdfGroups[group].append(windowID) }
             else { pdfGroups.append([parentID, windowID]) }
             parent.tabbingMode = .disallowed
             window.tabbingMode = .disallowed
             if window.frame != parent.frame { window.setFrame(parent.frame, display: false) }
-            window.orderFront(nil); window.makeKey()
-            parent.orderOut(nil)
-            active = model
-            prepareNextPDFTab()
+            selectDocumentTab(windowID)
         }
     }
     struct PDFTab: Identifiable {
@@ -396,18 +412,25 @@ final class RemileWindows: ObservableObject {
         }
     }
     func selectDocumentTab(_ id: ObjectIdentifier) {
-        guard let window = entries[id]?.0 else { return }
+        guard let (window, selected) = entries[id] else { return }
         window.animationBehavior = .none
         let others = (pdfGroups.first(where: { $0.contains(id) }) ?? [])
-            .filter { $0 != id }.compactMap { entries[$0] }.filter { $0.0.isVisible }
-        for (other, home) in others {
+            .filter { $0 != id }.compactMap { entries[$0] }
+        for (other, home) in others where other.isVisible {
             home.reader.pdfSession?.persistReadingPosition()
             if window.frame != other.frame { window.setFrame(other.frame, display: false) }
         }
         // Swap the retained surfaces in one flush, without native window expansion.
+        selected.reader.setPDFTabVisible(true)
         window.orderFront(nil); window.makeKey()
-        for (other, _) in others { other.animationBehavior = .none; other.orderOut(nil) }
-        active = entries[id]?.1
+        for (other, home) in others {
+            if other.isVisible {
+                other.animationBehavior = .none
+                other.orderOut(nil)
+            }
+            home.reader.setPDFTabVisible(false)
+        }
+        active = selected
     }
     func closeDocumentTab(_ id: ObjectIdentifier) { entries[id]?.0.performClose(nil) }
     func addDocumentTab(for reader: ReadingSession) {
@@ -432,7 +455,11 @@ final class RemileWindows: ObservableObject {
         guard case .pdf = model.reader.document.content, model.reader.url != nil,
               let parent = entries.values.first(where: { $0.1 === model })?.0,
               createWindow != nil else { return false }
-        pdfTabs.append((url, parent))
+        if preparingPDFTab?.path == path || preparedPDFTab?.request.path == path
+            || pdfTabParents.values.contains(where: { $0.path == path }) || pdfTabs.contains(where: { $0.path == path }) {
+            return true
+        }
+        pdfTabs.append(PDFTabRequest(url: url, path: path, parent: ObjectIdentifier(parent)))
         prepareNextPDFTab()
         return true
     }
@@ -480,6 +507,7 @@ final class RemileWindows: ObservableObject {
         objectWillChange.send()
         pdfGroups[groupIndex].removeAll { $0 == id }
         if let next = pdfGroups[groupIndex].first { selectDocumentTab(next) }
+        entries[id]?.1.reader.setPDFTabVisible(true)
         window.setFrameTopLeftPoint(NSPoint(x: point.x - min(120, window.frame.width / 2), y: point.y + 40))
         window.makeKeyAndOrderFront(nil)
         active = entries[id]?.1
@@ -488,6 +516,7 @@ final class RemileWindows: ObservableObject {
         objectWillChange.send()
         let id = ObjectIdentifier(window)
         let removed = entries.removeValue(forKey: id)?.1
+        pdfTabs.removeAll { $0.parent == id }
         if let index = pdfGroups.firstIndex(where: { $0.contains(id) }) {
             pdfGroups[index].removeAll { $0 == id }
             let remaining = pdfGroups[index]

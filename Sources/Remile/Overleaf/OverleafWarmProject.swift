@@ -1,7 +1,6 @@
 import Foundation
 
-/// Keep one recently closed Live project briefly. No hidden file scan or flush
-/// timer runs. The existing socket can finish ACKs and receive remote edits.
+/// Keep one recently closed Online project briefly, with its sync ticker stopped.
 extension OverleafLibrary {
     @discardableResult func retainWarmProject(_ project: TeXProject, duration: Duration = .seconds(45)) -> Bool {
         guard let connection = connection(for: project.root), OverleafSyncPreference.live(connection.id), project.liveWorkspace.enabled else { return false }
