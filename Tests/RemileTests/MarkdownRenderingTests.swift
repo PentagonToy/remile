@@ -4,6 +4,34 @@ import XCTest
 @testable import Remile
 
 final class MarkdownRenderingTests: XCTestCase {
+    func testMathPasteNormalisesExplicitDelimitersAndPreservesCode() {
+        let input = #"""
+        속도 \(u_{xx}\)입니다.
+        \[
+        \begin{aligned} a &= b \\ c &= d \end{aligned}
+        \]
+        `\(literal\)` and $x+\(existing\)$
+        > ~~~~tex
+        > \[example\]
+        > ~~~~
+        """#
+        let expected = #"""
+        속도 $u_{xx}$입니다.
+        $$
+        \begin{aligned} a &= b \\ c &= d \end{aligned}
+        $$
+        `\(literal\)` and $x+\(existing\)$
+        > ~~~~tex
+        > \[example\]
+        > ~~~~
+        """#
+        XCTAssertEqual(MarkdownMathPaste.normalised(input), expected)
+        XCTAssertNil(MarkdownMathPaste.normalised(#"\\(escaped\\) (ordinary) [ordinary] \[unfinished"#))
+        let before = "Example\n~~~tex\n"
+        let selection = NSRange(location: before.utf16.count, length: 0)
+        XCTAssertNil(MarkdownMathPaste.normalised(#"\[x\]"#, in: before + "\n~~~", replacing: selection))
+    }
+
     func testTeXMathSuggestionsHaveNativePreviewsAndKeepSourceCommands() throws {
         let source = "$\\d$"
         let completion = try XCTUnwrap(EditorCompletion.context(source, selection: NSRange(location: 3, length: 0), tex: true))

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Convert pasted TeX maths delimiters to Markdown maths while preserving code examples.
+
 ## 0.2.6 — 13 November 2026
 
 - Give an agent a copied document or project ID to read its source and file structure with one CLI command.

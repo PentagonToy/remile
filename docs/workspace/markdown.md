@@ -14,6 +14,8 @@ Source line numbers are on by default. Change **Settings → Markdown → Line n
 
 The Format tools insert headings, links, lists, maths, code and tables. In a narrow window, open **More** for Format, Find and Zoom. Pasting cells from a spreadsheet creates a table. In a pipe table, Tab and Shift+Tab move between cells. Return moves down a row and adds a row when you reach the end.
 
+Paste maths from ChatGPT or another editor to convert `\(…\)` to `$…$` and `\[…\]` to `$$…$$`. Code examples and existing dollar delimiters stay as written. Undo removes the paste in one step.
+
 Keep local images beside the document or in a subfolder. Remote images use a local cache so revisiting a page can reuse downloaded images. The source's cache policy controls refreshes. Online access is required to load remote images. PDF export uses local images and supported formulae.
 
 ## Find and replace

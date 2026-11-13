@@ -482,6 +482,11 @@ final class MarkdownSourceTextView: NSTextView {
     override func paste(_ sender: Any?) {
         guard markdownMode else { super.paste(sender); return }
         let board = NSPasteboard.general
+        if let text = board.string(forType: .string),
+           let converted = MarkdownMathPaste.normalised(text, in: string, replacing: selectedRange()) {
+            insertMarkdownPaste(converted, action: "Paste")
+            return
+        }
         if let text = board.string(forType: .string), let table = MarkdownTable.pasted(text) { insertText(table, replacementRange: selectedRange()); undoManager?.setActionName("Paste Table"); return }
         if let text = board.string(forType: .string), text.range(of: #"^https?://[^\s]+$"#, options: .regularExpression) != nil, selectedRange().length > 0 {
             let title = (string as NSString).substring(with: selectedRange())
@@ -490,6 +495,7 @@ final class MarkdownSourceTextView: NSTextView {
         super.paste(sender)
     }
     @objc func pasteMarkdown(_ sender: Any?) {
+        guard markdownMode else { super.paste(sender); return }
         guard let data = NSPasteboard.general.data(forType: .rtf), data.count <= 1_000_000, let rich = NSAttributedString(rtf: data, documentAttributes: nil) else { paste(sender); return }
         var output = ""
         rich.enumerateAttributes(in: NSRange(location: 0, length: rich.length)) { attributes, range, _ in
@@ -502,7 +508,14 @@ final class MarkdownSourceTextView: NSTextView {
             if let link = attributes[.link], let url = URL(string: String(describing: link)), ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") { value = "[" + value + "](" + url.absoluteString.replacingOccurrences(of: ")", with: "%29") + ")" }
             output += value
         }
-        breakUndoCoalescing(); insertText(output, replacementRange: selectedRange()); undoManager?.setActionName("Paste as Markdown"); breakUndoCoalescing()
+        let converted = MarkdownMathPaste.normalised(output, in: string, replacing: selectedRange())
+        insertMarkdownPaste(converted ?? output, action: "Paste as Markdown")
+    }
+    private func insertMarkdownPaste(_ text: String, action: String) {
+        breakUndoCoalescing()
+        insertText(text, replacementRange: selectedRange())
+        undoManager?.setActionName(action)
+        breakUndoCoalescing()
     }
     override func keyDown(with event: NSEvent) {
         sourceInteraction()
