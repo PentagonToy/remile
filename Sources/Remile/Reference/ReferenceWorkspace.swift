@@ -56,7 +56,7 @@ struct ReferenceWorkspace: View {
     private var toolbar: some View {
         let hasRecords = model.hasActiveLibraryRecords
         return HStack(spacing: RemileControl.spacing) {
-            Button(action: goHome) { SymbolIcon(systemName: "chevron.left") }.buttonStyle(RemileToolStyle()).accessibilityLabel("Back to Home").remileHelp("Back to Home")
+            WorkspaceBackButton(title: "Back to Home", action: goHome)
             Text("Reference").font(RemileType.heading)
             Spacer()
             Menu {
@@ -201,12 +201,17 @@ struct ReferenceWorkspace: View {
         return true
     }
     private var harbour: some View {
-        VStack(spacing: 14) {
-            if let image = RemileArtwork.image("harbour-focus", dark: scheme == .dark) {
-                Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity).frame(height: 90).accessibilityHidden(true)
+        ViewThatFits(in: .vertical) {
+            VStack(spacing: 14) {
+                if let image = RemileArtwork.image("harbour-focus", dark: scheme == .dark) {
+                    Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity).frame(height: 90).accessibilityHidden(true)
+                }
+                Text("Drop PDFs or BibTeX")
             }
-            Text("Drop PDFs or BibTeX").font(RemileType.caption).foregroundStyle(.secondary)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(14)
+            .fixedSize(horizontal: false, vertical: true)
+            Text("Drop PDFs or BibTeX")
+        }.font(RemileType.caption).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity).padding(14)
             .background(RemileStyle.accent.opacity(draggingFiles ? 0.22 : 0.04), in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(RemileStyle.accent.opacity(draggingFiles ? 0.95 : 0.24), style: StrokeStyle(lineWidth: 1, dash: state.harbourTarget ? [] : [4, 4])))
             .shadow(color: RemileStyle.accent.opacity(draggingFiles ? 0.32 : 0), radius: 14)
@@ -216,11 +221,14 @@ struct ReferenceWorkspace: View {
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: draggingFiles)
     }
     private var sidebar: some View {
-        VStack(spacing: 0) {
+        let libraries = Dictionary(grouping: model.activeLibraries, by: \.parentID)
+        let roots = libraries[nil] ?? []
+        let zoteroLibraries = roots.filter { $0.source?.hasPrefix("zotero-import:") == true }
+        let localLibraries = roots.filter { $0.source != "remarkable" && $0.source?.hasPrefix("zotero-import:") != true }
+        return VStack(spacing: 0) {
             GeometryReader { available in
-            let square = max(100, available.size.width - 40)
-            let harbourHeight = harbourExpanded ? square + 64 : 44
-            let libraryHeight = max(44, available.size.height - harbourHeight)
+            let harbourWidth = max(0, available.size.width - 40)
+            let harbourHeight = min(harbourWidth, max(0, available.size.height / 2 - 64))
             VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
@@ -233,23 +241,17 @@ struct ReferenceWorkspace: View {
                                     Text(String(model.allRecords.count)).font(RemileType.caption).foregroundStyle(.secondary)
                                 }.padding(10).background(model.selectedLibrary == ReferenceLibrary.allID && !model.showingTrash ? RemileStyle.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8)).contentShape(Rectangle())
                             }.buttonStyle(.plain)
-                            ForEach(model.activeLibraries.filter { $0.parentID == nil && $0.source != "remarkable" && $0.source?.hasPrefix("zotero-import:") != true }) { library in
-                                libraryRow(library)
-                                ForEach(model.activeLibraries.filter { $0.parentID == library.id }) { collection in libraryRow(collection).padding(.leading, 18) }
-                                if state.addingLibrary && state.parentLibrary == library.id { libraryNameField.padding(.leading, 18) }
+                            ForEach(localLibraries) { library in
+                                librarySection(library, collections: libraries[library.id] ?? [])
                             }
                             if state.addingLibrary && state.parentLibrary == nil { libraryNameField }
-                            ForEach(model.activeLibraries.filter { $0.parentID == nil && $0.source == "remarkable" }) { library in
-                                libraryRow(library)
-                                ForEach(model.activeLibraries.filter { $0.parentID == library.id }) { collection in libraryRow(collection).padding(.leading, 18) }
-                                if state.addingLibrary && state.parentLibrary == library.id { libraryNameField.padding(.leading, 18) }
+                            ForEach(roots.filter { $0.source == "remarkable" }) { library in
+                                librarySection(library, collections: libraries[library.id] ?? [])
                             }
-                            if model.activeLibraries.contains(where: { $0.source?.hasPrefix("zotero-import:") == true }) {
+                            if !zoteroLibraries.isEmpty {
                                 DisclosureGroup("Zotero", isExpanded: $zoteroExpanded) {
-                                    ForEach(model.activeLibraries.filter { $0.parentID == nil && $0.source?.hasPrefix("zotero-import:") == true }) { library in
-                                        libraryRow(library)
-                                        ForEach(model.activeLibraries.filter { $0.parentID == library.id }) { collection in libraryRow(collection).padding(.leading, 18) }
-                                        if state.addingLibrary && state.parentLibrary == library.id { libraryNameField.padding(.leading, 18) }
+                                    ForEach(zoteroLibraries) { library in
+                                        librarySection(library, collections: libraries[library.id] ?? [])
                                     }
                                 }.padding(.leading, 10)
                             }
@@ -261,9 +263,13 @@ struct ReferenceWorkspace: View {
                             }
                             if model.showingTrash {
                                 ForEach(model.deletedLibraries) { library in
-                                    Button { } label: { SymbolLabel(library.name, systemImage: "folder").padding(8).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).foregroundStyle(.secondary).contextMenu {
-                                        Button("Restore", systemImage: "arrow.uturn.backward") { model.restoreLibrary(library.id) }
-                                    }
+                                    SymbolLabel(library.name, systemImage: "folder").padding(8)
+                                        .frame(maxWidth: .infinity, alignment: .leading).foregroundStyle(.secondary)
+                                        .contentShape(Rectangle())
+                                        .accessibilityAction(named: "Restore") { model.restoreLibrary(library.id) }
+                                        .contextMenu {
+                                            Button("Restore", systemImage: "arrow.uturn.backward") { model.restoreLibrary(library.id) }
+                                        }
                                 }
                             }
                         }.contextMenu {
@@ -272,20 +278,18 @@ struct ReferenceWorkspace: View {
                     }.font(RemileType.callout).padding(10)
                 }.scrollContentGutter().frame(maxWidth: .infinity, alignment: .leading)
                     .contextMenu { Button("Add library…", systemImage: "folder.badge.plus") { addLibrary() } }
-            }.frame(height: libraryHeight)
+            }.frame(maxHeight: .infinity)
                 .contextMenu { Button("Add library…", systemImage: "folder.badge.plus") { addLibrary() } }
             Divider()
             VStack(alignment: .leading, spacing: 0) {
                 DisclosureGroup("Harbour", isExpanded: $harbourExpanded) { EmptyView() }
                     .font(RemileType.callout).padding(10).frame(height: 44)
                     .foregroundStyle(draggingFiles ? RemileStyle.accent : RemileStyle.ink)
-                if harbourExpanded {
-                    Group {
-                        if !model.showingTrash { harbour.frame(width: square, height: square) }
-                        else { Color.clear.frame(width: square, height: square) }
-                    }.frame(maxWidth: .infinity).padding(.bottom, 20)
+                if harbourExpanded && !model.showingTrash && harbourHeight >= 44 {
+                    harbour.frame(width: harbourWidth, height: harbourHeight)
+                        .frame(maxWidth: .infinity).padding(.bottom, 20)
                 }
-            }.frame(height: harbourHeight, alignment: .top)
+            }
             }
             }
             Divider()
@@ -309,6 +313,12 @@ struct ReferenceWorkspace: View {
             .remileHelp("Return or click elsewhere to save · Esc cancels")
             .id(id)
     }
+    @ViewBuilder private func librarySection(_ library: ReferenceLibrary, collections: [ReferenceLibrary]) -> some View {
+        libraryRow(library)
+        ForEach(collections) { collection in libraryRow(collection).padding(.leading, 18) }
+        if state.addingLibrary && state.parentLibrary == library.id { libraryNameField.padding(.leading, 18) }
+    }
+
     private func libraryRow(_ library: ReferenceLibrary) -> some View {
         let count = model.libraryCounts[library.id, default: 0]
         return Group {

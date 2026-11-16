@@ -212,8 +212,11 @@ struct PDFWorkspace: View {
 
             Spacer(minLength: 12)
             PDFProtectionButton(protection: session.protection, unlock: session.requestEditingUnlock)
-            Button { presentation.ocr = true } label: { controlLabel("Scan & OCR", symbol: "text.viewfinder", compact: compact) }.remileHelp("Recognise text throughout this PDF with Apple Vision").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
-            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.toggleEditing() } } label: { controlLabel(session.isEditing ? "Done" : "Edit PDF", symbol: session.isEditing ? "checkmark" : "square.and.pencil", compact: compact) }.remileHelp(session.isEditing ? "Finish editing PDF" : "Edit PDF text, annotations and pages").disabled(session.document == nil)
+            Button { presentation.ocr = true } label: { SymbolIcon(systemName: "text.viewfinder") }.accessibilityLabel("Scan & OCR").remileHelp("Recognise text throughout this PDF with Apple Vision").disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
+            Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { session.toggleEditing() } } label: {
+                SymbolIcon(systemName: session.isEditing ? "checkmark" : "square.and.pencil")
+            }.accessibilityLabel(session.isEditing ? "Finish editing PDF" : "Edit PDF")
+                .remileHelp(session.isEditing ? "Finish editing PDF" : "Edit PDF text, annotations and pages").disabled(session.document == nil)
             AIToolGroup {
             AIProviderButton()
             WorkspaceAskButton(isPresented: presentation.ask, action: toggleAssistant)
@@ -222,18 +225,13 @@ struct PDFWorkspace: View {
             }
             if compact {
                 Menu {
-                    Button("Zoom in") { zoom.step(1) }.disabled(session.showsOverview)
-                    Button("Zoom out") { zoom.step(-1) }.disabled(session.showsOverview)
-                    Button("Fit height") { zoom.fit(.height) }.disabled(session.showsOverview)
-                    Button("Fit width") { zoom.fit(.width) }.disabled(session.showsOverview)
+                    ReaderZoomMenuItems(zoom: zoom)
                 } label: { SymbolIcon(systemName: "ellipsis").frame(width: RemileControl.toolHit, height: RemileControl.toolHit) }
-                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).accessibilityLabel("View options")
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).disabled(session.showsOverview)
+                    .accessibilityLabel("Zoom options").remileHelp("Zoom and fit options")
             } else { ReaderZoomControls(zoom: zoom).disabled(session.showsOverview) }
-            Button { session.sidebar = .search; session.showsSidebar = true; searchFocused = true } label: { SymbolIcon(systemName: "magnifyingglass") }.remileHelp("Find in document").keyboardShortcut("f")
+            Button { session.sidebar = .search; session.showsSidebar = true; searchFocused = true } label: { SymbolIcon(systemName: "magnifyingglass") }.accessibilityLabel("Find in document").remileHelp("Find in document").keyboardShortcut("f")
         }.buttonStyle(RemileToolStyle()).font(RemileType.control).labelStyle(.titleAndIcon)
-    }
-    private func controlLabel(_ title: String, symbol: String, compact: Bool) -> some View {
-        SymbolIcon(systemName: symbol).accessibilityLabel(title)
     }
 
     private var selectionActions: PDFSelectionActions {
@@ -267,9 +265,9 @@ struct PDFWorkspace: View {
                 .disabled(!session.canArrangePages).remileHelp("Add PDFs").accessibilityLabel("Add PDFs")
             PDFPageSizeControl(session: session, compact: true).disabled(!session.canArrangePages)
             if !session.showsOverview {
-            Button { session.beginComment() } label: { controlLabel("Note", symbol: "text.bubble", compact: compact) }
+            Button { session.beginComment() } label: { SymbolIcon(systemName: "text.bubble") }.accessibilityLabel("Add note")
                 .disabled(session.document?.allowsCommenting != true).remileHelp("Add a note at the selection or current page")
-            Button { session.highlightSelection() } label: { controlLabel("Highlight", symbol: "highlighter", compact: compact) }
+            Button { session.highlightSelection() } label: { SymbolIcon(systemName: "highlighter") }.accessibilityLabel("Highlight selected text")
                 .disabled(!session.canHighlight).remileHelp("Highlight selected text")
             Menu {
                 Button("Select Text") { session.drawingTool = nil }

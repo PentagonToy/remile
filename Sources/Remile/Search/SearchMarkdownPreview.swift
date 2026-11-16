@@ -33,14 +33,14 @@ struct SearchMarkdownPreview: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(hit.name).font(RemileType.heading).lineLimit(1)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(hit.name).font(RemileType.heading).lineLimit(2).remileHelp(hit.name)
                     Text(hit.location).font(RemileType.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 ReaderZoomControls(zoom: zoom, text: true)
                 Button("Open Markdown") { open(URL(fileURLWithPath: hit.path)) }.fixedSize()
-            }.padding(16)
+            }.padding(14).background(RemileStyle.editorBar)
             Divider()
             if let html = model.html { SearchMarkdownCanvas(html: html, section: hit.page, query: query, dark: colorScheme == .dark, citation: citation, zoom: zoom, wide: zoom.wide) }
             else if let error = model.error { ContentUnavailableView(error, systemImage: "exclamationmark.triangle") }

@@ -33,7 +33,7 @@ struct LibrarySearchView: View {
             .onChange(of: model.exploring) { if model.exploring { assistant.cancel() } }
             .onChange(of: model.query) { assistant.cancel(); citationState.focus = nil; citationState.selectedPassages = []; citationState.compactPreview = false }
             .onChange(of: model.libraryRevision) { assistant.cancel(); citationState.focus = nil; citationState.selectedPassages = [] }
-            .onChange(of: model.documentFilter) { assistant.cancel(); citationState.focus = nil }
+            .onChange(of: model.documentFilter) { model.filterDocuments(); assistant.cancel(); citationState.focus = nil }
             .onChange(of: model.resultIDs) { assistant.cancel(); citationState.focus = nil }
             .onChange(of: model.selectedHit?.path) { citationState.selectedPassages = [] }
             .onChange(of: model.selectedHit?.id) { _, id in selectedHitChanged(id) }
@@ -111,7 +111,10 @@ struct LibrarySearchView: View {
                 TextField("Search your library", text: $model.query).textFieldStyle(.plain)
                     .onChange(of: model.query) { model.editSearch() }.onSubmit { model.search(immediate: true) }
                 if model.searching || model.exploring { ProgressView().controlSize(.small) }
-                if !model.query.isEmpty { Button { model.query = ""; model.invalidateSearch() } label: { SymbolIcon(systemName: "xmark.circle.fill") }.buttonStyle(.plain).remileHelp("Clear search") }
+                if !model.query.isEmpty {
+                    Button { model.query = "" } label: { SymbolIcon(systemName: "xmark.circle.fill") }
+                        .buttonStyle(RemileToolStyle()).accessibilityLabel("Clear search").remileHelp("Clear search")
+                }
             }.font(RemileType.control).padding(.horizontal, 10).frame(minWidth: 180, minHeight: 32).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 9))
     }
     private var aiActions: some View {
@@ -170,11 +173,7 @@ struct LibrarySearchView: View {
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14)
             }
             if let error = model.queryError { Text(error).font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 14) }
-            if model.summary.folders.isEmpty {
-                ContentUnavailableView { SymbolLabel("Build your library", systemImage: "folder") } actions: {
-                    Button("Add to Library…", action: model.addFolder).buttonStyle(.borderedProminent)
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 ContentUnavailableView("Enter a search", systemImage: "text.magnifyingglass").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.searching {
                 ProgressView("Searching…").frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -261,9 +260,13 @@ struct LibrarySearchView: View {
                 }
                 HStack(spacing: 8) {
                     SymbolIcon(systemName: "line.3.horizontal.decrease").foregroundStyle(.secondary)
-                    TextField("Filter documents", text: $model.documentFilter).textFieldStyle(.plain).onChange(of: model.documentFilter) { model.filterDocuments() }
-                    if !model.documentFilter.isEmpty { Button { model.documentFilter = ""; model.filterDocuments() } label: { SymbolIcon(systemName: "xmark.circle.fill") }.buttonStyle(.plain) }
-                }.padding(10).background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 8)).padding([.horizontal, .bottom], 10)
+                    TextField("Filter documents", text: $model.documentFilter).textFieldStyle(.plain)
+                    if !model.documentFilter.isEmpty {
+                        Button { model.documentFilter = "" } label: { SymbolIcon(systemName: "xmark.circle.fill") }
+                            .buttonStyle(RemileToolStyle()).accessibilityLabel("Clear document filter").remileHelp("Clear document filter")
+                    }
+                }.padding(.horizontal, 10).frame(minHeight: RemileControl.toolHit)
+                    .background(RemileStyle.surface, in: RoundedRectangle(cornerRadius: 8)).padding([.horizontal, .bottom], 10)
 
             }
             Divider()
@@ -289,8 +292,8 @@ struct LibrarySearchView: View {
                 }.padding(.horizontal, 16).padding(.vertical, 8)
                 Divider()
             }
-            if model.selectedHit?.isMarkdown == true {
-                SearchMarkdownPreview(hit: model.selectedHit!, query: model.selectedHit?.matchQuery ?? model.query, revision: model.libraryRevision, open: open, citation: activeCitation)
+            if let hit = model.selectedHit, hit.isMarkdown {
+                SearchMarkdownPreview(hit: hit, query: hit.matchQuery ?? model.query, revision: model.libraryRevision, open: open, citation: activeCitation)
             } else { SearchPDFPreview(hit: model.selectedHit, query: model.selectedHit?.matchQuery ?? model.query, revision: model.libraryRevision, open: open, revealID: model.resultRevealID, citation: activeCitation, askSelection: { context in
                 guard let hit = model.selectedHit else { return }
                 assistant.cancel(); citationState.selectedPassages = context.passages(path: hit.path)

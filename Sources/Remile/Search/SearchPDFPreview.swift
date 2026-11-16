@@ -233,9 +233,9 @@ struct SearchPDFPreview: View {
                                 Button { model.color = color } label: { Label { Text(color.name) } icon: { SymbolIcon(systemName: model.color == color ? "checkmark.circle.fill" : "circle.fill").foregroundStyle(Color(nsColor: color.color)) } }
                             }
                         } label: { SymbolIcon(systemName: "circle.fill").foregroundStyle(Color(nsColor: model.color.color)) }.remileHelp("Highlight colour · \(model.color.name)").accessibilityLabel("Highlight colour")
-                        Button { model.undoHighlight() } label: { SymbolIcon(systemName: "arrow.uturn.backward") }.disabled(!model.canUndoHighlight || model.saving).remileHelp("Undo last highlight")
+                        Button { model.undoHighlight() } label: { SymbolIcon(systemName: "arrow.uturn.backward") }.disabled(!model.canUndoHighlight || model.saving).accessibilityLabel("Undo last highlight").remileHelp("Undo last highlight")
                     }.buttonStyle(.borderless)
-                }.padding(14)
+                }.padding(14).background(RemileStyle.editorBar)
                 if let message = model.editMessage { Text(message).font(RemileType.caption).foregroundStyle(.secondary).padding([.horizontal, .bottom], 12) }
                 if let message = model.citationMessage { Text(message).font(RemileType.caption).foregroundStyle(.secondary).padding([.horizontal, .bottom], 12) }
                 Divider()

@@ -34,6 +34,11 @@ struct ReaderSplit<Pane: View, Content: View>: View {
     static func constrained(_ width: CGFloat, available: CGFloat, minimum: CGFloat, maximum: CGFloat, content: CGFloat) -> CGFloat {
         min(max(minimum, available - handleWidth - content), max(minimum, min(maximum, width)))
     }
+    static func toggledCollapse(_ collapsed: Int, narrow: Bool, preferPane: Bool) -> Int {
+        let paneVisible = collapsed > 0 || (collapsed == 0 && preferPane)
+        guard narrow, paneVisible == preferPane else { return 0 }
+        return paneVisible ? -1 : 1
+    }
     var body: some View {
         GeometryReader { geometry in
             let preferred: CGFloat = switch sizing {
@@ -68,7 +73,6 @@ struct ReaderSplit<Pane: View, Content: View>: View {
                     let saved = UserDefaults.standard.double(forKey: WorkspaceLayout.key(label))
                     if saved.isFinite, saved >= minimum, saved <= maximum { state.width = saved }
                 }
-                .onChange(of: state.width) { if let width = state.width { UserDefaults.standard.set(Double(width), forKey: WorkspaceLayout.key(label)) } }
                 .onChange(of: revealToken) { state.collapsed = 0 }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -76,10 +80,19 @@ struct ReaderSplit<Pane: View, Content: View>: View {
     private func grip(width: CGFloat, available: CGFloat) -> some View {
         ZStack {
             Rectangle().fill(RemileStyle.accent.opacity(0.16)).frame(width: 1).allowsHitTesting(false)
-            if state.collapsed != 0 || available < minimum + minimumContent + Self.handleWidth {
-                Button { state.collapsed = state.collapsed == 0 ? (preferPaneWhenNarrow ? -1 : 1) : 0 } label: {
-                    SymbolIcon(systemName: (state.collapsed < 0 || (state.collapsed == 0 && !preferPaneWhenNarrow)) == (side == .leading) ? "chevron.right" : "chevron.left").frame(width: 14, height: 40).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
-                }.buttonStyle(.plain).frame(width: Self.handleWidth, height: 44).contentShape(Rectangle()).remileHelp("Restore split view").accessibilityLabel("Restore " + label)
+            let narrow = available < minimum + minimumContent + Self.handleWidth
+            if state.collapsed != 0 || narrow {
+                let paneVisible = state.collapsed > 0 || (state.collapsed == 0 && preferPaneWhenNarrow)
+                let action = narrow ? (paneVisible ? "Show main pane" : "Show " + label) : "Restore split view"
+                Button {
+                    state.collapsed = Self.toggledCollapse(state.collapsed, narrow: narrow, preferPane: preferPaneWhenNarrow)
+                } label: {
+                    SymbolIcon(systemName: paneVisible == (side == .trailing) ? "chevron.right" : "chevron.left")
+                        .frame(width: 14, height: 40)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
+                        .frame(width: Self.handleWidth, height: 44)
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain).remileHelp(action).accessibilityLabel(action)
             } else {
             HStack(spacing: 2) {
                 ForEach(0..<3) { _ in Capsule().fill(RemileStyle.accent.opacity(0.85)).frame(width: 1, height: 11) }
@@ -97,13 +110,19 @@ struct ReaderSplit<Pane: View, Content: View>: View {
                     if proposed < minimum * 0.55 { state.collapsed = -1 }
                     else if proposed > available - Self.handleWidth - minimumContent * 0.45 { state.collapsed = 1 }
                     state.origin = nil
+                    if let width = state.width { saveWidth(width) }
                 })
                 .accessibilityElement().accessibilityLabel("Resize " + label).accessibilityValue("\(Int(width)) points")
                 .accessibilityAdjustableAction { direction in
                     state.width = Self.constrained(width + (direction == .increment ? 20 : -20), available: available, minimum: minimum, maximum: maximum, content: minimumContent)
+                    if let width = state.width { saveWidth(width) }
                 }.accessibilityAction(named: "Collapse " + label) { state.collapsed = -1 }.remileHelp("Resize " + label)
             }
         }.frame(width: Self.handleWidth).frame(maxHeight: .infinity)
+    }
+
+    private func saveWidth(_ width: CGFloat) {
+        UserDefaults.standard.set(Double(width), forKey: WorkspaceLayout.key(label))
     }
 }
 struct ResizeCursorRegion: NSViewRepresentable {

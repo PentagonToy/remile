@@ -5,7 +5,10 @@
 - Switch between saved reMarkable devices. The connection window remembers your last selection and links to setup help.
 - Paste TeX maths into Markdown. Preview more equations, including boxed expressions, continued fractions and annotated arrows.
 - See which links open in your browser. ChatGPT sign-in can finish after you close Settings.
-- Choose an Overleaf project while its tags load.
+- Choose an Overleaf project while its tags load. In the library, click a card’s blank area to open the project or its tag icon to see the tags.
+- Switch panes with one click in narrow windows. PDF zoom presets and fit options are available in the compact toolbar.
+- Clear the Search query or document filter from its field. Read long document titles in the Markdown preview.
+- Keep more of the Reference library list visible above Harbour in short windows.
 - Cancel preview and search work when you move on. Reuse PDF thumbnails and avoid rebuilding unchanged Reference lists.
 - Keep editing smoothly while LaTeX updates its outline and Writer paginates.
 

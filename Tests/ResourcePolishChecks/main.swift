@@ -16,6 +16,10 @@ app.setActivationPolicy(.prohibited)
 Task { @MainActor in
     do {
         let fm = FileManager.default; try fm.createDirectory(at: output, withIntermediateDirectories: true)
+        let split = ReaderSplit<EmptyView, EmptyView>.self
+        check(split.toggledCollapse(-1, narrow: true, preferPane: false) == 1, "A sidebar collapsed before narrowing still opens in one click")
+        check(split.toggledCollapse(1, narrow: true, preferPane: true) == -1, "A sidebar expanded before narrowing still reveals the main pane in one click")
+        check(split.toggledCollapse(1, narrow: true, preferPane: false) == 0 && split.toggledCollapse(-1, narrow: false, preferPane: false) == 0, "The split control returns to its default layout")
         let coverStore = SearchCoverStore()
         for rotation in [0, 90, 180, 270] {
             let url = output.appendingPathComponent("cover-\(rotation).pdf"), bytes = pdfImageFixture(rotation: rotation)

@@ -34,7 +34,7 @@ struct WriterWorkspace: View {
     }
     private var toolbar: some View {
             HStack(spacing: RemileControl.spacing) {
-                Button(action: goHome) { SymbolIcon(systemName: "chevron.left") }.buttonStyle(RemileToolStyle()).remileHelp("Back to Home").accessibilityLabel("Back to Home")
+                WorkspaceBackButton(title: "Back to Home", action: goHome)
                 Text("Writer").font(RemileType.heading)
                 Divider().frame(height: 18)
                 Button { state.tools.toggle() } label: { SymbolIcon(systemName: "sidebar.left") }.buttonStyle(RemileToolStyle()).foregroundStyle(RemileStyle.ink).remileHelp("Show or hide writing tools").accessibilityLabel("Writing tools")

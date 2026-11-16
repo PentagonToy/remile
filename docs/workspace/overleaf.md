@@ -19,6 +19,8 @@ Use **Sync now** when you need an immediate check. Independent changes merge aut
 
 The [file tree](latex.md#find-your-way) and [source editor](latex.md#find-and-complete) work as in local LaTeX. Drop a folder into **Files** to add its contents. Empty folders stay on this Mac until they contain a file.
 
+Both modes compile on this Mac. If the project builds on Overleaf's website but remile reports a missing package, check your [local TeX setup](latex.md#when-a-build-needs-attention).
+
 ### Recovery copies
 
 remile keeps one pending recovery copy per project and up to three managed references after a successful sync. A 256 MiB preflight budget pauses new preparation when space is insufficient and preserves pending work. Existing Git history and older unlabelled recovery copies have separate lifetimes.

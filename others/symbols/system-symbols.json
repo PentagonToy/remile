@@ -196,10 +196,8 @@
         "Sources/Remile/Convert/ConvertWorkspace.swift",
         "Sources/Remile/LaTeX/TeXAskPanel.swift",
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
-        "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
         "Sources/Remile/Reference/ReferencePreview.swift",
         "Sources/Remile/Reference/ReferencePublisherAccess.swift",
-        "Sources/Remile/Reference/ReferenceWorkspace.swift",
         "Sources/Remile/Search/LibrarySearchView.swift",
         "Sources/Remile/Writer/WriterWorkspace.swift"
       ]
@@ -737,6 +735,7 @@
       "name": "square.and.pencil",
       "sources": [
         "Sources/Remile/Home/HomeWorkspace.swift",
+        "Sources/Remile/PDF/PDFWorkspace.swift",
         "Sources/Remile/Reference/ReferenceWorkspace.swift"
       ]
     },
@@ -819,6 +818,12 @@
       "name": "text.quote",
       "sources": [
         "Sources/Remile/Assistant/AssistantPanel.swift"
+      ]
+    },
+    {
+      "name": "text.viewfinder",
+      "sources": [
+        "Sources/Remile/PDF/PDFWorkspace.swift"
       ]
     },
     {

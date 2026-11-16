@@ -42,10 +42,8 @@ enum TeXDiagnostics {
         return 8
     }
     static func prioritised(_ entries: [TeXDiagnostic]) -> [TeXDiagnostic] {
-        entries.enumerated().sorted {
-            let left = priority($0.element), right = priority($1.element)
-            return left == right ? $0.offset < $1.offset : left < right
-        }.map(\.element)
+        let groups = Dictionary(grouping: entries, by: priority)
+        return groups.sorted { $0.key < $1.key }.flatMap(\.value)
     }
     /// Add only directly observed source mistakes, never a guessed missing class.
     static func assessed(_ entries: [TeXDiagnostic], main: String, source: String) -> [TeXDiagnostic] {

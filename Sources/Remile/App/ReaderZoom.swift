@@ -191,7 +191,7 @@ struct ReaderZoomMenuItems: View {
             Button("Fit width") { zoom.fit(.width) }
         }
         Divider()
-        ForEach([50, 75, 100, 125, 150, 200], id: \.self) { percent in
+        ForEach([50, 75, 125, 150, 200], id: \.self) { percent in
             Button("\(percent)%") { zoom.change(CGFloat(percent) / 100) }
         }
     }

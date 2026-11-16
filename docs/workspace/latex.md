@@ -58,6 +58,8 @@ Open **Errors** beside **Compile**. Use the **Go to source** button on a diagnos
 
 The preview shows any PDF the compiler produces. If a build produces no PDF, the previous preview stays visible when available. A green check means the PDF matches the current source.
 
+If a build reports a missing package, open **TeX setup** for installation guidance. If another TeX installation already has the package, select its binaries folder in **Settings → LaTeX → TeX binaries**.
+
 With ChatGPT connected, use **Go to source** on the diagnostic, then choose **Suggest fix**. Review the proposed edit and choose **Apply and compile** to check the result.
 
 <details>
