@@ -101,7 +101,7 @@ enum PDFEditing {
                         NSPoint(x: x, y: y), NSPoint(x: x + rect.width, y: y)].map { NSValue(point: $0) }
             }
             note.contents = pieces.map { $0.1.trimmingCharacters(in: .whitespacesAndNewlines) }.joined(separator: " ")
-            note.color = color.color.withAlphaComponent(0.30)
+            note.color = color.markupColor
             note.userName = "Me"; note.modificationDate = Date()
             return (page, note)
         }

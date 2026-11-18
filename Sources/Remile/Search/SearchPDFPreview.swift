@@ -7,7 +7,6 @@ final class SearchPDFModel: ObservableObject {
     @Published private(set) var document: PDFDocument?
     @Published private(set) var loading = false
     @Published private(set) var error: String?
-    @Published var color = HighlightColor.yellow
     @Published private(set) var selectionAvailable = false
     @Published private(set) var saving = false
     @Published private(set) var canUndoHighlight = false
@@ -117,7 +116,7 @@ final class SearchPDFModel: ObservableObject {
     }
     func highlight(selection captured: PDFSelection? = nil, color chosenColor: HighlightColor? = nil) {
         guard !saving, let document, let selection = captured ?? view?.currentSelection, let digest, let url = editableURL() else { return }
-        let regions = HighlightRegion.make(selection: selection, document: document), chosen = chosenColor ?? color
+        let regions = HighlightRegion.make(selection: selection, document: document), chosen = chosenColor ?? HighlightColor.preferred
         guard !regions.isEmpty else { editMessage = "Select text to highlight."; return }
         if protection.requiresConsent {
             if protection.isLocked { protection.refuse(); return }
@@ -197,6 +196,7 @@ struct SearchPDFPreview: View {
     @StateObject private var presentation = Presentation()
     private final class Presentation: ObservableObject { @Published var translation: SelectionTranslation? }
     @StateObject private var model = SearchPDFModel()
+    @AppStorage(HighlightColor.preference) private var highlightColor: HighlightColor = .yellow
     @StateObject private var zoom = ReaderZoom()
     init(hit: LibraryHit?, query: String, revision: UUID, open: @escaping (URL) -> Void, revealID: UUID? = nil, citation: AssistantCitation? = nil,
          askSelection: ((PDFSelectionContext) -> Void)? = nil, editing: SearchPDFModel? = nil) {
@@ -229,10 +229,10 @@ struct SearchPDFPreview: View {
                         if model.saving { ProgressView().controlSize(.small) }
                         Button { model.highlight() } label: { SymbolIcon(systemName: "highlighter") }.remileHelp("Highlight selected text and save to PDF").accessibilityLabel("Highlight selected text").disabled(!model.selectionAvailable || model.saving)
                         Menu {
-                            ForEach(HighlightColor.allCases) { color in
-                                Button { model.color = color } label: { Label { Text(color.name) } icon: { SymbolIcon(systemName: model.color == color ? "checkmark.circle.fill" : "circle.fill").foregroundStyle(Color(nsColor: color.color)) } }
+                            ForEach(HighlightColor.markupColors) { color in
+                                Button { highlightColor = color } label: { Label { Text(color.name) } icon: { SymbolIcon(systemName: highlightColor == color ? "checkmark.circle.fill" : "circle.fill").foregroundStyle(Color(nsColor: color.color)) } }
                             }
-                        } label: { SymbolIcon(systemName: "circle.fill").foregroundStyle(Color(nsColor: model.color.color)) }.remileHelp("Highlight colour · \(model.color.name)").accessibilityLabel("Highlight colour")
+                        } label: { SymbolIcon(systemName: "circle.fill").foregroundStyle(Color(nsColor: highlightColor.color)) }.remileHelp("Default highlight colour · \(highlightColor.name)").accessibilityLabel("Default highlight colour")
                         Button { model.undoHighlight() } label: { SymbolIcon(systemName: "arrow.uturn.backward") }.disabled(!model.canUndoHighlight || model.saving).accessibilityLabel("Undo last highlight").remileHelp("Undo last highlight")
                     }.buttonStyle(.borderless)
                 }.padding(14).background(RemileStyle.editorBar)

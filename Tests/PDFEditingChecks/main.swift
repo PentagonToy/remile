@@ -77,7 +77,7 @@ expect(session.canHighlight, "Native owned selection can be highlighted")
 undo.beginUndoGrouping(); session.highlightSelection(); undo.endUndoGrouping()
 let marks = page.annotations.filter { $0.type == "Highlight" }
 expect(marks.count == 1 && marks[0].quadrilateralPoints?.count == 4, "Highlight persists standard quadrilateral geometry")
-expect(marks[0].color.alphaComponent == 0.30, "Highlight uses fixed transparent palette colour")
+expect(marks[0].color == HighlightColor.yellow.markupColor, "Highlight uses the shared readable markup colour")
 expect(session.hasPendingAnnotations, "Highlight keeps object edits pending until Save")
 _ = try session.prepareSave()
 expect(PDFDocument(data: session.committedData!)!.page(at: 0)!.annotations.contains { $0.type == "Highlight" }, "Highlight is present after reopening pending bytes")

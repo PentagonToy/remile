@@ -575,10 +575,10 @@ final class PDFSession: NSObject, ObservableObject {
               selection.pages.allSatisfy({ $0.document === document }) else { return false }
         view?.setCurrentSelection(selection, animate: false); return true
     }
-    func highlightSelection(color: HighlightColor = .yellow) {
+    func highlightSelection(color: HighlightColor? = nil) {
         guard allowProtectedEdit() else { return }
         guard let document, view?.document === document, let selection = view?.currentSelection else { return }
-        do { applyHighlights(try PDFEditing.highlights(for: selection, in: document, color: color), adding: true) }
+        do { applyHighlights(try PDFEditing.highlights(for: selection, in: document, color: color ?? HighlightColor.preferred), adding: true) }
         catch { editingError = error.localizedDescription }
     }
     func deleteAnnotation(_ comment: Comment) {

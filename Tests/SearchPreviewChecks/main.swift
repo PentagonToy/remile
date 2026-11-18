@@ -25,6 +25,8 @@ func settle(_ model: SearchPDFModel) async throws {
 }
 @MainActor
 func runChecks() async throws {
+    let savedColour = UserDefaults.standard.object(forKey: HighlightColor.preference)
+    defer { UserDefaults.standard.set(savedColour, forKey: HighlightColor.preference) }
     let url = output.appendingPathComponent("preview-fixture.pdf")
     fixture(url); let original = try Data(contentsOf: url)
     let document = PDFDocument(url: url)!, page = document.page(at: 0)!
@@ -114,14 +116,15 @@ func runChecks() async throws {
         let saved = try await store.add(url: annotationURL, expected: PDFHighlightStore.digest(last), regions: [region], color: color)
         let data = try Data(contentsOf: annotationURL), reopened = PDFDocument(data: data)!
         let mark = reopened.page(at: 0)!.annotations.last!
-        let actual = mark.color.usingColorSpace(.deviceRGB)!, expected = color.color.usingColorSpace(.deviceRGB)!
+        let actual = mark.color.usingColorSpace(.deviceRGB)!, expected = color.markupColor.usingColorSpace(.deviceRGB)!
         try check(mark.type == "Highlight" && mark.quadrilateralPoints?.count == 4, "\(color.name) saves standard text markup and quadrilaterals")
-        try check(abs(actual.redComponent - expected.redComponent) < 0.005 && abs(actual.greenComponent - expected.greenComponent) < 0.005 && abs(actual.blueComponent - expected.blueComponent) < 0.005, "\(color.name) preserves its Okabe–Ito RGB components")
+        try check(abs(actual.redComponent - expected.redComponent) < 0.005 && abs(actual.greenComponent - expected.greenComponent) < 0.005 && abs(actual.blueComponent - expected.blueComponent) < 0.005, "\(color.name) preserves its saved palette tint")
         try check(reopened.page(at: 0)!.string == page.string && reopened.pageCount == 2, "\(color.name) preserves original PDF text and pages")
         try check(saved.digest == PDFHighlightStore.digest(data), "\(color.name) commits the expected source revision")
         last = data
     }
-    try check(Set(HighlightColor.allCases.map(\.hex)).count == 8, "Only the eight fixed palette colours are exposed")
+    try check(Set(HighlightColor.allCases.map(\.hex)).count == 8, "The fixed base palette retains its eight colours")
+    try check(HighlightColor.markupColors.count == 5, "Highlight controls offer five colours")
     let permissions = try FileManager.default.attributesOfItem(atPath: annotationURL.path)[.posixPermissions] as? Int
     try check(permissions == 0o640, "Highlight saving preserves file permissions")
     let edited = last
@@ -142,9 +145,11 @@ func runChecks() async throws {
     let editView = PDFView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
     editView.document = editor.document; editor.attach(editView)
     editView.setCurrentSelection(editor.document!.page(at: 0)!.selection(for: NSRange(location: 0, length: 5)), animate: false)
-    editor.color = .skyBlue; editor.highlight()
+    HighlightColor.preferred = .blue; editor.highlight()
     for _ in 0..<300 { if !editor.saving { break }; try await Task.sleep(for: .milliseconds(10)) }
     try check(editor.canUndoHighlight && editor.editMessage == nil && editor.document?.page(at: 0)?.annotations.count == 1, "Search preview selection writes a real highlight and enables Undo")
+    let savedHighlight = editor.document?.page(at: 0)?.annotations.first?.color.usingColorSpace(.deviceRGB)
+    try check(abs((savedHighlight?.blueComponent ?? 0) - HighlightColor.blue.markupColor.blueComponent) < 0.005, "Search applies the same saved default colour as the reader")
     try Data(contentsOf: annotationURL).write(to: output.appendingPathComponent("visible-highlight.pdf"))
     editor.undoHighlight()
     for _ in 0..<300 { if !editor.saving { break }; try await Task.sleep(for: .milliseconds(10)) }

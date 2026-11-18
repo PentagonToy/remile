@@ -24,6 +24,9 @@ func invoke(_ item: NSMenuItem) {
     NSApplication.shared.sendAction(action, to: item.target, from: item)
 }
 _ = NSApplication.shared
+let savedColour = UserDefaults.standard.object(forKey: HighlightColor.preference)
+defer { UserDefaults.standard.set(savedColour, forKey: HighlightColor.preference) }
+HighlightColor.preferred = .yellow
 let bytes = fixture(), document = PDFDocument(data: bytes)!, foreign = PDFDocument(data: bytes)!
 let view = PDFSelectionView(frame: CGRect(x: 0, y: 0, width: 700, height: 850))
 view.document = document; view.autoScales = true; view.layoutDocumentView()
@@ -53,42 +56,47 @@ view.selectionActions.addNote = { context in calls.append("note"); captured = co
 view.selectionActions.ask = { context in calls.append("ask"); captured = context }
 view.selectionActions.translate = { context in calls.append("translate"); captured = context }
 var menu = view.selectionMenu(for: first)
-expect(menu.items.map(\.title) == ["Copy", "", "Highlight", "Add Note…", "", "Ask about Selection (on-device)", "Translate Selection…"], "Explicit native menu order excludes PDFKit defaults")
+expect(menu.items.map(\.title) == ["Copy", "", "Highlight", "Highlight colour", "Add Note…", "", "Ask about Selection (on-device)", "Translate Selection…"], "Explicit native menu order excludes PDFKit defaults")
 expect(!menu.autoenablesItems && menu.items[0].isEnabled, "Valid text enables Copy with explicit validation")
-let colours = menu.items[2].submenu!
-expect(colours.numberOfItems == HighlightColor.allCases.count, "Highlight includes the shared fixed palette")
+expect(menu.items[2].action != nil && menu.items[2].image != nil, "Highlight applies the displayed default colour")
+let colours = menu.items[3].submenu!
+expect(colours.presentationStyle == .palette, "Colours appear horizontally in the parent menu")
+expect(colours.numberOfItems == HighlightColor.markupColors.count && colours.numberOfItems == 5, "Highlight includes five shared colours")
 expect(colours.items.allSatisfy { $0.image != nil && $0.isEnabled }, "Palette has visible swatches and enabled actions")
 view.setCurrentSelection(second, animate: false)
-invoke(menu.items[5])
+invoke(menu.items[6])
 expect(calls == ["ask"] && captured?.text == "Physics", "Ask uses captured selection even when visible selection changes")
 expect(captured?.document === document, "Ask remains scoped to the original document")
 invoke(colours.items[1])
-expect(calls.last == "highlight" && chosen == .orange, "Highlight passes the selected palette colour")
-invoke(menu.items[3]); expect(calls.last == "note", "Note invokes its own scoped handler")
-invoke(menu.items[6]); expect(calls.last == "translate", "Translate invokes its own scoped handler")
+expect(calls == ["ask"] && HighlightColor.preferred == .orange, "Choosing a colour only changes the default")
+invoke(menu.items[2])
+expect(calls.last == "highlight" && chosen == .orange, "Highlight applies the default colour to captured text")
+invoke(menu.items[4]); expect(calls.last == "note", "Note invokes its own scoped handler")
+invoke(menu.items[7]); expect(calls.last == "translate", "Translate invokes its own scoped handler")
 expect(page.annotations.isEmpty, "Menu handlers leave persistence and PDF mutation to callers")
 
 let originalCount = calls.count
 view.document = foreign
-invoke(menu.items[5]); invoke(menu.items[3]); invoke(colours.items[0]); invoke(menu.items[6])
+invoke(menu.items[6]); invoke(menu.items[4]); invoke(menu.items[2]); invoke(menu.items[7])
 expect(calls.count == originalCount, "Every delayed callback rejects a replaced PDF")
 expect(!snapshot.isValid(in: view), "Snapshot rejects stale view identity")
 view.document = document
 view.selectionActions.canAnnotate = { _ in false }
 menu = view.selectionMenu(for: first)
-expect(!menu.items[2].isEnabled && !menu.items[3].isEnabled, "Busy or restricted caller disables markup")
-expect(menu.items[5].isEnabled && menu.items[6].isEnabled, "Markup gate does not disable reading actions")
+expect(!menu.items[2].isEnabled && !menu.items[4].isEnabled, "Busy or restricted caller disables markup")
+expect(menu.items[3].isEnabled, "Choosing a default colour is independent of PDF editing permissions")
+expect(menu.items[6].isEnabled && menu.items[7].isEnabled, "Markup gate does not disable reading actions")
 view.selectionActions.canAnnotate = { _ in true }
 menu = view.selectionMenu(for: first)
 view.selectionActions.canAnnotate = { _ in false }
-invoke(menu.items[3]); invoke(menu.items[2].submenu!.items[0])
+invoke(menu.items[4]); invoke(menu.items[2])
 expect(calls.count == originalCount, "Markup gate is rechecked at dispatch")
 view.selectionActions = PDFSelectionActions()
 menu = view.selectionMenu(for: first)
-expect(!menu.items[2].isEnabled && !menu.items[3].isEnabled && !menu.items[5].isEnabled && !menu.items[6].isEnabled, "Unavailable handlers are visibly disabled")
+expect(!menu.items[2].isEnabled && !menu.items[3].isEnabled && !menu.items[4].isEnabled && !menu.items[6].isEnabled && !menu.items[7].isEnabled, "Unavailable handlers are visibly disabled")
 expect(menu.items[0].isEnabled, "Native copy remains available independently")
 menu = view.selectionMenu(for: nil)
-expect(menu.items.filter { !$0.isSeparatorItem }.allSatisfy { !$0.isEnabled }, "No text produces no actionable selection items")
+expect(menu.items.filter { !$0.isSeparatorItem && !$0.isSectionHeader }.allSatisfy { !$0.isEnabled }, "No text produces no actionable selection items")
 
 let restrictedBytes = document.dataRepresentation(options: [PDFDocumentWriteOption.ownerPasswordOption: "owner", PDFDocumentWriteOption.userPasswordOption: "reader", PDFDocumentWriteOption.accessPermissionsOption: NSNumber(value: 0)])!
 let restricted = PDFDocument(data: restrictedBytes)!
@@ -102,13 +110,13 @@ view.selectionActions.translate = { _ in calls.append("restricted") }
 view.selectionActions.addNote = { _ in calls.append("restricted") }
 view.selectionActions.highlight = { _, _ in calls.append("restricted") }
 menu = view.selectionMenu(for: restricted.selectionForEntireDocument)
-expect(menu.items.filter { !$0.isSeparatorItem }.allSatisfy { !$0.isEnabled }, "Copy permission gates extraction and all selected-text actions")
-invoke(menu.items[5]); expect(calls.count == originalCount, "Permission guard survives direct target invocation")
+expect(menu.items.filter { !$0.isSeparatorItem && $0.submenu == nil }.allSatisfy { !$0.isEnabled }, "Copy permission gates extraction and all selected-text actions")
+invoke(menu.items[6]); expect(calls.count == originalCount, "Permission guard survives direct target invocation")
 
 let encrypted = PDFDocument(data: document.dataRepresentation(options: [PDFDocumentWriteOption.ownerPasswordOption: "owner", PDFDocumentWriteOption.userPasswordOption: "reader"])!)!
 _ = encrypted.unlock(withPassword: "reader"); view.document = encrypted
 menu = view.selectionMenu(for: encrypted.selectionForEntireDocument)
-expect(!menu.items[2].isEnabled && !menu.items[3].isEnabled, "Encrypted PDFs cannot enter unsupported markup write paths")
+expect(!menu.items[2].isEnabled && !menu.items[4].isEnabled, "Encrypted PDFs cannot enter unsupported markup write paths")
 
 view.document = document; view.setCurrentSelection(first, animate: false)
 let event = NSEvent.mouseEvent(with: .rightMouseDown, location: NSPoint(x: 0, y: 0), modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!

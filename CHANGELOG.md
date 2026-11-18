@@ -9,6 +9,7 @@
 - Switch panes with one click in narrow windows. PDF zoom presets and fit options are available in the compact toolbar.
 - Use **Fit** to keep the whole page or PDF spread visible in the available space, including on portrait displays. Choose **Fit height** or **Fit width** from the zoom menu to match one dimension.
 - Avoid a PDFKit text-extraction crash when highlighting selected text.
+- Choose a default highlight colour from five swatches, then use **Highlight** to mark selected text. Keep the same default in the reader and Search, with stronger tints that stay consistent after saving.
 - Clear the Search query or document filter from its field. Read long document titles in the Markdown preview.
 - Keep more of the Reference library list visible above Harbour in short windows.
 - Cancel preview and search work when you move on. Reuse PDF thumbnails and avoid rebuilding unchanged Reference lists.

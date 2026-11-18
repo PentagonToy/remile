@@ -17,6 +17,7 @@ enum PortableSettings {
     static let defaults: [String: Value] = [
         "reader.appearance": .string("System"), "appearance.animations": .bool(true), "editor.sidebarArtwork": .bool(true),
         "reader.markdownZoom": .number(100), "pdf.defaultPaperSize": .string("A4"), "pdf.defaultLandscape": .bool(false),
+        HighlightColor.preference: .string(HighlightColor.yellow.rawValue),
         "markdown.fontSize": .number(18), "markdown.spellcheck": .bool(true), "markdown.lineNumbers": .bool(true), "latex.lineNumbers": .bool(true),
         "latex.fontSize": .number(17), "latex.theme": .string("remile."), "latex.engine": .string("Automatic"), "latex.bibliography": .bool(true), "latex.compileTimeLimit": .number(180), "latex.historyMinutes": .number(3),
         TeXMathPreviewState.preference: .bool(true),
@@ -49,6 +50,7 @@ enum PortableSettings {
         }
         if case .string(let rule) = snapshot.preferences[ReferenceKeyRule.preference], !ReferenceKeyRule.allCases.contains(where: { $0.rawValue == rule }) { throw Failure("Choose a supported citation key format.") }
         if case .string(let appearance) = snapshot.preferences["reader.appearance"], !["System", "Light", "Dark"].contains(appearance) { throw Failure("Choose a supported theme.") }
+        if case .string(let colour) = snapshot.preferences[HighlightColor.preference], !HighlightColor.markupColors.contains(where: { $0.rawValue == colour }) { throw Failure("Choose a supported highlight colour.") }
         if case .number(let size) = snapshot.preferences["markdown.fontSize"], !(11...40).contains(size) { throw Failure("Choose a readable Markdown font size.") }
         if case .number(let size) = snapshot.preferences["latex.fontSize"], !(11...40).contains(size) { throw Failure("Choose a readable LaTeX font size.") }
         if case .string(let columns) = snapshot.preferences[ReferenceColumn.preference], !Set(columns.split(separator: ",").map(String.init)).isSubset(of: Set(ReferenceColumn.allCases.map(\.rawValue))) { throw Failure("Choose supported reference columns.") }

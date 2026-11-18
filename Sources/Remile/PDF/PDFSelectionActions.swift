@@ -227,14 +227,23 @@ final class PDFSelectionView: PageNavigationPDFView {
         let menu = NSMenu(title: "Selection"); menu.autoenablesItems = false
         menu.addItem(item("Copy", action: .copy, context: context))
         menu.addItem(.separator())
-        let highlight = NSMenuItem(title: "Highlight", action: nil, keyEquivalent: "")
+        let applyHighlight = item("Highlight", action: .highlight, context: context)
+        menu.addItem(applyHighlight)
+        let highlight = NSMenuItem(title: "Highlight colour", action: nil, keyEquivalent: "")
         let colours = NSMenu(title: "Highlight"); colours.autoenablesItems = false
-        for colour in HighlightColor.allCases {
-            let option = item(colour.name, action: .highlight(colour), context: context)
-            option.image = NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
-                colour.color.setFill(); NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 2, yRadius: 2).fill(); return true
+        colours.presentationStyle = .palette
+        for colour in HighlightColor.markupColors {
+            let option = item(colour.name, action: .highlightColor(colour), context: context)
+            option.state = colour == HighlightColor.preferred ? .on : .off
+            option.toolTip = colour.name
+            option.image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+                let swatch = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
+                colour.color.setFill(); swatch.fill()
+                NSColor.labelColor.withAlphaComponent(0.35).setStroke(); swatch.lineWidth = 1; swatch.stroke()
+                return true
             }
             option.image?.isTemplate = false
+            if colour == HighlightColor.preferred { applyHighlight.image = option.image }
             colours.addItem(option)
         }
         highlight.submenu = colours; highlight.isEnabled = colours.items.contains { $0.isEnabled }
@@ -273,7 +282,7 @@ private final class HighlightRemovalCommand: NSObject {
 
 @MainActor
 private final class SelectionCommand: NSObject {
-    enum Action { case copy, highlight(HighlightColor), note, ask, translate }
+    enum Action { case copy, highlight, highlightColor(HighlightColor), note, ask, translate }
     weak var view: PDFSelectionView?
     let context: PDFSelectionContext?
     let action: Action
@@ -281,8 +290,10 @@ private final class SelectionCommand: NSObject {
         self.view = view; self.context = context; self.action = action
     }
     var isEnabled: Bool {
+        if case .highlightColor = action { return view?.selectionActions.highlight != nil }
         guard let view, let context, context.isValid(in: view), context.document.allowsCopying else { return false }
         switch action {
+        case .highlightColor: return false
         case .copy: return true
         case .ask: return view.selectionActions.ask != nil
         case .translate: return view.selectionActions.translate != nil
@@ -295,11 +306,20 @@ private final class SelectionCommand: NSObject {
     }
     @objc func invoke(_ sender: NSMenuItem) {
         // Recheck identity and permissions even if the menu was enabled before a document changed.
+        if case .highlightColor(let colour) = action {
+            if isEnabled {
+                HighlightColor.preferred = colour
+                sender.menu?.items.forEach { $0.state = $0 === sender ? .on : .off }
+                sender.menu?.supermenu?.item(withTitle: "Highlight")?.image = sender.image
+            }
+            return
+        }
         guard isEnabled, let view, let context else { return }
         switch action {
         case .copy:
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(context.selection.string ?? context.text, forType: .string)
-        case .highlight(let colour): view.selectionActions.highlight?(context, colour)
+        case .highlight: view.selectionActions.highlight?(context, HighlightColor.preferred)
+        case .highlightColor: break
         case .note: view.selectionActions.addNote?(context)
         case .ask: view.selectionActions.ask?(context)
         case .translate: view.selectionActions.translate?(context)
