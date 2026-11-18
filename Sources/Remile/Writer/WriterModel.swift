@@ -270,7 +270,7 @@ import CryptoKit
         let scale = min(2, max(0.25, value))
         if zoom != scale { zoom = scale }
     }
-    func fitPage(_ mode: PageFit) {
+    func fitPage(_ mode: PageFit = .page) {
         desk?.fitPage(mode)
     }
     func fitWidth() { fitPage(.width) }

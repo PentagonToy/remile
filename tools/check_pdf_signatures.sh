@@ -10,6 +10,7 @@ cat "$project_directory/Sources/Remile/PDF/HighlightPalette.swift" \
     "$project_directory/Sources/Remile/PDF/PDFSignedAnnotations.swift" \
     "$project_directory/Sources/Remile/PDF/PDFCommentGraph.swift" \
     "$project_directory/Sources/Remile/PDF/PDFNotes.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFSelectionText.swift" \
     "$project_directory/Sources/Remile/PDF/PDFEditing.swift" \
     "$project_directory/Tests/PDFSignatureChecks/main.swift" > "$check_directory/signature-checks.swift"
 swift -module-cache-path "$check_directory/module-cache" "$check_directory/signature-checks.swift" "$check_directory"

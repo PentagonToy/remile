@@ -62,6 +62,32 @@ import SwiftUI
         XCTAssertGreaterThan(rect.width, view.bounds.width)
         XCTAssertLessThanOrEqual(rect.height, view.bounds.height + 1)
     }
+    func testDefaultFitKeepsPagesVisibleInPortraitAndLandscapeViewports() throws {
+        _ = NSApplication.shared
+        for size in [NSSize(width: 400, height: 1200), NSSize(width: 1200, height: 600)] {
+            for rotation in [0, 90] {
+                for twoUp in [false, true] {
+                    let view = PDFView(frame: NSRect(origin: .zero, size: size))
+                    let doc = document()
+                    doc.removePage(at: 2)
+                    if !twoUp { doc.removePage(at: 1) }
+                    doc.page(at: 0)!.rotation = rotation
+                    view.displayMode = twoUp ? .twoUpContinuous : .singlePageContinuous
+                    view.displaysAsBook = false; view.document = doc
+                    let zoom = ReaderZoom(); zoom.attach(view); zoom.change(1.5)
+                    zoom.fit()
+                    let clip = try XCTUnwrap(view.documentView?.enclosingScrollView?.contentView)
+                    let visible = view.convert(clip.bounds, from: clip)
+                    let spread = (0..<doc.pageCount).compactMap { doc.page(at: $0) }.reduce(CGRect.null) {
+                        $0.union(view.convert($1.bounds(for: view.displayBox), from: $1))
+                    }
+                    XCTAssertTrue(visible.insetBy(dx: -1, dy: -1).contains(spread),
+                                  "Viewport \(size), rotation \(rotation), twoUp \(twoUp), visible \(visible), pages \(spread)")
+                    XCTAssertFalse(view.autoScales)
+                }
+            }
+        }
+    }
     func testFixedZoomSurvivesViewReplacement() {
         let doc = document()
         let first = PDFView(frame: NSRect(x: 0, y: 0, width: 1000, height: 800)); first.document = doc

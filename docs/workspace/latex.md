@@ -20,7 +20,7 @@ Right-click a file, folder or collection and choose **Rename** to edit its row. 
 
 Outline follows the project’s sections. Drag the divider to give either the source or PDF more room.
 
-Use **Fit** to match the page height or choose **Fit width** in the zoom menu. Recompiling keeps your place in the preview. The same behaviour applies in Overleaf.
+Use **Fit** to show the whole PDF page within the available space. The zoom menu offers **Fit height** and **Fit width**. Recompiling keeps your place in the preview. The same behaviour applies in Overleaf.
 
 Opened files appear in the bottom tab bar. Select a tab to switch source, drag it to change its order, or use + to open another project file. Double-click a tab to edit its file name in **Files**. Closing a tab keeps your edits and the file in the project. At least one file stays open. Source tabs stay within their window.
 

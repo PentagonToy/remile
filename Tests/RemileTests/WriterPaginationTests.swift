@@ -90,6 +90,17 @@ import Combine
         }
     }
 
+    func testDefaultFitKeepsTheWholePageVisibleInAPortraitViewport() throws {
+        let (model, desk, window) = makeDesk(size: CGSize(width: 400, height: 1200))
+        defer { desk.suspend(); window.contentView = nil }
+        model.setZoom(1.5); desk.update()
+        model.fitPage()
+        let page = try XCTUnwrap(model.canvas?.sheets.first)
+        let frame = desk.convert(page.bounds, from: page)
+        let visible = desk.convert(desk.scroll.contentView.bounds, from: desk.scroll.contentView)
+        XCTAssertTrue(visible.insetBy(dx: -1, dy: -1).contains(frame))
+    }
+
     func testFitHeightCentresTheCurrentPageAndRetainsExplicitZoom() throws {
         let (model, desk, window) = makeDesk(size: CGSize(width: 1500, height: 1180))
         defer { desk.suspend(); window.contentView = nil }

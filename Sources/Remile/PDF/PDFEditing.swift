@@ -74,7 +74,8 @@ enum PDFEditing {
         guard !lines.isEmpty, lines.count <= 200 else { throw Failure.selection }
         let regions = try lines.map { line -> (PDFPage, CGRect, String) in
             guard line.pages.count == 1, let page = line.pages.first, page.document === document,
-                  let text = line.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Failure.selection }
+                  let text = PDFSelectionText.string(for: line, on: page),
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Failure.selection }
             return (page, line.bounds(for: page), text)
         }
         return try highlights(regions: regions, in: document, color: color)

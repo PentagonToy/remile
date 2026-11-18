@@ -68,7 +68,7 @@ final class ReaderZoom: ObservableObject {
         wide = width
         change(1)
     }
-    func fit(_ mode: PageFit) {
+    func fit(_ mode: PageFit = .page) {
         fitting = (mode, true)
         guard let pdf else { return }
         completePendingFit(in: pdf)
@@ -156,10 +156,10 @@ struct ReaderZoomControls: View {
             Button { zoom.step(1) } label: { SymbolIcon(systemName: "plus").frame(width: RemileControl.toolHit, height: RemileControl.toolHit).contentShape(Rectangle()) }
                 .remileHelp("Zoom in 10 percentage points (⌘+: fine)").accessibilityLabel("Zoom in")
             Button {
-                if text { zoom.fitReadingWidth(wide: true) } else { zoom.fit(.height) }
+                if text { zoom.fitReadingWidth(wide: true) } else { zoom.fit() }
             } label: {
                 Text("Fit").frame(width: 42, height: RemileControl.toolHit).contentShape(Rectangle())
-            }.remileHelp(text ? "Fit width (⌘0)" : "Fit height (⌘0)").keyboardShortcut("0")
+            }.remileHelp(text ? "Fit width (⌘0)" : "Fit page to available space (⌘0)").keyboardShortcut("0")
         }.buttonStyle(RemileToolStyle()).font(RemileType.control).tint(.primary).fixedSize()
             .accessibilityElement(children: .contain)
             .background {
@@ -187,6 +187,7 @@ struct ReaderZoomMenuItems: View {
             Button("Reading width") { zoom.fitReadingWidth(wide: false) }
             Button("Fit width") { zoom.fitReadingWidth(wide: true) }
         } else {
+            Button("Fit") { zoom.fit() }
             Button("Fit height") { zoom.fit(.height) }
             Button("Fit width") { zoom.fit(.width) }
         }

@@ -7,7 +7,9 @@ struct HighlightRegion: Sendable {
     let text: String
     static func make(selection: PDFSelection, document: PDFDocument) -> [HighlightRegion] {
         selection.selectionsByLine().compactMap { line in
-            guard let page = line.pages.first, page.document === document, let text = line.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            guard line.pages.count == 1, let page = line.pages.first, page.document === document,
+                  let text = PDFSelectionText.string(for: line, on: page),
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             return HighlightRegion(page: document.index(for: page), bounds: line.bounds(for: page), text: text)
         }
     }

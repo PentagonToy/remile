@@ -829,7 +829,7 @@ final class PDFSession: NSObject, ObservableObject {
         guard index != NSNotFound else { return nil }
         // A multi-page selection must not be attributed wholly to its first page.
         let selected = selection.pages.count == 1 ? text : selection.selectionsByLine()
-            .filter { $0.pages.first === page }.compactMap(\.string).joined(separator: " ")
+            .filter { $0.pages.first === page }.compactMap { PDFSelectionText.string(for: $0, on: page) }.joined(separator: " ")
         return (index + 1, String(selected.prefix(3000)))
     }
 

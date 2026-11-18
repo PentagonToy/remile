@@ -14,6 +14,7 @@ cat "$project_directory/Sources/Remile/Assistant/AssistantPassage.swift" \
     "$project_directory/Sources/Remile/PDF/PDFCommentGraph.swift" \
     "$project_directory/Sources/Remile/PDF/PDFCommentExport.swift" \
     "$project_directory/Sources/Remile/PDF/PDFNotes.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFSelectionText.swift" \
     "$project_directory/Sources/Remile/PDF/PDFEditing.swift" \
     "$project_directory/Sources/Remile/PDF/PDFPageAssembly.swift" \
     "$project_directory/Sources/Remile/PDF/PDFPageSizing.swift" \

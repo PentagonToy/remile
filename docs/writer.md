@@ -18,7 +18,7 @@ Insert a line, rectangle, image, table or LaTeX equation. Double-click a rectang
 
 Choose one or two columns in the toolbar. Settings at the bottom of the inspector opens paper size, orientation, headers, footers, page numbers and rulers.
 
-Writer opens with the whole page in view. **Fit** centres the current page and matches the available height. Choose **Fit width** in the zoom menu to fill the available width.
+Writer opens with the whole page in view. **Fit** centres the current page within the available space. Choose **Fit height** or **Fit width** in the zoom menu to match one dimension.
 
 Lock position keeps an object in place. Text wrap lets the body flow around it.
 
