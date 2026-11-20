@@ -10,9 +10,13 @@ Find the passage you remember, even when the filename has slipped away.
 
 Use quotation marks for an exact phrase. Results keep the page context beside the match. Open a result to continue reading, or choose **Save reference** to keep the paper in [Reference](../reference.md).
 
+Right-click a document title or page match and choose **Reveal in Finder** to select the original file. This also works when results are sorted by Rank.
+
 ## Keep it current
 
-Use Update Index after files change. The circle beside each folder opens its search coverage. An exclamation mark indicates files that could not be indexed or contain pages without searchable text. Open those PDFs and use Scan & OCR when needed.
+Use **Update Index**, or the update arrow beside a folder, after files change. remile checks for changes, reads new and changed files, and retries files that previously failed. Unchanged files keep their indexed text. Progress counts the files being updated. Adding a folder updates that folder alone.
+
+To read every file in a folder again, right-click its update arrow and choose **Rebuild Index**. The circle beside each folder opens its search coverage. An exclamation mark indicates files that could not be indexed or contain pages without searchable text. Open those PDFs and use Scan & OCR when needed.
 
 Keyword results appear first. Apple Intelligence can then refine a natural-language question on a supported Mac. Standard search remains available offline and needs no AI account.
 
@@ -41,4 +45,4 @@ Search reuses its prepared index between launches.
 
 [Ranking, indexing and result controls](../details/features.md#library-search) · [Ask about a document](../assistant.md)
 
-Update Index also prepares the search engine before reporting completion. The final stage shows “Preparing search…”.
+Update Index also prepares the search engine before reporting completion. The final stage shows “Preparing search…”. Ranking is recalculated across the library after content changes, using indexed text without reading unchanged PDFs again.

@@ -46,21 +46,22 @@ struct LibraryManager: View {
                             SymbolIcon(systemName: state.loadError != nil || state.documents.contains(where: { $0.path.hasPrefix(folder.path.hasSuffix("/") ? folder.path : folder.path + "/") }) ? "exclamationmark.circle" : "checkmark.circle")
                         }
                             .buttonStyle(.plain).remileHelp("Search coverage for this folder").accessibilityLabel("Search coverage for " + folder.name)
-                        Button { model.reindex(folder) } label: { SymbolIcon(systemName: "arrow.clockwise") }
-                            .buttonStyle(.plain).remileHelp("Reindex this folder, including unchanged files").accessibilityLabel("Reindex " + folder.name).disabled(model.indexing)
+                        Button { model.refresh(folderID: folder.id) } label: { SymbolIcon(systemName: "arrow.clockwise") }
+                            .buttonStyle(.plain).remileHelp("Update new and changed files in this folder").accessibilityLabel("Update index for " + folder.name).disabled(model.indexing)
+                            .contextMenu { Button("Rebuild Index") { model.reindex(folder) }.disabled(model.indexing) }
                         Button { model.removeFolder(folder) } label: { SymbolIcon(systemName: "minus.circle") }.buttonStyle(.plain).remileHelp("Remove from Library · keep original files").disabled(model.indexing)
                     }.padding(.vertical, 8)
                 }
                 }.listStyle(.plain).scrollContentBackground(.hidden)
             }
             if model.indexing {
-                if let progress = model.progress, !progress.preparingSearch {
+                if let progress = model.progress, !progress.preparingSearch, progress.total > 0 {
                     ProgressView(value: Double(progress.completed), total: Double(max(1, progress.total)))
                     Text("\(progress.completed) of \(progress.total) · \(progress.name)").font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1)
                 } else {
                     HStack(spacing: RemileControl.spacing) {
                         ProgressView().controlSize(.small)
-                        Text(model.progress?.preparingSearch == true ? "Preparing search…" : "Preparing index…")
+                        Text(model.progress?.name ?? "Checking for changes…")
                             .font(RemileType.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reveal original PDF and Markdown files in Finder by right-clicking Search results.
+- Update new and changed files with the folder's update arrow. Keep unchanged indexed text, show progress for files being updated, and index newly added folders separately. Choose **Rebuild Index** from the arrow's right-click menu when needed.
 - Switch between saved reMarkable devices. The connection window remembers your last selection and links to setup help.
 - Paste TeX maths into Markdown. Preview more equations, including boxed expressions, continued fractions and annotated arrows.
 - See which links open in your browser. ChatGPT sign-in can finish after you close Settings.

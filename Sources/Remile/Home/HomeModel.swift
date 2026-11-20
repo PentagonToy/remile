@@ -169,7 +169,7 @@ final class HomeModel: ObservableObject {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         libraryPresented = true
         Task {
-            do { try await index.add(url); await load(); refresh() }
+            do { let id = try await index.add(url); await load(); refresh(folderID: id) }
             catch { self.error = error.localizedDescription }
         }
     }

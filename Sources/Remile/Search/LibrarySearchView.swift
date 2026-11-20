@@ -143,10 +143,10 @@ struct LibrarySearchView: View {
             }.font(RemileType.caption).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.top, 14)
                 .lineLimit(1)
             if model.indexing {
-                if let progress = model.progress, !progress.preparingSearch {
+                if let progress = model.progress, !progress.preparingSearch, progress.total > 0 {
                     ProgressView(value: Double(progress.completed), total: Double(max(1, progress.total))).padding(.horizontal, 14)
                     Text("\(progress.completed) of \(progress.total) · \(progress.name)").font(RemileType.caption).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal, 14)
-                } else { ProgressView(model.progress?.preparingSearch == true ? "Preparing search…" : "Preparing index…").controlSize(.small).padding(.horizontal, 14) }
+                } else { ProgressView(model.progress?.name ?? "Checking for changes…").controlSize(.small).padding(.horizontal, 14) }
             }
             if model.summary.needsOCR > 0 || model.summary.failed > 0 || model.searchDuration != nil {
                 Button { model.libraryPresented = true } label: {
@@ -216,6 +216,7 @@ struct LibrarySearchView: View {
                                         .contentShape(Rectangle()).onTapGesture { selectResult(entry.hit) }.tag(entry.id)
                                         .remileHelp(entry.hit.excerpt).accessibilityElement(children: .ignore)
                                         .accessibilityLabel("Rank \(entry.rank), \(entry.hit.name), \(entry.hit.location)")
+                                        .contextMenu { revealInFinder(entry.hit.path) }
                                 }
                             } else {
                             ForEach(model.resultGroups) { group in
@@ -232,6 +233,7 @@ struct LibrarySearchView: View {
                                             .background(model.selectedHit?.id == hit.id ? RemileStyle.accent.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
                                             .contentShape(Rectangle()).onTapGesture { selectResult(hit) }.tag(hit.id)
                                             .remileHelp(hit.excerpt).accessibilityElement(children: .ignore).accessibilityLabel("\(hit.name), \(hit.location), relevance position \(group.rank(for: hit) ?? 0)")
+                                            .contextMenu { revealInFinder(hit.path) }
                                     }
                                 } label: {
                                     Button { selectResult(group.hits.first) } label: {
@@ -248,6 +250,7 @@ struct LibrarySearchView: View {
                                             Spacer(minLength: 0)
                                         }.padding(.vertical, 8).scrollContentGutter().contentShape(Rectangle())
                                     }.buttonStyle(.plain).remileHelp(group.path).accessibilityLabel("\(group.name), best relevance position \(group.bestRank), \(group.hits.count) matches")
+                                        .contextMenu { revealInFinder(group.path) }
                                 }
                             }
                             }
@@ -303,6 +306,9 @@ struct LibrarySearchView: View {
         }.frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private func revealInFinder(_ path: String) -> some View {
+        Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+    }
     private func rankBadge(_ rank: Int, best: Bool = false) -> some View {
         Text(best ? "Best #\(rank)" : "#\(rank)")
             .font(.caption2.weight(.medium)).monospacedDigit().fixedSize()

@@ -251,7 +251,7 @@ actor LibraryIndex {
         return result
     }
 
-    func add(_ url: URL) throws {
+    @discardableResult func add(_ url: URL) throws -> String {
         try connect()
         let canonical = url.resolvingSymlinksInPath().standardizedFileURL
         for folder in try folders() {
@@ -260,10 +260,12 @@ actor LibraryIndex {
         }
         let scope = url.startAccessingSecurityScopedResource(); defer { if scope { url.stopAccessingSecurityScopedResource() } }
         let bookmark = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
-        let row = try statement("INSERT INTO folders VALUES(?,?,?)", [UUID().uuidString, canonical.path])
+        let id = UUID().uuidString
+        let row = try statement("INSERT INTO folders VALUES(?,?,?)", [id, canonical.path])
         defer { sqlite3_finalize(row) }
         let status = bookmark.withUnsafeBytes { sqlite3_bind_blob(row, 3, $0.baseAddress, Int32($0.count), transient) }
         guard status == SQLITE_OK, sqlite3_step(row) == SQLITE_DONE else { throw failure() }
+        return id
     }
 
     private func invalidateRanker() {
@@ -289,27 +291,36 @@ actor LibraryIndex {
         try connect(); try ensureSearchText()
         for folder in try folders() where folderID == nil || folder.id == folderID {
             try Task.checkCancellation()
+            await progress(LibraryProgress(completed: 0, total: 0, name: "Checking for changes…"))
             let url = try folder.url()
             let scope = url.startAccessingSecurityScopedResource(); defer { if scope { url.stopAccessingSecurityScopedResource() } }
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw Failure.inaccessible }
             // An incomplete traversal must never remove files from the previous index.
             var traversalError: Error?
-            guard let walker = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { _, error in
+            let keys: Set<URLResourceKey> = [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey, .fileResourceIdentifierKey]
+            guard let walker = FileManager.default.enumerator(at: url, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { _, error in
                 traversalError = error; return false
             }) else { throw Failure.inaccessible }
+            let previous = try statement("SELECT path,revision FROM documents WHERE folder=? AND error IS NULL", [folder.id])
+            var revisions: [String: String] = [:]
+            while sqlite3_step(previous) == SQLITE_ROW { revisions[text(previous, 0)] = text(previous, 1) }
+            sqlite3_finalize(previous)
             var files: [URL] = []
+            var seen = Set<String>()
             while let file = walker.nextObject() as? URL {
                 try Task.checkCancellation()
-                if ["pdf", "md", "markdown", "mdown"].contains(file.pathExtension.lowercased()), try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true { files.append(file.resolvingSymlinksInPath()) }
+                if ["pdf", "md", "markdown", "mdown"].contains(file.pathExtension.lowercased()), try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
+                    let canonical = file.resolvingSymlinksInPath()
+                    guard seen.insert(canonical.path).inserted else { continue }
+                    if try force || revisions[canonical.path] != revision(canonical) { files.append(canonical) }
+                }
             }
             if let traversalError { throw traversalError }
-            var seen = Set<String>()
             let clock = ContinuousClock()
             var nextProgress = clock.now
             for (offset, file) in files.sorted(by: { $0.path < $1.path }).enumerated() {
                 try Task.checkCancellation()
-                seen.insert(file.path)
                 if clock.now >= nextProgress {
                     await progress(LibraryProgress(completed: offset, total: files.count, name: file.lastPathComponent))
                     nextProgress = clock.now.advanced(by: .milliseconds(100))
