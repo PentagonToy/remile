@@ -102,8 +102,14 @@ struct MarkdownWorkspace: View {
                 editor.apply(.init(range: NSRange(location: 0, length: (before as NSString).length), text: after, selection: selection), name: "CLI edit", focus: false)
                 return view.string == after
             }
-            preview.sourceSelection = { [weak editor = editor, weak state = presentation] line, text in state?.mode = .split; editor?.reveal(line: line, text: text) }
-            editor.syncToPreview = { [weak preview = preview, weak state = presentation] line in state?.mode = .split; preview?.reveal(line: line) }
+            preview.sourceSelection = { [weak editor = editor, weak state = presentation] line, text in
+                guard state?.mode == .split else { return }
+                editor?.reveal(line: line, text: text)
+            }
+            editor.syncToPreview = { [weak preview = preview, weak state = presentation] line in
+                guard state?.mode == .split else { return }
+                preview?.reveal(line: line)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.print"))) { event in if event.object as? ReadingSession === session { printDocument() } }
         .alert("Unable to export or print", isPresented: Binding(get: { presentation.error != nil }, set: { if !$0 { presentation.error = nil } })) {

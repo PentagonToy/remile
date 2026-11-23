@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep Markdown in Edit or Read when double-clicking text. Jump between source and preview only in Split.
+
 ## 0.2.7 — 20 November 2026
 
 - Reveal original PDF and Markdown files in Finder by right-clicking Search results.
