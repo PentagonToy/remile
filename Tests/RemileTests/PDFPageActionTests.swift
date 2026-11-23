@@ -188,7 +188,6 @@ import SwiftUI
                 let bounds = CGRect(x: 40, y: 40 + mark * 24, width: 20, height: 16)
                 page.addAnnotation(PDFNotes.make(text: "Note \(index)-\(mark)", author: "Fixture", bounds: bounds))
                 let highlight = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
-                highlight.contents = "Highlight \(index)-\(mark)"
                 page.addAnnotation(highlight)
             }
         }

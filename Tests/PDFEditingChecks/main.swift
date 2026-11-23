@@ -171,7 +171,7 @@ try rotated.write(to: directory.appendingPathComponent("rotated-with-reply.pdf")
 let groupedDocument = PDFDocument(data: original)!, groupedPage = groupedDocument.page(at: 0)!
 let grouped = try PDFEditing.highlights(regions: [(groupedPage, CGRect(x: 40, y: 100, width: 80, height: 14), "First line"), (groupedPage, CGRect(x: 40, y: 80, width: 50, height: 14), "with math"), (groupedPage, CGRect(x: 95, y: 82, width: 5, height: 9), "x")], in: groupedDocument, color: .yellow)
 expect(grouped.count == 1 && grouped[0].1.quadrilateralPoints?.count == 12, "Math fragments share one highlight with separate line geometry")
-expect(grouped[0].1.contents == "First line with math x", "One coherent excerpt is retained for the sidebar")
+expect(grouped[0].1.contents == nil, "A plain highlight does not create a popup comment")
 let groupedGraph = PDFCommentGraph(document: groupedDocument)
 let groupedBytes = try PDFEditing.apply(grouped, adding: true, in: groupedDocument, graph: groupedGraph)
 let groupedReload = PDFDocument(data: groupedBytes)!.page(at: 0)!.annotations.filter { $0.type == "Highlight" }

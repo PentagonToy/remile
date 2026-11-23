@@ -341,7 +341,7 @@
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
         "Sources/Remile/Markdown/MarkdownWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafViews.swift",
-        "Sources/Remile/PDF/PDFWorkspace.swift",
+        "Sources/Remile/PDF/PDFDocumentMenu.swift",
         "Sources/Remile/Reference/ReferencePaperSearch.swift",
         "Sources/Remile/Reference/ReferencePublisherAccess.swift"
       ]
@@ -884,6 +884,7 @@
     {
       "name": "xmark.circle.fill",
       "sources": [
+        "Sources/Remile/PDF/PDFWorkspace.swift",
         "Sources/Remile/Search/LibrarySearchView.swift"
       ]
     }

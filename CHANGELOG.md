@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Refresh PDFs changed in another app when returning to remile, keeping your reading position and protecting unsaved edits. Open the file in another PDF app or reveal it in Finder from **PDF options**.
+- Find notes by text or author, with replies shown in context. Load long note lists without blocking the reader.
+- Keep new highlights free of automatic popup comments. Preserve comments imported from other PDF apps.
 - Keep Markdown in Edit or Read when double-clicking text. Jump between source and preview only in Split.
 
 ## 0.2.7 — 20 November 2026

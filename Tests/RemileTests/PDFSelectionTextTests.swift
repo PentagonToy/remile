@@ -21,7 +21,7 @@ import PDFKit
         XCTAssertEqual(PDFSelectionText.string(for: readable, on: page), "Remile")
         let marks = try PDFEditing.highlights(for: readable, in: document)
         XCTAssertEqual(marks.count, 1)
-        XCTAssertEqual(marks.first?.1.contents, "Remile")
+        XCTAssertNil(marks.first?.1.contents)
         let separated = UnreadableLineSelection(page: page, ranges: [NSRange(location: 0, length: 6), NSRange(location: 7, length: 7)])
         XCTAssertEqual(PDFSelectionText.string(for: separated, on: page), "Remileediting")
 

@@ -17,7 +17,9 @@ cat "$project_directory/Sources/Remile/Assistant/AssistantPassage.swift" \
     "$project_directory/Sources/Remile/PDF/PDFEditing.swift" \
     "$project_directory/Sources/Remile/PDF/PDFPageAssembly.swift" \
     "$project_directory/Sources/Remile/PDF/PDFPageSizing.swift" \
-    "$project_directory/Sources/Remile/PDF/PDFEditProtection.swift" \
+    <(sed '/^struct PDFProtectionButton/,$d' "$project_directory/Sources/Remile/PDF/PDFEditProtection.swift") \
+    "$project_directory/Sources/Remile/PDF/PDFReadingPosition.swift" \
+    "$project_directory/Sources/Remile/PDF/SearchExcerpt.swift" \
     "$project_directory/Sources/Remile/PDF/PDFDrawing.swift" \
     "$project_directory/Sources/Remile/PDF/PDFSession.swift" \
     "$project_directory/Tests/PDFEditingChecks/main.swift" > "$check_directory/pdf-editing-checks.swift"

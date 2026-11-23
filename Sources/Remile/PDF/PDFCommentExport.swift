@@ -36,7 +36,6 @@ enum PDFCommentExport {
     }
     static func isReviewComment(_ annotation: PDFAnnotation) -> Bool {
         let types: Set<String> = ["Text", "FreeText", "Line", "Square", "Circle", "Polygon", "PolyLine", "Highlight", "Underline", "Squiggly", "StrikeOut", "Stamp", "Caret", "Ink", "FileAttachment", "Sound", "Redact"]
-        if ["Highlight", "Underline", "Squiggly", "StrikeOut"].contains(annotation.type ?? ""), annotation.value(forAnnotationKey: PDFAnnotationKey(rawValue: "IRT")) == nil { return false }
         return types.contains(annotation.type ?? "") && annotation.contents?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
     static func capture(_ document: PDFDocument, name: String, graph supplied: PDFCommentGraph? = nil) throws -> Archive {
@@ -60,7 +59,7 @@ enum PDFCommentExport {
             let identity = ObjectIdentifier(annotation)
             guard included.contains(identity), let id = ids[identity] else { return nil }
             let kind = annotation.type ?? "Text"
-            let quote = ["Highlight", "Underline", "Squiggly", "StrikeOut"].contains(kind) ? page.selection(for: annotation.bounds)?.string : nil
+            let quote = ["Highlight", "Underline", "Squiggly", "StrikeOut"].contains(kind) ? PDFSelectionText.quote(for: annotation, on: page) : nil
             return Comment(id: id, page: number, kind: kind, author: annotation.userName?.isEmpty == false ? annotation.userName : nil, text: annotation.contents ?? "", quote: quote, modified: annotation.modificationDate.map(date.string(from:)), replyTo: parents[identity].flatMap { ids[$0] })
         }
         return Archive(document: URL(fileURLWithPath: name).lastPathComponent, comments: comments)

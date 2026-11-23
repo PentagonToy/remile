@@ -31,6 +31,21 @@ final class PDFSession: NSObject, ObservableObject {
     }
     private var commentPresentation: (threads: [Thread], indices: [ObjectIdentifier: Int])?
 
+    @Published var noteQuery = "" { didSet { filteredCommentThreads = nil } }
+    private var filteredCommentThreads: [Thread]?
+
+    var visibleThreads: [Thread] {
+        if let filteredCommentThreads { return filteredCommentThreads }
+        let query = noteQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = query.isEmpty ? threads : threads.filter { thread in
+            ([thread.root] + thread.replies).contains {
+                $0.text.localizedStandardContains(query) || $0.author.localizedStandardContains(query)
+            }
+        }
+        filteredCommentThreads = result
+        return result
+    }
+
     var threads: [Thread] {
         if let commentPresentation { return commentPresentation.threads }
         let indices = Dictionary(comments.enumerated().map { ($0.element.id, $0.offset) },
@@ -78,7 +93,7 @@ final class PDFSession: NSObject, ObservableObject {
     @Published private(set) var searching = false
     @Published private(set) var resultLimitReached = false
     @Published private(set) var currentPage = 0
-    @Published private(set) var comments: [Comment] = [] { didSet { commentPresentation = nil } }
+    @Published private(set) var comments: [Comment] = [] { didSet { commentPresentation = nil; filteredCommentThreads = nil } }
     @Published private(set) var highlights: [Comment] = []
     @Published private(set) var loadingComments = false
     @Published var selectedComment: ObjectIdentifier?
@@ -106,14 +121,26 @@ final class PDFSession: NSObject, ObservableObject {
     var readingURL: URL?
     private var restoredReadingPosition = false
     private var restoringReadingPosition = false
+    private var pendingReadingPosition: PDFReadingPosition.Marker?
 
-    func persistReadingPosition() {
-        guard restoredReadingPosition, !restoringReadingPosition, let url = readingURL, let view,
-              let document, view.document === document,
-              let destination = view.currentDestination, let page = destination.page else { return }
+    private func visiblePage(in view: PDFView) -> PDFPage? {
+        let clip = view.documentView?.enclosingScrollView?.contentView
+        let visible = clip.map { view.convert($0.bounds, from: $0) } ?? view.bounds
+        return view.page(for: CGPoint(x: visible.midX, y: visible.midY), nearest: true) ?? view.currentPage
+    }
+    private func currentReadingPosition() -> PDFReadingPosition.Marker? {
+        guard let view, let document, view.document === document,
+              let destination = view.currentDestination, let anchor = destination.page,
+              let page = visiblePage(in: view) else { return nil }
         let index = document.index(for: page)
-        guard index != NSNotFound else { return }
-        PDFReadingPosition.save(.init(page: index, x: destination.point.x, y: destination.point.y, updated: Date()), for: url)
+        guard index != NSNotFound else { return nil }
+        let point = view.convert(view.convert(destination.point, from: anchor), to: page)
+        return .init(page: index, x: point.x, y: point.y, updated: Date())
+    }
+    func persistReadingPosition() {
+        guard restoredReadingPosition, !restoringReadingPosition, pendingReadingPosition == nil,
+              let url = readingURL, let position = currentReadingPosition() else { return }
+        PDFReadingPosition.save(position, for: url)
     }
 
     func restoreReadingPosition() {
@@ -121,7 +148,7 @@ final class PDFSession: NSObject, ObservableObject {
               let url = readingURL, let document, !document.isLocked,
               let view, view.document === document else { return }
         restoredReadingPosition = true
-        guard let marker = PDFReadingPosition.read(url), document.pageCount > 0,
+        guard let marker = pendingReadingPosition ?? PDFReadingPosition.read(url), document.pageCount > 0,
               let page = document.page(at: min(marker.page, document.pageCount - 1)) else { return }
         restoringReadingPosition = true
         DispatchQueue.main.async { [weak self, weak view] in
@@ -130,7 +157,9 @@ final class PDFSession: NSObject, ObservableObject {
             guard let view, view.document === document, self.libraryDestination == nil else { return }
             let bounds = page.bounds(for: view.displayBox)
             let point = CGPoint(x: min(max(marker.x, bounds.minX), bounds.maxX), y: min(max(marker.y, bounds.minY), bounds.maxY))
+            view.layoutDocumentView()
             view.go(to: PDFDestination(page: page, at: point))
+            self.pendingReadingPosition = nil
             self.currentPage = document.index(for: page) + 1
         }
     }
@@ -169,6 +198,7 @@ final class PDFSession: NSObject, ObservableObject {
         undoManager?.removeAllActions(withTarget: self)
         inputData = data
         restoredReadingPosition = false
+        pendingReadingPosition = nil
         libraryDestination = nil
         document = PDFDocument(data: data)
         installNoteRenderer(in: document)
@@ -205,12 +235,14 @@ final class PDFSession: NSObject, ObservableObject {
         restoreReadingPosition()
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: .PDFViewPageChanged, object: view, queue: .main) { [weak self, weak view] _ in
-            guard let self, let view, let page = view.currentPage, let document = self.document,
-                  view.document === document, page.document === document else { return }
-            let index = document.index(for: page)
-            guard index != NSNotFound else { return }
-            if self.currentPage != index + 1 { self.currentPage = index + 1 }
-            self.persistReadingPosition()
+            Task { @MainActor [weak self, weak view] in
+                guard let self, let view, let page = self.visiblePage(in: view), let document = self.document,
+                      view.document === document, page.document === document else { return }
+                let index = document.index(for: page)
+                guard index != NSNotFound else { return }
+                if self.currentPage != index + 1 { self.currentPage = index + 1 }
+                self.persistReadingPosition()
+            }
         })
         observers.append(center.addObserver(forName: .PDFViewSelectionChanged, object: view, queue: .main) { [weak self, weak view] _ in
             guard let self, let view, self.view === view else { return }
@@ -222,6 +254,7 @@ final class PDFSession: NSObject, ObservableObject {
         observers.append(center.addObserver(forName: .PDFViewAnnotationHit, object: view, queue: .main) { [weak self] notification in
             guard let self, let annotation = notification.userInfo?["PDFAnnotationHit"] as? PDFAnnotation,
                   Self.isReviewComment(annotation) else { return }
+            self.noteQuery = ""
             self.selectedComment = ObjectIdentifier(annotation)
             self.sidebar = .comments
             self.showsSidebar = true
@@ -362,14 +395,16 @@ final class PDFSession: NSObject, ObservableObject {
                 if let page = document.page(at: index) {
                     for annotation in page.annotations {
                         if ["Highlight", "Underline", "Squiggly", "StrikeOut"].contains(annotation.type ?? "") {
-                            let excerpt = annotation.contents?.isEmpty == false ? annotation.contents! : page.selection(for: annotation.bounds)?.string ?? "Highlighted text"
+                            let excerpt = PDFSelectionText.quote(for: annotation, on: page) ?? annotation.contents ?? "Highlighted text"
                             marks.append(Comment(id: ObjectIdentifier(annotation), annotation: annotation, page: page, pageNumber: index + 1, author: annotation.userName ?? "", text: excerpt, parent: nil))
                         }
                         guard Self.isReviewComment(annotation) else { continue }
                         guard let text = annotation.contents, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                         // Build reply identities only if the reader has a note to display.
                         if self.commentGraph == nil {
-                            self.commentGraph = PDFCommentGraph(document: document, sourceData: self.inputData, allowSignatureChanges: true)
+                            guard let graph = try? await PDFCommentGraph.importing(document: document, sourceData: self.inputData),
+                                  !Task.isCancelled, self.commentGeneration == token, self.document === document else { return }
+                            if self.commentGraph == nil { self.commentGraph = graph }
                         }
                         notes.append(Comment(id: ObjectIdentifier(annotation), annotation: annotation, page: page,
                                              pageNumber: index + 1, author: annotation.userName ?? "Unknown author", text: text,
@@ -431,11 +466,12 @@ final class PDFSession: NSObject, ObservableObject {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let page = draftPage else { return }
         if let editedNote {
-            if updateNote(editedNote, text: text, author: author, date: Date()) { cancelComment() }
+            if updateNote(editedNote, text: text, author: author, date: Date()) { noteQuery = ""; cancelComment() }
             return
         }
         let note = PDFNotes.make(text: text, author: author, bounds: draftBounds)
         if applyNote(note, page: page, adding: true, parent: draftParent) {
+            noteQuery = ""
             selectedComment = ObjectIdentifier(note)
             cancelComment()
         }
@@ -794,8 +830,10 @@ final class PDFSession: NSObject, ObservableObject {
         return bytes
     }
     func discardChanges(to data: Data) {
+        let position = currentReadingPosition()
         inputData = nil
         load(data)
+        pendingReadingPosition = position
     }
 
     private func acceptEdit(_ bytes: Data) {

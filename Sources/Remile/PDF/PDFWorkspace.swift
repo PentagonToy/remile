@@ -45,6 +45,7 @@ struct PDFWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             readingHeader
+            if let readingSession { PDFFileNotice(reader: readingSession) }
             readingColumns.frame(maxWidth: .infinity, maxHeight: .infinity).layoutPriority(1)
             if let message = session.citationStatus {
                 HStack {
@@ -70,6 +71,7 @@ struct PDFWorkspace: View {
             session.undoManager = undoManager
             session.readingURL = fileURL
             session.load(data)
+            readingSession?.checkPDFFile()
             if showsAnnotationPanel { session.loadComments() }
             revealLibraryPage()
             if !session.query.isEmpty { session.search() }
@@ -88,7 +90,17 @@ struct PDFWorkspace: View {
         }
         .onChange(of: fileURL) { assistant.useHistory(fileURL.map { "pdf:" + $0.path }) }
         .onChange(of: navigation.request?.id) { revealLibraryPage() }
-        .onDisappear { slides.finish(); sidebarPresentation.cancel(); session.persistReadingPosition(); assistant.cancel(); session.stop(); session.protection.finish(); readingSession?.commentsExport = nil; readingSession?.pdfInspection = nil; readingSession?.pdfSession = nil }
+        .onDisappear { slides.finish(); sidebarPresentation.cancel(); session.persistReadingPosition(); assistant.cancel(); session.stop(); session.protection.finish(); readingSession?.cancelPDFRefresh(); readingSession?.commentsExport = nil; readingSession?.pdfInspection = nil; readingSession?.pdfSession = nil }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if pdfTabVisible { readingSession?.checkPDFFile() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            if pdfTabVisible { readingSession?.checkPDFFile() }
+        }
+        .onChange(of: pdfTabVisible) { _, visible in
+            if visible { readingSession?.checkPDFFile() }
+            else { readingSession?.cancelPDFRefresh() }
+        }
         .onChange(of: session.query) { session.search() }
         .onChange(of: session.caseSensitive) { session.search() }
         .onChange(of: session.pendingAnnotationRevision) { readingSession?.objectWillChange.send() }
@@ -223,14 +235,11 @@ struct PDFWorkspace: View {
                 .disabled(session.document?.allowsCopying != true || session.document?.isLocked != false)
 
             }
-            if compact {
-                Menu {
-                    ReaderZoomMenuItems(zoom: zoom)
-                } label: { SymbolIcon(systemName: "ellipsis").frame(width: RemileControl.toolHit, height: RemileControl.toolHit) }
-                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).disabled(session.showsOverview)
-                    .accessibilityLabel("Zoom options").remileHelp("Zoom and fit options")
-            } else { ReaderZoomControls(zoom: zoom).disabled(session.showsOverview) }
+            if !compact { ReaderZoomControls(zoom: zoom).disabled(session.showsOverview) }
             Button { session.sidebar = .search; session.showsSidebar = true; searchFocused = true } label: { SymbolIcon(systemName: "magnifyingglass") }.accessibilityLabel("Find in document").remileHelp("Find in document").keyboardShortcut("f")
+            if compact || readingSession != nil {
+                PDFDocumentMenu(reader: readingSession, zoom: zoom, compact: compact, showsOverview: session.showsOverview)
+            }
         }.buttonStyle(RemileToolStyle()).font(RemileType.control).labelStyle(.titleAndIcon)
     }
 
@@ -407,6 +416,18 @@ struct PDFWorkspace: View {
 
     private var commentsPanel: some View {
         VStack(spacing: 0) {
+            if !session.comments.isEmpty || !session.noteQuery.isEmpty {
+                HStack(spacing: RemileControl.spacing) {
+                    SymbolIcon(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Find a note", text: $session.noteQuery).textFieldStyle(.plain)
+                        .accessibilityLabel("Find a note")
+                    if !session.noteQuery.isEmpty {
+                        Button { session.noteQuery = "" } label: { SymbolIcon(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.plain).accessibilityLabel("Clear note search")
+                    }
+                }.padding(12)
+                Divider()
+            }
             commentList
             if let context = session.draftContext {
                 Divider()
@@ -433,11 +454,14 @@ struct PDFWorkspace: View {
                 ProgressView("Loading notes…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if session.comments.isEmpty {
                 ContentUnavailableView("No notes", systemImage: "text.bubble").frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if session.visibleThreads.isEmpty {
+                Text("No matching notes").foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 12) {
-                            ForEach(session.threads) { thread in
+                            ForEach(session.visibleThreads) { thread in
                                 VStack(alignment: .leading, spacing: 0) {
                                     commentCard(thread.root, parent: session.parentComment(of: thread.root),
                                                 hasReplies: !thread.replies.isEmpty)
@@ -473,10 +497,11 @@ struct PDFWorkspace: View {
                 Text(original.text).font(RemileType.small).foregroundStyle(.secondary).lineLimit(1).help(original.text)
             }
             Text(comment.text).textSelection(.enabled).multilineTextAlignment(.leading)
+            if let date = comment.annotation.modificationDate {
+                Text(date, format: .dateTime.day().month(.abbreviated).year())
+                    .font(RemileType.small).foregroundStyle(.secondary)
+            }
             HStack {
-                if let date = comment.annotation.modificationDate {
-                    Text(date, style: .date).font(RemileType.small).foregroundStyle(.secondary)
-                }
                 Spacer()
                 Button("Edit") { session.beginEditingNote(comment.annotation) }.buttonStyle(.borderless).font(RemileType.caption)
                     .disabled(session.document?.allowsCommenting != true || session.document?.isEncrypted == true)

@@ -14,54 +14,74 @@ final class PDFCommentGraph {
     private var signedWriter: PDFSignedAnnotations?
     private var signatureError: Error?
 
-    init(document: PDFDocument, sourceData: Data? = nil, allowSignatureChanges: Bool = false) {
+    convenience init(document: PDFDocument, sourceData: Data? = nil, allowSignatureChanges: Bool = false) {
+        self.init(document: document, sourceData: sourceData, allowSignatureChanges: allowSignatureChanges, importAnnotations: true)
+    }
+
+    private init(document: PDFDocument, sourceData: Data?, allowSignatureChanges: Bool, importAnnotations: Bool) {
         allowsSignatureChanges = allowSignatureChanges
         signed = PDFFormPreservation.hasDigitalSignature(document)
         signatureSource = signed ? sourceData.map { PDFSignedAnnotations.Source(document: document, data: $0) } : nil
         sourceDocument = document
         // PDFKit can omit an outline that has never been materialised before its first write.
         _ = document.outlineRoot
+        if importAnnotations {
+            for index in 0..<document.pageCount { importPage(index, in: document) }
+        }
+    }
+
+    @MainActor static func importing(document: PDFDocument, sourceData: Data?) async throws -> PDFCommentGraph {
+        try Task.checkCancellation()
+        let graph = PDFCommentGraph(document: document, sourceData: sourceData, allowSignatureChanges: true, importAnnotations: false)
         for index in 0..<document.pageCount {
-            guard let page = document.page(at: index), let rawPage = page.pageRef, let pageDictionary = rawPage.dictionary else { importIsComplete = false; continue }
-            var rawArray: CGPDFArrayRef?
-            guard CGPDFDictionaryGetArray(pageDictionary, "Annots", &rawArray), let rawArray else {
-                if !page.annotations.isEmpty { importIsComplete = false }
-                continue
-            }
-            var mappings: [(PDFAnnotation, CGPDFDictionaryRef)] = []
-            let annotations = page.annotations.filter { $0.type != "Popup" }
-            for position in 0..<CGPDFArrayGetCount(rawArray) {
-                var dictionary: CGPDFDictionaryRef?
-                guard CGPDFArrayGetDictionary(rawArray, position, &dictionary), let dictionary else { importIsComplete = false; continue }
-                if Self.name("Subtype", dictionary) == "Popup" { continue }
-                guard mappings.count < annotations.count else { importIsComplete = false; continue }
-                let annotation = annotations[mappings.count]
-                guard Self.name("Subtype", dictionary) == annotation.type else { importIsComplete = false; continue }
-                mappings.append((annotation, dictionary))
-            }
-            guard mappings.count == annotations.count else { importIsComplete = false; continue }
-            var identities: [UInt: ObjectIdentifier] = [:]
-            for (annotation, dictionary) in mappings {
-                let key = UInt(bitPattern: dictionary.rawValue)
-                if identities[key] != nil { importIsComplete = false }
-                identities[key] = ObjectIdentifier(annotation)
-            }
-            for (annotation, dictionary) in mappings {
-                let identity = ObjectIdentifier(annotation)
-                var rawName: CGPDFStringRef?
-                if CGPDFDictionaryGetString(dictionary, "NM", &rawName), let rawName,
-                   let text = CGPDFStringCopyTextString(rawName) { names[identity] = text as String }
-                else { names[identity] = UUID().uuidString }
-                var parent: CGPDFDictionaryRef?
-                var rawParent: CGPDFObjectRef?
-                if CGPDFDictionaryGetObject(dictionary, "IRT", &rawParent) {
-                    let relation = Self.name("RT", dictionary)
-                    guard CGPDFDictionaryGetDictionary(dictionary, "IRT", &parent), let parent,
-                          let parentID = identities[UInt(bitPattern: parent.rawValue)], relation == nil || relation == "R" else {
-                        importIsComplete = false; continue
-                    }
-                    parents[identity] = parentID
+            try Task.checkCancellation()
+            graph.importPage(index, in: document)
+            await Task.yield()
+        }
+        try Task.checkCancellation()
+        return graph
+    }
+
+    private func importPage(_ index: Int, in document: PDFDocument) {
+        guard let page = document.page(at: index), let rawPage = page.pageRef, let pageDictionary = rawPage.dictionary else { importIsComplete = false; return }
+        var rawArray: CGPDFArrayRef?
+        guard CGPDFDictionaryGetArray(pageDictionary, "Annots", &rawArray), let rawArray else {
+            if !page.annotations.isEmpty { importIsComplete = false }
+            return
+        }
+        var mappings: [(PDFAnnotation, CGPDFDictionaryRef)] = []
+        let annotations = page.annotations.filter { $0.type != "Popup" }
+        for position in 0..<CGPDFArrayGetCount(rawArray) {
+            var dictionary: CGPDFDictionaryRef?
+            guard CGPDFArrayGetDictionary(rawArray, position, &dictionary), let dictionary else { importIsComplete = false; continue }
+            if Self.name("Subtype", dictionary) == "Popup" { continue }
+            guard mappings.count < annotations.count else { importIsComplete = false; continue }
+            let annotation = annotations[mappings.count]
+            guard Self.name("Subtype", dictionary) == annotation.type else { importIsComplete = false; continue }
+            mappings.append((annotation, dictionary))
+        }
+        guard mappings.count == annotations.count else { importIsComplete = false; return }
+        var identities: [UInt: ObjectIdentifier] = [:]
+        for (annotation, dictionary) in mappings {
+            let key = UInt(bitPattern: dictionary.rawValue)
+            if identities[key] != nil { importIsComplete = false }
+            identities[key] = ObjectIdentifier(annotation)
+        }
+        for (annotation, dictionary) in mappings {
+            let identity = ObjectIdentifier(annotation)
+            var rawName: CGPDFStringRef?
+            if CGPDFDictionaryGetString(dictionary, "NM", &rawName), let rawName,
+               let text = CGPDFStringCopyTextString(rawName) { names[identity] = text as String }
+            else { names[identity] = UUID().uuidString }
+            var parent: CGPDFDictionaryRef?
+            var rawParent: CGPDFObjectRef?
+            if CGPDFDictionaryGetObject(dictionary, "IRT", &rawParent) {
+                let relation = Self.name("RT", dictionary)
+                guard CGPDFDictionaryGetDictionary(dictionary, "IRT", &parent), let parent,
+                      let parentID = identities[UInt(bitPattern: parent.rawValue)], relation == nil || relation == "R" else {
+                    importIsComplete = false; continue
                 }
+                parents[identity] = parentID
             }
         }
     }

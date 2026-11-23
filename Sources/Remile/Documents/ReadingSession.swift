@@ -43,6 +43,11 @@ final class ReadingSession: ObservableObject {
     @Published private(set) var url: URL?
     @Published private(set) var isUntitled = false
     private var original = Data()
+    private var observedPDFVersion: PDFFileAccess.Version?
+    private var pdfRefreshTask: Task<Void, Never>?
+    private var pdfRefreshGeneration = UUID()
+    @Published private(set) var pdfChangedOutside = false
+    @Published private(set) var pdfFileError: String?
     var bytes: Data {
         switch document.content {
         case .pdf(let data): return data
@@ -60,6 +65,9 @@ final class ReadingSession: ObservableObject {
             content = .markdown(text)
         }
         guard confirmLeaving() else { return }
+        cancelPDFRefresh()
+        pdfChangedOutside = false; pdfFileError = nil
+        observedPDFVersion = suppliedData == nil ? try? PDFFileAccess.Version(destination) : nil
         pdfSession?.protection.finish()
         externalEdits = []; provenance = EditorProvenance.Tracker(); editSource = nil; commentsExport = nil; pdfInspection = nil; pdfSession = nil
         identity = UUID(); document.content = content; original = data; url = destination; isUntitled = false
@@ -73,6 +81,8 @@ final class ReadingSession: ObservableObject {
     }
     @discardableResult func newMarkdown() -> Bool {
         guard confirmLeaving() else { return false }
+        cancelPDFRefresh()
+        pdfChangedOutside = false; pdfFileError = nil; observedPDFVersion = nil
         pdfSession?.protection.finish()
         externalEdits = []; provenance = EditorProvenance.Tracker(); editSource = nil; commentsExport = nil; pdfInspection = nil; pdfSession = nil
         identity = UUID(); document.content = .markdown(""); original = Data(); isUntitled = true; hasSavedEditMarks = false
@@ -121,8 +131,15 @@ final class ReadingSession: ObservableObject {
         }
         panel.allowsOtherFileTypes = false
         guard panel.runModal() == .OK, let destination = panel.url else { return }
-        do { try StorageFileAccess.requireWritable(destination); try bytes.write(to: destination, options: .atomic) }
-        catch { NSAlert(error: error).runModal() }
+        do {
+            if destination.resolvingSymlinksInPath() == url?.resolvingSymlinksInPath() {
+                guard try Data(contentsOf: destination) == original else {
+                    throw NSError(domain: "Remile", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose a different name to keep both versions of this file."])
+                }
+            }
+            try StorageFileAccess.requireWritable(destination)
+            try bytes.write(to: destination, options: .atomic)
+        } catch { NSAlert(error: error).runModal(); return }
     }
     @discardableResult func save() -> Bool {
         guard let url else { return true }
@@ -142,9 +159,12 @@ final class ReadingSession: ObservableObject {
         do {
             // Avoid overwriting a document edited in another application.
             guard try Data(contentsOf: url) == original else {
+                if case .pdf = document.content { pdfChangedOutside = true }
                 throw NSError(domain: "Remile", code: 1, userInfo: [NSLocalizedDescriptionKey: "This file changed in another app. Keep this window open and save a copy before replacing it."])
             }
             let data = bytes; try data.write(to: url, options: .atomic); original = data
+            observedPDFVersion = try? PDFFileAccess.Version(url)
+            pdfChangedOutside = false; pdfFileError = nil
             saveEditMarks(at: url)
             pdfSession?.protection.committed()
             objectWillChange.send(); return true
@@ -170,9 +190,107 @@ final class ReadingSession: ObservableObject {
     }
     @discardableResult func close() -> Bool {
         guard confirmLeaving() else { return false }
+        cancelPDFRefresh()
+        pdfChangedOutside = false; pdfFileError = nil; observedPDFVersion = nil
         pdfSession?.protection.finish()
         externalEdits = []; provenance = EditorProvenance.Tracker(); editSource = nil; commentsExport = nil; pdfInspection = nil; pdfSession = nil
         url = nil; original = Data(); document = ReadingDocument(); isUntitled = false; return true
+    }
+
+    func cancelPDFRefresh() {
+        pdfRefreshTask?.cancel(); pdfRefreshTask = nil; pdfRefreshGeneration = UUID()
+    }
+
+    func checkPDFFile() {
+        guard pdfTabVisible, case .pdf = document.content, url != nil else { return }
+        cancelPDFRefresh()
+        let token = pdfRefreshGeneration
+        pdfRefreshTask = Task { [weak self] in
+            defer { if self?.pdfRefreshGeneration == token { self?.pdfRefreshTask = nil } }
+            do { try await self?.refreshPDFFile() }
+            catch is CancellationError { }
+            catch {
+                guard self?.pdfRefreshGeneration == token else { return }
+                self?.pdfFileError = "This PDF could not be refreshed. " + error.localizedDescription
+            }
+        }
+    }
+
+    private var hasPDFLocalEdits: Bool { dirty || pdfSession?.draftContext != nil }
+
+    /// Recheck state after the background read so typing or a tab switch cannot lose edits.
+    func refreshPDFFile(discardingLocalChanges: Bool = false) async throws {
+        guard case .pdf = document.content, let url else { return }
+        let identity = identity, baseline = original, token = pdfRefreshGeneration
+        let localBytes = bytes, annotationRevision = pdfSession?.pendingAnnotationRevision
+        let noteDraft = pdfSession?.draft, noteAuthor = pdfSession?.author, noteContext = pdfSession?.draftContext
+        let previous = pdfChangedOutside ? nil : observedPDFVersion
+        let worker = Task.detached(priority: .utility) { try PDFFileAccess.read(url, since: previous) }
+        let snapshot = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+        try Task.checkCancellation()
+        guard self.identity == identity, self.url == url, self.original == baseline,
+              pdfRefreshGeneration == token, let snapshot else { return }
+        if discardingLocalChanges, bytes != localBytes || pdfSession?.pendingAnnotationRevision != annotationRevision ||
+            pdfSession?.draft != noteDraft || pdfSession?.author != noteAuthor || pdfSession?.draftContext != noteContext {
+            pdfChangedOutside = true
+            return
+        }
+        if snapshot.data != original || (discardingLocalChanges && hasPDFLocalEdits) {
+            guard discardingLocalChanges || !hasPDFLocalEdits else {
+                observedPDFVersion = snapshot.version; pdfChangedOutside = true; return
+            }
+            guard let pdf = PDFDocument(data: snapshot.data), pdf.pageCount > 0 else { throw CocoaError(.fileReadCorruptFile) }
+            pdfSession?.persistReadingPosition()
+            pdfSession?.discardChanges(to: snapshot.data)
+            document.content = .pdf(snapshot.data)
+            original = snapshot.data
+        }
+        observedPDFVersion = snapshot.version
+        pdfChangedOutside = false; pdfFileError = nil
+    }
+
+    func reloadPDFFile() {
+        if hasPDFLocalEdits {
+            let alert = NSAlert()
+            alert.messageText = "Reload this PDF?"
+            alert.informativeText = "Your unsaved edits will be discarded. Save a copy first to keep them."
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Reload")
+            guard alert.runModal() == .alertSecondButtonReturn else { return }
+        }
+        cancelPDFRefresh()
+        observedPDFVersion = nil
+        let token = pdfRefreshGeneration
+        pdfRefreshTask = Task { [weak self] in
+            defer { if self?.pdfRefreshGeneration == token { self?.pdfRefreshTask = nil } }
+            do { try await self?.refreshPDFFile(discardingLocalChanges: true) }
+            catch is CancellationError { }
+            catch {
+                guard self?.pdfRefreshGeneration == token else { return }
+                self?.pdfFileError = error.localizedDescription
+            }
+        }
+    }
+
+    func dismissPDFFileError() { pdfFileError = nil }
+
+    func openPDF(in application: URL) {
+        guard let url, case .pdf = document.content else { return }
+        guard pdfSession?.draftContext == nil else {
+            pdfFileError = "Finish or cancel your note before opening this PDF in another app."
+            return
+        }
+        if dirty && !save() { return }
+        let identity = identity
+        let configuration = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.open([url], withApplicationAt: application, configuration: configuration) { [weak self] _, error in
+            if let error {
+                Task { @MainActor in
+                    guard self?.identity == identity, self?.url == url else { return }
+                    self?.pdfFileError = error.localizedDescription
+                }
+            }
+        }
     }
 }
 

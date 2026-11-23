@@ -24,6 +24,14 @@ Select text, right-click and choose **Highlight** to mark it with your default c
 
 Use the page overview to reorder, rotate or add pages. Right-click a thumbnail to delete that page or the selected pages. Keep at least one page. Undo restores a deletion. Export comments from the Comments heading when you want your notes as Markdown or JSON.
 
+## Work with other PDF apps
+
+Open **PDF options → Open With** to choose an installed PDF app, or **Show in Finder** to locate the file. remile saves pending PDF edits before opening another app. Finish or cancel an unfinished note first.
+
+When you return to remile or select its PDF tab, changes saved by another app appear at your reading position. If you also have unsaved edits, remile keeps them and offers **Save a Copy…** and **Reload…**. Save a copy before reloading if you need both versions. Reload discards your unsaved edits after confirmation.
+
+In **Notes**, search by text or author. A matching reply keeps its whole conversation visible. New highlights do not add an automatic popup comment. Existing comments remain in the PDF.
+
 ## Copy an image or table
 
 Drag an embedded image into Notes or another image-aware app. You can also right-click and choose **Copy Image**.

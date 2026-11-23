@@ -29,6 +29,12 @@ Search prepares document structure and scientific aliases during indexing. It st
 
 The CLI uses the same document operations as the interface. Editing requires explicit targets and matching revisions. Online work passes through the shared network gate.
 
+## PDF files and notes
+
+`ReadingSession` checks file metadata when a PDF regains focus or its tab is selected. Changed bytes are read off-main and applied only if the document and refresh request are still current. Pending edits and unfinished notes block automatic replacement. Reload requires confirmation before discarding them. A live reading anchor protects the page and position while PDFKit replaces its document. There is no polling timer or additional disk cache.
+
+PDFKit access stays on the main actor. Reply import yields between pages and stops when cancelled. Note search retains a matching reply’s conversation. New highlights keep their quotation in page geometry rather than automatic comment text. Imported comments remain intact. See [the PDF guide](workspace/pdf.md#work-with-other-pdf-apps) for opening files in other apps and keeping both edited versions.
+
 ## Development checks
 
 Focused checks live in `tools/check_*.sh`. Use temporary fixtures and an external output directory. Check changed behaviour without repeating unrelated validation. Builds, installation and live-service checks are separate actions.
