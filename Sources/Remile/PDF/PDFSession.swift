@@ -115,6 +115,31 @@ final class PDFSession: NSObject, ObservableObject {
     private var editedNote: PDFAnnotation?
     var isEditingNote: Bool { editedNote != nil }
     private var commentGraph: PDFCommentGraph?
+    private let formEdits = PDFFormEdits()
+    var hasPendingFormEdits: Bool { formEdits.hasChanges }
+    var hasActiveFormEditor: Bool {
+        guard formEdits.hasFields, let editor = view?.window?.firstResponder as? NSTextView else { return false }
+        return isFormEditor(editor)
+    }
+    private func isFormEditor(_ editor: NSTextView) -> Bool {
+        guard formEdits.hasFields, editor.isEditable, let view else { return false }
+        return editor.isDescendant(of: view) || (editor.delegate as? NSView)?.isDescendant(of: view) == true
+    }
+    private func observeFormEdits() {
+        formEdits.attach(document) { [weak self, weak document = document] in
+            Task { @MainActor in
+                guard let self, let document, self.document === document, self.formEdits.hasChanges else { return }
+                self.acceptFormEdit()
+            }
+        }
+    }
+    private func acceptFormEdit() {
+        hasPendingAnnotations = true; pendingAnnotationRevision = UUID(); editingError = nil
+    }
+    func finishFormEditing() throws {
+        if hasActiveFormEditor, let view, view.window?.makeFirstResponder(view) != true { throw CocoaError(.userCancelled) }
+        if formEdits.hasChanges { acceptFormEdit() }
+    }
     var isReplyDraft: Bool { draftParent != nil }
     private var draftBounds = CGRect.zero
     private weak var view: PDFView?
@@ -202,6 +227,7 @@ final class PDFSession: NSObject, ObservableObject {
         libraryDestination = nil
         document = PDFDocument(data: data)
         installNoteRenderer(in: document)
+        observeFormEdits()
         openedWithSignature = document.map(PDFEditing.hasDigitalSignature) ?? false
         protection.configure(document)
         pageRevision = UUID(); showsOverview = false
@@ -250,6 +276,13 @@ final class PDFSession: NSObject, ObservableObject {
             guard available != self.selectionHighlightAvailable else { return }
             self.selectionHighlightAvailable = available
             self.objectWillChange.send()
+        })
+        observers.append(center.addObserver(forName: NSText.didChangeNotification, object: nil, queue: .main) { [weak self] notification in
+            guard let editor = notification.object as? NSTextView else { return }
+            Task { @MainActor [weak self, weak editor] in
+                guard let self, let editor, self.hasActiveFormEditor, self.isFormEditor(editor) else { return }
+                self.acceptFormEdit()
+            }
         })
         observers.append(center.addObserver(forName: .PDFViewAnnotationHit, object: view, queue: .main) { [weak self] notification in
             guard let self, let annotation = notification.userInfo?["PDFAnnotationHit"] as? PDFAnnotation,
@@ -800,7 +833,7 @@ final class PDFSession: NSObject, ObservableObject {
         guard let document else { return }
         let graph = commentGraph ?? PDFCommentGraph(document: document, sourceData: inputData, allowSignatureChanges: true)
         let previous = PageState(document: document, graph: graph, bytes: try hasPendingAnnotations ? graph.serialize(document) : (inputData ?? graph.serialize(document)), page: currentPage, selection: selectedOverviewPages)
-        stop(); self.document = state.document; installNoteRenderer(in: state.document); commentGraph = state.graph
+        stop(); self.document = state.document; installNoteRenderer(in: state.document); observeFormEdits(); commentGraph = state.graph
         currentPage = state.page; selectedOverviewPages = state.selection
         pageRevision = UUID(); matches = []; activeCitation = nil; citationStatus = nil
         cancelComment(); acceptEdit(state.bytes)
@@ -822,6 +855,7 @@ final class PDFSession: NSObject, ObservableObject {
     }
     func prepareSave() throws -> Data {
         guard let document else { throw PDFEditing.Failure.invalid }
+        try finishFormEditing()
         guard hasPendingAnnotations else { return inputData ?? Data() }
         let graph = commentGraph ?? PDFCommentGraph(document: document, sourceData: inputData, allowSignatureChanges: true)
         commentGraph = graph
@@ -837,6 +871,7 @@ final class PDFSession: NSObject, ObservableObject {
     }
 
     private func acceptEdit(_ bytes: Data) {
+        formEdits.committed()
         hasPendingAnnotations = false
         inputData = bytes; committedData = bytes; editingError = nil
         cancelCommentScan()
@@ -887,6 +922,7 @@ final class PDFSession: NSObject, ObservableObject {
         let candidate = password
         password = ""
         if document.unlock(withPassword: candidate) {
+            observeFormEdits()
             assistantPassword = candidate
             passwordError = nil
             currentPage = document.pageCount > 0 ? 1 : 0

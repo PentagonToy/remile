@@ -20,6 +20,8 @@ With the PDF focused, Left and Right move between pages. Up and Down keep normal
 
 Choose a highlight, note or drawing tool. Save writes changes to the open file. Undo lets you revisit an edit.
 
+For a PDF form, fill in its fields and press **⌘S** to save text, checkboxes and selections. You can save while typing in a field. The fields remain editable when you reopen the PDF.
+
 Select text, right-click and choose **Highlight** to mark it with your default colour. The colour row offers Yellow, Orange, Blue, Green and Purple. Choosing a colour sets the default without marking text. remile remembers one default across all PDFs in the reader and Search, including after restarting the app. New marks use a stronger tint that stays consistent after saving and reopening.
 
 Use the page overview to reorder, rotate or add pages. Right-click a thumbnail to delete that page or the selected pages. Keep at least one page. Undo restores a deletion. Export comments from the Comments heading when you want your notes as Markdown or JSON.

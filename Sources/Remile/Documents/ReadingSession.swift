@@ -54,7 +54,7 @@ final class ReadingSession: ObservableObject {
         case .markdown(let text): return Data(text.utf8)
         }
     }
-    var dirty: Bool { url != nil && ((isUntitled ? !bytes.isEmpty : bytes != original) || (pdfSession?.hasPendingAnnotations ?? false)) }
+    var dirty: Bool { url != nil && ((isUntitled ? !bytes.isEmpty : bytes != original) || (pdfSession?.hasPendingAnnotations ?? false) || (pdfSession?.hasPendingFormEdits ?? false)) }
     func open(_ destination: URL, data suppliedData: Data? = nil, recordRecent: Bool = true) throws {
         if destination.standardizedFileURL == url?.standardizedFileURL { return }
         let data = try suppliedData ?? Data(contentsOf: destination)
@@ -176,6 +176,7 @@ final class ReadingSession: ObservableObject {
         hasSavedEditMarks = !externalEdits.isEmpty
     }
     @discardableResult func confirmLeaving() -> Bool {
+        do { try pdfSession?.finishFormEditing() } catch { NSAlert(error: error).runModal(); return false }
         pdfSession?.persistReadingPosition()
         guard dirty else { return true }
         let alert = NSAlert()
@@ -216,7 +217,7 @@ final class ReadingSession: ObservableObject {
         }
     }
 
-    private var hasPDFLocalEdits: Bool { dirty || pdfSession?.draftContext != nil }
+    private var hasPDFLocalEdits: Bool { dirty || pdfSession?.draftContext != nil || pdfSession?.hasActiveFormEditor == true }
 
     /// Recheck state after the background read so typing or a tab switch cannot lose edits.
     func refreshPDFFile(discardingLocalChanges: Bool = false) async throws {
@@ -231,7 +232,8 @@ final class ReadingSession: ObservableObject {
         guard self.identity == identity, self.url == url, self.original == baseline,
               pdfRefreshGeneration == token, let snapshot else { return }
         if discardingLocalChanges, bytes != localBytes || pdfSession?.pendingAnnotationRevision != annotationRevision ||
-            pdfSession?.draft != noteDraft || pdfSession?.author != noteAuthor || pdfSession?.draftContext != noteContext {
+            pdfSession?.draft != noteDraft || pdfSession?.author != noteAuthor || pdfSession?.draftContext != noteContext ||
+            pdfSession?.hasActiveFormEditor == true {
             pdfChangedOutside = true
             return
         }
@@ -280,6 +282,7 @@ final class ReadingSession: ObservableObject {
             pdfFileError = "Finish or cancel your note before opening this PDF in another app."
             return
         }
+        do { try pdfSession?.finishFormEditing() } catch { pdfFileError = error.localizedDescription; return }
         if dirty && !save() { return }
         let identity = identity
         let configuration = NSWorkspace.OpenConfiguration()

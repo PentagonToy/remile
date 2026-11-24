@@ -21,6 +21,7 @@ cat "$project_directory/Sources/Remile/Assistant/AssistantPassage.swift" \
     "$project_directory/Sources/Remile/PDF/PDFReadingPosition.swift" \
     "$project_directory/Sources/Remile/PDF/SearchExcerpt.swift" \
     "$project_directory/Sources/Remile/PDF/PDFDrawing.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFFormEdits.swift" \
     "$project_directory/Sources/Remile/PDF/PDFSession.swift" \
     "$project_directory/Tests/PDFEditingChecks/main.swift" > "$check_directory/pdf-editing-checks.swift"
 swift -module-cache-path "$check_directory/module-cache" "$check_directory/pdf-editing-checks.swift" "$check_directory"

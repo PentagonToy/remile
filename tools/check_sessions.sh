@@ -20,6 +20,7 @@ cat "$project_directory/Sources/Remile/Assistant/AssistantPassage.swift" \
     "$project_directory/Sources/Remile/PDF/PDFPageSizing.swift" \
     "$project_directory/Sources/Remile/PDF/PDFEditProtection.swift" \
     "$project_directory/Sources/Remile/PDF/PDFDrawing.swift" \
+    "$project_directory/Sources/Remile/PDF/PDFFormEdits.swift" \
     "$project_directory/Sources/Remile/PDF/PDFSession.swift" \
     "$project_directory/Tests/SessionChecks/main.swift" > "$check_directory/session-checks.swift"
 swift -module-cache-path "$check_directory/module-cache" "$check_directory/session-checks.swift" "$check_directory"

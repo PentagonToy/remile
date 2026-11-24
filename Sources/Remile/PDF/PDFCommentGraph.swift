@@ -123,8 +123,9 @@ final class PDFCommentGraph {
     func serialize(_ document: PDFDocument) throws -> Data {
         signaturePreservedData = nil
         do { try prepareSignedWriter() } catch { if !allowsSignatureChanges { throw error } }
-        let forms = try PDFFormPreservation.snapshot(document)
         guard sourceDocument === document, importIsComplete, let bytes = document.dataRepresentation() else { throw PDFReplyWriter.Failure.unsupported }
+        // PDFKit updates its field dictionaries when it serializes live widget values.
+        let forms = try PDFFormPreservation.snapshot(document)
         let file = try PDFReplyWriter.File(bytes)
         let pages = try file.pages()
         guard pages.count == document.pageCount, let provider = CGDataProvider(data: bytes as CFData),
