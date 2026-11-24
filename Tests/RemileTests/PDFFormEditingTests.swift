@@ -100,6 +100,18 @@ import XCTest
         XCTAssertEqual(try field("Name", in: reopened).widgetStringValue, "New edit")
         session.stop()
     }
+    func testSaveUsesSerializedFormTreeWhenDocumentReferenceIsStale() throws {
+        let bytes = fixture()
+        let document = try XCTUnwrap(StaleFormDocument(data: bytes))
+        let graph = PDFCommentGraph(document: document, sourceData: bytes)
+        try field("Name", in: document).widgetStringValue = "Updated value"
+        let original = bytes + Data("\n% Unedited field tree\n".utf8)
+        document.originalReference = try XCTUnwrap(CGPDFDocument(try XCTUnwrap(CGDataProvider(data: original as CFData))))
+        XCTAssertEqual(try canonicalText("Name", in: document), "")
+        let reopened = try XCTUnwrap(PDFDocument(data: graph.serialize(document)))
+        XCTAssertEqual(try field("Name", in: reopened).widgetStringValue, "Updated value")
+        XCTAssertEqual(try canonicalText("Name", in: reopened), "Updated value")
+    }
     func testExternalRefreshPreservesUnsavedFormValues() async throws {
         let url = try file(), reader = ReadingSession()
         try reader.open(url, recordRecent: false)
@@ -117,4 +129,9 @@ import XCTest
         let copy = try XCTUnwrap(PDFDocument(data: session.prepareSave()))
         XCTAssertEqual(try field("Name", in: copy).widgetStringValue, "Local form value")
     }
+}
+
+private final class StaleFormDocument: PDFDocument {
+    var originalReference: CGPDFDocument?
+    override var documentRef: CGPDFDocument? { originalReference ?? super.documentRef }
 }

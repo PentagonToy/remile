@@ -34,7 +34,11 @@ enum PDFFormPreservation {
 
 
     static func snapshot(_ document: PDFDocument) throws -> String? {
-        guard let catalog = document.documentRef?.catalog else { throw PDFReplyWriter.Failure.unsupported }
+        guard let reference = document.documentRef else { throw PDFReplyWriter.Failure.unsupported }
+        return try snapshot(reference)
+    }
+    static func snapshot(_ document: CGPDFDocument) throws -> String? {
+        guard let catalog = document.catalog else { throw PDFReplyWriter.Failure.unsupported }
         var form: CGPDFObjectRef?, permissions: CGPDFObjectRef?
         let hasForm = CGPDFDictionaryGetObject(catalog, "AcroForm", &form)
         let hasPermissions = CGPDFDictionaryGetObject(catalog, "Perms", &permissions)

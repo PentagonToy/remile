@@ -27,7 +27,6 @@ trap cleanup EXIT
 mkdir -p "$work/staging" "$work/module-cache"
 codesign --verify --deep --strict "$application"
 ditto "$application" "$work/staging/remile.app"
-ln -s /Applications "$work/staging/Applications"
 swift -module-cache-path "$work/module-cache" "$source_directory/tools/dmg_layout.swift" background "$work/staging/.background.tiff"
 hdiutil create -volname "remile. $version" -srcfolder "$work/staging" -fs HFS+ -format UDRW "$work/working.dmg"
 hdiutil attach -nobrowse -noautoopen -noverify -readwrite -plist "$work/working.dmg" > "$work/attach.plist"

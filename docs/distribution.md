@@ -8,6 +8,10 @@ Open the [latest release](https://github.com/PentagonToy/remile/releases/latest)
 
 The app and DMG are Developer ID signed and Apple-notarised. macOS may ask you to confirm the first launch.
 
+## Development builds
+
+In an Unreleased DMG, double-click **remile.app** and choose **Install**. remile copies itself to Applications and opens. If remile is running, finish saving your work when asked. Documents and settings stay in place. The current 0.2.7 release uses the drag-to-Applications instructions above.
+
 ## Use Homebrew
 
 ```sh

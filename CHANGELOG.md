@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Install from a DMG by opening remile.app and choosing **Install**. remile copies itself to Applications and opens, keeping your documents and settings.
 - Save PDF form text, checkboxes and selections, including a field you are still typing in. Keep the fields editable after reopening.
 - Refresh PDFs changed in another app when returning to remile, keeping your reading position and protecting unsaved edits. Open the file in another PDF app or reveal it in Finder from **PDF options**.
 - Find notes by text or author, with replies shown in context. Load long note lists without blocking the reader.

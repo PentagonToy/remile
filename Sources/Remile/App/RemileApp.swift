@@ -32,6 +32,7 @@ final class RemileDelegate: NSObject, NSApplicationDelegate {
 struct RemileEntry {
     @MainActor static func main() {
         if CommandLine.arguments.dropFirst().first == "--cli" { exit(EditorCLI.run(Array(CommandLine.arguments.dropFirst(2)))) }
+        if AppInstallation.runIfNeeded() { return }
         do { try LegacyMigration.run() }
         catch { let alert = NSAlert(); alert.messageText = "Could not migrate your library"; alert.informativeText = error.localizedDescription + " Your previous data is unchanged."; alert.runModal(); return }
         applyStorageChange("Storage", keys: [StorageLocation.pendingPreference]) { try StoragePaths.applyPendingStorage() }

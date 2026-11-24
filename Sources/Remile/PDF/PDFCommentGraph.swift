@@ -124,12 +124,12 @@ final class PDFCommentGraph {
         signaturePreservedData = nil
         do { try prepareSignedWriter() } catch { if !allowsSignatureChanges { throw error } }
         guard sourceDocument === document, importIsComplete, let bytes = document.dataRepresentation() else { throw PDFReplyWriter.Failure.unsupported }
-        // PDFKit updates its field dictionaries when it serializes live widget values.
-        let forms = try PDFFormPreservation.snapshot(document)
         let file = try PDFReplyWriter.File(bytes)
         let pages = try file.pages()
         guard pages.count == document.pageCount, let provider = CGDataProvider(data: bytes as CFData),
               let outputDocument = CGPDFDocument(provider) else { throw PDFReplyWriter.Failure.unsupported }
+        // The live documentRef can retain old field values after PDFKit serializes edits.
+        let forms = try PDFFormPreservation.snapshot(outputDocument)
         var refs: [ObjectIdentifier: PDFReplyWriter.Reference] = [:]
         var pageIndices: [ObjectIdentifier: Int] = [:]
         for (index, pageRef) in pages.enumerated() {
