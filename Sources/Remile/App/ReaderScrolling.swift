@@ -3,6 +3,10 @@ import AppKit
 /// Keep macOS momentum/trackpad physics; configure elasticity instead of synthesising input.
 enum ReaderScrolling {
     static let preference = "reader.elasticScrolling"
+    static func detach(_ view: NSView) {
+        if let scroll = view as? NSScrollView { NativeScrollMotion.detach(scroll) }
+        for child in view.subviews { detach(child) }
+    }
     static func configure(_ view: NSView) {
         if let scroll = view as? NSScrollView {
             let enabled = UserDefaults.standard.object(forKey: preference) as? Bool ?? true

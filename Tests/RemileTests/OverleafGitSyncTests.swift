@@ -589,6 +589,49 @@ final class OverleafGitSyncTests: XCTestCase {
         let connection = OverleafConnection(id: UUID(), projectID: String(repeating: "a", count: 24), name: "Fixture", account: "Test", branch: "main")
         try work(local, other, remote, connection)
     }
+    func testFreeSpaceRequiresAnExactRemoteCopyAndProtectsPendingWork() throws {
+        try fixture { local, other, remote, project in
+            let recovery = local.deletingLastPathComponent().appendingPathComponent("Recovery")
+            func verify() throws {
+                try OverleafGit.verifyRemovableCopy(project, root: local, recovery: recovery, transport: remote.path)
+            }
+            try verify()
+            let source = local.appendingPathComponent("main.tex")
+            let original = try Data(contentsOf: source)
+            try Data("Unpublished edit".utf8).write(to: source)
+            XCTAssertThrowsError(try verify())
+            try original.write(to: source)
+
+            let ignored = local.appendingPathComponent("private.tex")
+            try Data("private.tex\n".utf8).write(to: local.appendingPathComponent(".git/info/exclude"))
+            try Data("Local-only data".utf8).write(to: ignored)
+            XCTAssertThrowsError(try verify())
+            try FileManager.default.removeItem(at: ignored)
+
+            _ = try git(["update-index", "--assume-unchanged", "main.tex"], local)
+            XCTAssertThrowsError(try verify())
+            _ = try git(["update-index", "--no-assume-unchanged", "main.tex"], local)
+
+            let stage = OverleafSyncRecovery.stage(project, recovery: recovery)
+            try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: true)
+            XCTAssertThrowsError(try verify())
+            try FileManager.default.removeItem(at: stage)
+
+            let head = try OverleafGit.head(local)
+            let localOnly = try git(["commit-tree", "HEAD^{tree}", "-p", head, "-m", "Local history"], local)
+            _ = try git(["update-ref", "refs/heads/local-only", localOnly], local)
+            XCTAssertThrowsError(try verify())
+            _ = try git(["update-ref", "-d", "refs/heads/local-only"], local)
+            _ = try git(["update-ref", OverleafSyncRecovery.reference(), localOnly], local)
+            try verify()
+
+            _ = try git(["commit", "--allow-empty", "-m", "Remote update"], other)
+            _ = try git(["push"], other)
+            XCTAssertThrowsError(try verify())
+            XCTAssertEqual(try Data(contentsOf: source), original)
+        }
+    }
+
     func testRemoteChangesMergeWithLocalWorkAndPreserveTypingDuringTransport() throws {
         try fixture { local, other, remote, connection in
             try "Alpha local\nBeta two\n".write(to: local.appendingPathComponent("main.tex"), atomically: true, encoding: .utf8)

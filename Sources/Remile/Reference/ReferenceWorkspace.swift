@@ -116,7 +116,7 @@ struct ReferenceWorkspace: View {
         }.focusedSceneValue(\.workspaceActions, WorkspaceActions(restorePanes: { state.paneReset = UUID() }))
         .font(RemileType.control).background(RemileStyle.background).tint(RemileStyle.accent)
             .overlay(Color.black.opacity(draggingFiles ? 0.10 : 0).allowsHitTesting(false))
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: draggingFiles)
+            .animation(reduceMotion ? nil : RemileMotion.feedback, value: draggingFiles)
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: $state.windowTarget) { receive($0) }
             .onChange(of: remarkable.error) { _, error in
                 if !showRemarkable, let error {
@@ -411,8 +411,8 @@ struct ReferenceWorkspace: View {
         }.buttonStyle(.plain)
             .opacity(draggingFiles && state.hoveredRecord != record.id ? 0.6 : 1)
             .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(RemileStyle.accent.opacity(state.hoveredRecord == record.id ? 1 : 0), lineWidth: 2).allowsHitTesting(false))
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: draggingFiles)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: state.hoveredRecord)
+            .animation(reduceMotion ? nil : RemileMotion.feedback, value: draggingFiles)
+            .animation(reduceMotion ? nil : RemileMotion.feedback, value: state.hoveredRecord)
             .contextMenu {
             let chosen = model.contextRecords(record)
             Button("Copy BibTeX", systemImage: "doc.on.clipboard") { model.copy(chosen) }

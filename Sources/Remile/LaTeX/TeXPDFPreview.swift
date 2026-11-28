@@ -3,6 +3,13 @@ import PDFKit
 
 @MainActor final class TeXPDFController: NSObject, ObservableObject {
     weak var view: PDFView?
+    let canvas: PDFCanvasReuse<TeXPreviewPDFView>
+    init(canvas: PDFCanvasReuse<TeXPreviewPDFView>? = nil) {
+        self.canvas = canvas ?? PDFCanvasReuse()
+        super.init()
+    }
+    weak var zoom: ReaderZoom?
+    var elasticScrolling: Bool?
     @Published private(set) var page = 0
     @Published private(set) var pages = 0
     private var pageObserver: NSObjectProtocol?
@@ -154,14 +161,23 @@ struct TeXPDFPreview: NSViewRepresentable {
     let zoom: ReaderZoom
     let controller: TeXPDFController
     let jump: TeXProject.PDFJump?
+    @AppStorage(ReaderScrolling.preference) private var elasticScrolling = true
     func makeCoordinator() -> TeXPDFController { controller }
     func makeNSView(context: Context) -> PDFView {
-        let view = TeXPreviewPDFView(); view.navigation = controller; view.autoScales = true; view.displayMode = .singlePageContinuous; view.document = document
-        ReaderScrolling.configure(view); zoom.attach(view); controller.attach(view); return view
+        let view = controller.canvas.take { TeXPreviewPDFView() }
+        view.navigation = controller; view.autoScales = true; view.displayMode = .singlePageContinuous; view.document = document
+        ReaderScrolling.configure(view)
+        zoom.attach(view); controller.zoom = zoom; controller.attach(view)
+        controller.elasticScrolling = elasticScrolling
+        return view
     }
     func updateNSView(_ view: PDFView, context: Context) {
         updateDocument(in: view)
-        ReaderScrolling.configure(view); controller.show(jump)
+        if controller.elasticScrolling != elasticScrolling {
+            ReaderScrolling.configure(view)
+            controller.elasticScrolling = elasticScrolling
+        }
+        controller.show(jump)
     }
     func updateDocument(in view: PDFView) {
         guard view.document !== document else { return }
@@ -170,6 +186,7 @@ struct TeXPDFPreview: NSViewRepresentable {
         let previousIndex = page.flatMap { view.document?.index(for: $0) } ?? 0
         let index = previousIndex == NSNotFound ? 0 : previousIndex
         view.document = document
+        ReaderScrolling.configure(view)
         zoom.completePendingFit(in: view)
         if let target = document.page(at: min(index, max(0, document.pageCount - 1))) {
             if let destination, index < document.pageCount {
@@ -181,5 +198,14 @@ struct TeXPDFPreview: NSViewRepresentable {
         }
         Task { @MainActor in controller.updatePage() }
     }
-    static func dismantleNSView(_ view: PDFView, coordinator: TeXPDFController) { view.document = nil; if coordinator.view === view { coordinator.detach() } }
+    static func dismantleNSView(_ view: PDFView, coordinator: TeXPDFController) {
+        coordinator.zoom?.detach(view)
+        if coordinator.view === view { coordinator.detach() }
+        ReaderScrolling.detach(view)
+        view.clearSelection()
+        view.highlightedSelections = []
+        view.document = nil
+        (view as? TeXPreviewPDFView)?.navigation = nil
+        coordinator.canvas.store(view)
+    }
 }

@@ -24,6 +24,6 @@ Find matching passages across your own PDF and Markdown folders. [Find a passage
 
 ## Overleaf
 
-Connect a project link with a Git token. Online synchronises saved source automatically. Local keeps work local. Comments and suggestions connect separately. [Connect a project →](workspace/overleaf.md)
+Browse your account, download projects as needed and edit offline or sync automatically through Git. [Browse and download projects →](workspace/overleaf.md)
 
 [Workspace overview](workspace-layout.md) · [Complete feature reference](details/features.md)

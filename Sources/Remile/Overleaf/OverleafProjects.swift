@@ -215,7 +215,7 @@ struct OverleafProjects: View {
                 catalogue = projects
             }
             completedLoad = key
-            library.rememberTags(projects, profile: profile)
+            try library.rememberCatalogue(projects, profile: profile)
         } catch {
             guard key == loadKey, !Task.isCancelled else { return }
             needsConnection = (error as? OverleafWebClient.Failure)?.needsConnection == true

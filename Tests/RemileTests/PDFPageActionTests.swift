@@ -14,6 +14,26 @@ import SwiftUI
         }
         return document
     }
+    func testPDFCanvasCannotBeReusedWithADocumentOrWhileMounted() {
+        _ = NSApplication.shared
+        let reuse = PDFCanvasReuse<PDFView>()
+        let view = reuse.take { PDFView() }
+        view.document = document()
+        reuse.store(view)
+        XCTAssertFalse(reuse.take { PDFView() } === view)
+
+        view.document = nil
+        let parent = NSView()
+        parent.addSubview(view)
+        reuse.store(view)
+        XCTAssertFalse(reuse.take { PDFView() } === view)
+
+        view.removeFromSuperview()
+        let reused = reuse.take { PDFView() }
+        XCTAssertTrue(reused === view)
+        XCTAssertNil(reused.document)
+        XCTAssertFalse(reuse.take { PDFView() } === reused)
+    }
     func testFitIsOneShotAndUsesCurrentPage() {
         _ = NSApplication.shared
         let view = PDFView(frame: NSRect(x: 0, y: 0, width: 1000, height: 800))

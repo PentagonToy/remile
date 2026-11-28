@@ -11,8 +11,8 @@ struct SearchWaitingView: View {
             else { ProgressView(value: 0.35).progressViewStyle(.linear) }
             Text("Somewhere in these pages, a few words are waiting…")
                 .font(RemileType.callout).lineLimit(1).minimumScaleFactor(0.75)
-            TimelineView(.periodic(from: startedAt, by: 0.1)) { tick in
-                Text("\(max(0, tick.date.timeIntervalSince(startedAt)), specifier: "%.1f") s elapsed")
+            TimelineView(.periodic(from: startedAt, by: 1)) { tick in
+                Text("\(max(0, tick.date.timeIntervalSince(startedAt)), specifier: "%.0f") s elapsed")
                     .font(RemileType.caption).monospacedDigit().foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }

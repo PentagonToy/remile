@@ -52,7 +52,10 @@ struct MarkdownWorkspace: View {
         VStack(spacing: 0) {
             ViewThatFits(in: .horizontal) { editorToolbar(compact: false); editorToolbar(compact: true) }
             Divider()
-            ReaderSplit(sizing: .outline, isPresented: presentation.outline, minimum: 180, maximum: 300, minimumContent: 580, label: "outline", revealToken: presentation.paneReset.uuidString, pane: { outlinePanel }, content: { documentContent })
+            ReaderSplit(sizing: .outline, isPresented: presentation.outline, animatesResizing: false, minimum: 180, maximum: 300, minimumContent: 580, label: "outline", revealToken: presentation.paneReset.uuidString, pane: {
+                outlinePanel.opacity(presentation.outline ? 1 : 0)
+                    .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.outline)
+            }, content: { documentContent })
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             HStack(spacing: 14) {
@@ -77,8 +80,6 @@ struct MarkdownWorkspace: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("remile.exportMarkdownPDF"))) { event in if event.object as? ReadingSession === session { exportPDF() } }
         .font(RemileType.control).tint(DocumentTone.accent(pdf: false))
-        .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.outline)
-        .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.ask)
         .task(id: EditorWritingReview.Request(source: source, enabled: spellcheck, language: language)) {
             await writing.check(source, enabled: spellcheck, language: language, editor: editor)
         }
@@ -140,7 +141,7 @@ struct MarkdownWorkspace: View {
     private func editorToolbar(compact: Bool) -> some View {
         HStack(spacing: RemileControl.spacing) {
                 Text("Markdown").font(RemileType.heading)
-                Button { withAnimation(reduceMotion ? nil : RemileMotion.panel) { presentation.outline.toggle() } } label: { SymbolIcon(systemName: "list.bullet.indent") }.remileHelp("Show document outline").accessibilityLabel("Document outline")
+                Button { presentation.outline.toggle() } label: { SymbolIcon(systemName: "list.bullet.indent") }.remileHelp("Show document outline").accessibilityLabel("Document outline")
                 if !compact { ReaderZoomControls(zoom: zoom, text: true) }
                 Spacer()
                 if !compact {
@@ -212,24 +213,31 @@ struct MarkdownWorkspace: View {
         }.frame(maxHeight: .infinity, alignment: .top).background(RemileStyle.sidebar)
             .animation(reduceMotion ? nil : RemileMotion.disclosure, value: presentation.expanded)
     }
-    @ViewBuilder private var documentContent: some View {
-        if presentation.ask {
-            ReaderSplit(side: .trailing, initial: 330, minimum: 240, maximum: 420, minimumContent: 280, preferPaneWhenNarrow: true, label: "Markdown Ask", revealToken: presentation.paneReset.uuidString, pane: {
-                AssistantPanel(assistant: assistant, passages: [], topic: fileURL?.deletingPathExtension().lastPathComponent ?? "this document", select: { item in editor.reveal(line: item.location.unit); presentation.ask = false }, close: { presentation.ask = false }, retrieve: { question in
-                    let lines = source.components(separatedBy: "\n")
-                    let passages = stride(from: 0, to: lines.count, by: 16).map { index in AssistantPassage(location: .init(path: fileURL?.path ?? "Untitled.md", unit: index + 1, label: "Line \(index + 1)"), text: lines[index..<min(lines.count, index + 16)].joined(separator: "\n")) }
-                    return AssistantRetrieval.rank(passages, question: question)
-                })
-            }, content: { plainDocumentContent })
-        } else { plainDocumentContent }
+    private var documentContent: some View {
+        ReaderSplit(side: .trailing, isPresented: presentation.ask, animatesResizing: false, initial: 330, minimum: 240, maximum: 420, minimumContent: 280, preferPaneWhenNarrow: true, label: "Markdown Ask", revealToken: presentation.paneReset.uuidString, pane: {
+            ZStack {
+                if presentation.ask {
+                    AssistantPanel(assistant: assistant, passages: [], topic: fileURL?.deletingPathExtension().lastPathComponent ?? "this document", select: { item in editor.reveal(line: item.location.unit); presentation.ask = false }, close: { presentation.ask = false }, retrieve: { question in
+                        let lines = source.components(separatedBy: "\n")
+                        let passages = stride(from: 0, to: lines.count, by: 16).map { index in AssistantPassage(location: .init(path: fileURL?.path ?? "Untitled.md", unit: index + 1, label: "Line \(index + 1)"), text: lines[index..<min(lines.count, index + 16)].joined(separator: "\n")) }
+                        return AssistantRetrieval.rank(passages, question: question)
+                    }).modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
+                }
+            }.animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.ask)
+        }, content: { documentMode })
     }
-    @ViewBuilder private var plainDocumentContent: some View {
-        switch presentation.mode {
-        case .read: previewView
-        case .edit: editorView
-        case .split:
-            ReaderSplit(sizing: .equal, minimum: 280, maximum: .greatestFiniteMagnitude, minimumContent: 280, preferPaneWhenNarrow: true, label: "Markdown editor", revealToken: presentation.paneReset.uuidString, pane: { editorView }, content: { previewView })
-        }
+    private var documentMode: some View {
+        ZStack {
+            switch presentation.mode {
+            case .read:
+                previewView.modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
+            case .edit:
+                editorView.modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
+            case .split:
+                ReaderSplit(sizing: .equal, minimum: 280, maximum: .greatestFiniteMagnitude, minimumContent: 280, preferPaneWhenNarrow: true, label: "Markdown editor", revealToken: presentation.paneReset.uuidString, pane: { editorView }, content: { previewView })
+                    .modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
+            }
+        }.animation(reduceMotion ? nil : RemileMotion.navigation, value: presentation.mode)
     }
     private var previewURL: URL { fileURL ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Untitled.md") }
     private func render() { preview.retryRemoteImages(); Task { @MainActor in await preview.render(source, url: previewURL) } }

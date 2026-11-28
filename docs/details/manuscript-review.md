@@ -14,9 +14,9 @@ The model returns at most five questions with an explanation and exact source ex
 
 Questions remain across navigation and app restarts. A new source version appends a review and keeps earlier questions. Changed source versions are marked in the panel. Source links follow an unchanged passage when possible and report when the passage is missing or ambiguous. Repeating an unchanged request reuses its saved result. Changes to the criteria or prompt invalidate that reuse.
 
-Use **Export** for Markdown or JSON and **Clear** to remove the project's saved reviews. Clear stops a pending request before removing results, so a late response cannot restore them. Removing an Overleaf project from the library, or removing its containing Search library folder, also removes its saved reviews. Removing a recent-document entry does not clear reviews. Local project renames retain the archive.
+Use **Export** for Markdown or JSON and **Clear** to remove the project's saved reviews. Clear stops a pending request before removing results, so a late response cannot restore them. Freeing space for an Overleaf project or removing a recent-document entry preserves its reviews. Local project renames retain the archive.
 
-Archives live in `~/Library/Application Support/local.remile.app/Reviews`, outside the manuscript and its Git history. Each archive records the project directory, review date, provider, criteria version, source hashes and questions. Exports contain this provenance and the quoted manuscript passages. Clear and library removal move existing archives to the macOS Trash.
+Archives live in `~/Library/Application Support/local.remile.app/Reviews`, outside the manuscript and its Git history. Each archive records the project directory, review date, provider, criteria version, source hashes and questions. Exports contain this provenance and the quoted manuscript passages. Clearing reviews or removing a Search library folder moves the affected archives to Trash.
 
 ## CLI
 

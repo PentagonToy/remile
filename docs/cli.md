@@ -45,7 +45,7 @@ remile read --id overleaf:PROJECT_ID --file contents/methods.tex
 
 `files` and `folders` list relative paths. For projects, `root` gives the local folder and `main` identifies the LaTeX entry point when known. Each entry in `sources` contains the full UTF-8 `source`, its `sha256` and its `origin` (`editor-buffer` or `disk`). Markdown returns one source. Projects list figures and other assets without returning their bytes.
 
-The command works with the app closed. An open editor supplies its current buffers, including unsaved changes. If the document is open in several windows, use `--target` from `documents`. If an Overleaf ID has several connections, use `--connection` from the response. Overleaf reads use the connected local copy and report `lastSyncedAt` and `remoteFreshness: not-checked`. The command does not open documents, compile or sync.
+The command works with the app closed. An open editor supplies its current buffers, including unsaved changes. If the document is open in several windows, use `--target` from `documents`. If an Overleaf ID has several connections, use `--connection` from the response. Download a **Cloud only** Overleaf project in the app before reading it from the CLI. Overleaf reads use the downloaded copy and report `lastSyncedAt` and `remoteFreshness: not-checked`. The command does not open documents, compile or sync.
 
 Reads are limited to 4 MB per source, 32 MB total and 2,000 text files. Use `--file` to read one source while still listing the project structure.
 
@@ -165,7 +165,7 @@ Read `show` immediately before a mutation and supply its revision. A stale revis
 
 ## Overleaf projects
 
-Start remile, then use **Copy project ID** in the Overleaf library or Recently opened. The same Overleaf ID works across Macs after the project has been connected there.
+Download the project in remile, then use **Copy project ID** in the Overleaf library or Recently opened. The same ID works on any Mac with a downloaded copy.
 
 ```sh
 remile overleaf list --query "remile-sample-4"
@@ -177,7 +177,7 @@ remile overleaf review --id overleaf:PROJECT_ID --format markdown --output /abso
 remile overleaf review --id overleaf:PROJECT_ID --format bundle --output /absolute/new-review.zip
 ```
 
-Replace `PROJECT_ID` with the copied 24-character ID. `list` returns project names, persistent IDs, connection UUIDs and local roots. Several account connections to the same project require `--connection UUID`. Several open windows require `--target UUID` from `documents`.
+Replace `PROJECT_ID` with the copied 24-character ID. `list` returns project names, persistent IDs, connection UUIDs and local roots for copies on this Mac. Several account connections to the same project require `--connection UUID`. Several open windows require `--target UUID` from `documents`.
 
 `show` returns known sync status and the last recorded sync time. An open project includes `online` observations: Git transport, the chosen `online` or `on-device` mode, connection state, pending document count, review requirements and the last confirmed sync time. `online.confirmed` becomes false as soon as local typing is pending. The original `live` field remains an identical compatibility alias. A closed project returns both fields as `null`. For an open project it also returns the session target, source hashes, unsaved state and whether its PDF matches the current source. For a closed project, PDF currency is unknown. `read` returns an open editor buffer or the saved UTF-8 source, its SHA-256 and origin. It accepts project-relative text paths up to 4 MB and refuses paths outside the project. Unsaved buffers take precedence over disk files.
 

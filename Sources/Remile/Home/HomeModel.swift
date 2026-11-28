@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 @MainActor
 final class HomeModel: ObservableObject {
     let reader = ReadingSession()
+    let pdfCanvas = PDFCanvasReuse<PDFSelectionView>()
+    let latexCanvas = PDFCanvasReuse<TeXPreviewPDFView>()
     let overleaf: OverleafLibrary
     @Published var texProject: TeXProject?
     private(set) lazy var assistant = DocumentAssistant(historyKey: "search")
@@ -312,7 +314,10 @@ final class HomeModel: ObservableObject {
         }
     }
     func cancelExploration() {
-        searchTask?.cancel(); searchGeneration = UUID(); exploring = false; searching = false; boosting = false
+        searchTask?.cancel()
+        searchTask = nil
+        searchGeneration = UUID()
+        exploring = false; searching = false; boosting = false
     }
 
     func selectResult(_ hit: LibraryHit?) {

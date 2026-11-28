@@ -3,7 +3,7 @@ import SwiftUI
 /// The document resizes once. Only the sidebar fades and moves during presentation.
 @MainActor final class PDFSidebarPresentation: ObservableObject {
     static let duration = Duration.milliseconds(180)
-    static let animation = Animation.easeOut(duration: 0.18)
+    static let animation = RemileMotion.disclosure
     static let offset: CGFloat = 12
     @Published private(set) var mounted = false
     @Published private(set) var visible = false

@@ -108,10 +108,14 @@ enum RemileRadius {
 }
 
 enum RemileMotion {
-    static let disclosure = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.24)
+    static let feedback = Animation.easeOut(duration: 0.12)
+    static let disclosure = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.18)
     static let panel = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.24)
+    static let navigation = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.22)
     static let tour = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.6)
-    static let navigation = Animation.timingCurve(0.22, 0.7, 0.25, 1, duration: 0.4)
+
+    // Expensive outgoing document views can dismantle immediately.
+    static let arrival = AnyTransition.asymmetric(insertion: .opacity, removal: .identity)
 }
 
 enum PageFit {
@@ -129,9 +133,9 @@ enum PageFit {
 struct RemilePressStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.contentShape(Rectangle()).scaleEffect(configuration.isPressed ? 0.975 : 1)
+        configuration.label.contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.88 : 1)
-            .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.75), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : RemileMotion.feedback, value: configuration.isPressed)
     }
 }
 
@@ -149,7 +153,7 @@ struct RemileToolStyle: ButtonStyle {
             .background(configuration.isPressed ? RemileStyle.ink.opacity(0.09) : Color.clear, in: RoundedRectangle(cornerRadius: RemileRadius.control))
             .modifier(RemilePointerFeedback())
             .opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : RemileMotion.feedback, value: configuration.isPressed)
     }
 }
 

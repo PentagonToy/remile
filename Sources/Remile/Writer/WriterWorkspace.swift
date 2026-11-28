@@ -19,7 +19,10 @@ struct WriterWorkspace: View {
             toolbar
             Divider()
             GeometryReader { geometry in
-                ReaderSplit(isPresented: state.tools, initial: min(320, max(250, geometry.size.width * 0.22)), minimum: 250, maximum: 340, minimumContent: 380, label: "writer tools", pane: { tools }, content: { document })
+                ReaderSplit(isPresented: state.tools, animatesResizing: false, initial: min(320, max(250, geometry.size.width * 0.22)), minimum: 250, maximum: 340, minimumContent: 380, label: "writer tools", pane: {
+                    tools.opacity(state.tools ? 1 : 0)
+                        .animation(reduceMotion ? nil : RemileMotion.panel, value: state.tools)
+                }, content: { document })
             }
             HStack {
                 Text("\(model.pages) \(model.pages == 1 ? "page" : "pages")"); Spacer()
@@ -29,7 +32,6 @@ struct WriterWorkspace: View {
                 ReaderThemeButton()
             }.font(RemileType.caption).padding(.horizontal, 12).frame(minHeight: 32).background(RemileStyle.editorBar)
         }.font(RemileType.control).background(RemileStyle.background).tint(RemileStyle.accent)
-            .animation(reduceMotion ? nil : RemileMotion.disclosure, value: state.tools)
             .sheet(isPresented: $state.formula) { formula }
     }
     private var toolbar: some View {

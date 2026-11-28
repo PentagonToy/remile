@@ -6,6 +6,7 @@ struct PDFWorkspace: View {
     var fileURL: URL? = nil
     var readingSession: ReadingSession? = nil
     let pdfTabVisible: Bool
+    let canvasReuse: PDFCanvasReuse<PDFSelectionView>?
     @ObservedObject private var navigation = ReaderNavigation.shared
     let updateDocument: (Data) -> Void
     @StateObject private var session = PDFSession()
@@ -15,7 +16,8 @@ struct PDFWorkspace: View {
     @StateObject private var presentation = Presentation()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("assistant.provider") private var assistantProvider = "Apple Intelligence"
-    private final class Presentation: ObservableObject {
+    @MainActor private final class Presentation: ObservableObject {
+        let pdfCanvas = PDFCanvasReuse<PDFSelectionView>()
         let assistantContext = PDFAssistantContext(index: .shared)
         @Published var ask = false
         @Published var selectedPassages: [AssistantPassage] = []
@@ -34,9 +36,9 @@ struct PDFWorkspace: View {
     }
 
     init(data: Data, fileURL: URL? = nil, session: PDFSession? = nil, showAsk: Bool = false, readingSession: ReadingSession? = nil,
-         pdfTabVisible: Bool = true, updateDocument: @escaping (Data) -> Void) {
+         pdfTabVisible: Bool = true, canvasReuse: PDFCanvasReuse<PDFSelectionView>? = nil, updateDocument: @escaping (Data) -> Void) {
         self.data = data; self.fileURL = fileURL; self.readingSession = readingSession; self.updateDocument = updateDocument
-        self.pdfTabVisible = pdfTabVisible
+        self.pdfTabVisible = pdfTabVisible; self.canvasReuse = canvasReuse
         _session = StateObject(wrappedValue: session ?? PDFSession())
         let state = Presentation(); state.ask = showAsk
         _presentation = StateObject(wrappedValue: state)
@@ -127,7 +129,11 @@ struct PDFWorkspace: View {
         }, content: { readingAndAsk })
     }
     private var readingAndAsk: some View {
-        ReaderSplit(side: .trailing, isPresented: presentation.ask, initial: 360, minimum: 320, maximum: 440, minimumContent: 380, preferPaneWhenNarrow: true, label: "Ask panel", pane: { assistantPanel }, content: { readingCanvas })
+        ReaderSplit(side: .trailing, isPresented: presentation.ask, animatesResizing: false, initial: 360, minimum: 320, maximum: 440, minimumContent: 380, preferPaneWhenNarrow: true, label: "Ask panel", pane: {
+            ZStack {
+                if presentation.ask { assistantPanel.modifier(RemileNavigationContent()).transition(RemileMotion.arrival) }
+            }.animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.ask)
+        }, content: { readingCanvas })
     }
     private var readingCanvas: some View {
         Group {
@@ -138,7 +144,7 @@ struct PDFWorkspace: View {
                     PDFReader(session: session, zoom: zoom, selectionActions: selectionActions, openPDFs: { urls in
                         guard let readingSession else { return false }
                         return RemileWindows.shared.openDroppedPDFs(urls, for: readingSession)
-                    })
+                    }, canvasReuse: canvasReuse ?? presentation.pdfCanvas)
                 }
             } else if session.document?.isLocked == true {
                 VStack(spacing: 16) {
@@ -166,7 +172,7 @@ struct PDFWorkspace: View {
                     await assistant.reportProgress(fraction)
                 }
             return presentation.selectedPassages + retrieved.filter { passage in !presentation.selectedPassages.contains { $0.id == passage.id } }
-        }, selection: presentation.selectedPassages.isEmpty ? nil : presentation.selectedPassages.map(\.text).joined(separator: "\n"), clearSelection: { presentation.selectedPassages = [] }).transition(.move(edge: .trailing).combined(with: .opacity))
+        }, selection: presentation.selectedPassages.isEmpty ? nil : presentation.selectedPassages.map(\.text).joined(separator: "\n"), clearSelection: { presentation.selectedPassages = [] })
     }
 
     private var readingHeader: some View {
@@ -205,7 +211,7 @@ struct PDFWorkspace: View {
                 if !compact { Button { session.nextPage() } label: { SymbolIcon(systemName: "chevron.down") }.remileHelp("Next page").disabled(session.showsOverview || session.currentPage >= (session.document?.pageCount ?? 0)) }
             }
             Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                withAnimation(reduceMotion ? nil : RemileMotion.disclosure) {
                     if session.showsOverview, let page = session.document?.page(at: max(0, session.currentPage - 1)) { session.openOverviewPage(page) }
                     else {
                         session.selectedOverviewPages = Set(session.document?.page(at: max(0, session.currentPage - 1)).map { [ObjectIdentifier($0)] } ?? [])
@@ -252,7 +258,7 @@ struct PDFWorkspace: View {
             guard context.document === session.document else { return }
             assistant.cancel(); presentation.selectedPassages = context.passages(path: assistantPath)
             if assistant.question.isEmpty { assistant.question = "Explain the selected passage." }
-            withAnimation(reduceMotion ? nil : RemileMotion.panel) { presentation.ask = true }
+            presentation.ask = true
         }, translate: { context in
             guard context.document === session.document else { return }; presentation.translation = SelectionTranslation(text: context.text)
         }, removeHighlight: { document, annotation in
@@ -317,7 +323,7 @@ struct PDFWorkspace: View {
     private var assistantPath: String { fileURL?.path ?? presentation.untitledPath }
     private func toggleAssistant() {
         if presentation.ask { assistant.cancel() }
-        withAnimation(reduceMotion ? nil : RemileMotion.panel) { presentation.ask.toggle() }
+        presentation.ask.toggle()
     }
 
     private func revealLibraryPage() {

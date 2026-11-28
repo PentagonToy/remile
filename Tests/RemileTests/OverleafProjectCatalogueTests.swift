@@ -59,6 +59,70 @@ final class OverleafProjectCatalogueTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: draft, encoding: .utf8), "Review in progress")
     }
 
+    @MainActor func testCataloguePersistsMetadataWithoutDownloadingProjects() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = OverleafLibrary(directory: root)
+        let account = try XCTUnwrap(library.saveAccount(name: "Fixture", token: ""))
+        let tag = OverleafWebClient.Tag(id: "research", name: "Research", color: nil)
+        let project = OverleafWebClient.Project(id: String(repeating: "a", count: 24), name: "Sample", tags: [tag])
+        try library.rememberCatalogue([project], profile: account.id)
+        let restored = OverleafLibrary(directory: root)
+        XCTAssertEqual(restored.catalogue[account.id], [project])
+        XCTAssertTrue(restored.projects.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Projects").path))
+        var partial = project
+        partial.tags = []
+        partial.tagsLoaded = false
+        try restored.rememberCatalogue([partial], profile: account.id)
+        XCTAssertEqual(restored.catalogue[account.id]?.first?.tags, [tag])
+    }
+
+    @MainActor func testInterruptedRemovalKeepsTheCloudCardAndItsLocalIdentity() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let connection = OverleafConnection(id: UUID(), projectID: String(repeating: "a", count: 24),
+                                            name: "Sample", account: "Fixture", branch: "main")
+        let item = OverleafWebClient.Project(id: connection.projectID, name: connection.name, downloadID: connection.id)
+        try JSONEncoder().encode([connection]).write(to: root.appendingPathComponent("projects.json"))
+        try JSONEncoder().encode([connection.profileID: [item]]).write(to: root.appendingPathComponent("project-catalogue.json"))
+        let restored = OverleafLibrary(directory: root)
+        XCTAssertTrue(restored.projects.isEmpty)
+        XCTAssertEqual(restored.catalogue[connection.profileID], [item])
+        try restored.rememberCatalogue([.init(id: item.id, name: "Renamed")], profile: connection.profileID)
+        XCTAssertEqual(restored.catalogue[connection.profileID]?.first?.downloadID, connection.id)
+    }
+
+    @MainActor func testBulkCleanupChecksEachCopyAndKeepsBlockedProjects() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = UUID()
+        let projects = ["Open", "Pending", "Legacy"].enumerated().map { index, name in
+            OverleafConnection(id: UUID(), profileID: profile, projectID: String(repeating: String(index), count: 24),
+                               name: name, account: "Fixture", branch: "main", liveOnly: index == 2)
+        }
+        for project in projects {
+            let path = OverleafLibrary.projectRoot(project, directory: root)
+            try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+        }
+        try JSONEncoder().encode(projects).write(to: root.appendingPathComponent("projects.json"))
+        let library = OverleafLibrary(directory: root)
+        library.pendingFiles.insert(projects[1].id)
+        var checked: [UUID] = []
+        let opened = library.root(projects[0])
+        let failures = await library.freeSpace(projects + [projects[0]], isOpen: { $0 == opened }, didRemove: { _ in
+            XCTFail("Blocked local copies must stay on disk")
+        }) { checked.append($0.id) }
+        XCTAssertEqual(checked, projects.map(\.id))
+        XCTAssertEqual(failures[projects[0].id], "Close this project before freeing space.")
+        XCTAssertEqual(failures[projects[1].id], "Finish syncing before freeing space.")
+        XCTAssertEqual(failures[projects[2].id], "Git sync is unavailable for this copy.")
+        XCTAssertEqual(library.projects, projects)
+        XCTAssertFalse(library.busy)
+        for project in projects { XCTAssertTrue(FileManager.default.fileExists(atPath: library.root(project).path)) }
+    }
+
     @MainActor func testUnchangedCatalogueKeepsSavedTagFile() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

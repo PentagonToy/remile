@@ -309,23 +309,34 @@ struct ReadingShell: View {
         return false
     }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private enum Surface: Equatable { case library, latex(UUID), document(URL), opening, home }
+
+    private var surface: Surface {
+        if overleaf.browsing { return .library }
+        if let project = home.texProject { return .latex(project.identity) }
+        if let url = reader.url { return .document(url) }
+        return home.opening ? .opening : .home
+    }
+
     var body: some View {
         ZStack {
             if overleaf.browsing {
                 OverleafLibraryWorkspace(library: overleaf, open: home.openTeX, prepareRemoval: { root in
                     if home.texProject?.root == root, !home.closeTeX(retainConnection: false) { return false }
                     home.removeRecent(root); return true
-                }).transition(.opacity.combined(with: .offset(x: 16)))
+                }, isOpen: { root in
+                    home.texProject?.root == root || RemileWindows.shared.models.contains { $0.texProject?.root == root }
+                }, didRemove: home.removeRecent).modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
             } else if let project = home.texProject {
                 VStack(spacing: 0) {
                     if let connection = overleaf.connection(for: project.root) { OverleafBar(library: overleaf, project: project, connection: connection).id(project.identity) }
-                    TeXWorkspace(project: project, close: { home.closeTeX() }, title: overleaf.title(for: project.root), projectTags: overleaf.connection(for: project.root).flatMap { overleaf.tags[$0.id] } ?? [], freeOverleaf: overleaf.connection(for: project.root).map { overleaf.isFreeLimited($0) } ?? false, overleafConnection: overleaf.connection(for: project.root), reviewArchiveChanged: { archive in
+                    TeXWorkspace(project: project, close: { home.closeTeX() }, title: overleaf.title(for: project.root), projectTags: overleaf.connection(for: project.root).flatMap { overleaf.tags[$0.id] } ?? [], freeOverleaf: overleaf.connection(for: project.root).map { overleaf.isFreeLimited($0) } ?? false, overleafConnection: overleaf.connection(for: project.root), previewCanvas: home.latexCanvas, reviewArchiveChanged: { archive in
                         if let connection = overleaf.connection(for: project.root), archive.projectID == connection.projectID { overleaf.comments[connection.id] = archive }
                     }).id(project.identity)
-                }.modifier(RemileNavigationContent()).transition(.opacity.combined(with: .offset(x: 12)))
+                }.modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
             } else if let url = reader.url {
-                DocumentWorkspace(document: $reader.document, fileURL: url, session: reader, pdfTabVisible: reader.pdfTabVisible)
-                    .id(url).transition(.opacity.combined(with: .offset(x: 12)))
+                DocumentWorkspace(document: $reader.document, fileURL: url, session: reader, pdfTabVisible: reader.pdfTabVisible, canvasReuse: home.pdfCanvas)
+                    .id(url).modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
                     .navigationTitle((home.references.title(for: url) ?? url.deletingPathExtension().lastPathComponent) + (reader.dirty ? " •" : ""))
                     .toolbar {
                         RemileToolbarItem(placement: .navigation) {
@@ -340,11 +351,9 @@ struct ReadingShell: View {
                         } }
                     }
             } else if home.opening { Color.clear }
-            else { HomeWorkspace(model: home).transition(.opacity) }
+            else { HomeWorkspace(model: home).modifier(RemileNavigationContent()).transition(RemileMotion.arrival) }
         }
-        .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: reader.url)
-        .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: overleaf.browsing)
-        .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: home.texProject?.identity)
+        .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: surface)
         .frame(minWidth: 560, minHeight: 450)
         .background(RemileStyle.background)
         .overlay { if home.opening { ProgressView("Opening document…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }

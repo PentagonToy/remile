@@ -295,6 +295,13 @@ final class PDFSession: NSObject, ObservableObject {
         })
     }
 
+    func detach(_ view: PDFView) {
+        guard self.view === view else { return }
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers.removeAll()
+        self.view = nil
+    }
+
     func revealLibraryPage(_ number: Int, terms: [String], excerpt: String? = nil, addNote: Bool = false) {
         guard number > 0 else { return }
         restoredReadingPosition = true

@@ -29,7 +29,10 @@ struct LibrarySearchView: View {
             .onChange(of: includeBibliography) { model.invalidateSearch() }
             .onChange(of: model.resultOrder) { model.filterDocuments() }
             .onAppear { model.resumeSearch() }
-            .onDisappear { model.cancelExploration() }
+            .onDisappear {
+                model.cancelExploration()
+                if model.askPresented { assistant.cancel() }
+            }
             .onChange(of: model.exploring) { if model.exploring { assistant.cancel() } }
             .onChange(of: model.query) { assistant.cancel(); citationState.focus = nil; citationState.selectedPassages = []; citationState.compactPreview = false }
             .onChange(of: model.libraryRevision) { assistant.cancel(); citationState.focus = nil; citationState.selectedPassages = [] }
@@ -49,7 +52,13 @@ struct LibrarySearchView: View {
                 } else if geometry.size.width < 780 {
                     VStack(spacing: 0) {
                         RemileSegmentedControl(title: "Search pane", selection: $citationState.compactPreview, options: [false, true], label: { $0 ? "Preview" : "Results" }).padding(10)
-                        if citationState.compactPreview { previewAndAsk } else { sidebar }
+                        ZStack {
+                            if citationState.compactPreview {
+                                previewAndAsk.modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
+                            } else {
+                                sidebar.modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
+                            }
+                        }.animation(reduceMotion ? nil : RemileMotion.navigation, value: citationState.compactPreview)
                     }
                 } else { ReaderSplit(sizing: .results, minimum: 260, maximum: 520, minimumContent: model.askPresented ? 600 : 420, label: "search results", revealToken: citationState.paneReset.uuidString, pane: { sidebar }, content: { previewAndAsk }) }
             }
@@ -88,7 +97,6 @@ struct LibrarySearchView: View {
             let ranked = AssistantRetrieval.rank(context.map(\.assistantPassage), question: question)
             return citationState.selectedPassages + ranked.filter { passage in !citationState.selectedPassages.contains { $0.id == passage.id } }
         }, selection: citationState.selectedPassages.isEmpty ? nil : citationState.selectedPassages.map(\.text).joined(separator: "\n"), clearSelection: { citationState.selectedPassages = [] })
-            .transition(.move(edge: .trailing).combined(with: .opacity))
     }
 
     private var header: some View {
@@ -301,7 +309,7 @@ struct LibrarySearchView: View {
                 guard let hit = model.selectedHit else { return }
                 assistant.cancel(); citationState.selectedPassages = context.passages(path: hit.path)
                 if assistant.question.isEmpty { assistant.question = "Explain the selected passage." }
-                withAnimation(reduceMotion ? nil : RemileMotion.panel) { model.askPresented = true }
+                model.askPresented = true
             }, editing: model.pdfSearchEditing) }
         }.frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -331,7 +339,7 @@ struct LibrarySearchView: View {
     private func toggleAssistant() {
         if model.askPresented { assistant.cancel() }
         else { citationState.compactPreview = true }
-        withAnimation(reduceMotion ? nil : RemileMotion.panel) { model.askPresented.toggle() }
+        model.askPresented.toggle()
     }
 
 }

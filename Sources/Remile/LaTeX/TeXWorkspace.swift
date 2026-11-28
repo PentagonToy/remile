@@ -9,16 +9,17 @@ struct TeXWorkspace: View {
     var freeOverleaf = false
     var overleafConnection: OverleafConnection?
     var reviewArchiveChanged: (OverleafThreadArchive) -> Void = { _ in }
-    @MainActor init(project: TeXProject, close: @escaping () -> Void, title: String = "LaTeX", projectTags: [OverleafWebClient.Tag] = [], freeOverleaf: Bool = false, overleafConnection: OverleafConnection? = nil, reviewArchiveChanged: @escaping (OverleafThreadArchive) -> Void = { _ in }) {
+    @MainActor init(project: TeXProject, close: @escaping () -> Void, title: String = "LaTeX", projectTags: [OverleafWebClient.Tag] = [], freeOverleaf: Bool = false, overleafConnection: OverleafConnection? = nil, previewCanvas: PDFCanvasReuse<TeXPreviewPDFView>? = nil, reviewArchiveChanged: @escaping (OverleafThreadArchive) -> Void = { _ in }) {
         self.project = project; self.close = close; self.title = title; self.projectTags = projectTags
         self.freeOverleaf = freeOverleaf; self.overleafConnection = overleafConnection; self.reviewArchiveChanged = reviewArchiveChanged
         self._editor = StateObject(wrappedValue: project.sourceEditor)
+        self._preview = StateObject(wrappedValue: TeXPDFController(canvas: previewCanvas))
     }
     @StateObject private var assistant = DocumentAssistant()
     @StateObject private var editor: MarkdownEditorController
     @StateObject private var writing = EditorWritingReview()
     @StateObject private var zoom = ReaderZoom()
-    @StateObject private var preview = TeXPDFController()
+    @StateObject private var preview: TeXPDFController
     @StateObject private var presentation = Presentation()
     private final class Presentation: ObservableObject {
         @Published var paneReset = UUID(); @Published var evidence: ReferenceRecord?; @Published var references = false; @Published var review = false; @Published var writingTool: EditorToolsPanel.Tool?; @Published var notice = false; @Published var renameProject = false; @Published var renameSource = false; @Published var files = false; @Published var pane = "Source" }
@@ -41,8 +42,10 @@ struct TeXWorkspace: View {
         .font(RemileType.control).background(RemileStyle.background).navigationTitle(project.displayName + (project.dirty ? " •" : ""))
     }
     private var workspaceContent: some View {
-        ReaderSplit(side: .trailing, isPresented: project.showsAssistant, initial: 330, minimum: 240, maximum: 420, minimumContent: 400, preferPaneWhenNarrow: true, label: "LaTeX Ask", revealToken: presentation.paneReset.uuidString, pane: {
+        ReaderSplit(side: .trailing, isPresented: project.showsAssistant, animatesResizing: false, initial: 330, minimum: 240, maximum: 420, minimumContent: 400, preferPaneWhenNarrow: true, label: "LaTeX Ask", revealToken: presentation.paneReset.uuidString, pane: {
             TeXAskPanel(project: project, assistant: assistant, connection: overleafConnection, archiveRead: reviewArchiveChanged, close: { project.showsAssistant = false })
+                .opacity(project.showsAssistant ? 1 : 0)
+                .animation(reduceMotion ? nil : RemileMotion.panel, value: project.showsAssistant)
         }, content: { editorContent })
     }
     private var editorContent: some View {
@@ -55,7 +58,13 @@ struct TeXWorkspace: View {
                         Spacer()
                         RemileSegmentedControl(title: "Editor pane", selection: $presentation.pane, options: ["Source", "Preview"], label: { $0 }).frame(width: 190)
                     }.padding(8)
-                    if presentation.pane == "Source" { sourcePane(availableHeight: geometry.size.height) } else { previewPane }
+                    ZStack {
+                        if presentation.pane == "Source" {
+                            sourcePane(availableHeight: geometry.size.height).modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
+                        } else {
+                            previewPane.modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
+                        }
+                    }.animation(reduceMotion ? nil : RemileMotion.navigation, value: presentation.pane)
                 }
             } else {
                 ReaderSplit(sizing: .files, minimum: 160, maximum: 300, minimumContent: 580, label: "project files", revealToken: navigationToken, pane: { projectSidebar }, content: {
@@ -136,9 +145,6 @@ struct TeXWorkspace: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             project.refreshSharedEditMarks(for: project.selected)
         }
-        .animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.review)
-        .animation(reduceMotion ? nil : RemileMotion.panel, value: project.showsLog)
-        .animation(reduceMotion ? nil : RemileMotion.panel, value: project.showsHistory)
         .onDisappear {
             project.lastPreviewLocation = preview.currentLocation()
             assistant.cancel()
@@ -195,9 +201,10 @@ struct TeXWorkspace: View {
                 if let pdf = project.pdf { TeXPDFPreview(document: pdf, zoom: zoom, controller: preview, jump: project.pdfJump) }
                 else { ContentUnavailableView("Compile to preview", systemImage: "doc.richtext").frame(maxWidth: .infinity, maxHeight: .infinity) }
             }.opacity(project.showsLog || project.showsHistory ? 0 : 1).allowsHitTesting(!project.showsLog && !project.showsHistory).accessibilityHidden(project.showsLog || project.showsHistory)
-            if project.showsHistory { TeXHistoryPanel(project: project) }
-            else if project.showsLog { TeXLogPanel(project: project) }
-        }
+            if project.showsHistory { TeXHistoryPanel(project: project).transition(RemileMotion.arrival) }
+            else if project.showsLog { TeXLogPanel(project: project).transition(RemileMotion.arrival) }
+        }.animation(reduceMotion ? nil : RemileMotion.panel, value: project.showsHistory)
+            .animation(reduceMotion ? nil : RemileMotion.panel, value: project.showsLog)
     }
     private var projectSidebar: some View {
         VStack(spacing: 0) {
@@ -206,8 +213,11 @@ struct TeXWorkspace: View {
                 Divider()
                 ZStack {
                     TeXProjectSidebar(project: project).opacity(presentation.review ? 0 : 1).allowsHitTesting(!presentation.review).accessibilityHidden(presentation.review)
-                    if presentation.review { OverleafReviewPanel(project: project, connection: overleafConnection, archiveRead: reviewArchiveChanged) }
-                }
+                    if presentation.review {
+                        OverleafReviewPanel(project: project, connection: overleafConnection, archiveRead: reviewArchiveChanged)
+                            .transition(RemileMotion.arrival)
+                    }
+                }.animation(reduceMotion ? nil : RemileMotion.panel, value: presentation.review)
             } else {
                 TeXProjectSidebar(project: project)
             }

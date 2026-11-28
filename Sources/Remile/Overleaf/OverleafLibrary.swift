@@ -17,6 +17,7 @@ import Network
     enum Status { case unchecked, online, offline, changes, conflict }
     @Published private(set) var accounts: [Account] = []
     @Published private(set) var projects: [OverleafConnection] = []
+    @Published private(set) var catalogue: [UUID: [OverleafWebClient.Project]] = [:]
     @Published private(set) var tags: [UUID: [OverleafWebClient.Tag]] = [:]
     @Published private(set) var unavailableTags = Set<UUID>()
     @Published var importSize = CGSize(width: 986, height: 600)
@@ -53,8 +54,16 @@ import Network
         if let data = try? Data(contentsOf: self.directory.appendingPathComponent("projects.json")), let saved = try? JSONDecoder().decode([OverleafConnection].self, from: data) { projects = saved }
         if let data = try? Data(contentsOf: self.directory.appendingPathComponent("accounts.json")), let saved = try? JSONDecoder().decode([Account].self, from: data) { accounts = saved }
         if let data = try? Data(contentsOf: self.directory.appendingPathComponent("project-tags.json")), let saved = try? JSONDecoder().decode([UUID: [OverleafWebClient.Tag]].self, from: data) { tags = saved }
-        for project in projects { if let date = UserDefaults.standard.object(forKey: "overleaf.synced." + project.id.uuidString) as? Date { syncedAt[project.id] = date } }
         for project in projects where !accounts.contains(where: { $0.id == project.profileID }) { accounts.append(Account(id: project.profileID, name: project.account)) }
+        if let data = try? Data(contentsOf: catalogueFile), let saved = try? JSONDecoder().decode([UUID: [OverleafWebClient.Project]].self, from: data) {
+            catalogue = saved.filter { entry in accounts.contains { $0.id == entry.key } }
+            // A shutdown between moving the copy to Trash and updating the index leaves a cloud card.
+            projects = projects.filter { project in
+                let known = catalogue[project.profileID]?.contains { $0.id == project.projectID && $0.downloadID == project.id } == true
+                return !known || FileManager.default.fileExists(atPath: root(project).path)
+            }
+        }
+        for project in projects { if let date = UserDefaults.standard.object(forKey: "overleaf.synced." + project.id.uuidString) as? Date { syncedAt[project.id] = date } }
         policyObserver = NotificationCenter.default.addObserver(forName: NetworkAccessGate.changed, object: NetworkAccess.gate, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.objectWillChange.send() } }
     }
     deinit { if let policyObserver { NotificationCenter.default.removeObserver(policyObserver) } }
@@ -216,6 +225,11 @@ import Network
             let folder = directory
             try await Task.detached { try OverleafAccountEdit.apply(change, under: folder) }.value
             accounts = updatedAccounts; projects = updatedProjects
+            if catalogue[id] != nil {
+                var updated = catalogue
+                updated[id] = nil
+                if (try? storeCatalogue(updated)) == nil { catalogue = updated }
+            }
             for project in owned {
                 tags[project.id] = nil; comments[project.id] = nil; statuses[project.id] = nil; syncedAt[project.id] = nil
                 automaticPaused.remove(project.id); pendingFiles.remove(project.id); unavailableTags.remove(project.id)
@@ -225,26 +239,36 @@ import Network
             return true
         } catch { self.error = error.localizedDescription; return false }
     }
+    private func storedProjects() throws -> [OverleafConnection] {
+        let file = directory.appendingPathComponent("projects.json")
+        guard FileManager.default.fileExists(atPath: file.path) else { return projects }
+        return try JSONDecoder().decode([OverleafConnection].self, from: Data(contentsOf: file))
+    }
+
     private func persist(_ updated: [OverleafConnection]) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try JSONEncoder().encode(updated).write(to: directory.appendingPathComponent("projects.json"), options: .atomic)
         projects = updated
     }
-    func connect(url: String, name: String, account: String, token: String) async {
+    func connect(url: String, name: String, account: String, token: String, profile: UUID? = nil) async {
         guard !busy else { return }
-        let account = account.trimmingCharacters(in: .whitespacesAndNewlines), existing = self.account(account)
+        let account = account.trimmingCharacters(in: .whitespacesAndNewlines)
+        let existing = profile.flatMap { id in accounts.first { $0.id == id } } ?? self.account(account)
+        if let profile, existing?.id != profile { error = "This account is no longer available."; return }
         guard let projectID = OverleafConnection.projectID(url), !account.isEmpty, existing != nil || !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { error = "Enter an Overleaf project link, an account label and its Git token."; return }
         if let existing, !existing.allowsGit {
             error = Self.premiumHint; return
         }
-        guard !projects.contains(where: { $0.projectID == projectID && $0.account == account && $0.liveOnly != true }) else { error = "This project is already connected for that account."; return }
+        guard !projects.contains(where: { $0.projectID == projectID && $0.profileID == existing?.id && $0.liveOnly != true }) else { error = "This project is already connected for that account."; return }
         busy = true; error = nil
-        var project = OverleafConnection(id: UUID(), projectID: projectID, name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Overleaf project" : name.trimmingCharacters(in: .whitespacesAndNewlines), account: account.trimmingCharacters(in: .whitespacesAndNewlines), branch: "master")
+        let savedID = existing.flatMap { catalogue[$0.id]?.first { $0.id == projectID }?.downloadID }
+        var project = OverleafConnection(id: savedID ?? UUID(), projectID: projectID, name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Overleaf project" : name.trimmingCharacters(in: .whitespacesAndNewlines), account: existing?.name ?? account, branch: "master")
         if let existing { project.profileID = existing.id }
         let root = root(project)
+        defer { busy = false }
         do {
             if existing == nil || !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                guard let saved = saveAccount(name: account, token: token) else { busy = false; return }
+                guard let saved = saveAccount(name: account, token: token) else { return }
                 project.profileID = saved.id
             }
             switch OverleafCredential.availability(project.profileID) {
@@ -252,16 +276,128 @@ import Network
             case .locked: throw OverleafGit.Failure("Unlock this account’s Git token in Keychain, then retry.")
             case .available: break
             }
+            let writer = try writerLease(project)
+            defer { withExtendedLifetime(writer) {} }
+            let stored = try storedProjects()
+            if let alreadyDownloaded = stored.first(where: {
+                $0.profileID == project.profileID && $0.projectID == projectID && $0.liveOnly != true &&
+                    FileManager.default.fileExists(atPath: self.root($0).path)
+            }) {
+                projects = stored
+                statuses[alreadyDownloaded.id] = .unchecked
+                return
+            }
+            guard !FileManager.default.fileExists(atPath: root.path) else {
+                throw OverleafGit.Failure("A local copy already exists. Reveal it in Finder before downloading another copy.")
+            }
             let connection = project
-            project.branch = try await Task.detached { try OverleafGit.clone(connection, root: root) }.value
-            try persist(projects + [project])
-            statuses[project.id] = .online
-        } catch {
-            if FileManager.default.fileExists(atPath: root.path) { try? FileManager.default.trashItem(at: root, resultingItemURL: nil) }
-            self.error = error.localizedDescription
-        }
-        busy = false
+            do {
+                project.branch = try await Task.detached { try OverleafGit.clone(connection, root: root) }.value
+                try persist(try storedProjects().filter { $0.id != project.id } + [project])
+                statuses[project.id] = .online
+            } catch {
+                if FileManager.default.fileExists(atPath: root.path) { try? FileManager.default.trashItem(at: root, resultingItemURL: nil) }
+                throw error
+            }
+        } catch { self.error = error.localizedDescription }
     }
+    private var catalogueFile: URL { directory.appendingPathComponent("project-catalogue.json") }
+
+    private func storeCatalogue(_ updated: [UUID: [OverleafWebClient.Project]]) throws {
+        guard updated != catalogue else { return }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try JSONEncoder().encode(updated).write(to: catalogueFile, options: .atomic)
+        catalogue = updated
+    }
+
+    func rememberCatalogue(_ listed: [OverleafWebClient.Project], profile: UUID) throws {
+        guard accounts.contains(where: { $0.id == profile }) else { return }
+        let previous = catalogue[profile] ?? []
+        let savedIDs = Dictionary(previous.compactMap { item in item.downloadID.map { (item.id, $0) } },
+                                  uniquingKeysWith: { first, _ in first })
+        var updated = catalogue
+        updated[profile] = OverleafProjects.retainingTags(listed, previous: previous).map { item in
+            var item = item
+            item.downloadID = savedIDs[item.id]
+            return item
+        }
+        try storeCatalogue(updated)
+        rememberTags(listed, profile: profile)
+    }
+
+    func localCopyIssue(_ project: OverleafConnection, isOpen: (URL) -> Bool) -> String? {
+        if project.liveOnly == true { return "Git sync is unavailable for this copy." }
+        if isOpen(root(project)) { return "Close this project before freeing space." }
+        if review?.connection.id == project.id || pendingFiles.contains(project.id) {
+            return "Finish syncing before freeing space."
+        }
+        return nil
+    }
+
+    func freeSpace(_ selected: [OverleafConnection], isOpen: (URL) -> Bool, didRemove: (URL) -> Void,
+                   checking: (OverleafConnection) -> Void) async -> [UUID: String] {
+        guard !busy else {
+            return Dictionary(selected.map { ($0.id, "Wait for the current operation and try again.") },
+                              uniquingKeysWith: { first, _ in first })
+        }
+        busy = true
+        error = nil
+        defer { busy = false }
+        var failures: [UUID: String] = [:]
+        var checked = Set<UUID>()
+        for project in selected where checked.insert(project.id).inserted {
+            checking(project)
+            do { try await trashLocalCopy(project, isOpen: isOpen, didRemove: didRemove) }
+            catch { failures[project.id] = error.localizedDescription }
+        }
+        return failures
+    }
+
+    private func trashLocalCopy(_ project: OverleafConnection, isOpen: (URL) -> Bool, didRemove: (URL) -> Void) async throws {
+        if let issue = localCopyIssue(project, isOpen: isOpen) { throw OverleafGit.Failure(issue) }
+        try NetworkAccess.requireOnline()
+        guard projects.contains(where: { $0.id == project.id }) else {
+            throw OverleafGit.Failure("The local copy is no longer in this library.")
+        }
+        let path = root(project)
+        if warmProject?.root.path == path.path { await discardWarmProject() }
+        if liveOwned.contains(project.id) { throw OverleafGit.Failure("Finish syncing before freeing space.") }
+        let writer = try writerLease(project)
+        defer { withExtendedLifetime(writer) {} }
+        let recovery = directory.appendingPathComponent("GitSyncRecovery")
+        try await Task.detached {
+            try OverleafGit.verifyRemovableCopy(project, root: path, recovery: recovery)
+        }.value
+        if let issue = localCopyIssue(project, isOpen: isOpen) { throw OverleafGit.Failure(issue) }
+        if liveOwned.contains(project.id) { throw OverleafGit.Failure("Finish syncing before freeing space.") }
+        var updated = catalogue
+        var listed = updated[project.profileID] ?? []
+        if let index = listed.firstIndex(where: { $0.id == project.projectID }) {
+            listed[index].downloadID = project.id
+        } else {
+            listed.append(.init(id: project.projectID, name: project.name, tags: tags[project.id] ?? [],
+                                tagsLoaded: tags[project.id] != nil, downloadID: project.id))
+        }
+        updated[project.profileID] = listed
+        try storeCatalogue(updated)
+        let current = try storedProjects()
+        guard current.contains(project) else { throw OverleafGit.Failure("The project changed. Reopen the library and try again.") }
+        let manager = FileManager.default
+        var trashed: NSURL?
+        try manager.trashItem(at: path, resultingItemURL: &trashed)
+        do { try persist(current.filter { $0.id != project.id }) }
+        catch {
+            if let trashed { try manager.moveItem(at: trashed as URL, to: path) }
+            throw error
+        }
+        didRemove(path)
+        statuses.removeValue(forKey: project.id)
+        comments.removeValue(forKey: project.id)
+        syncedAt.removeValue(forKey: project.id)
+        automaticPaused.remove(project.id)
+        UserDefaults.standard.removeObject(forKey: "overleaf.synced." + project.id.uuidString)
+    }
+
     func rememberTags(_ catalog: [OverleafWebClient.Project], profile: UUID) {
         let byID = Dictionary(catalog.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var updatedTags = tags

@@ -76,7 +76,7 @@ struct ToolFileDrop: ViewModifier {
     private final class Hover: ObservableObject { @Published var active = false }
     func body(content: Content) -> some View {
         content.overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(RemileStyle.accent.opacity(hover.active ? 0.9 : 0), lineWidth: 2).allowsHitTesting(false))
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hover.active)
+            .animation(reduceMotion ? nil : RemileMotion.feedback, value: hover.active)
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: $hover.active) { providers in
                 HomeFileDrop.receive(providers) { model.handleDrop($0, target: target) }; return true
             }

@@ -5,11 +5,12 @@ struct DocumentWorkspace: View {
     var fileURL: URL? = nil
     var session: ReadingSession? = nil
     var pdfTabVisible = true
+    var canvasReuse: PDFCanvasReuse<PDFSelectionView>? = nil
 
     var body: some View {
         switch document.content {
         case .pdf(let data):
-            PDFWorkspace(data: data, fileURL: fileURL, readingSession: session, pdfTabVisible: pdfTabVisible) { data in
+            PDFWorkspace(data: data, fileURL: fileURL, readingSession: session, pdfTabVisible: pdfTabVisible, canvasReuse: canvasReuse) { data in
                 document.content = .pdf(data)
             }
         case .markdown:

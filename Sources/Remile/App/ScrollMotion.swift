@@ -27,6 +27,13 @@ final class NativeScrollMotion {
         objc_setAssociatedObject(scroll, &association, motion, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         return motion
     }
+    static func detach(_ scroll: NSScrollView) {
+        if let motion = objc_getAssociatedObject(scroll, &association) as? NativeScrollMotion {
+            motion.stop()
+            if let monitor = motion.monitor { NSEvent.removeMonitor(monitor); motion.monitor = nil }
+        }
+        objc_setAssociatedObject(scroll, &association, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
     private init(_ scroll: NSScrollView) {
         self.scroll = scroll
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .leftMouseDown, .keyDown]) { [weak self] event in
@@ -63,7 +70,7 @@ final class NativeScrollMotion {
         guard let ease, abs(ease.target - ease.position) > 0.1 else { stop(); return false }
         if timer == nil {
             lastTick = ProcessInfo.processInfo.systemUptime
-            let rate = min(120, max(30, scroll.window?.screen?.maximumFramesPerSecond ?? 60))
+            let rate = min(60, max(30, scroll.window?.screen?.maximumFramesPerSecond ?? 60))
             let timer = Timer(timeInterval: 1 / Double(rate), repeats: true) { [weak self] _ in self?.tick() }
             self.timer = timer; RunLoop.main.add(timer, forMode: .common)
         }
@@ -86,11 +93,16 @@ final class NativeScrollMotion {
 /// Find native scroll views only within this surface, including SwiftUI Form's scroll view.
 private struct ScrollMotionAttachment: NSViewRepresentable {
     final class Marker: NSView {
+        private var configurationPending = false
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
         override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); configure() }
         func configure() {
+            guard !configurationPending else { return }
+            configurationPending = true
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.window != nil else { return }
+                guard let self else { return }
+                self.configurationPending = false
+                guard self.window != nil else { return }
                 var scope: NSView? = self.superview
                 while let parent = scope {
                     if Self.containsScroll(parent) { ReaderScrolling.configure(parent); return }

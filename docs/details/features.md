@@ -48,7 +48,7 @@ Compile options includes a fresh rebuild and submission comparison. The comparis
 
 ## Overleaf
 
-Add a project by its Overleaf or Git link and save its Git token in account settings. The local library keeps added projects, saved labels and manual order. Project title edits change the local label.
+Browse account projects in a grid or list. The library shows availability on each card and keeps local labels and manual order for downloaded projects. Open a cloud project to download its files. See the [Overleaf guide](../workspace/overleaf.md) for account setup and disk cleanup.
 
 Online groups local edits and reconciles remote changes through Git. Local stops synchronisation. Both modes retain the local editor, PDF compilation and source navigation. Conflicts keep recovery copies and require review. See [synchronisation](../overleaf-realtime.md).
 

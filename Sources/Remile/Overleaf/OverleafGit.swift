@@ -206,6 +206,44 @@ enum OverleafGit {
         try excludePrivateFiles(root)
         return try run(["symbolic-ref", "--short", "HEAD"], at: root).text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+    static func checkLocalCopyForRemoval(_ project: OverleafConnection, root: URL, recovery: URL) throws {
+        let manager = FileManager.default
+        let receipt = recovery.appendingPathComponent(project.id.uuidString.lowercased() + ".json")
+        guard !manager.fileExists(atPath: receipt.path),
+              !manager.fileExists(atPath: OverleafSyncRecovery.stage(project, recovery: recovery).path),
+              try run(["for-each-ref", "--format=%(refname)", OverleafSyncRecovery.pendingReference], at: root).data.isEmpty else {
+            throw Failure("Finish the pending sync before freeing space.")
+        }
+        let extraFiles = try run(["ls-files", "--others", "-z"], at: root).text.split(separator: "\0")
+        let indexed = try run(["ls-files", "-v", "-z"], at: root).text.split(separator: "\0")
+        guard extraFiles.allSatisfy({ $0.split(separator: "/").last == ".DS_Store" }),
+              indexed.allSatisfy({ $0.hasPrefix("H ") }),
+              try run(["status", "--porcelain", "--untracked-files=no", "--ignore-submodules=none"], at: root).data.isEmpty else {
+            throw Failure("Local changes or extra files are still here. Sync or move them before freeing space.")
+        }
+        let references = try run(["for-each-ref", "--format=%(refname)"], at: root).text.split(separator: "\n")
+            .map(String.init).filter { !OverleafSyncRecovery.isManagedReference($0) }
+        let input = Data((references.joined(separator: "\n") + "\n").utf8)
+        guard try run(["rev-list", "--max-count=1", "--stdin", "^HEAD"], at: root, input: input).data.isEmpty else {
+            throw Failure("This copy contains other local Git history. Keep it or back up that history before freeing space.")
+        }
+    }
+
+    static func verifyRemovableCopy(_ project: OverleafConnection, root: URL, recovery: URL, transport: String? = nil) throws {
+        try checkLocalCopyForRemoval(project, root: root, recovery: recovery)
+        let initialHead = try head(root)
+        let branch = "refs/heads/" + project.branch
+        let options = transport == nil ? [] : ["-c", "protocol.file.allow=always"]
+        let remote = try run(options + ["ls-remote", "--exit-code", "--refs", "--", transport ?? project.remote, branch],
+                             at: root, credential: project.profileID).text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard remote == initialHead + "\t" + branch else {
+            throw Failure("Sync with Overleaf before freeing space.")
+        }
+        try checkLocalCopyForRemoval(project, root: root, recovery: recovery)
+        guard try head(root) == initialHead else { throw Failure("The project changed. Sync and try again.") }
+    }
+
     private static func excludePrivateFiles(_ root: URL) throws {
         let path = root.appendingPathComponent(".git/info/exclude")
         let original = (try? String(contentsOf: path, encoding: .utf8)) ?? ""

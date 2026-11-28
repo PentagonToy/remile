@@ -13,6 +13,7 @@ final class SearchPDFModel: ObservableObject {
     @Published var editMessage: String?
     @Published var citationMessage: String?
     let protection = PDFEditProtection()
+    let canvas = PDFCanvasReuse<PDFSelectionView>()
     @Published private(set) var hasPendingEdits = false
     private var stagedGraph: PDFCommentGraph?
     private var stagedHighlights: [[(PDFPage, PDFAnnotation)]] = []
@@ -64,6 +65,11 @@ final class SearchPDFModel: ObservableObject {
         selectionObserver = NotificationCenter.default.addObserver(forName: .PDFViewSelectionChanged, object: view, queue: .main) { [weak self, weak view] _ in
             MainActor.assumeIsolated { self?.selectionAvailable = view?.currentSelection?.string?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
         }
+    }
+    func detach(_ view: PDFView) {
+        guard self.view === view else { return }
+        if let selectionObserver { NotificationCenter.default.removeObserver(selectionObserver); self.selectionObserver = nil }
+        self.view = nil
     }
     private func editableURL() -> URL? {
         guard let path else { return nil }
@@ -276,10 +282,18 @@ struct SearchPDFCanvas: NSViewRepresentable {
     var citation: AssistantCitation? = nil
     var zoom: ReaderZoom? = nil
     var selectionActions = PDFSelectionActions()
-    @MainActor final class Coordinator { var page = 0; var query = ""; var citationID: UUID?; var revealID: UUID?; let highlights = SearchPDFHighlights() }
+    @MainActor final class Coordinator {
+        var page = 0; var query = ""; var citationID: UUID?; var revealID: UUID?
+        let highlights = SearchPDFHighlights()
+        weak var editing: SearchPDFModel?
+        weak var zoom: ReaderZoom?
+    }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> PDFView {
-        let view = PDFSelectionView(); view.selectionActions = selectionActions; editing?.attach(view); view.autoScales = true; view.displayMode = .singlePageContinuous
+        let view = editing?.canvas.take { PDFSelectionView() } ?? PDFSelectionView()
+        view.selectionActions = selectionActions; editing?.attach(view); view.autoScales = true; view.displayMode = .singlePageContinuous
+        context.coordinator.editing = editing
+        context.coordinator.zoom = zoom
         view.pageOverlayViewProvider = context.coordinator.highlights
         zoom?.attach(view)
         view.displayDirection = .vertical; view.backgroundColor = .windowBackgroundColor
@@ -327,5 +341,14 @@ struct SearchPDFCanvas: NSViewRepresentable {
             return selection
         }
     }
-    static func dismantleNSView(_ view: PDFView, coordinator: Coordinator) { (view as? PDFSelectionView)?.selectionActions = PDFSelectionActions(); view.highlightedSelections = []; view.pageOverlayViewProvider = nil; view.document = nil }
+    static func dismantleNSView(_ view: PDFView, coordinator: Coordinator) {
+        (view as? PDFSelectionView)?.selectionActions = PDFSelectionActions()
+        coordinator.editing?.detach(view)
+        coordinator.zoom?.detach(view)
+        view.clearSelection()
+        view.highlightedSelections = []
+        view.pageOverlayViewProvider = nil
+        view.document = nil
+        coordinator.editing?.canvas.store(view)
+    }
 }

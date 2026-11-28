@@ -45,6 +45,15 @@ final class ReaderZoom: ObservableObject {
         }
     }
 
+    func detach(_ view: PDFView) {
+        guard pdf === view else { return }
+        lastPDFScale = view.scaleFactor
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers.removeAll()
+        if let layoutObserver { NotificationCenter.default.removeObserver(layoutObserver); self.layoutObserver = nil }
+        pdf = nil
+    }
+
     func attach(_ view: WKWebView) {
         web = view
         if view.pageZoom != scale { view.pageZoom = scale }

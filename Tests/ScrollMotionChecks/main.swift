@@ -37,6 +37,14 @@ Task { @MainActor in
   precondition(motion.move(by:-10000));let maxY=scroll.documentView!.bounds.maxY-scroll.contentView.bounds.height
   let clamped=await wait{abs(scroll.contentView.bounds.minY-maxY)<0.3};precondition(clamped,"Scroll escaped document bounds")
   print("Passed native clip-view wheel coalescing, settling and document-bound clamping")
+  precondition(motion.move(by: 6))
+  ReaderScrolling.detach(scroll)
+  let detachedY = scroll.contentView.bounds.minY
+  try? await Task.sleep(for: .milliseconds(120))
+  precondition(scroll.contentView.bounds.minY == detachedY, "Detached scrolling must stop immediately")
+  precondition(NativeScrollMotion.attach(scroll) !== motion, "Reattaching gets a fresh event monitor")
+  ReaderScrolling.detach(scroll)
+  print("Passed immediate scroll teardown and clean reattachment")
  } else {print("Reduced Motion active: animation assertions skipped; native bypass retained")}
  window.orderOut(nil);exit(0)
 }

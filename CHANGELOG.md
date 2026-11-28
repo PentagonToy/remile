@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Browse your Overleaf account in a grid or list. See which projects are on this Mac and double-click a project to open it, downloading its files when needed.
+- Use **Free Up Space…** to move selected local copies to Trash after a sync check. The projects stay available in Overleaf.
+- Switch layouts and workspaces with shorter transitions. Keep PDF previews steady when opening side panels or reopening documents.
+
 ## 0.2.8 — 28 November 2026
 
 - Install from a DMG by opening remile.app and choosing **Install**. remile copies itself to Applications and opens, keeping your documents and settings.

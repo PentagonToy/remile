@@ -17,22 +17,22 @@ struct HomeWorkspace: View {
     var body: some View {
         ZStack {
             if model.page == .home || model.page == .extensions {
-                homeLayout.modifier(RemileNavigationContent()).transition(.identity)
+                homeLayout.modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
             } else if model.page == .writer, let writer = model.writer {
                 WriterWorkspace(model: writer, goHome: { if model.closeWriter() { model.page = .home } }).navigationTitle(writer.title)
-                    .modifier(RemileNavigationContent()).transition(.opacity.combined(with: .offset(x: 12)))
+                    .modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
             } else if model.page == .reference {
                 ReferenceWorkspace(model: model.references, goHome: { navigate(.home) }, openPDF: { url, page in
                     ReaderNavigation.shared.reveal(LibraryHit(path: url.path, folderID: "reference", page: page + 1, excerpt: "", score: 0), query: "")
                     model.open(url)
-                }).modifier(RemileNavigationContent()).transition(.identity)
+                }).modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
             } else {
                 LibrarySearchView(model: model, open: open, goHome: { navigate(.home) })
-                    .transition(.identity)
+                    .modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
             }
         }
         .modifier(WelcomeTour(enabled: (loadOnAppear || tourProgress != nil) && model.page == .home && !actions.settings && !model.guidePresented && !model.overleaf.presented, openGuide: { model.guidePresented = true }, progress: tour))
-        .animation(reduceMotion || !animations || model.page != .writer ? nil : RemileMotion.navigation, value: model.page)
+        .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: model.page)
         .background(RemileStyle.background).tint(RemileStyle.accent)
         .frame(minWidth: 560, minHeight: 450)
         .task { if loadOnAppear { await model.load() } }
@@ -75,9 +75,14 @@ struct HomeWorkspace: View {
             }.padding(14).frame(maxWidth: .infinity).background(.ultraThinMaterial)
         }, content: {
             Group {
-                if model.page == .extensions { ExtensionsWorkspace(references: model.references, showReference: { navigate(.reference) }) }
-                else { home }
+                if model.page == .extensions {
+                    ExtensionsWorkspace(references: model.references, showReference: { navigate(.reference) })
+                        .modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
+                } else {
+                    home.modifier(RemileNavigationContent()).transition(RemileMotion.arrival)
+                }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                .animation(reduceMotion || !animations ? nil : RemileMotion.navigation, value: model.page == .extensions)
         })
     }
 

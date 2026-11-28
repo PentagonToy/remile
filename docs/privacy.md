@@ -14,7 +14,7 @@ Find, replace and TeX completion use the local editor and project data. Closing 
 
 Questions and selected document context are sent to the AI provider when you submit a request. ChatGPT suggestions use your connected account and its limits. Read [AI and writing](assistant.md) for context boundaries and provider controls.
 
-Overleaf synchronisation sends project changes through the configured connection. Update checks contact GitHub. Work offline pauses remile’s online requests.
+The Overleaf library reads project names and tags through your web sign-in. Git downloads project files when you choose a project and sends your source changes when you sync. Update checks contact GitHub. Work offline pauses remile’s online requests.
 
 Reference can send a detected DOI or arXiv identifier, or a title you choose to look up, to public bibliographic services. Link lookup contacts the source you provide and may follow advertised PDF links. These lookups keep the contents of your local PDFs on your Mac. Citation suggestions compare your preceding sentence with locally stored titles and abstracts on your Mac.
 

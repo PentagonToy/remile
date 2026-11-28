@@ -89,7 +89,7 @@ struct CompressWorkspace: View {
             Divider()
             footer
         }.frame(width: 940, height: 600).background(RemileStyle.background).modifier(ReaderAppearanceModifier())
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: model.busy)
+            .animation(reduceMotion ? nil : RemileMotion.disclosure, value: model.busy)
             .onChange(of: model.settings) { _, _ in model.invalidate() }
             .dropDestination(for: URL.self) { urls, _ in
                 guard !model.busy && !model.saving, urls.count == 1, let url = urls.first, url.pathExtension.lowercased() == "pdf" else { return false }

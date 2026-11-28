@@ -117,7 +117,7 @@ struct RemilePointerFeedback: ViewModifier {
             RoundedRectangle(cornerRadius: RemileRadius.control)
                 .fill(RemileStyle.ink.opacity(enabled && pointer.hovering ? 0.045 : 0)).allowsHitTesting(false)
         }.onHover { pointer.hovering = $0 }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: pointer.hovering)
+            .animation(reduceMotion ? nil : RemileMotion.feedback, value: pointer.hovering)
     }
 }
 

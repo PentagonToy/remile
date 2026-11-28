@@ -15,7 +15,7 @@ A local workspace for PDF, Markdown and LaTeX documents.
 - **Markdown** — Write in Edit, read the rendered document, or keep both together in Split.
 - **PDF** — Read and annotate PDFs in bottom tabs, present pages in Slide View and find matching passages across your local library.
 - **LaTeX** — Edit in source tabs with project path completion, drop folders into Files and compile to PDF.
-- **Overleaf** — Use the same LaTeX editor with automatic Git synchronisation in Online mode. Comments and suggestions connect separately.
+- **Overleaf** — Browse your account and download projects as needed. Edit them in the LaTeX workspace with automatic Git synchronisation in Online mode. Comments and suggestions connect separately.
 - **Extensions** — Read selected reMarkable folders over SSH or import local Zotero libraries into Reference. See [setup and limits](docs/extensions.md).
 - **Reference** — Keep citations and PDFs together. Review duplicates, lock citation keys and reuse attachments across matching records. See [Reference](docs/reference.md).
 - **AI** — Use Apple Intelligence on your Mac or connect ChatGPT for document questions, [manuscript review](docs/manuscript-review.md), grammar suggestions and reviewed LaTeX repairs.

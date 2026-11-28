@@ -73,7 +73,7 @@ struct OverleafAccountManager: View {
                                     Toggle("Access to Premium-owned projects", isOn: Binding(get: { account.premiumProjectAccess == true }, set: { library.setPlan(.free, premiumProjectAccess: $0, for: account.id) }))
                                         .toggleStyle(.checkbox).remileHelp("Enable Git for projects owned by an Overleaf Premium subscriber.")
                                 }
-                                Text("Use an Overleaf Git token. Browser sign-in is not needed.").font(RemileType.caption).foregroundStyle(RemileStyle.secondaryInk)
+                                Text("Sign in to browse projects. Use a Git token to download and sync them.").font(RemileType.caption).foregroundStyle(RemileStyle.secondaryInk)
                                 if account.allowsGit {
                                     DisclosureGroup("Git token", isExpanded: $draft.showGit) {
                                         VStack(alignment: .leading, spacing: 12) {

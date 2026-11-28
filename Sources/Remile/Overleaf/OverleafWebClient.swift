@@ -18,11 +18,12 @@ import WebKit
         let name: String
         let color: String?
     }
-    struct Project: Identifiable, Equatable, Sendable {
+    struct Project: Codable, Identifiable, Equatable, Sendable {
         let id: String
         let name: String
         var tags: [Tag] = []
         var tagsLoaded = true
+        var downloadID: UUID?
     }
     enum Failure: LocalizedError {
         case signIn, response, verification, permission, rateLimited, unavailable, sessionLocked

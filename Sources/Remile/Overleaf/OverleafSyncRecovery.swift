@@ -141,15 +141,18 @@ enum OverleafSyncRecovery {
         if FileManager.default.fileExists(atPath: stage.path) { try FileManager.default.removeItem(at: stage) }
         try trimReferences(at: root)
     }
+    static func isManagedReference(_ name: String) -> Bool {
+        let prefix = "refs/remile/git-recovery/"
+        guard name.hasPrefix(prefix) else { return false }
+        let suffix = name.dropFirst(prefix.count)
+        return suffix.count == 50 && Int64(suffix.prefix(13)) != nil && UUID(uuidString: String(suffix.dropFirst(14))) != nil
+    }
     static func trimReferences(at root: URL) throws {
         let prefix = "refs/remile/git-recovery/"
         let rows = try OverleafGit.run(["for-each-ref", "--format=%(refname) %(objectname)", prefix], at: root).text.split(separator: "\n")
         let references = rows.compactMap { row -> (String, String)? in
             let fields = row.split(separator: " ")
-            guard fields.count == 2, fields[0].hasPrefix(prefix), validObject(String(fields[1])) else { return nil }
-            // Older unlabelled refs may protect unresolved recovery copies. Never expire them by guessing.
-            let suffix = fields[0].dropFirst(prefix.count)
-            guard suffix.count == 50, Int64(suffix.prefix(13)) != nil, UUID(uuidString: String(suffix.dropFirst(14))) != nil else { return nil }
+            guard fields.count == 2, isManagedReference(String(fields[0])), validObject(String(fields[1])) else { return nil }
             return (String(fields[0]), String(fields[1]))
         }.sorted { left, right in
             func timestamp(_ name: String) -> Int64 { Int64(name.dropFirst(prefix.count).prefix(13)) ?? 0 }

@@ -6,7 +6,7 @@ struct PDFDocumentTabs: View {
     @ObservedObject private var drag = PDFTabDragState.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(AnimationPolicy.preference) private var animations = true
-    private var tabAnimation: Animation? { reduceMotion || !animations ? nil : .easeInOut(duration: 0.18) }
+    private var tabAnimation: Animation? { reduceMotion || !animations ? nil : RemileMotion.disclosure }
     @ObservedObject private var windows = RemileWindows.shared
 
     var body: some View {

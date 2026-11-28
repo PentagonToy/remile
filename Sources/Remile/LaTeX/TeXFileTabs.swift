@@ -34,7 +34,7 @@ struct TeXFileTabs: View {
                             tab(file, width: tabWidth).id(file)
                         }
                     }.padding(.vertical, DocumentTabMetrics.spacing)
-                        .animation(reduceMotion || !animations ? nil : .easeInOut(duration: 0.18), value: project.openFiles)
+                        .animation(reduceMotion || !animations ? nil : RemileMotion.disclosure, value: project.openFiles)
                 }.frame(width: min(contentWidth, viewport))
                     .onAppear { proxy.scrollTo(project.selected) }
                     .onChange(of: project.selected) { _, file in proxy.scrollTo(file) }

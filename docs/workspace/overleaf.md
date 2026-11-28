@@ -2,13 +2,19 @@
 
 Edit and compile a local copy of your Overleaf project. In **Online** mode, remile syncs the source through Git.
 
-## Connect a project
+## Browse and download projects
 
-1. Open Overleaf from Home and choose **Add project**.
-2. Label the account and enter the token from **Overleaf → Account settings → Git integration**.
-3. Sign in to choose a project, or expand **Add by link** and paste its Overleaf or Git link.
+1. Open **Overleaf** from Home and sign in to see your account’s projects and tags. Choose a grid or list.
+2. Double-click a **Cloud only** card to download and open it. Right-click and choose **Download for Offline Use** to download without opening.
+3. If prompted, create a Git token in **Overleaf → Account settings → Git integration**. To connect a project by URL, choose **+ → Add by link**.
 
-You need an account with Overleaf Git access. Install TeX locally to compile. The chooser uses the web sign-in to list projects. You can select one while its tags load, or search by project or tag name. remile downloads the project after you add it.
+**On this Mac** means the source is available offline. Downloads and source sync require Overleaf Git access. Install TeX locally to compile.
+
+## Free up disk space
+
+Close projects before removing their local copies. Choose **Free Up Space…** in the library toolbar to select one or more copies, or right-click a card to start with it selected.
+
+remile verifies each copy against Overleaf and keeps any project with unsynced or pending work. Eligible copies move to Trash with their local Git recovery history. The results show how many moved and explain why any selected copies stayed. The projects remain available in Overleaf. Empty Trash to reclaim the space.
 
 ## Choose a mode
 
@@ -35,7 +41,7 @@ In **Ask**, use **Attach Overleaf feedback** to prepare notes and source excerpt
 
 ## Hand a project to an agent
 
-Right-click a saved project and choose **Copy project ID**. The [CLI](../cli.md#overleaf-projects) reads open editor buffers, source hashes and the sync state last seen by remile.
+Right-click a project marked **On this Mac** and choose **Copy project ID**. The [CLI](../cli.md#overleaf-projects) reads open editor buffers, source hashes and the sync state last seen by remile.
 
 ## Buttons at a glance
 

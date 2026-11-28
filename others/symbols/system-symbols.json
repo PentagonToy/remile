@@ -24,6 +24,7 @@
       "name": "arrow.clockwise",
       "sources": [
         "Sources/Remile/Markdown/MarkdownWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafProjects.swift",
         "Sources/Remile/Overleaf/OverleafReviewPanel.swift",
         "Sources/Remile/Search/LibraryManager.swift",
@@ -160,6 +161,7 @@
         "Sources/Remile/Assistant/ChatGPTSettings.swift",
         "Sources/Remile/Convert/ConvertWorkspace.swift",
         "Sources/Remile/LaTeX/TeXSetupGuide.swift",
+        "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafViews.swift",
         "Sources/Remile/PDF/PDFPageOCR.swift",
         "Sources/Remile/Reference/ReferenceCleanupReview.swift",
@@ -263,6 +265,12 @@
       ]
     },
     {
+      "name": "cloud",
+      "sources": [
+        "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift"
+      ]
+    },
+    {
       "name": "doc",
       "sources": [
         "Sources/Remile/Convert/ConvertWorkspace.swift",
@@ -340,6 +348,7 @@
         "Sources/Remile/Home/HomeWorkspace.swift",
         "Sources/Remile/LaTeX/TeXWorkspace.swift",
         "Sources/Remile/Markdown/MarkdownWorkspace.swift",
+        "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
         "Sources/Remile/Overleaf/OverleafViews.swift",
         "Sources/Remile/PDF/PDFDocumentMenu.swift",
         "Sources/Remile/Reference/ReferencePaperSearch.swift",
@@ -495,6 +504,7 @@
     {
       "name": "list.bullet",
       "sources": [
+        "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
         "Sources/Remile/PDF/PDFNavigationPanel.swift",
         "Sources/Remile/Writer/WriterWorkspace.swift"
       ]
@@ -742,6 +752,7 @@
     {
       "name": "square.grid.2x2",
       "sources": [
+        "Sources/Remile/Overleaf/OverleafLibraryWorkspace.swift",
         "Sources/Remile/PDF/PDFWorkspace.swift"
       ]
     },
