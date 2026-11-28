@@ -4,13 +4,9 @@ remile. runs on Apple Silicon Macs with macOS 14 or later.
 
 ## Download
 
-Open the [latest release](https://github.com/PentagonToy/remile/releases/latest), download the Apple Silicon DMG, then drag **remile.app** into **Applications**.
+Open the [latest release](https://github.com/PentagonToy/remile/releases/latest), download the Apple Silicon DMG, open it, double-click **remile.app** and choose **Install**. remile copies itself to Applications and opens.
 
 The app and DMG are Developer ID signed and Apple-notarised. macOS may ask you to confirm the first launch.
-
-## Development builds
-
-In an Unreleased DMG, double-click **remile.app** and choose **Install**. remile copies itself to Applications and opens. If remile is running, finish saving your work when asked. Documents and settings stay in place. The current 0.2.7 release uses the drag-to-Applications instructions above.
 
 ## Use Homebrew
 
@@ -22,7 +18,7 @@ The cask installs the app and CLI. It checks the package checksum and retains ma
 
 ## Update
 
-Quit remile before replacing the app. For a Homebrew installation, run:
+For a DMG installation, open the new DMG and choose **Install**. Save your work if remile asks before replacing the app. For a Homebrew installation, run:
 
 ```sh
 brew upgrade --cask remile
